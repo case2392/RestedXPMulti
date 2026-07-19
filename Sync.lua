@@ -328,8 +328,12 @@ function ns.SetupSync()
     Multi:RegisterMessage("RXP_OBJECTIVE_COMPLETE", OnObjectiveProgress)
     Multi:RegisterEvent("QUEST_LOG_UPDATE", OnObjectiveProgress)
     Multi:RegisterMessage("RXP_STEP_COMPLETE", function(_, step)
-        if step and RXPCData and step.index == RXPCData.currentStep and
-            not ns.my.done then
+        -- compare by table identity, not index number, so a sticky or
+        -- generated step completing can never be mistaken for our own
+        local guide = ns.RXP.currentGuide
+        local current = guide and guide.steps and RXPCData and
+                            guide.steps[RXPCData.currentStep]
+        if step and current and step == current and not ns.my.done then
             ns.my.done = true
             ns.BroadcastState(true)
             ns.UpdateUI()

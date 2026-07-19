@@ -10,7 +10,7 @@ local Multi = AceAddon:NewAddon("RestedXPMulti", "AceEvent-3.0", "AceComm-3.0",
                                 "AceSerializer-3.0")
 ns.Multi = Multi
 
-ns.VERSION = 2
+ns.VERSION = 3
 ns.PREFIX = "RXPMulti"
 ns.STALE_SECONDS = 90 -- partner counts as offline after this long without a message
 ns.PRUNE_SECONDS = 600 -- partner removed from the window after this long
@@ -155,12 +155,27 @@ end
 --------------------------------------------------------------------------
 
 local origSetStep
+local setStepDepth = 0
+
+local function CallOrigSetStep(a1, a2, a3)
+    setStepDepth = setStepDepth + 1
+    local ok, result = pcall(origSetStep, a1, a2, a3)
+    setStepDepth = setStepDepth - 1
+    if not ok then error(result) end
+    return result
+end
 
 function ns.InstallStepHook()
     local RXP = ns.RXP
     if origSetStep or type(RXP.SetStep) ~= "function" then return end
     origSetStep = RXP.SetStep
     RXP.SetStep = function(a1, a2, a3)
+        -- nested calls are RestedXP's own internal routing: sticky hops and
+        -- skipping over steps that don't apply (already done, level-locked).
+        -- Those are not step completions - never gate them, and never let
+        -- them mark our current step as "done". Only genuine top-level
+        -- advances are gated.
+        if setStepDepth > 0 then return origSetStep(a1, a2, a3) end
         local n = a1
         if type(n) == "table" then n = a2 end
         if type(n) == "number" then
@@ -175,7 +190,7 @@ function ns.InstallStepHook()
                 ns.pendingStep = nil
             end
         end
-        return origSetStep(a1, a2, a3)
+        return CallOrigSetStep(a1, a2, a3)
     end
 end
 
@@ -183,7 +198,7 @@ end
 function ns.AdvanceNow(n)
     if not origSetStep then return end
     ns.pendingStep = nil
-    origSetStep(n)
+    CallOrigSetStep(n)
 end
 
 -- Is this partner far enough along for us to start step `targetIdx`?

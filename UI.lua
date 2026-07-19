@@ -208,6 +208,16 @@ function ns.UpdateUI()
     for _, name in ipairs(names) do
         local p = ns.partners[name]
         local stale = now - (p.lastSeen or 0) >= ns.STALE_SECONDS
+        if not stale and (p.version or 0) > 0 and p.version ~= ns.VERSION then
+            if p.version < ns.VERSION then
+                Line(string.format(
+                         "|cFFFF9933%s's RXP Multi is outdated - have them update|r",
+                         name), 0.95, 0.6, 0.2)
+            else
+                Line("|cFFFF9933your RXP Multi is outdated - update it|r", 0.95,
+                     0.6, 0.2)
+            end
+        end
         if stale then
             Line(string.format("%s  -  |cFF888888offline?|r", name), 0.55,
                  0.55, 0.55)
