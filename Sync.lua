@@ -35,7 +35,8 @@ local function BuildPayload(msgType)
         sn = my.nextStepId or 0,
         d = my.done and true or false,
         l = my.level or 0,
-        pd = pd
+        pd = pd,
+        st = my.stepLines or {}
     }
 end
 
@@ -168,6 +169,19 @@ local function OnCommReceived(prefix, message, distribution, sender)
         p.level = tonumber(msg.l) or 0
         p.version = tonumber(msg.v) or 1
 
+        -- live text of the step they're on, as their RestedXP renders it
+        p.stepLines = nil
+        if type(msg.st) == "table" then
+            local stepLines = {}
+            for i, line in ipairs(msg.st) do
+                if i > 8 then break end
+                if type(line) == "string" then
+                    table.insert(stepLines, line:sub(1, 120))
+                end
+            end
+            if #stepLines > 0 then p.stepLines = stepLines end
+        end
+
         -- a hello means they just logged in or reloaded and lost session
         -- state: re-send our accept so they don't wait on us
         if msg.t == "HI" then p.linkSent = nil end
@@ -239,9 +253,16 @@ end
 --------------------------------------------------------------------------
 
 local function OnLocalProgress()
+    ns.RefreshMyProgress()
     -- send right away: a partner may be holding on this very step
     if ns.RefreshMyState() then ns.BroadcastState(true) end
     ns.UpdateUI()
+end
+
+-- objective counts changed (mob killed, item looted, quest turned in...):
+-- share the new numbers, coalesced by the broadcast throttle
+local function OnObjectiveProgress()
+    if ns.RefreshMyProgress() then ns.BroadcastState() end
 end
 
 local function PruneParted()
@@ -256,6 +277,7 @@ end
 local function OnTick()
     tickCount = tickCount + 1
     if ns.RefreshMyState() then sendDirty = true end
+    if ns.RefreshMyProgress() then sendDirty = true end
 
     local now = GetTime()
     for name, p in pairs(ns.partners) do
@@ -303,6 +325,8 @@ function ns.SetupSync()
     -- RestedXP fires these AceEvent messages as the guide progresses
     Multi:RegisterMessage("RXP_STEP_ACTIVATED", OnLocalProgress)
     Multi:RegisterMessage("RXP_GUIDE_LOADED", OnLocalProgress)
+    Multi:RegisterMessage("RXP_OBJECTIVE_COMPLETE", OnObjectiveProgress)
+    Multi:RegisterEvent("QUEST_LOG_UPDATE", OnObjectiveProgress)
     Multi:RegisterMessage("RXP_STEP_COMPLETE", function(_, step)
         if step and RXPCData and step.index == RXPCData.currentStep and
             not ns.my.done then

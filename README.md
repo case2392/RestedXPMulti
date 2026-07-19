@@ -8,9 +8,13 @@ together in lockstep:
   you get a popup: *"«Name» is also using RestedXP Multi. Sync your RestedXP
   guide progress with them?"* Both click **Sync** and you're linked. Your
   choice is remembered, so the same friend never has to be confirmed again.
-- **See each other's steps** — a window (skinned to match your RestedXP theme)
-  shows every synced partner's current guide, step number, and the text of the
-  step they're on.
+- **See each other's steps, with live progress** — a window (skinned to match
+  your RestedXP theme) shows every synced partner's current guide, step
+  number, and the step text exactly as *their* RestedXP renders it, running
+  objective counts included: "Webwood Ichor: 4/7", "Webwood Venom Sac: 1/3",
+  updating as they kill and loot. This works even when they're on a step your
+  own guide doesn't contain (their class quest, for example) — you see what
+  they're doing, labeled as their class/race step.
 - **Step lock** — the guide will *not* advance to the next step until everyone
   you're synced with has finished the current one. When you finish first you'll
   see "Waiting for: <friend>", and the moment they finish, both guides move on

@@ -46,6 +46,7 @@ function Multi:OnEnable()
     ns.SetupSync()
     ns.SetupUI()
     ns.RefreshMyState()
+    ns.RefreshMyProgress()
     ns.UpdateUI()
     ns.Print("loaded. Type |cFFFFCC00/rxpm help|r for commands.")
 end
@@ -85,6 +86,56 @@ end
 -- Are we actively syncing with this partner? (both sides accepted the prompt)
 function ns.IsSynced(name, p)
     return (ns.db.paired[name] and p.pairedBack) and true or false
+end
+
+-- Snapshot the live text lines of our current step, exactly as RestedXP
+-- renders them (quest objectives keep their running "3/7" counts because
+-- RestedXP rewrites element.text in place as you play). These are broadcast
+-- so partners see our real progress - including steps their own guide
+-- doesn't contain, like class quests.
+local MAX_LINES = 6
+local MAX_LINE_LEN = 90
+function ns.CollectMyStepLines()
+    local guide = ns.RXP.currentGuide
+    local stepIdx = RXPCData and RXPCData.currentStep
+    local step = guide and guide.steps and stepIdx and guide.steps[stepIdx]
+    local lines, sig = {}, ""
+    if step then
+        for _, element in ipairs(step) do
+            if #lines >= MAX_LINES then break end
+            local text = element.text
+            if type(text) == "string" then
+                -- strip texture/atlas markup; keep color codes
+                text = text:gsub("|T.-|t", ""):gsub("|A.-|a", "")
+                for line in text:gmatch("[^\n]+") do
+                    line = line:gsub("^%s+", ""):gsub("%s+$", "")
+                    if line ~= "" and line ~= " " and #lines < MAX_LINES then
+                        if #line > MAX_LINE_LEN then
+                            line = line:sub(1, MAX_LINE_LEN - 3):gsub(
+                                       "|c?%x*$", "") .. "...|r"
+                        end
+                        local bullet = element.completed and "|cFF55EE55-|r " or
+                                           "- "
+                        table.insert(lines, bullet .. line)
+                    end
+                end
+            end
+        end
+    end
+    for _, l in ipairs(lines) do sig = sig .. l .. "\001" end
+    return lines, sig
+end
+
+-- Returns true when our step's visible text (objective counts etc.) changed.
+function ns.RefreshMyProgress()
+    local my = ns.my
+    if not my then return end
+    local lines, sig = ns.CollectMyStepLines()
+    if sig ~= my.stepSig then
+        my.stepSig = sig
+        my.stepLines = lines
+        return true
+    end
 end
 
 -- Find which of MY steps corresponds to a partner's stepId (nil if my guide

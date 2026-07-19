@@ -231,6 +231,11 @@ function ns.UpdateUI()
                                p.guideName), 0.9, 0.85, 0.6)
             Line(string.format("    step %d/%d", p.step or 0, p.total or 0),
                  0.6, 0.6, 0.6)
+            if p.stepLines then
+                for _, stepLine in ipairs(p.stepLines) do
+                    Line("    " .. stepLine, 0.75, 0.75, 0.75)
+                end
+            end
         elseif (p.gv or 0) ~= (my.version or 0) then
             Line(string.format("%s  -  step %d/%d", name, p.step or 0,
                                p.total or 0), tc[1], tc[2], tc[3])
@@ -250,15 +255,31 @@ function ns.UpdateUI()
             end
             Line(string.format("%s  -  step %d/%d%s", name, p.step or 0,
                                p.total or 0, marker), tc[1], tc[2], tc[3])
-            local myIdx = ns.FindMyStepByStepId(theirId)
-            if myIdx then
-                local stepText = ns.GetStepText(myIdx)
-                if stepText then
-                    Line("    " .. stepText, 0.6, 0.6, 0.6)
+            if p.stepLines then
+                -- live step text as THEIR RestedXP renders it, running
+                -- objective counts included - works even for steps our own
+                -- guide doesn't contain (their class quests etc.)
+                for _, stepLine in ipairs(p.stepLines) do
+                    Line("    " .. stepLine, 0.8, 0.8, 0.8)
                 end
-            elseif theirId > 0 then
-                Line("    (a step your guide doesn't have - class quest?)",
-                     0.6, 0.6, 0.6)
+                local myIdx = ns.FindMyStepByStepId(theirId)
+                if not myIdx and theirId > 0 then
+                    Line("    |cFFFFCC00(their class/race step - not in your guide)|r",
+                         0.7, 0.65, 0.45)
+                end
+            else
+                -- partner on an older RXP Multi that doesn't broadcast step
+                -- text: fall back to looking the step up in our own guide
+                local myIdx = ns.FindMyStepByStepId(theirId)
+                if myIdx then
+                    local stepText = ns.GetStepText(myIdx)
+                    if stepText then
+                        Line("    " .. stepText, 0.6, 0.6, 0.6)
+                    end
+                elseif theirId > 0 then
+                    Line("    (a step your guide doesn't have - class quest?)",
+                         0.6, 0.6, 0.6)
+                end
             end
         end
     end
