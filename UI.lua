@@ -1,6 +1,8 @@
 -- RestedXP Multi - partner window
 -- Small movable frame showing your step and each partner's step, plus a
 -- "waiting for..." banner while the step lock is holding the guide.
+-- Skinned at runtime with RestedXP's own active theme (borders, banner
+-- texture, colors, font) so it matches the guide window exactly.
 
 local addonName, ns = ...
 
@@ -10,9 +12,9 @@ local lines = {}
 local WIDTH = 230
 local LINE_GAP = 3
 local PADDING = 10
+local TITLE_HEIGHT = 21
 
 -- First readable line of text from step `index` of OUR loaded guide
--- (partners on the same guide have identical steps, so this is their text too)
 function ns.GetStepText(index)
     local guide = ns.RXP and ns.RXP.currentGuide
     local step = guide and guide.steps and guide.steps[index]
@@ -24,6 +26,51 @@ function ns.GetStepText(index)
             text = text:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
             if #text > 60 then text = text:sub(1, 57) .. "..." end
             return text
+        end
+    end
+end
+
+-- Pull RestedXP's current theme onto our frame; falls back to a plain dark
+-- tooltip look if anything is missing.
+local function ApplySkin()
+    local RXP = ns.RXP
+    local theme = RXP and (RXP.colors or RXP.activeTheme)
+    local backdrop = RXP and RXP.RXPFrame and RXP.RXPFrame.backdrop
+    ns.appliedTheme = theme
+    local bgColor = theme and theme.background or {0.05, 0.05, 0.08, 0.92}
+
+    if frame.SetBackdrop then
+        if frame.ClearBackdrop then frame:ClearBackdrop() end
+        if backdrop and backdrop.edge then
+            frame:SetBackdrop(backdrop.edge)
+        else
+            frame:SetBackdrop({
+                bgFile = "Interface/BUTTONS/WHITE8X8",
+                edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
+                edgeSize = 12,
+                insets = {left = 3, right = 3, top = 3, bottom = 3}
+            })
+        end
+        frame:SetBackdropColor(unpack(bgColor))
+    end
+
+    local tb = frame.titleBar
+    if tb.SetBackdrop then
+        if tb.ClearBackdrop then tb:ClearBackdrop() end
+        if backdrop and backdrop.guideName then
+            tb:SetBackdrop(backdrop.guideName)
+            tb:SetBackdropColor(unpack(bgColor))
+        end
+    end
+    if RXP and RXP.GetTexture then
+        tb.bg:SetTexture(RXP.GetTexture("rxp-banner"))
+    end
+
+    ns.skinFont = theme and theme.font
+    if ns.skinFont then
+        frame.title:SetFont(ns.skinFont, 11, "")
+        for _, line in ipairs(lines) do
+            line:SetFont(ns.skinFont, 10, "")
         end
     end
 end
@@ -45,17 +92,6 @@ local function CreateWindow()
         ns.db.pos = {point, relPoint, x, y}
     end)
 
-    if frame.SetBackdrop then
-        frame:SetBackdrop({
-            bgFile = "Interface/Tooltips/UI-Tooltip-Background",
-            edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
-            edgeSize = 12,
-            insets = {left = 3, right = 3, top = 3, bottom = 3}
-        })
-        frame:SetBackdropColor(0.05, 0.05, 0.08, 0.88)
-        frame:SetBackdropBorderColor(0.4, 0.6, 0.9, 0.9)
-    end
-
     if ns.db.pos then
         frame:SetPoint(ns.db.pos[1], UIParent, ns.db.pos[2], ns.db.pos[3],
                        ns.db.pos[4])
@@ -63,17 +99,31 @@ local function CreateWindow()
         frame:SetPoint("CENTER", UIParent, "CENTER", 320, 120)
     end
 
-    frame.title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    frame.title:SetPoint("TOPLEFT", PADDING, -8)
-    frame.title:SetText("|cFF66CCFFRXP Multi|r")
+    -- title bar styled like RestedXP's guide-name banner
+    local tb = CreateFrame("Frame", "$parentTitle", frame,
+                           BackdropTemplateMixin and "BackdropTemplate" or nil)
+    frame.titleBar = tb
+    tb:SetPoint("TOPLEFT", 0, 0)
+    tb:SetPoint("TOPRIGHT", 0, 0)
+    tb:SetHeight(TITLE_HEIGHT)
+    tb.bg = tb:CreateTexture(nil, "BACKGROUND")
+    tb.bg:SetPoint("TOPLEFT", 4, -2)
+    tb.bg:SetPoint("BOTTOMRIGHT", -2, 2)
 
-    local close = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
-    close:SetPoint("TOPRIGHT", 2, 2)
+    frame.title = tb:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    frame.title:SetPoint("CENTER", tb, "CENTER", 0, 0)
+    frame.title:SetText("RestedXP Multi")
+
+    local close = CreateFrame("Button", nil, tb, "UIPanelCloseButton")
+    close:SetPoint("RIGHT", 3, 0)
+    close:SetScale(0.75)
     close:SetScript("OnClick", function()
         ns.db.show = false
         frame:Hide()
         ns.Print("window hidden. Type /rxpm to bring it back.")
     end)
+
+    ApplySkin()
 end
 
 local function GetLine(i)
@@ -83,6 +133,7 @@ local function GetLine(i)
         line:SetWidth(WIDTH - PADDING * 2)
         line:SetJustifyH("LEFT")
         line:SetWordWrap(false)
+        if ns.skinFont then line:SetFont(ns.skinFont, 10, "") end
         lines[i] = line
     end
     line:Show()
@@ -120,10 +171,15 @@ function ns.UpdateUI()
     local my = ns.my
     if not my then return end
 
+    -- restyle if RestedXP's theme changed since we last drew
+    local currentTheme = ns.RXP and (ns.RXP.colors or ns.RXP.activeTheme)
+    if currentTheme ~= ns.appliedTheme then ApplySkin() end
+    local tc = (currentTheme and currentTheme.textColor) or {1, 1, 1}
+
     for _, line in ipairs(lines) do line:Hide() end
 
     local i = 0
-    local y = 28
+    local y = TITLE_HEIGHT + 6
     local function Line(text, r, g, b)
         i = i + 1
         y = AddLine(i, y, text, r, g, b)
@@ -132,7 +188,8 @@ function ns.UpdateUI()
     -- our own row
     if my.total and my.total > 0 then
         Line(string.format("You  -  step %d/%d %s", my.step or 0, my.total,
-                           my.done and "|cFF66FF66(done)|r" or ""), 1, 1, 1)
+                           my.done and "|cFF66FF66(done)|r" or ""), tc[1],
+             tc[2], tc[3])
     else
         Line("You  -  no guide loaded", 0.6, 0.6, 0.6)
     end
@@ -154,9 +211,19 @@ function ns.UpdateUI()
         if stale then
             Line(string.format("%s  -  |cFF888888offline?|r", name), 0.55,
                  0.55, 0.55)
-        elseif not ns.CodeMatches(p) then
-            Line(string.format("%s  -  |cFFFF6666different sync code|r", name),
-                 0.8, 0.5, 0.5)
+        elseif not ns.IsSynced(name, p) then
+            if p.theyDeclined then
+                Line(string.format("%s  -  |cFFFF6666declined sync|r", name),
+                     0.7, 0.55, 0.55)
+            elseif ns.db.paired[name] then
+                Line(string.format(
+                         "%s  -  |cFFFFCC00waiting for their accept|r", name),
+                     0.9, 0.85, 0.6)
+            else
+                Line(string.format("%s  -  |cFF888888not synced|r", name),
+                     0.65, 0.65, 0.65)
+                Line("    /rxpm sync " .. name .. " to sync up", 0.5, 0.5, 0.5)
+            end
         elseif p.key == "" then
             Line(string.format("%s  -  no guide loaded", name), 0.7, 0.7, 0.7)
         elseif p.key ~= my.key then
@@ -164,20 +231,34 @@ function ns.UpdateUI()
                                p.guideName), 0.9, 0.85, 0.6)
             Line(string.format("    step %d/%d", p.step or 0, p.total or 0),
                  0.6, 0.6, 0.6)
+        elseif (p.gv or 0) ~= (my.version or 0) then
+            Line(string.format("%s  -  step %d/%d", name, p.step or 0,
+                               p.total or 0), tc[1], tc[2], tc[3])
+            Line("    |cFFFF9933guide version differs - update addons|r", 0.9,
+                 0.6, 0.3)
         else
+            -- fully synced, same guide: compare positions via stepId so
+            -- class-specific steps don't skew the picture
             local marker = ""
+            local myId, theirId = my.stepId or 0, p.stepId or 0
             if p.done then
                 marker = " |cFF66FF66(done)|r"
-            elseif (p.step or 0) < (my.step or 0) then
+            elseif theirId > 0 and myId > 0 and theirId < myId then
                 marker = " |cFFFF9933(behind)|r"
-            elseif (p.step or 0) > (my.step or 0) then
+            elseif theirId > 0 and myId > 0 and theirId > myId then
                 marker = " |cFF66CCFF(ahead)|r"
             end
             Line(string.format("%s  -  step %d/%d%s", name, p.step or 0,
-                               p.total or 0, marker), 1, 1, 1)
-            local stepText = ns.GetStepText(p.step)
-            if stepText then
-                Line("    " .. stepText, 0.6, 0.6, 0.6)
+                               p.total or 0, marker), tc[1], tc[2], tc[3])
+            local myIdx = ns.FindMyStepByStepId(theirId)
+            if myIdx then
+                local stepText = ns.GetStepText(myIdx)
+                if stepText then
+                    Line("    " .. stepText, 0.6, 0.6, 0.6)
+                end
+            elseif theirId > 0 then
+                Line("    (a step your guide doesn't have - class quest?)",
+                     0.6, 0.6, 0.6)
             end
         end
     end
@@ -192,10 +273,8 @@ function ns.UpdateUI()
     end
 
     -- footer
-    local codeText = ns.db.code ~= "" and ns.db.code or "none"
     local lockText = ns.db.lock and "|cFF66FF66on|r" or "|cFFFF6666off|r"
-    Line(string.format("code: %s   lock: %s", codeText, lockText), 0.45, 0.45,
-         0.5)
+    Line(string.format("lock: %s   /rxpm help", lockText), 0.45, 0.45, 0.5)
 
     frame:SetHeight(y + PADDING - LINE_GAP)
 end

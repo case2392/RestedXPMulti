@@ -10,24 +10,20 @@ local Multi = AceAddon:NewAddon("RestedXPMulti", "AceEvent-3.0", "AceComm-3.0",
                                 "AceSerializer-3.0")
 ns.Multi = Multi
 
-ns.VERSION = 1
+ns.VERSION = 2
 ns.PREFIX = "RXPMulti"
 ns.STALE_SECONDS = 90 -- partner counts as offline after this long without a message
 ns.PRUNE_SECONDS = 600 -- partner removed from the window after this long
-
-local defaults = {
-    code = "", -- sync code; empty = sync with any party member running the addon
-    lock = true, -- hold on each step until synced partners have finished it too
-    show = true, -- show the partner window
-    pos = nil -- saved window position
-}
+ns.INF_STEP = 2147483647 -- "past the last step" sentinel that serializes safely
 
 function Multi:OnInitialize()
     RestedXPMultiDB = RestedXPMultiDB or {}
-    for k, v in pairs(defaults) do
-        if RestedXPMultiDB[k] == nil then RestedXPMultiDB[k] = v end
-    end
-    ns.db = RestedXPMultiDB
+    local db = RestedXPMultiDB
+    db.code = nil -- v1 sync codes replaced by sync prompts
+    if db.lock == nil then db.lock = true end
+    if db.show == nil then db.show = true end
+    db.paired = db.paired or {} -- names we've agreed to sync with (persistent)
+    ns.db = db
 end
 
 function ns.Print(msg, ...)
@@ -43,6 +39,8 @@ function Multi:OnEnable()
 
     ns.my = {} -- our own guide/step state, broadcast to partners
     ns.partners = {} -- partner name -> last reported state
+    ns.sessionDeclined = {} -- names declined this session (don't re-prompt)
+    ns.prompted = {} -- names we've already shown the sync popup for
 
     ns.InstallStepHook()
     ns.SetupSync()
@@ -59,18 +57,45 @@ function ns.RefreshMyState()
     local guide = ns.RXP.currentGuide
     local key = guide and guide.key or ""
     local gname = guide and (guide.displayname or guide.name) or ""
+    local version = guide and tonumber(guide.version) or 0
     local step = RXPCData and RXPCData.currentStep or 0
-    local total = guide and guide.steps and #guide.steps or 0
+    local steps = guide and guide.steps
+    local total = steps and #steps or 0
+    -- stepId encodes the step's position in the shared guide source, so it's
+    -- identical for every class/race even when their step numbering differs
+    local stepId = steps and steps[step] and steps[step].stepId or 0
+    local nextStepId = steps and
+                           (steps[step + 1] and steps[step + 1].stepId or
+                               ns.INF_STEP) or 0
 
-    local changed = key ~= my.key or step ~= my.step or total ~= my.total
+    local changed = key ~= my.key or step ~= my.step or total ~= my.total or
+                        stepId ~= my.stepId
     if changed then
         -- moving to a new step (or guide) resets our "finished this step" flag
         my.done = false
         ns.lastBlockAnnounced = nil
     end
-    my.key, my.guideName, my.step, my.total = key, gname, step, total
+    my.key, my.guideName, my.version = key, gname, version
+    my.step, my.total = step, total
+    my.stepId, my.nextStepId = stepId, nextStepId
     my.level = UnitLevel("player")
     return changed
+end
+
+-- Are we actively syncing with this partner? (both sides accepted the prompt)
+function ns.IsSynced(name, p)
+    return (ns.db.paired[name] and p.pairedBack) and true or false
+end
+
+-- Find which of MY steps corresponds to a partner's stepId (nil if my guide
+-- doesn't contain that step - e.g. it's their class quest)
+function ns.FindMyStepByStepId(stepId)
+    local guide = ns.RXP and ns.RXP.currentGuide
+    if not (guide and guide.steps) or not stepId or stepId == 0 then return end
+    for i, s in ipairs(guide.steps) do
+        if s.stepId == stepId then return i end
+        if s.stepId and s.stepId > stepId then return nil end
+    end
 end
 
 --------------------------------------------------------------------------
@@ -110,6 +135,20 @@ function ns.AdvanceNow(n)
     origSetStep(n)
 end
 
+-- Is this partner far enough along for us to start step `targetIdx`?
+-- Compared in stepId space (position in the shared guide source), so players
+-- of different classes - whose guides omit each other's class steps - still
+-- line up correctly: everyone waits while one player does a step the others
+-- don't have, then advances together.
+local function PartnerReady(p, targetIdx, targetId)
+    if targetId and (p.stepId or 0) > 0 then
+        return p.stepId >= targetId or
+                   (p.done and (p.nextStepId or 0) >= targetId)
+    end
+    -- partner running an older RXP Multi: fall back to raw step numbers
+    return p.step >= targetIdx or (p.step == targetIdx - 1 and p.done)
+end
+
 -- Should moving to step `target` be blocked? Returns blocked, {names...}
 function ns.ShouldBlock(target)
     local db, my = ns.db, ns.my
@@ -126,16 +165,20 @@ function ns.ShouldBlock(target)
     local prev = guide.steps and guide.steps[target - 1]
     if prev and prev.sticky then return false end
 
+    local targetId = guide.steps and guide.steps[target] and
+                         guide.steps[target].stepId
+
     local now = GetTime()
     local anyPartner = false
     local waitingOn
     for name, p in pairs(ns.partners) do
         local fresh = now - (p.lastSeen or 0) < ns.STALE_SECONDS
-        if fresh and ns.CodeMatches(p) and p.key ~= "" and p.key == my.key then
+        -- only gate on partners we're synced with, on the same guide AND the
+        -- same guide version (a version difference shifts stepIds)
+        if fresh and ns.IsSynced(name, p) and p.key ~= "" and p.key == my.key and
+            (p.gv or 0) == (my.version or 0) then
             anyPartner = true
-            local ready = p.step >= target or
-                              (p.step == target - 1 and p.done)
-            if not ready then
+            if not PartnerReady(p, target, targetId) then
                 waitingOn = waitingOn or {}
                 table.insert(waitingOn, name)
             end
@@ -184,11 +227,23 @@ end
 local function ShowHelp()
     ns.Print("commands:")
     print("  |cFFFFCC00/rxpm|r - show/hide the partner window")
-    print("  |cFFFFCC00/rxpm code <word>|r - set a sync code (only players with the same code sync)")
-    print("  |cFFFFCC00/rxpm code off|r - clear the code (sync with your whole party)")
+    print("  |cFFFFCC00/rxpm sync|r - offer to sync with everyone detected (also happens automatically)")
+    print("  |cFFFFCC00/rxpm sync <name>|r - offer to sync with a specific player")
+    print("  |cFFFFCC00/rxpm unsync <name>|r - stop syncing with a player (no name = everyone)")
     print("  |cFFFFCC00/rxpm lock|r - toggle the step lock (wait for partners before advancing)")
     print("  |cFFFFCC00/rxpm skip|r - stop waiting and advance to the next step now")
     print("  |cFFFFCC00/rxpm status|r - print what your partners are doing")
+end
+
+-- case-insensitive match against detected partners
+local function ResolveName(input)
+    for name in pairs(ns.partners) do
+        if name:lower() == input:lower() then return name end
+    end
+    for name in pairs(ns.db.paired) do
+        if name:lower() == input:lower() then return name end
+    end
+    return input:sub(1, 1):upper() .. input:sub(2)
 end
 
 SLASH_RXPMULTI1 = "/rxpm"
@@ -201,27 +256,34 @@ SlashCmdList["RXPMULTI"] = function(input)
 
     if cmd == "" or cmd == "show" or cmd == "hide" then
         ns.ToggleUI(cmd)
-    elseif cmd == "code" then
+    elseif cmd == "sync" then
         rest = rest:gsub("%s+", "")
-        if rest == "" then
-            if ns.db.code ~= "" then
-                ns.Print("current sync code: |cFFFFCC00%s|r", ns.db.code)
-            else
-                ns.Print("no sync code set - syncing with any party member running RXP Multi.")
-            end
-        elseif rest:lower() == "off" or rest:lower() == "clear" then
-            ns.db.code = ""
-            ns.Print("sync code cleared - syncing with your whole party.")
-            ns.BroadcastState(true)
-            ns.TryRelease()
+        if rest ~= "" then
+            ns.AcceptPair(ResolveName(rest))
         else
-            ns.db.code = rest:lower()
-            ns.Print("sync code set to |cFFFFCC00%s|r - have your friend run: /rxpm code %s",
-                     ns.db.code, ns.db.code)
-            ns.BroadcastState(true)
-            ns.TryRelease()
+            local offered = 0
+            for name in pairs(ns.partners) do
+                if not ns.db.paired[name] then
+                    offered = offered + 1
+                    ns.AcceptPair(name)
+                end
+            end
+            if offered == 0 then
+                ns.Print("nobody new to sync with - partners appear here once they're in your party with RXP Multi installed.")
+            end
         end
-        ns.UpdateUI()
+    elseif cmd == "unsync" then
+        rest = rest:gsub("%s+", "")
+        if rest ~= "" then
+            ns.Unpair(ResolveName(rest))
+        else
+            local had = false
+            for name in pairs(ns.db.paired) do
+                had = true
+                ns.Unpair(name)
+            end
+            if not had then ns.Print("you aren't synced with anyone.") end
+        end
     elseif cmd == "lock" then
         local arg = rest:lower()
         if arg == "on" then
@@ -269,10 +331,18 @@ function ns.PrintStatus()
         local note = ""
         if now - (p.lastSeen or 0) >= ns.STALE_SECONDS then
             note = " |cFF888888(offline?)|r"
-        elseif not ns.CodeMatches(p) then
-            note = " |cFFFF6666(different sync code)|r"
+        elseif not ns.IsSynced(name, p) then
+            if p.theyDeclined then
+                note = " |cFFFF6666(declined sync)|r"
+            elseif ns.db.paired[name] then
+                note = " |cFFFFCC00(waiting for them to accept)|r"
+            else
+                note = " |cFF888888(not synced - /rxpm sync " .. name .. ")|r"
+            end
         elseif p.key ~= my.key then
             note = " |cFFFFCC00(different guide)|r"
+        elseif (p.gv or 0) ~= (my.version or 0) then
+            note = " |cFFFFCC00(different guide version)|r"
         elseif p.done then
             note = " |cFF66FF66(done)|r"
         end

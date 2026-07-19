@@ -1,6 +1,7 @@
--- RestedXP Multi - group communication
--- Broadcasts our guide/step state over the party addon channel and keeps a
--- table of every partner's last reported state.
+-- RestedXP Multi - group communication & sync pairing
+-- Broadcasts our guide/step state over the party addon channel, keeps a
+-- table of every partner's last reported state, and manages the "want to
+-- sync with X?" handshake shown when two addon users end up in a party.
 
 local addonName, ns = ...
 
@@ -8,18 +9,6 @@ local Multi
 local lastSend = 0
 local sendDirty = false
 local tickCount = 0
-
-local function NormalizeCode(code)
-    code = (code or ""):lower()
-    code = code:gsub("%s+", "")
-    return code
-end
-ns.NormalizeCode = NormalizeCode
-
--- compared at use time so changing your own code takes effect immediately
-function ns.CodeMatches(partner)
-    return NormalizeCode(ns.db.code) == NormalizeCode(partner.code)
-end
 
 local function ChatChannel()
     if LE_PARTY_CATEGORY_INSTANCE and
@@ -33,11 +22,13 @@ local function BuildPayload(msgType)
     return {
         t = msgType,
         v = ns.VERSION,
-        c = NormalizeCode(ns.db.code),
         k = my.key or "",
         g = my.guideName or "",
+        gv = my.version or 0,
         s = my.step or 0,
         n = my.total or 0,
+        si = my.stepId or 0,
+        sn = my.nextStepId or 0,
         d = my.done and true or false,
         l = my.level or 0
     }
@@ -66,6 +57,157 @@ function ns.BroadcastHello()
     if Multi then Send("HI") end
 end
 
+--------------------------------------------------------------------------
+-- Pairing: when we detect another RXP Multi user in the party, ask the
+-- player whether to sync. Both sides must accept; the choice is remembered
+-- so the same friend never has to be confirmed twice.
+--------------------------------------------------------------------------
+
+local function SendTo(name, msgType)
+    local p = ns.partners[name]
+    Multi:SendCommMessage(ns.PREFIX, Multi:Serialize({t = msgType,
+                                                      v = ns.VERSION}),
+                          "WHISPER", (p and p.fullSender) or name)
+end
+
+function ns.SendPair(name)
+    local p = ns.partners[name]
+    if p then p.linkSent = true end
+    SendTo(name, "PAIR")
+end
+
+function ns.SendDecline(name) SendTo(name, "DECLINE") end
+
+function ns.AcceptPair(name)
+    ns.db.paired[name] = true
+    ns.sessionDeclined[name] = nil
+    ns.SendPair(name)
+    local p = ns.partners[name]
+    if p and p.pairedBack then
+        ns.Print("now syncing with |cFFFFCC00%s|r!", name)
+    else
+        ns.Print("sync request sent to |cFFFFCC00%s|r - waiting for them to accept.",
+                 name)
+    end
+    ns.BroadcastState(true)
+    ns.TryRelease()
+    ns.UpdateUI()
+end
+
+function ns.DeclinePair(name)
+    ns.sessionDeclined[name] = true
+    ns.db.paired[name] = nil
+    ns.SendDecline(name)
+    ns.Print("not syncing with %s. Use /rxpm sync %s if you change your mind.",
+             name, name)
+    ns.TryRelease()
+    ns.UpdateUI()
+end
+
+function ns.Unpair(name)
+    ns.db.paired[name] = nil
+    ns.sessionDeclined[name] = true
+    ns.SendDecline(name)
+    ns.Print("stopped syncing with |cFFFFCC00%s|r.", name)
+    ns.TryRelease()
+    ns.UpdateUI()
+end
+
+function ns.ShowPairPrompt(name)
+    ns.prompted[name] = true
+    if not StaticPopup_Show then return end
+    local dialog = StaticPopup_Show("RXPMULTI_PAIR", name, nil, name)
+    if not dialog then
+        -- all popup slots busy; retry shortly
+        ns.prompted[name] = nil
+        C_Timer.After(5, function()
+            if not ns.db.paired[name] and not ns.sessionDeclined[name] and
+                not ns.prompted[name] and ns.partners[name] then
+                ns.ShowPairPrompt(name)
+            end
+        end)
+    end
+end
+
+--------------------------------------------------------------------------
+-- Receiving
+--------------------------------------------------------------------------
+
+local function OnCommReceived(prefix, message, distribution, sender)
+    if prefix ~= ns.PREFIX then return end
+
+    local name = Ambiguate(sender, "short")
+    if name == UnitName("player") then return end
+
+    local ok, msg = Multi:Deserialize(message)
+    if not ok or type(msg) ~= "table" then return end
+
+    local p = ns.partners[name]
+    if not p then
+        p = {step = 0, total = 0, key = "", guideName = ""}
+        ns.partners[name] = p
+    end
+    p.fullSender = sender
+    p.lastSeen = GetTime()
+
+    if msg.t == "S" or msg.t == "HI" then
+        if type(msg.s) ~= "number" then return end
+        p.step = msg.s
+        p.total = tonumber(msg.n) or 0
+        p.key = tostring(msg.k or "")
+        p.guideName = tostring(msg.g or "")
+        p.gv = tonumber(msg.gv) or 0
+        p.stepId = tonumber(msg.si) or 0
+        p.nextStepId = tonumber(msg.sn) or 0
+        p.done = msg.d and true or false
+        p.level = tonumber(msg.l) or 0
+        p.version = tonumber(msg.v) or 1
+
+        if ns.db.paired[name] then
+            -- previously accepted partner: re-establish the link silently
+            if not p.linkSent then ns.SendPair(name) end
+        elseif not ns.sessionDeclined[name] and not ns.prompted[name] then
+            ns.ShowPairPrompt(name)
+        end
+
+        if msg.t == "HI" then
+            -- introduce ourselves back (small random delay to avoid a burst
+            -- when several people zone in at once)
+            C_Timer.After(math.random() * 2, function()
+                if IsInGroup() then ns.BroadcastState(true) end
+            end)
+        end
+    elseif msg.t == "PAIR" then
+        local wasPaired = p.pairedBack
+        p.pairedBack = true
+        p.theyDeclined = nil
+        if ns.db.paired[name] then
+            if not p.linkSent then ns.SendPair(name) end
+            if not wasPaired then
+                ns.Print("now syncing with |cFFFFCC00%s|r!", name)
+            end
+            ns.BroadcastState(true)
+        elseif ns.sessionDeclined[name] then
+            ns.SendDecline(name)
+        elseif not ns.prompted[name] then
+            ns.ShowPairPrompt(name)
+        end
+    elseif msg.t == "DECLINE" then
+        p.pairedBack = false
+        p.theyDeclined = true
+        if ns.db.paired[name] then
+            ns.Print("|cFFFFCC00%s|r declined guide sync.", name)
+        end
+    end
+
+    ns.TryRelease()
+    ns.UpdateUI()
+end
+
+--------------------------------------------------------------------------
+-- Local progress + housekeeping
+--------------------------------------------------------------------------
+
 local function OnLocalProgress()
     -- send right away: a partner may be holding on this very step
     if ns.RefreshMyState() then ns.BroadcastState(true) end
@@ -76,6 +218,7 @@ local function PruneParted()
     for name in pairs(ns.partners) do
         if not (UnitInParty(name) or UnitInRaid(name)) then
             ns.partners[name] = nil
+            ns.prompted[name] = nil -- re-prompt if they rejoin later
         end
     end
 end
@@ -88,6 +231,7 @@ local function OnTick()
     for name, p in pairs(ns.partners) do
         if now - (p.lastSeen or 0) > ns.PRUNE_SECONDS then
             ns.partners[name] = nil
+            ns.prompted[name] = nil
         end
     end
 
@@ -101,43 +245,20 @@ local function OnTick()
     ns.UpdateUI()
 end
 
-local function OnCommReceived(prefix, message, distribution, sender)
-    if prefix ~= ns.PREFIX then return end
-
-    local name = Ambiguate(sender, "short")
-    if name == UnitName("player") then return end
-
-    local ok, msg = Multi:Deserialize(message)
-    if not ok or type(msg) ~= "table" or type(msg.s) ~= "number" then
-        return
-    end
-
-    ns.partners[name] = {
-        step = msg.s or 0,
-        total = tonumber(msg.n) or 0,
-        key = tostring(msg.k or ""),
-        guideName = tostring(msg.g or ""),
-        done = msg.d and true or false,
-        level = tonumber(msg.l) or 0,
-        version = tonumber(msg.v) or 1,
-        code = NormalizeCode(msg.c),
-        lastSeen = GetTime()
-    }
-
-    if msg.t == "HI" then
-        -- introduce ourselves back (small random delay to avoid a burst
-        -- when several people zone in at once)
-        C_Timer.After(math.random() * 2, function()
-            if IsInGroup() then ns.BroadcastState(true) end
-        end)
-    end
-
-    ns.TryRelease()
-    ns.UpdateUI()
-end
-
 function ns.SetupSync()
     Multi = ns.Multi
+
+    StaticPopupDialogs["RXPMULTI_PAIR"] = {
+        text = "%s is also using RestedXP Multi.\n\nSync your RestedXP guide progress with them?",
+        button1 = "Sync",
+        button2 = "Not now",
+        OnAccept = function(self, data) ns.AcceptPair(data) end,
+        OnCancel = function(self, data) ns.DeclinePair(data) end,
+        timeout = 0,
+        whileDead = true,
+        hideOnEscape = true,
+        preferredIndex = 3
+    }
 
     Multi:RegisterComm(ns.PREFIX, OnCommReceived)
 

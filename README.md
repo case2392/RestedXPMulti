@@ -4,17 +4,26 @@ A small companion addon for [RestedXP / RXPGuides](https://www.restedxp.com/) th
 syncs guide progress between party members, so you and a friend can level
 together in lockstep:
 
-- **See each other's steps** — a small movable window shows every synced
-  partner's current guide, step number, and the text of the step they're on.
+- **Sync prompt** — when you join a party with another RXP Multi user, both of
+  you get a popup: *"«Name» is also using RestedXP Multi. Sync your RestedXP
+  guide progress with them?"* Both click **Sync** and you're linked. Your
+  choice is remembered, so the same friend never has to be confirmed again.
+- **See each other's steps** — a window (skinned to match your RestedXP theme)
+  shows every synced partner's current guide, step number, and the text of the
+  step they're on.
 - **Step lock** — the guide will *not* advance to the next step until everyone
-  in your sync group has finished the current one. When you finish first you'll
+  you're synced with has finished the current one. When you finish first you'll
   see "Waiting for: <friend>", and the moment they finish, both guides move on
   automatically.
-- **Sync codes (optional)** — type in a shared code so you only sync with the
-  people you intend to, even in a full party.
+- **Class quests handled properly** — RestedXP guides contain steps only some
+  classes see (class quests, weapon training, etc.), so step *numbers* differ
+  between classes. RXP Multi matches steps by their position in the guide
+  itself, not by number: when your friend reaches their class quest, you simply
+  wait (or go help!), and you both move on together afterwards.
 
 It does **not** modify RestedXP itself — it hooks in from the outside, so you
-can keep updating RestedXP normally.
+can keep updating RestedXP normally. The window adopts whatever RestedXP theme
+you use (RXP Red, RXP Blue, Gold, custom...) automatically.
 
 ## Requirements
 
@@ -22,9 +31,11 @@ can keep updating RestedXP normally.
 - Both players need **this addon** installed.
 - You must be **in the same party** (addon messages travel over the party
   channel).
-- For the step lock to hold you in lockstep, both players should be following
-  the **same guide**. Partners on a different guide are still shown in the
-  window but never hold you back.
+- For the step lock to hold you in lockstep, both players should follow the
+  **same guide**. Partners on a different guide are still shown in the window
+  but never hold you back. Keep your RestedXP versions in step too — if your
+  guide versions differ, the addon shows a warning and stops gating rather
+  than guessing.
 
 ## Installation
 
@@ -42,18 +53,18 @@ can keep updating RestedXP normally.
 
 1. Both install the addon (see above) and pick the same RestedXP guide.
 2. Invite each other to a party.
-3. That's it — within a few seconds the **RXP Multi** window shows both of you.
-   The step lock is **on by default**: whoever finishes a step first simply
-   waits, and both guides advance together.
-4. (Optional) agree on a code and both type, e.g.: `/rxpm code bananas`
+3. Within a few seconds you'll both get the sync popup — click **Sync** on
+   both screens. Done: the RXP Multi window shows both of you, and the step
+   lock keeps you together from then on.
 
 ## Commands
 
 | Command | What it does |
 |---|---|
 | `/rxpm` | Show/hide the partner window |
-| `/rxpm code <word>` | Set a sync code — only players with the same code sync with you |
-| `/rxpm code off` | Clear the code (sync with your whole party) |
+| `/rxpm sync` | Offer to sync with everyone detected (the popup does this for you normally) |
+| `/rxpm sync <name>` | Offer/accept sync with a specific player |
+| `/rxpm unsync <name>` | Stop syncing with a player (no name = everyone) |
 | `/rxpm lock` | Toggle the step lock on/off (`/rxpm lock on`, `/rxpm lock off` also work) |
 | `/rxpm skip` | Stop waiting and advance to the next step right now |
 | `/rxpm status` | Print your partners' progress to chat |
@@ -61,12 +72,16 @@ can keep updating RestedXP normally.
 
 ## How the step lock decides you're "ready"
 
-When RestedXP tries to advance you to step *N*, the addon checks every synced
-partner (same code, same guide, seen in the last 90 seconds). You advance when
-each of them either:
+Steps are compared by their position in the guide source (RestedXP's internal
+`stepId`), which is identical for every class even when step numbering isn't.
+When RestedXP tries to advance you to a step, the addon checks every synced
+partner (same guide, same guide version, seen in the last 90 seconds). You
+advance when each of them either:
 
-- is already on step *N* or beyond, **or**
-- is on step *N − 1* and has finished it too.
+- is already **at or past** that position in the guide, **or**
+- has **finished their current step** and their next step is at or past that
+  position (this is what lets someone sit through your class quest without
+  either of you getting stuck).
 
 If a partner logs off or leaves the party, they stop holding you back
 automatically. You can always force your way forward with `/rxpm skip`, by
@@ -76,9 +91,10 @@ turning the lock off, or by jumping to a step from RestedXP's own step menu.
 
 - Addon messages require being in the same party/raid; you can't sync while
   ungrouped.
-- The lock also applies to forward jumps made through RestedXP's automatic
-  step handling. Backward jumps are never blocked.
+- Declining the popup lasts for the current session; the popup returns next
+  session (or use `/rxpm sync <name>` any time). Accepting is remembered
+  permanently until you `/rxpm unsync` them.
 - Sticky steps (RestedXP's "do this later" steps) are never gated, since
   RestedXP skips through them as part of its own bookkeeping.
-- Works with any number of partners, not just two — everyone with the addon,
-  the same code, and the same guide stays in lockstep.
+- Works with any number of partners, not just two — everyone who accepts the
+  sync and follows the same guide stays in lockstep.
