@@ -1,0 +1,14 @@
+## Interface: 11508, 20506, 50504, 120100, 120005, 120007
+## Interface-Classic: 11508
+## Interface-TBC: 20506
+## Interface-Mists: 50504
+## Title: RestedXP Multi
+## Notes: Party sync for RestedXP guides - see your friends' current step and stay in lockstep while leveling together
+## Author: case2392
+## Version: 1.0.0
+## Dependencies: RXPGuides
+## SavedVariables: RestedXPMultiDB
+
+Core.lua
+Sync.lua
+UI.lua
