@@ -19,6 +19,10 @@ end
 
 local function BuildPayload(msgType)
     local my = ns.my
+    -- carry our accepted-partner list in every broadcast: pairing state can
+    -- never get stuck on a single lost handshake message this way
+    local pd = {}
+    for pname in pairs(ns.db.paired) do table.insert(pd, pname) end
     return {
         t = msgType,
         v = ns.VERSION,
@@ -30,7 +34,8 @@ local function BuildPayload(msgType)
         si = my.stepId or 0,
         sn = my.nextStepId or 0,
         d = my.done and true or false,
-        l = my.level or 0
+        l = my.level or 0,
+        pd = pd
     }
 end
 
@@ -163,6 +168,31 @@ local function OnCommReceived(prefix, message, distribution, sender)
         p.level = tonumber(msg.l) or 0
         p.version = tonumber(msg.v) or 1
 
+        -- a hello means they just logged in or reloaded and lost session
+        -- state: re-send our accept so they don't wait on us
+        if msg.t == "HI" then p.linkSent = nil end
+
+        -- their broadcast is the authoritative word on whether they've
+        -- accepted us: if our name is in their paired list, we're in
+        if type(msg.pd) == "table" then
+            local wasPairedBack = p.pairedBack
+            local myName = UnitName("player")
+            local mePaired = false
+            for _, pname in ipairs(msg.pd) do
+                if pname == myName then
+                    mePaired = true
+                    break
+                end
+            end
+            p.pairedBack = mePaired
+            if mePaired then
+                p.theyDeclined = nil
+                if ns.db.paired[name] and not wasPairedBack then
+                    ns.Print("now syncing with |cFFFFCC00%s|r!", name)
+                end
+            end
+        end
+
         if ns.db.paired[name] then
             -- previously accepted partner: re-establish the link silently
             if not p.linkSent then ns.SendPair(name) end
@@ -253,7 +283,15 @@ function ns.SetupSync()
         button1 = "Sync",
         button2 = "Not now",
         OnAccept = function(self, data) ns.AcceptPair(data) end,
-        OnCancel = function(self, data) ns.DeclinePair(data) end,
+        OnCancel = function(self, data, reason)
+            -- only a real "Not now" click declines; the popup can also be
+            -- dismissed by other dialogs overriding it or by Escape
+            if reason == "clicked" then
+                ns.DeclinePair(data)
+            else
+                ns.prompted[data] = nil -- allow the prompt to come back
+            end
+        end,
         timeout = 0,
         whileDead = true,
         hideOnEscape = true,
