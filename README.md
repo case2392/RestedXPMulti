@@ -43,15 +43,13 @@ you use (RXP Red, RXP Blue, Gold, custom...) automatically.
 
 ## Installation
 
-1. Download this repository (green **Code** button → *Download ZIP*, or
-   `git clone`).
-2. Copy/rename the folder so it is called exactly `RestedXPMulti`, and place it
-   in your AddOns folder, e.g.:
-   - Classic Era / Anniversary: `World of Warcraft/_classic_era_/Interface/AddOns/RestedXPMulti`
-   - Wrath/Cata/Mists Classic: `World of Warcraft/_classic_/Interface/AddOns/RestedXPMulti`
-   - Retail: `World of Warcraft/_retail_/Interface/AddOns/RestedXPMulti`
-3. The folder must directly contain `RestedXPMulti.toc` (not a nested folder).
-4. Restart the game (or `/reload`). Do this on **both** players' machines.
+Get **RestedXP Multi** from CurseForge — search for it in the
+[CurseForge app](https://www.curseforge.com/download/app) and click Install,
+or download it from the project page on curseforge.com. Both players need it
+installed.
+
+(Installing manually instead? Unzip so your AddOns folder contains
+`RestedXPMulti/RestedXPMulti.toc`, then restart the game.)
 
 ## Quick start (you + one friend)
 
