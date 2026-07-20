@@ -1,5 +1,7 @@
 # RestedXP Multi
 
+**[Download on CurseForge](https://www.curseforge.com/wow/addons/restedxpmulti)**
+
 A small companion addon for [RestedXP / RXPGuides](https://www.restedxp.com/) that
 syncs guide progress between party members, so you and a friend can level
 together in lockstep:
@@ -43,10 +45,9 @@ you use (RXP Red, RXP Blue, Gold, custom...) automatically.
 
 ## Installation
 
-Get **RestedXP Multi** from CurseForge — search for it in the
-[CurseForge app](https://www.curseforge.com/download/app) and click Install,
-or download it from the project page on curseforge.com. Both players need it
-installed.
+Get **RestedXP Multi** [on CurseForge](https://www.curseforge.com/wow/addons/restedxpmulti) —
+install it with the [CurseForge app](https://www.curseforge.com/download/app)
+or download it from the project page. Both players need it installed.
 
 (Installing manually instead? Unzip so your AddOns folder contains
 `RestedXPMulti/RestedXPMulti.toc`, then restart the game.)
