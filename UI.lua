@@ -1,4 +1,4 @@
--- RestedXP Multi - partner window
+-- RestedXP Party Sync - partner window
 -- Small movable frame showing your step and each partner's step, plus a
 -- "waiting for..." banner while the step lock is holding the guide.
 -- Skinned at runtime with RestedXP's own active theme (borders, banner
@@ -112,7 +112,7 @@ local function CreateWindow()
 
     frame.title = tb:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     frame.title:SetPoint("CENTER", tb, "CENTER", 0, 0)
-    frame.title:SetText("RestedXP Multi")
+    frame.title:SetText("RestedXP Party Sync")
 
     local close = CreateFrame("Button", nil, tb, "UIPanelCloseButton")
     close:SetPoint("RIGHT", 3, 0)
@@ -211,7 +211,7 @@ function ns.UpdateUI()
 
     if #names == 0 then
         Line("No partners found yet.", 0.6, 0.6, 0.6)
-        Line("(friend needs RXP Multi + same party)", 0.5, 0.5, 0.5)
+        Line("(friend needs this addon + same party)", 0.5, 0.5, 0.5)
     end
 
     for _, name in ipairs(names) do
@@ -220,11 +220,11 @@ function ns.UpdateUI()
         if not stale and (p.version or 0) > 0 and p.version ~= ns.VERSION then
             if p.version < ns.VERSION then
                 Line(string.format(
-                         "|cFFFF9933%s's RXP Multi is outdated - have them update|r",
+                         "|cFFFF9933%s's Party Sync is outdated - have them update|r",
                          name), 0.95, 0.6, 0.2)
             else
-                Line("|cFFFF9933your RXP Multi is outdated - update it|r", 0.95,
-                     0.6, 0.2)
+                Line("|cFFFF9933your Party Sync is outdated - update it|r",
+                     0.95, 0.6, 0.2)
             end
         end
         if stale then

@@ -1,4 +1,4 @@
-# RestedXP Multi
+# RestedXP Party Sync
 
 **[Download on CurseForge](https://www.curseforge.com/wow/addons/restedxpmulti)**
 
@@ -6,8 +6,8 @@ A small companion addon for [RestedXP / RXPGuides](https://www.restedxp.com/) th
 syncs guide progress between party members, so you and a friend can level
 together in lockstep:
 
-- **Sync prompt** — when you join a party with another RXP Multi user, both of
-  you get a popup: *"«Name» is also using RestedXP Multi. Sync your RestedXP
+- **Sync prompt** — when you join a party with another RestedXP Party Sync user, both of
+  you get a popup: *"«Name» is also using RestedXP Party Sync. Sync your RestedXP
   guide progress with them?"* Both click **Sync** and you're linked. Your
   choice is remembered, so the same friend never has to be confirmed again.
 - **See each other's steps, with live progress** — a window (skinned to match
@@ -23,7 +23,7 @@ together in lockstep:
   automatically.
 - **Class quests handled properly** — RestedXP guides contain steps only some
   classes see (class quests, weapon training, etc.), so step *numbers* differ
-  between classes. RXP Multi matches steps by their position in the guide
+  between classes. The addon matches steps by their position in the guide
   itself, not by number: when your friend reaches their class quest, you simply
   wait (or go help!), and you both move on together afterwards.
 
@@ -45,7 +45,7 @@ you use (RXP Red, RXP Blue, Gold, custom...) automatically.
 
 ## Installation
 
-Get **RestedXP Multi** [on CurseForge](https://www.curseforge.com/wow/addons/restedxpmulti) —
+Get **RestedXP Party Sync** [on CurseForge](https://www.curseforge.com/wow/addons/restedxpmulti) —
 install it with the [CurseForge app](https://www.curseforge.com/download/app)
 or download it from the project page. Both players need it installed.
 
@@ -57,7 +57,7 @@ or download it from the project page. Both players need it installed.
 1. Both install the addon (see above) and pick the same RestedXP guide.
 2. Invite each other to a party.
 3. Within a few seconds you'll both get the sync popup — click **Sync** on
-   both screens. Done: the RXP Multi window shows both of you, and the step
+   both screens. Done: the Party Sync window shows both of you, and the step
    lock keeps you together from then on.
 
 ## Commands

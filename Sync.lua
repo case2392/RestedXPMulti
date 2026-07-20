@@ -1,4 +1,4 @@
--- RestedXP Multi - group communication & sync pairing
+-- RestedXP Party Sync - group communication & sync pairing
 -- Broadcasts our guide/step state over the party addon channel, keeps a
 -- table of every partner's last reported state, and manages the "want to
 -- sync with X?" handshake shown when two addon users end up in a party.
@@ -301,7 +301,7 @@ function ns.SetupSync()
     Multi = ns.Multi
 
     StaticPopupDialogs["RXPMULTI_PAIR"] = {
-        text = "%s is also using RestedXP Multi.\n\nSync your RestedXP guide progress with them?",
+        text = "%s is also using RestedXP Party Sync.\n\nSync your RestedXP guide progress with them?",
         button1 = "Sync",
         button2 = "Not now",
         OnAccept = function(self, data) ns.AcceptPair(data) end,

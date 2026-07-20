@@ -1,4 +1,4 @@
--- RestedXP Multi
+-- RestedXP Party Sync (folder name: RestedXPMulti)
 -- Companion addon for RestedXP (RXPGuides) that syncs guide progress between
 -- party members: shows everyone's current step and can hold you on a step
 -- until the whole group has finished it.
@@ -27,7 +27,7 @@ function Multi:OnInitialize()
 end
 
 function ns.Print(msg, ...)
-    print("|cFF66CCFFRXP Multi:|r " .. string.format(msg, ...))
+    print("|cFF66CCFFRXP Party Sync:|r " .. string.format(msg, ...))
 end
 
 function Multi:OnEnable()
@@ -347,7 +347,7 @@ SlashCmdList["RXPMULTI"] = function(input)
                 end
             end
             if offered == 0 then
-                ns.Print("nobody new to sync with - partners appear here once they're in your party with RXP Multi installed.")
+                ns.Print("nobody new to sync with - partners appear here once they're in your party with the addon installed.")
             end
         end
     elseif cmd == "unsync" then
@@ -422,6 +422,6 @@ function ns.PrintStatus()
                             p.step or 0, p.total or 0, note))
     end
     if count == 0 then
-        print("  no partners found yet - both players need RXP Multi and must be in the same party.")
+        print("  no partners found yet - both players need this addon and must be in the same party.")
     end
 end
