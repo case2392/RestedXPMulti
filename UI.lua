@@ -123,6 +123,15 @@ local function CreateWindow()
         ns.Print("window hidden. Type /rxpm to bring it back.")
     end)
 
+    -- shown only while the step lock is holding us on a finished step
+    local skip = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+    frame.skipButton = skip
+    skip:SetWidth(110)
+    skip:SetHeight(20)
+    skip:SetText("Skip wait")
+    skip:SetScript("OnClick", function() ns.SkipWait() end)
+    skip:Hide()
+
     ApplySkin()
 end
 
@@ -294,13 +303,19 @@ function ns.UpdateUI()
         end
     end
 
-    -- waiting banner
+    -- waiting banner + skip button
     if ns.pendingStep then
         local _, waitingOn = ns.ShouldBlock(ns.pendingStep)
         if waitingOn then
             Line(string.format("|cFFFFAA00Waiting for: %s|r",
                                table.concat(waitingOn, ", ")), 1, 0.7, 0.2)
         end
+        frame.skipButton:ClearAllPoints()
+        frame.skipButton:SetPoint("TOPLEFT", PADDING, -y)
+        frame.skipButton:Show()
+        y = y + 24
+    else
+        frame.skipButton:Hide()
     end
 
     -- footer

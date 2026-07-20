@@ -273,6 +273,18 @@ function ns.OnBlocked(target, waitingOn)
     ns.UpdateUI()
 end
 
+-- Stop waiting on partners and advance now (slash command + window button)
+function ns.SkipWait()
+    if not ns.pendingStep then return end
+    local target = ns.pendingStep
+    ns.Print("skipping the wait - advancing to step %d.", target)
+    ns.AdvanceNow(target)
+    ns.RefreshMyState()
+    ns.BroadcastState(true)
+    ns.UpdateUI()
+    return true
+end
+
 -- Called whenever partner state changes; advances if the block has cleared.
 function ns.TryRelease()
     local pending = ns.pendingStep
@@ -367,14 +379,7 @@ SlashCmdList["RXPMULTI"] = function(input)
         end
         ns.UpdateUI()
     elseif cmd == "skip" then
-        if ns.pendingStep then
-            local target = ns.pendingStep
-            ns.Print("skipping the wait - advancing to step %d.", target)
-            ns.AdvanceNow(target)
-            ns.RefreshMyState()
-            ns.BroadcastState(true)
-            ns.UpdateUI()
-        else
+        if not ns.SkipWait() then
             ns.Print("nothing to skip - you aren't waiting on anyone.")
         end
     elseif cmd == "status" then

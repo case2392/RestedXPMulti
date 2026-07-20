@@ -69,7 +69,7 @@ or download it from the project page. Both players need it installed.
 | `/rxpm sync <name>` | Offer/accept sync with a specific player |
 | `/rxpm unsync <name>` | Stop syncing with a player (no name = everyone) |
 | `/rxpm lock` | Toggle the step lock on/off (`/rxpm lock on`, `/rxpm lock off` also work) |
-| `/rxpm skip` | Stop waiting and advance to the next step right now |
+|  `/rxpm skip` (or the window's **Skip wait** button) | Stop waiting and advance to the next step right now |
 | `/rxpm status` | Print your partners' progress to chat |
 | `/rxpm help` | List the commands |
 
