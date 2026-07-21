@@ -101,7 +101,8 @@ function ns.CollectMyStepLines()
     local step = guide and guide.steps and stepIdx and guide.steps[stepIdx]
     local lines, sig = {}, ""
     if step then
-        for _, element in ipairs(step) do
+        -- RestedXP keeps a step's tasks in step.elements
+        for _, element in ipairs(step.elements or step) do
             if #lines >= MAX_LINES then break end
             local text = element.text
             if type(text) == "string" then

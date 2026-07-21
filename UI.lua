@@ -19,7 +19,7 @@ function ns.GetStepText(index)
     local guide = ns.RXP and ns.RXP.currentGuide
     local step = guide and guide.steps and guide.steps[index]
     if not step then return end
-    for _, element in ipairs(step) do
+    for _, element in ipairs(step.elements or step) do
         local text = element.text
         if type(text) == "string" and text ~= "" and text ~= " " then
             text = text:gsub("\n.*", "")
