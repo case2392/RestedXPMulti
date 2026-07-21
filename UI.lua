@@ -141,7 +141,10 @@ local function GetLine(i)
         line = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         line:SetWidth(WIDTH - PADDING * 2)
         line:SetJustifyH("LEFT")
-        line:SetWordWrap(false)
+        -- wrap long step text onto a second line instead of clipping it
+        line:SetWordWrap(true)
+        line:SetNonSpaceWrap(false)
+        if line.SetMaxLines then line:SetMaxLines(2) end
         if ns.skinFont then line:SetFont(ns.skinFont, 10, "") end
         lines[i] = line
     end
@@ -296,8 +299,8 @@ function ns.UpdateUI()
                         Line("    " .. stepText, 0.6, 0.6, 0.6)
                     end
                 elseif theirId > 0 then
-                    Line("    (a step your guide doesn't have - class quest?)",
-                         0.6, 0.6, 0.6)
+                    Line("    (a step you don't have - class quest?)", 0.6,
+                         0.6, 0.6)
                 end
             end
         end
