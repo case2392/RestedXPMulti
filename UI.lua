@@ -200,7 +200,7 @@ function ns.UpdateUI()
     -- our own row
     if my.total and my.total > 0 then
         Line(string.format("You  -  step %d/%d %s", my.step or 0, my.total,
-                           my.done and "|cFF66FF66(done)|r" or ""), tc[1],
+                           my.done and "|cFF66FF66(ready)|r" or ""), tc[1],
              tc[2], tc[3])
     else
         Line("You  -  no guide loaded", 0.6, 0.6, 0.6)
@@ -269,7 +269,7 @@ function ns.UpdateUI()
             local marker = ""
             local myId, theirId = my.stepId or 0, p.stepId or 0
             if p.done then
-                marker = " |cFF66FF66(done)|r"
+                marker = " |cFF66FF66(ready)|r"
             elseif theirId > 0 and myId > 0 and theirId < myId then
                 marker = " |cFFFF9933(behind)|r"
             elseif theirId > 0 and myId > 0 and theirId > myId then

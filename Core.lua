@@ -266,7 +266,7 @@ function ns.OnBlocked(target, waitingOn)
     end
     if ns.lastBlockAnnounced ~= target then
         ns.lastBlockAnnounced = target
-        ns.Print("step %d done! Waiting for: |cFFFFCC00%s|r (use /rxpm skip to move on anyway)",
+        ns.Print("finished with step %d! Waiting for: |cFFFFCC00%s|r (use /rxpm skip to move on anyway)",
                  (RXPCData and RXPCData.currentStep) or (target - 1),
                  table.concat(waitingOn, ", "))
     end
@@ -394,7 +394,7 @@ function ns.PrintStatus()
     if not my then return end
     ns.Print("you: %s - step %d/%d%s", my.guideName ~= "" and my.guideName or
                  "no guide", my.step or 0, my.total or 0,
-             my.done and " |cFF66FF66(done)|r" or "")
+             my.done and " |cFF66FF66(ready)|r" or "")
     local count = 0
     local now = GetTime()
     for name, p in pairs(ns.partners) do
@@ -415,7 +415,7 @@ function ns.PrintStatus()
         elseif (p.gv or 0) ~= (my.version or 0) then
             note = " |cFFFFCC00(different guide version)|r"
         elseif p.done then
-            note = " |cFF66FF66(done)|r"
+            note = " |cFF66FF66(ready)|r"
         end
         print(string.format("  %s: %s - step %d/%d%s", name,
                             p.guideName ~= "" and p.guideName or "no guide",
