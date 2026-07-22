@@ -64,8 +64,15 @@ function ns.BuildProfLines(name, p)
 
     if p.unlearned then
         add(name, "head")
-        add(string.format("Not learned yet - visit a %s trainer", name),
-            "warn")
+        add("Not learned yet - train with:", "warn")
+        local trainers = ns.TRAINERS[name]
+        local faction = UnitFactionGroup and UnitFactionGroup("player")
+        local where = trainers and
+                          (faction == "Horde" and trainers.H or trainers.A)
+        if where then
+            add(where, "normal")
+        end
+        add("(any city guard can mark trainers on your map)", "dim")
         return lines
     end
 

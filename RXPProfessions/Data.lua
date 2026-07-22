@@ -256,6 +256,59 @@ ns.TRACKED = {
     ["Cooking"] = "craft"
 }
 
+-- Apprentice trainers per faction: NPC, city, district. Capital-city guards
+-- can pin any of these on the map, so districts beat raw coordinates.
+ns.TRAINERS = {
+    ["Alchemy"] = {
+        A = "Lilyssia Nightbreeze - Stormwind, Mage Quarter (Alchemy Needs)",
+        H = "Yelmak - Orgrimmar, The Drag"
+    },
+    ["Herbalism"] = {
+        A = "Tannysa - Stormwind, Mage Quarter (by Alchemy Needs)",
+        H = "Jandi - Orgrimmar, The Drag"
+    },
+    ["Mining"] = {
+        A = "Gelman Stonehand - Stormwind, Dwarven District",
+        H = "Makaru - Orgrimmar, Valley of Honor"
+    },
+    ["Blacksmithing"] = {
+        A = "Therum Deepforge - Stormwind, Dwarven District",
+        H = "Saru Steelfury - Orgrimmar, Valley of Honor"
+    },
+    ["Engineering"] = {
+        A = "Lilliam Sparkspindle - Stormwind, Dwarven District",
+        H = "Thund - Orgrimmar, Valley of Honor"
+    },
+    ["Leatherworking"] = {
+        A = "Simon Tanner - Stormwind, Old Town",
+        H = "Karolek - Orgrimmar, Valley of Honor"
+    },
+    ["Skinning"] = {
+        A = "Maris Granger - Stormwind, Old Town",
+        H = "Thuwd - Orgrimmar, The Drag"
+    },
+    ["Tailoring"] = {
+        A = "Georgio Bolero - Stormwind, Mage Quarter",
+        H = "Magar - Orgrimmar, The Drag"
+    },
+    ["Enchanting"] = {
+        A = "Lucan Cordell - Stormwind, Mage Quarter",
+        H = "Godan - Orgrimmar, The Drag"
+    },
+    ["Cooking"] = {
+        A = "Stephen Ryback - Stormwind, Old Town",
+        H = "Zamja - Orgrimmar, The Drag"
+    },
+    ["First Aid"] = {
+        A = "Shaina Fuller - Stormwind, Cathedral Square",
+        H = "Arnok - Orgrimmar, Valley of Spirits"
+    },
+    ["Fishing"] = {
+        A = "Arnold Leland - Stormwind, canals by Cathedral Square",
+        H = "Lumak - Orgrimmar, Valley of Honor"
+    }
+}
+
 -- shown in the first-launch setup window, in this order
 ns.CHOOSABLE = {
     "Herbalism", "Mining", "Skinning", "Alchemy", "Blacksmithing",
