@@ -235,6 +235,26 @@ ns.CRAFT = {
     }
 }
 
+-- Fishing + Cooking combo: when both are tracked, Cooking levels off your
+-- catches and Fishing tells you which fish (and waters) feed the next
+-- Cooking bracket. {from-cooking-skill, cooked dish, fish, where-to-fish}
+ns.FISH_COOKING = {
+    {1, "Brilliant Smallfish", fish = "Raw Brilliant Smallfish",
+     where = "starting-zone lakes & rivers"},
+    {50, "Longjaw Mud Snapper", fish = "Raw Longjaw Mud Snapper",
+     where = "inland lakes & rivers"},
+    {100, "Bristle Whisker Catfish", fish = "Raw Bristle Whisker Catfish",
+     where = "rivers in 10-30 zones"},
+    {175, "Rockscale Cod", fish = "Raw Rockscale Cod",
+     where = "coastal waters in 20-40 zones"},
+    {225, "Spotted Yellowtail", fish = "Raw Spotted Yellowtail",
+     where = "Stranglethorn / Tanaris coasts"},
+    {250, "Nightfin Soup", fish = "Raw Nightfin Snapper",
+     where = "high-level inland waters, at night"},
+    {285, "Baked Salmon", fish = "Raw Whitescale Salmon",
+     where = "high-level inland waters"}
+}
+
 ns.FISHING_NOTES = {
     {130, "Expert rank: book |cFFFFCC00Expert Fishing - The Bass and You|r (Booty Bay)"},
     {225, "Artisan rank: Nat Pagle quest (Dustwallow Marsh)"}

@@ -132,10 +132,21 @@ function ns.BuildProfLines(name, p)
     elseif p.kind == "craft" then
         local craft = ns.CRAFT[name]
         if craft then
-            local current, nextUp = CurrentAndNext(craft.route, p.rank)
+            local route = craft.route
+            local fishCombo = name == "Cooking" and ns.FishCookCombo()
+            if fishCombo then route = ns.FISH_COOKING end
+            local current, nextUp = CurrentAndNext(route, p.rank)
+            if fishCombo then
+                add("Combo: cooking your Fishing catches", "good")
+            end
             if current then
                 add(string.format("Craft: %s", current[2]), "normal")
-                if current[3] then add("Mats: " .. current[3], "dim") end
+                if fishCombo then
+                    add(string.format("Mats: %s", current.fish), "dim")
+                    add(string.format("(fish: %s)", current.where), "dim")
+                elseif current[3] then
+                    add("Mats: " .. current[3], "dim")
+                end
             end
             if nextUp then
                 add(string.format("At %d: %s", nextUp[1], nextUp[2]), "dim")
@@ -152,8 +163,24 @@ function ns.BuildProfLines(name, p)
             end
         end
     elseif p.kind == "fishing" then
-        add("Fish anywhere - each catch can skill up", "normal")
-        add("Higher-level zones need higher skill (use lures)", "dim")
+        if ns.FishCookCombo() then
+            -- steer the fishing spot by what Cooking needs next
+            local cooking = ns.profs["Cooking"] or {rank = 0}
+            local current, nextUp = CurrentAndNext(ns.FISH_COOKING,
+                                                   cooking.rank)
+            if current then
+                add(string.format("Catch: %s", current.fish), "normal")
+                add(string.format("Where: %s", current.where), "dim")
+                add("(feeds your Cooking bracket)", "dim")
+            end
+            if nextUp then
+                add(string.format("At Cooking %d: %s", nextUp[1], nextUp.fish),
+                    "dim")
+            end
+        else
+            add("Fish anywhere - each catch can skill up", "normal")
+            add("Higher-level zones need higher skill (use lures)", "dim")
+        end
         for _, note in ipairs(ns.FISHING_NOTES) do
             if p.rank >= note[1] - 40 and p.rank < note[1] + 15 then
                 add(note[2], "warn")
@@ -167,6 +194,18 @@ function ns.BuildProfLines(name, p)
     end
 
     return lines
+end
+
+-- Is this profession being tracked (per setup choices, or learned pre-setup)?
+function ns.IsTrackedName(name)
+    local chosen = ns.db and ns.db.setupDone and ns.db.chosen
+    if chosen then return chosen[name] and true or false end
+    return ns.profs[name] ~= nil
+end
+
+-- Both Fishing and Cooking tracked -> level them together off your catches
+function ns.FishCookCombo()
+    return ns.IsTrackedName("Cooking") and ns.IsTrackedName("Fishing")
 end
 
 -- The setup choices decide what's displayed: checked professions show
