@@ -146,8 +146,14 @@ function ns.BuildProfLines(name, p)
                     add(string.format("(fish: %s)", current.where), "dim")
                     if current.recipe then
                         -- fish recipes are vendor scrolls, not trainer-taught
-                        add(string.format("Recipe: %s", current.recipe),
-                            "warn")
+                        local recipe = current.recipe
+                        if type(recipe) == "table" then
+                            local faction = UnitFactionGroup and
+                                                UnitFactionGroup("player")
+                            recipe = faction == "Horde" and recipe.H or
+                                         recipe.A
+                        end
+                        add(string.format("Recipe: %s", recipe), "warn")
                     end
                 elseif current[3] then
                     add("Mats: " .. current[3], "dim")

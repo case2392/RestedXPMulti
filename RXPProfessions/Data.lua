@@ -243,25 +243,28 @@ ns.CRAFT = {
 ns.FISH_COOKING = {
     {1, "Brilliant Smallfish", fish = "Raw Brilliant Smallfish",
      where = "starting-zone lakes & rivers",
-     recipe = "fishing supply vendors (starter towns & cities)"},
+     recipe = {A = "Catherine Leland - Stormwind canals (by the fishing trainer)",
+               H = "Shankys - Orgrimmar, Valley of Honor (by the fishing trainer)"}},
     {50, "Longjaw Mud Snapper", fish = "Raw Longjaw Mud Snapper",
      where = "inland lakes & rivers",
-     recipe = "fishing supply vendors (any city)"},
+     recipe = {A = "Catherine Leland - Stormwind canals",
+               H = "Shankys - Orgrimmar, Valley of Honor"}},
     {100, "Bristle Whisker Catfish", fish = "Raw Bristle Whisker Catfish",
      where = "rivers in 10-30 zones",
-     recipe = "fishing supply vendors (any city)"},
+     recipe = {A = "Catherine Leland - Stormwind canals",
+               H = "Shankys - Orgrimmar, Valley of Honor"}},
     {175, "Rockscale Cod", fish = "Raw Rockscale Cod",
      where = "coastal waters in 20-40 zones",
-     recipe = "fishing suppliers in coastal towns"},
+     recipe = "coastal-town fishing suppliers (Menethil, Ratchet...)"},
     {225, "Spotted Yellowtail", fish = "Raw Spotted Yellowtail",
      where = "Stranglethorn / Tanaris coasts",
-     recipe = "vendors in Booty Bay / Steamwheedle Port"},
+     recipe = "Kelsey Yance (Booty Bay) or Gikkix (Steamwheedle Port, Tanaris)"},
     {250, "Nightfin Soup", fish = "Raw Nightfin Snapper",
      where = "high-level inland waters, at night",
-     recipe = "Feralas vendors (Feathermoon / Camp Mojache)"},
+     recipe = "Vivianna (Feathermoon) / Sheendra Tallgrass (Camp Mojache), Feralas"},
     {285, "Baked Salmon", fish = "Raw Whitescale Salmon",
      where = "high-level inland waters",
-     recipe = "Feralas vendors (Feathermoon / Camp Mojache)"}
+     recipe = "Vivianna (Feathermoon) / Sheendra Tallgrass (Camp Mojache), Feralas"}
 }
 
 ns.FISHING_NOTES = {
