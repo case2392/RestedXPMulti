@@ -144,6 +144,11 @@ function ns.BuildProfLines(name, p)
                 if fishCombo then
                     add(string.format("Mats: %s", current.fish), "dim")
                     add(string.format("(fish: %s)", current.where), "dim")
+                    if current.recipe then
+                        -- fish recipes are vendor scrolls, not trainer-taught
+                        add(string.format("Recipe: %s", current.recipe),
+                            "warn")
+                    end
                 elseif current[3] then
                     add("Mats: " .. current[3], "dim")
                 end

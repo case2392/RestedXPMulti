@@ -238,21 +238,30 @@ ns.CRAFT = {
 -- Fishing + Cooking combo: when both are tracked, Cooking levels off your
 -- catches and Fishing tells you which fish (and waters) feed the next
 -- Cooking bracket. {from-cooking-skill, cooked dish, fish, where-to-fish}
+-- Fish dishes are NOT trainer-taught: each recipe is a scroll sold by
+-- vendors (fishing suppliers stock the low ones).
 ns.FISH_COOKING = {
     {1, "Brilliant Smallfish", fish = "Raw Brilliant Smallfish",
-     where = "starting-zone lakes & rivers"},
+     where = "starting-zone lakes & rivers",
+     recipe = "fishing supply vendors (starter towns & cities)"},
     {50, "Longjaw Mud Snapper", fish = "Raw Longjaw Mud Snapper",
-     where = "inland lakes & rivers"},
+     where = "inland lakes & rivers",
+     recipe = "fishing supply vendors (any city)"},
     {100, "Bristle Whisker Catfish", fish = "Raw Bristle Whisker Catfish",
-     where = "rivers in 10-30 zones"},
+     where = "rivers in 10-30 zones",
+     recipe = "fishing supply vendors (any city)"},
     {175, "Rockscale Cod", fish = "Raw Rockscale Cod",
-     where = "coastal waters in 20-40 zones"},
+     where = "coastal waters in 20-40 zones",
+     recipe = "fishing suppliers in coastal towns"},
     {225, "Spotted Yellowtail", fish = "Raw Spotted Yellowtail",
-     where = "Stranglethorn / Tanaris coasts"},
+     where = "Stranglethorn / Tanaris coasts",
+     recipe = "vendors in Booty Bay / Steamwheedle Port"},
     {250, "Nightfin Soup", fish = "Raw Nightfin Snapper",
-     where = "high-level inland waters, at night"},
+     where = "high-level inland waters, at night",
+     recipe = "Feralas vendors (Feathermoon / Camp Mojache)"},
     {285, "Baked Salmon", fish = "Raw Whitescale Salmon",
-     where = "high-level inland waters"}
+     where = "high-level inland waters",
+     recipe = "Feralas vendors (Feathermoon / Camp Mojache)"}
 }
 
 ns.FISHING_NOTES = {
