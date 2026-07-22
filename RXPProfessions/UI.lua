@@ -126,9 +126,11 @@ local function GetLine(i)
         line = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         line:SetWidth(WIDTH - PADDING * 2)
         line:SetJustifyH("LEFT")
+        -- fully wrap: no max-line cap, height auto-sizes and AddLine stacks
+        -- by the real rendered height
         line:SetWordWrap(true)
         line:SetNonSpaceWrap(false)
-        if line.SetMaxLines then line:SetMaxLines(2) end
+        line:SetHeight(0)
         if ns.skinFont then line:SetFont(ns.skinFont, 10, "") end
         lines[i] = line
     end
@@ -218,7 +220,7 @@ function ns.ShowSetup()
     local f = CreateFrame("Frame", "RXPProfessionsSetup", UIParent,
                           BackdropTemplateMixin and "BackdropTemplate" or nil)
     setupFrame = f
-    f:SetWidth(260)
+    f:SetWidth(320)
     f:SetFrameStrata("DIALOG")
     f:SetPoint("CENTER")
     f:EnableMouse(true)
@@ -246,23 +248,32 @@ function ns.ShowSetup()
 
     local learned = ns.ScanSkills()
     local boxes = {}
-    local yOff = -52
-    for _, name in ipairs(ns.CHOOSABLE) do
+    local perColumn = math.ceil(#ns.CHOOSABLE / 2)
+    local bottomY = 0
+    for idx, name in ipairs(ns.CHOOSABLE) do
+        local col = (idx > perColumn) and 1 or 0
+        local row = (idx - 1) % perColumn
+        local yOff = -52 - row * 26
         local cb = CreateFrame("CheckButton", nil, f, "UICheckButtonTemplate")
-        cb:SetPoint("TOPLEFT", 24, yOff)
+        cb:SetPoint("TOPLEFT", 20 + col * 150, yOff)
         cb:SetWidth(24)
         cb:SetHeight(24)
-        local label = f:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-        label:SetPoint("LEFT", cb, "RIGHT", 4, 0)
-        label:SetText(name .. (learned[name] and " |cFF66FF66(learned)|r" or ""))
+        local label = f:CreateFontString(nil, "OVERLAY",
+                                         "GameFontHighlightSmall")
+        label:SetPoint("LEFT", cb, "RIGHT", 2, 0)
+        label:SetText(name .. (learned[name] and " |cFF66FF66*|r" or ""))
         cb:SetChecked((ns.db.chosen and ns.db.chosen[name]) or
                           (not ns.db.chosen and learned[name] and true) or
                           false)
         boxes[name] = cb
-        yOff = yOff - 26
+        if yOff < bottomY then bottomY = yOff end
     end
+    local yOff = bottomY - 26
 
-    yOff = yOff - 8
+    local hint = f:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+    hint:SetPoint("TOPLEFT", 24, yOff)
+    hint:SetText("|cFF66FF66*|r = already learned")
+    yOff = yOff - 22
     local ahBox = CreateFrame("CheckButton", nil, f, "UICheckButtonTemplate")
     ahBox:SetPoint("TOPLEFT", 24, yOff)
     ahBox:SetWidth(24)

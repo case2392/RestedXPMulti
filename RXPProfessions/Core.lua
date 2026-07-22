@@ -73,12 +73,15 @@ function ns.BuildProfLines(name, p)
 
     -- pace check: rough classic rule of thumb is ~5 skill per character
     -- level; warn when falling well behind so you catch up before moving on
+    local isPrimary = p.kind == "gather" or
+                          (p.kind == "craft" and ns.CRAFT[name] and
+                              ns.CRAFT[name].primary)
     local level = UnitLevel and UnitLevel("player") or 0
-    if level > 5 and p.kind ~= "skinning" then
+    if level > 5 and isPrimary then
         local target = math.min(level * 5, 300)
         if p.rank < target - 25 then
-            add(string.format("Behind pace for level %d - catch up toward ~%d before leaving the zone",
-                              level, target), "warn")
+            add(string.format("Behind pace - aim ~%d before", target), "warn")
+            add("leaving the zone", "warn")
         end
     end
 
@@ -110,32 +113,35 @@ function ns.BuildProfLines(name, p)
         if nextUp then
             add(string.format("At %d: %s", nextUp[1], nextUp[2]), "dim")
         end
-    elseif p.kind == "firstaid" then
-        local current, nextUp = CurrentAndNext(ns.FIRSTAID, p.rank)
-        if current then
-            add(string.format("Craft: %s", current[2]), "normal")
-        end
-        if nextUp then
-            add(string.format("At %d: %s", nextUp[1], nextUp[2]), "dim")
-        end
-        for _, note in ipairs(ns.FIRSTAID_NOTES) do
-            -- surface each milestone note early enough to plan the trip
-            if p.rank >= note[1] - 40 and p.maxRank <= note[1] then
-                add(note[2], "warn")
+    elseif p.kind == "craft" then
+        local craft = ns.CRAFT[name]
+        if craft then
+            local current, nextUp = CurrentAndNext(craft.route, p.rank)
+            if current then
+                add(string.format("Craft: %s", current[2]), "normal")
+                if current[3] then add("Mats: " .. current[3], "dim") end
+            end
+            if nextUp then
+                add(string.format("At %d: %s", nextUp[1], nextUp[2]), "dim")
+            end
+            for _, note in ipairs(craft.notes or {}) do
+                -- surface milestone notes early enough to plan the trip,
+                -- drop them once comfortably past
+                if p.rank >= note[1] - 40 and p.rank < note[1] + 15 then
+                    add(note[2], "warn")
+                end
+            end
+            if craft.primary and ns.db and ns.db.useAH then
+                add("Tip: buy missing mats from the Auction House", "dim")
             end
         end
-    elseif p.kind == "craft" and name == "Alchemy" then
-        local current, nextUp = CurrentAndNext(ns.ALCHEMY, p.rank)
-        if current then
-            add(string.format("Craft: %s", current[2]), "normal")
-            add("Mats: " .. current[3], "dim")
-        end
-        if nextUp then
-            add(string.format("At %d: %s", nextUp[1], nextUp[2]), "dim")
-        end
-        add("Vials: Alchemy supplies vendor (near trainers)", "dim")
-        if ns.db and ns.db.useAH then
-            add("Tip: buy missing herbs from the Auction House", "dim")
+    elseif p.kind == "fishing" then
+        add("Fish anywhere - each catch can skill up", "normal")
+        add("Higher-level zones need higher skill (use lures)", "dim")
+        for _, note in ipairs(ns.FISHING_NOTES) do
+            if p.rank >= note[1] - 40 and p.rank < note[1] + 15 then
+                add(note[2], "warn")
+            end
         end
     elseif p.kind == "skinning" then
         -- max skinnable mob level is roughly skill/5 (min 10)

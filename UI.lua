@@ -141,10 +141,11 @@ local function GetLine(i)
         line = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         line:SetWidth(WIDTH - PADDING * 2)
         line:SetJustifyH("LEFT")
-        -- wrap long step text onto a second line instead of clipping it
+        -- fully wrap long step text: height auto-sizes and AddLine stacks
+        -- lines by their real rendered height
         line:SetWordWrap(true)
         line:SetNonSpaceWrap(false)
-        if line.SetMaxLines then line:SetMaxLines(2) end
+        line:SetHeight(0)
         if ns.skinFont then line:SetFont(ns.skinFont, 10, "") end
         lines[i] = line
     end
