@@ -67,10 +67,19 @@ function ns.BuildProfLines(name, p)
         add("Not learned yet - train with:", "warn")
         local trainers = ns.TRAINERS[name]
         local faction = UnitFactionGroup and UnitFactionGroup("player")
-        local where = trainers and
-                          (faction == "Horde" and trainers.H or trainers.A)
-        if where then
-            add(where, "normal")
+        local capital = trainers and
+                            (faction == "Horde" and trainers.H or trainers.A)
+        -- while still low level, the starting-village trainer is far closer
+        -- than the capital
+        local race = UnitRace and select(2, UnitRace("player"))
+        local level = UnitLevel and UnitLevel("player") or 0
+        local villages = race and ns.VILLAGE_TRAINERS[race]
+        local nearby = villages and villages[name]
+        if nearby and level <= 14 then
+            add(nearby, "normal")
+            if capital then add("or: " .. capital, "dim") end
+        elseif capital then
+            add(capital, "normal")
         end
         add("(any city guard can mark trainers on your map)", "dim")
         return lines

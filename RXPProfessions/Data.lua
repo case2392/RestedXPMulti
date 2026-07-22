@@ -309,6 +309,66 @@ ns.TRAINERS = {
     }
 }
 
+-- Starting-village trainers by race, shown while you're still low level -
+-- much closer than the capital. Only entries we're confident about; other
+-- professions fall back to the capital trainer above.
+local goldshire = {
+    ["Alchemy"] = "Alchemist Mallory - farmhouse north of Goldshire",
+    ["Herbalism"] = "Herbalist Pomeroy - hut northeast of Goldshire",
+    ["Blacksmithing"] = "Smith Argus - Goldshire",
+    ["Leatherworking"] = "Adele Fielder - camp south of Goldshire",
+    ["Skinning"] = "Helene Peltskinner - west side of Goldshire",
+    ["Cooking"] = "Tomas - Lion's Pride Inn kitchen, Goldshire",
+    ["First Aid"] = "Michelle Belle - Lion's Pride Inn, Goldshire",
+    ["Fishing"] = "Lee Brown - Crystal Lake, Elwynn Forest"
+}
+local kharanos = {
+    ["Blacksmithing"] = "Tognus Flintfire - Kharanos",
+    ["Mining"] = "Yarr Hammerstone - Steelgrill's Depot, Kharanos",
+    ["Engineering"] = "Bronk Guzzlegear - Steelgrill's Depot, Kharanos",
+    ["First Aid"] = "Thamner Pol - Kharanos"
+}
+local dolanaar = {
+    ["Alchemy"] = "Cyndra Kindwhisper - Dolanaar",
+    ["Herbalism"] = "Malorne Bladeleaf - Dolanaar",
+    ["Skinning"] = "Radnaal Maneweaver - southwest of Dolanaar",
+    ["Leatherworking"] = "Nadyia Maneweaver - southwest of Dolanaar",
+    ["Cooking"] = "Zarrin - Dolanaar",
+    ["First Aid"] = "Byancie - Dolanaar"
+}
+local durotar = {
+    ["Alchemy"] = "Miao'zan - Sen'jin Village",
+    ["First Aid"] = "Rawrk - Razor Hill",
+    ["Fishing"] = "Lau'Tiki - Sen'jin Village coast"
+}
+local mulgore = {
+    ["Leatherworking"] = "Chaw Stronghide - Bloodhoof Village",
+    ["Skinning"] = "Yonn Deepcut - Bloodhoof Village",
+    ["First Aid"] = "Vira Younghoof - Bloodhoof Village",
+    ["Fishing"] = "Uthan Stillwater - Bloodhoof Village pond",
+    ["Cooking"] = "Pyall Silentstride - Camp Narache"
+}
+local tirisfal = {
+    ["Alchemy"] = "Carolai Anise - Brill",
+    ["Herbalism"] = "Faruza - Brill",
+    ["Tailoring"] = "Bowen Brisboise - north of Brill",
+    ["Leatherworking"] = "Shelene Rhobart - south of Brill",
+    ["First Aid"] = "Nurse Neela - Brill",
+    ["Fishing"] = "Clyde Kellen - Brill lake"
+}
+
+-- keyed by the race token from UnitRace (undead = "Scourge")
+ns.VILLAGE_TRAINERS = {
+    Human = goldshire,
+    Dwarf = kharanos,
+    Gnome = kharanos,
+    NightElf = dolanaar,
+    Orc = durotar,
+    Troll = durotar,
+    Tauren = mulgore,
+    Scourge = tirisfal
+}
+
 -- shown in the first-launch setup window, in this order
 ns.CHOOSABLE = {
     "Herbalism", "Mining", "Skinning", "Alchemy", "Blacksmithing",
