@@ -171,16 +171,20 @@ function ns.ToggleUI(cmd)
     else
         ns.db.show = not ns.db.show
     end
-    if ns.db.show then
-        frame:Show()
-        ns.UpdateUI()
-    else
-        frame:Hide()
+    if ns.db.show and not IsInGroup() then
+        ns.Print("window enabled - it appears when you're in a party.")
     end
+    ns.UpdateUI()
 end
 
 function ns.UpdateUI()
-    if not frame or not frame:IsShown() then return end
+    if not frame or not ns.db then return end
+    -- only relevant while grouped: hide when solo, reappear in a party
+    if not (ns.db.show and IsInGroup()) then
+        frame:Hide()
+        return
+    end
+    if not frame:IsShown() then frame:Show() end
     local my = ns.my
     if not my then return end
 
@@ -331,5 +335,5 @@ end
 
 function ns.SetupUI()
     CreateWindow()
-    if ns.db.show then frame:Show() else frame:Hide() end
+    ns.UpdateUI()
 end

@@ -169,15 +169,16 @@ function ns.BuildProfLines(name, p)
     return lines
 end
 
--- learned professions merged with the ones chosen during setup (chosen but
--- not yet learned shows a "go learn it" entry)
+-- The setup choices decide what's displayed: checked professions show
+-- (learned or not), unchecked ones stay hidden even if the character has
+-- the skill. Before setup has run, everything learned shows.
 function ns.GetTracked()
     local merged = {}
-    for name, p in pairs(ns.profs) do merged[name] = p end
-    if ns.db and ns.db.chosen then
-        for name in pairs(ns.db.chosen) do
-            if not merged[name] and ns.TRACKED[name] then
-                merged[name] = {
+    local chosen = ns.db and ns.db.setupDone and ns.db.chosen
+    if chosen then
+        for name in pairs(chosen) do
+            if ns.TRACKED[name] then
+                merged[name] = ns.profs[name] or {
                     rank = 0,
                     maxRank = 0,
                     kind = ns.TRACKED[name],
@@ -185,6 +186,8 @@ function ns.GetTracked()
                 }
             end
         end
+    else
+        for name, p in pairs(ns.profs) do merged[name] = p end
     end
     return merged
 end
@@ -196,10 +199,12 @@ end
 function ns.Refresh()
     local fresh = ns.ScanSkills()
 
-    -- announce newly crossed gathering unlocks
+    -- announce newly crossed gathering unlocks (tracked professions only)
+    local chosen = ns.db and ns.db.setupDone and ns.db.chosen
     for name, p in pairs(fresh) do
         local old = ns.profs[name]
-        if old and p.kind == "gather" and p.rank > old.rank then
+        if (not chosen or chosen[name]) and old and p.kind == "gather" and
+            p.rank > old.rank then
             for _, tier in ipairs(ns.GATHER[name].tiers) do
                 if old.rank < tier[1] and p.rank >= tier[1] and tier[1] > 1 then
                     ns.Print("|cFF66FF66%s unlocked:|r you can now gather %s!",
