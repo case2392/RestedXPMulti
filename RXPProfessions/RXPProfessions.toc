@@ -1,0 +1,14 @@
+## Interface: 11509, 20506, 50504
+## Interface-Classic: 11509
+## Interface-TBC: 20506
+## Interface-Mists: 50504
+## Title: RestedXP Professions
+## Notes: Keep your professions leveled while you follow RestedXP guides - live gathering targets, trainer reminders, and First Aid brackets
+## Author: case2392
+## Version: 0.1.0
+## OptionalDeps: RXPGuides
+## SavedVariables: RXPProfessionsDB
+
+Data.lua
+Core.lua
+UI.lua

@@ -1,0 +1,227 @@
+-- RestedXP Professions - track profession skills and recommend what to do
+-- right now: what to gather at your current skill, when to visit a trainer,
+-- which bandage to craft. Reads live skill levels from the skill line API.
+
+local addonName, ns = ...
+
+local eventFrame = CreateFrame("Frame")
+ns.profs = {} -- name -> {rank, maxRank, kind}
+
+function ns.Print(msg, ...)
+    print("|cFF66CCFFRXP Professions:|r " .. string.format(msg, ...))
+end
+
+--------------------------------------------------------------------------
+-- Skill scanning
+--------------------------------------------------------------------------
+
+function ns.ScanSkills()
+    local found = {}
+    if not GetNumSkillLines then return found end
+    for i = 1, GetNumSkillLines() do
+        local name, isHeader, _, rank, _, _, maxRank = GetSkillLineInfo(i)
+        if name and not isHeader and ns.TRACKED[name] then
+            found[name] = {
+                rank = rank or 0,
+                maxRank = maxRank or 0,
+                kind = ns.TRACKED[name]
+            }
+        end
+    end
+    return found
+end
+
+--------------------------------------------------------------------------
+-- Recommendations
+--------------------------------------------------------------------------
+
+-- current entry and next unlock from an ascending {skill, text} list
+local function CurrentAndNext(tiers, skill)
+    local current, nextUp
+    for _, tier in ipairs(tiers) do
+        if skill >= tier[1] then
+            current = tier
+        elseif not nextUp then
+            nextUp = tier
+        end
+    end
+    return current, nextUp
+end
+
+local function RankInfo(maxRank)
+    for _, r in ipairs(ns.RANKS) do
+        if maxRank <= r.cap then return r end
+    end
+end
+
+-- Returns a list of {text, style} lines for one profession.
+-- style: "head" | "normal" | "good" | "warn" | "dim"
+function ns.BuildProfLines(name, p)
+    local lines = {}
+    local function add(text, style)
+        table.insert(lines, {text = text, style = style or "normal"})
+    end
+
+    if p.unlearned then
+        add(name, "head")
+        add(string.format("Not learned yet - visit a %s trainer", name),
+            "warn")
+        return lines
+    end
+
+    add(string.format("%s  %d/%d", name, p.rank, p.maxRank), "head")
+
+    -- pace check: rough classic rule of thumb is ~5 skill per character
+    -- level; warn when falling well behind so you catch up before moving on
+    local level = UnitLevel and UnitLevel("player") or 0
+    if level > 5 and p.kind ~= "skinning" then
+        local target = math.min(level * 5, 300)
+        if p.rank < target - 25 then
+            add(string.format("Behind pace for level %d - catch up toward ~%d before leaving the zone",
+                              level, target), "warn")
+        end
+    end
+
+    -- trainer / cap advice
+    local rank = RankInfo(p.maxRank)
+    local capped = p.rank >= p.maxRank
+    if rank and rank.nextRank and p.rank >= (rank.trainAt or math.huge) then
+        if capped then
+            add(string.format("Capped! Train %s at a %s trainer", rank.nextRank,
+                              name), "warn")
+        else
+            add(string.format("Can train %s now (%d needed)", rank.nextRank,
+                              rank.trainAt), "good")
+        end
+    elseif capped then
+        add("Skill capped for this expansion", "dim")
+    elseif rank and rank.nextRank and p.maxRank - p.rank <= 10 then
+        add(string.format("Cap soon - train %s at %d", rank.nextRank,
+                          rank.trainAt), "warn")
+    end
+
+    -- what to do right now
+    if p.kind == "gather" then
+        local gather = ns.GATHER[name]
+        local current, nextUp = CurrentAndNext(gather.tiers, p.rank)
+        if current then
+            add(string.format("%s: %s", gather.verb, current[2]), "normal")
+        end
+        if nextUp then
+            add(string.format("At %d: %s", nextUp[1], nextUp[2]), "dim")
+        end
+    elseif p.kind == "firstaid" then
+        local current, nextUp = CurrentAndNext(ns.FIRSTAID, p.rank)
+        if current then
+            add(string.format("Craft: %s", current[2]), "normal")
+        end
+        if nextUp then
+            add(string.format("At %d: %s", nextUp[1], nextUp[2]), "dim")
+        end
+        for _, note in ipairs(ns.FIRSTAID_NOTES) do
+            -- surface each milestone note early enough to plan the trip
+            if p.rank >= note[1] - 40 and p.maxRank <= note[1] then
+                add(note[2], "warn")
+            end
+        end
+    elseif p.kind == "craft" and name == "Alchemy" then
+        local current, nextUp = CurrentAndNext(ns.ALCHEMY, p.rank)
+        if current then
+            add(string.format("Craft: %s", current[2]), "normal")
+            add("Mats: " .. current[3], "dim")
+        end
+        if nextUp then
+            add(string.format("At %d: %s", nextUp[1], nextUp[2]), "dim")
+        end
+        add("Vials: Alchemy supplies vendor (near trainers)", "dim")
+        if ns.db and ns.db.useAH then
+            add("Tip: buy missing herbs from the Auction House", "dim")
+        end
+    elseif p.kind == "skinning" then
+        -- max skinnable mob level is roughly skill/5 (min 10)
+        local maxLevel = math.max(10, math.floor(p.rank / 5))
+        add(string.format("Skin your kills (up to ~level %d mobs)", maxLevel),
+            "normal")
+    end
+
+    return lines
+end
+
+-- learned professions merged with the ones chosen during setup (chosen but
+-- not yet learned shows a "go learn it" entry)
+function ns.GetTracked()
+    local merged = {}
+    for name, p in pairs(ns.profs) do merged[name] = p end
+    if ns.db and ns.db.chosen then
+        for name in pairs(ns.db.chosen) do
+            if not merged[name] and ns.TRACKED[name] then
+                merged[name] = {
+                    rank = 0,
+                    maxRank = 0,
+                    kind = ns.TRACKED[name],
+                    unlearned = true
+                }
+            end
+        end
+    end
+    return merged
+end
+
+--------------------------------------------------------------------------
+-- Refresh loop: rescan on skill events, announce unlocks
+--------------------------------------------------------------------------
+
+function ns.Refresh()
+    local fresh = ns.ScanSkills()
+
+    -- announce newly crossed gathering unlocks
+    for name, p in pairs(fresh) do
+        local old = ns.profs[name]
+        if old and p.kind == "gather" and p.rank > old.rank then
+            for _, tier in ipairs(ns.GATHER[name].tiers) do
+                if old.rank < tier[1] and p.rank >= tier[1] and tier[1] > 1 then
+                    ns.Print("|cFF66FF66%s unlocked:|r you can now gather %s!",
+                             name, tier[2])
+                end
+            end
+        end
+    end
+
+    ns.profs = fresh
+    ns.UpdateUI()
+end
+
+--------------------------------------------------------------------------
+-- Events + slash command
+--------------------------------------------------------------------------
+
+eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
+eventFrame:RegisterEvent("SKILL_LINES_CHANGED")
+eventFrame:RegisterEvent("CHAT_MSG_SKILL")
+eventFrame:SetScript("OnEvent", function(_, event)
+    if event == "PLAYER_ENTERING_WORLD" then
+        RXPProfessionsDB = RXPProfessionsDB or {}
+        if RXPProfessionsDB.show == nil then RXPProfessionsDB.show = true end
+        ns.db = RXPProfessionsDB
+        if not ns.uiReady then
+            ns.SetupUI()
+            ns.uiReady = true
+        end
+        if not ns.db.setupDone then ns.ShowSetup() end
+    end
+    if ns.db then ns.Refresh() end
+end)
+
+SLASH_RXPPROFESSIONS1 = "/rxpp"
+SLASH_RXPPROFESSIONS2 = "/rxpprofessions"
+SlashCmdList["RXPPROFESSIONS"] = function(input)
+    if not ns.db then return end
+    input = (input or ""):gsub("%s+", ""):lower()
+    if input == "" or input == "show" or input == "hide" then
+        ns.ToggleUI(input)
+    elseif input == "setup" then
+        ns.ShowSetup()
+    else
+        ns.Print("commands: |cFFFFCC00/rxpp|r toggle the window, |cFFFFCC00/rxpp setup|r choose professions")
+    end
+end

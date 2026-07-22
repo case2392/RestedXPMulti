@@ -4,7 +4,9 @@
 
 A small companion addon for [RestedXP / RXPGuides](https://www.restedxp.com/) that
 syncs guide progress between party members, so you and a friend can level
-together in lockstep:
+together in lockstep. (Also in this repo: [RestedXP Professions](RXPProfessions/),
+a second companion that keeps your professions leveled while you follow the
+guides.)
 
 - **Sync prompt** — when you join a party with another RestedXP Party Sync user, both of
   you get a popup: *"«Name» is also using RestedXP Party Sync. Sync your RestedXP
