@@ -115,12 +115,15 @@ function ns.BuildProfLines(name, p)
                     milestone, milestoneName = nextUp[1], nextUp[2]
                 end
             end
+            local zone = (GetRealZoneText and GetRealZoneText()) or
+                             (GetZoneText and GetZoneText())
+            if not zone or zone == "" then zone = "this zone" end
             if milestone and milestone <= pace then
-                add(string.format("Behind pace - next goal: %d (%s)",
-                                  milestone, milestoneName), "warn")
+                add(string.format("Aim for %d (%s) before leaving %s",
+                                  milestone, milestoneName, zone), "warn")
             else
-                add(string.format("Behind pace - catch up toward ~%d", pace),
-                    "warn")
+                add(string.format("Catch up toward ~%d before leaving %s",
+                                  pace, zone), "warn")
             end
         end
     end
@@ -299,6 +302,7 @@ end
 eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 eventFrame:RegisterEvent("SKILL_LINES_CHANGED")
 eventFrame:RegisterEvent("CHAT_MSG_SKILL")
+eventFrame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
 eventFrame:SetScript("OnEvent", function(_, event)
     if event == "PLAYER_ENTERING_WORLD" then
         RXPProfessionsDB = RXPProfessionsDB or {}
