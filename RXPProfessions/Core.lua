@@ -88,16 +88,40 @@ function ns.BuildProfLines(name, p)
     add(string.format("%s  %d/%d", name, p.rank, p.maxRank), "head")
 
     -- pace check: rough classic rule of thumb is ~5 skill per character
-    -- level; warn when falling well behind so you catch up before moving on
+    -- level; warn when falling well behind so you catch up before moving on.
+    -- The goal shown is the next unlock/bracket - a fixed, achievable
+    -- milestone - not the ever-climbing level*5 number.
     local isPrimary = p.kind == "gather" or
                           (p.kind == "craft" and ns.CRAFT[name] and
                               ns.CRAFT[name].primary)
     local level = UnitLevel and UnitLevel("player") or 0
     if level > 5 and isPrimary then
-        local target = math.min(level * 5, 300)
-        if p.rank < target - 25 then
-            add(string.format("Behind pace - aim ~%d before", target), "warn")
-            add("leaving the zone", "warn")
+        local pace = math.min(level * 5, 300)
+        if p.rank < pace - 25 then
+            local milestone, milestoneName
+            if p.kind == "gather" then
+                local _, nextUp = CurrentAndNext(ns.GATHER[name].tiers, p.rank)
+                if nextUp then
+                    milestone, milestoneName = nextUp[1], nextUp[2]
+                end
+            else
+                local craftDef = ns.CRAFT[name]
+                local route = craftDef and craftDef.route
+                if name == "Cooking" and ns.FishCookCombo() then
+                    route = ns.FISH_COOKING
+                end
+                local _, nextUp = route and CurrentAndNext(route, p.rank)
+                if nextUp then
+                    milestone, milestoneName = nextUp[1], nextUp[2]
+                end
+            end
+            if milestone and milestone <= pace then
+                add(string.format("Behind pace - next goal: %d (%s)",
+                                  milestone, milestoneName), "warn")
+            else
+                add(string.format("Behind pace - catch up toward ~%d", pace),
+                    "warn")
+            end
         end
     end
 
