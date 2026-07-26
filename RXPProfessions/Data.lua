@@ -218,14 +218,22 @@ ns.CRAFT = {
     },
     ["Cooking"] = {
         route = {
-            {1, "Spice Bread / Charred Wolf Meat", "Simple Flour + Mild Spices / Stringy Wolf Meat"},
-            {40, "Smoked Bear Meat", "1 Bear Meat"},
-            {80, "Crab Cake / Dry Pork Ribs", "Crawler Meat / Boar Ribs + Mild Spices"},
-            {130, "Curiously Tasty Omelet", "1 Raptor Egg + Mild Spices"},
-            {175, "Roast Raptor", "1 Raptor Flesh + Hot Spices"},
-            {225, "Monster Omelet", "1 Giant Egg + 2 Soothing Spices"},
-            {250, "Tender Wolf Steak", "1 Tender Wolf Meat + Soothing Spices"},
-            {285, "Smoked Desert Dumplings", "1 Sandworm Meat + Soothing Spices"}
+            {1, "Spice Bread / Charred Wolf Meat", "Simple Flour + Mild Spices / Stringy Wolf Meat",
+             source = "taught by the Cooking trainer"},
+            {40, "Smoked Bear Meat", "1 Bear Meat",
+             source = "vendor recipe (Loch Modan / Silverpine); or revisit your trainer for new recipes"},
+            {80, "Crab Cake / Dry Pork Ribs", "Crawler Meat / Boar Ribs + Mild Spices",
+             source = "trainer / vendor recipes - revisit your Cooking trainer"},
+            {130, "Curiously Tasty Omelet", "1 Raptor Egg + Mild Spices",
+             source = "vendor recipe (city cooking suppliers)"},
+            {175, "Roast Raptor", "1 Raptor Flesh + Hot Spices",
+             source = "vendor recipe (Stranglethorn / Gadgetzan cooks)"},
+            {225, "Monster Omelet", "1 Giant Egg + 2 Soothing Spices",
+             source = "vendor recipe - Himmik, Everlook (Winterspring)"},
+            {250, "Tender Wolf Steak", "1 Tender Wolf Meat + Soothing Spices",
+             source = "vendor recipe (Gadgetzan)"},
+            {285, "Smoked Desert Dumplings", "1 Sandworm Meat + Soothing Spices",
+             source = "quest reward (Silithus)"}
         },
         notes = {
             {150, "Expert rank: |cFFFFCC00Expert Cookbook|r (vendors in Desolace / Shimmering Flats)"},

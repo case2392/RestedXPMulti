@@ -32,6 +32,43 @@ function ns.ScanSkills()
 end
 
 --------------------------------------------------------------------------
+-- Known-recipe tracking: the game only exposes your recipe list while a
+-- profession window is open, so we scan and remember it whenever one is.
+--------------------------------------------------------------------------
+
+function ns.ScanOpenTradeSkill()
+    if not (GetTradeSkillLine and GetNumTradeSkills) then return end
+    local prof = GetTradeSkillLine()
+    if not prof or prof == "UNKNOWN" or not ns.TRACKED[prof] then return end
+    local known = {}
+    for i = 1, GetNumTradeSkills() do
+        local rname, rtype = GetTradeSkillInfo(i)
+        if rname and rtype ~= "header" then known[rname] = true end
+    end
+    ns.db.knownRecipes = ns.db.knownRecipes or {}
+    ns.db.knownRecipes[prof] = known
+    ns.UpdateUI()
+end
+
+function ns.ScanOpenCraft() -- Enchanting uses the separate Craft API
+    if not (GetCraftDisplaySkillLine and GetNumCrafts) then return end
+    local prof = GetCraftDisplaySkillLine()
+    if not prof or not ns.TRACKED[prof] then return end
+    local known = {}
+    for i = 1, GetNumCrafts() do
+        local rname, _, rtype = GetCraftInfo(i)
+        if rname and rtype ~= "header" then known[rname] = true end
+    end
+    ns.db.knownRecipes = ns.db.knownRecipes or {}
+    ns.db.knownRecipes[prof] = known
+    ns.UpdateUI()
+end
+
+function ns.GetKnownRecipes(prof)
+    return ns.db and ns.db.knownRecipes and ns.db.knownRecipes[prof]
+end
+
+--------------------------------------------------------------------------
 -- Recommendations
 --------------------------------------------------------------------------
 
@@ -167,23 +204,44 @@ function ns.BuildProfLines(name, p)
                 add("Combo: cooking your Fishing catches", "good")
             end
             if current then
-                add(string.format("Craft: %s", current[2]), "normal")
+                -- prefer an alternative the player actually knows; warn
+                -- with the recipe source when none of them are known
+                local knownMap = ns.GetKnownRecipes(name)
+                local display = current[2]
+                local anyKnown = false
+                if knownMap then
+                    for alt in current[2]:gmatch("[^/]+") do
+                        alt = alt:gsub("^%s+", ""):gsub("%s+$", "")
+                        if knownMap[alt] then
+                            if not anyKnown then display = alt end
+                            anyKnown = true
+                        end
+                    end
+                end
+                add(string.format("Craft: %s", display), "normal")
                 if fishCombo then
                     add(string.format("Mats: %s", current.fish), "dim")
                     add(string.format("(fish: %s)", current.where), "dim")
-                    if current.recipe then
-                        -- fish recipes are vendor scrolls, not trainer-taught
-                        local recipe = current.recipe
-                        if type(recipe) == "table" then
-                            local faction = UnitFactionGroup and
-                                                UnitFactionGroup("player")
-                            recipe = faction == "Horde" and recipe.H or
-                                         recipe.A
-                        end
-                        add(string.format("Recipe: %s", recipe), "warn")
-                    end
                 elseif current[3] then
                     add("Mats: " .. current[3], "dim")
+                end
+                local source = current.source or current.recipe
+                if type(source) == "table" then
+                    local faction = UnitFactionGroup and
+                                        UnitFactionGroup("player")
+                    source = faction == "Horde" and source.H or source.A
+                end
+                if knownMap and not anyKnown then
+                    add("You don't know this recipe yet!", "warn")
+                    add("Get it: " ..
+                            (source or "check your trainer / recipe vendors"),
+                        "warn")
+                elseif not knownMap then
+                    if source then
+                        add("Recipe: " .. source, "dim")
+                    end
+                    add(string.format("(open your %s window once so I can track your recipes)",
+                                      name), "dim")
                 end
             end
             if nextUp then
@@ -303,7 +361,18 @@ eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 eventFrame:RegisterEvent("SKILL_LINES_CHANGED")
 eventFrame:RegisterEvent("CHAT_MSG_SKILL")
 eventFrame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
+eventFrame:RegisterEvent("TRADE_SKILL_SHOW")
+eventFrame:RegisterEvent("TRADE_SKILL_UPDATE")
+eventFrame:RegisterEvent("CRAFT_SHOW")
+eventFrame:RegisterEvent("CRAFT_UPDATE")
 eventFrame:SetScript("OnEvent", function(_, event)
+    if event == "TRADE_SKILL_SHOW" or event == "TRADE_SKILL_UPDATE" then
+        if ns.db then ns.ScanOpenTradeSkill() end
+        return
+    elseif event == "CRAFT_SHOW" or event == "CRAFT_UPDATE" then
+        if ns.db then ns.ScanOpenCraft() end
+        return
+    end
     if event == "PLAYER_ENTERING_WORLD" then
         RXPProfessionsDB = RXPProfessionsDB or {}
         if RXPProfessionsDB.show == nil then RXPProfessionsDB.show = true end
