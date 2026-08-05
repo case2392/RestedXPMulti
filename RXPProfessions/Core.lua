@@ -85,6 +85,44 @@ local function CurrentAndNext(tiers, skill)
     return current, nextUp
 end
 
+-- "finishing 19-20 Redridge" when a RestedXP guide is loaded, otherwise
+-- "leaving <zone>" - a city name makes no sense as a gathering deadline,
+-- but the guide chapter always does.
+local function GuideContext()
+    if LibStub then
+        local ace = LibStub("AceAddon-3.0", true)
+        local rxp = ace and ace:GetAddon("RXPGuides", true)
+        local guide = rxp and rxp.currentGuide
+        local gname = guide and (guide.displayname or guide.name)
+        if type(gname) == "string" and gname ~= "" then
+            gname = gname:gsub("\n.*", ""):gsub("|c%x%x%x%x%x%x%x%x", "")
+                         :gsub("|r", "")
+            return "finishing " .. gname
+        end
+    end
+    local zone = (GetRealZoneText and GetRealZoneText()) or
+                     (GetZoneText and GetZoneText())
+    if zone and zone ~= "" then return "leaving " .. zone end
+    return "moving on"
+end
+
+-- "In Redridge Mountains: Lake Everstill" - but only when the current zone
+-- has the right kind of water AND the fish actually lives at this zone's
+-- level (no catfish in starter-zone lakes)
+function ns.ZoneWaterSpot(entry)
+    local zone = (GetRealZoneText and GetRealZoneText()) or ""
+    local waters = ns.ZONE_WATERS[zone]
+    if not waters then return end
+    local spot = entry.water and waters[entry.water]
+    if not spot then return end
+    if entry.band and waters.lvl then
+        if waters.lvl < entry.band[1] or waters.lvl > entry.band[2] then
+            return
+        end
+    end
+    return string.format("In %s: %s", zone, spot)
+end
+
 local function RankInfo(maxRank)
     for _, r in ipairs(ns.RANKS) do
         if maxRank <= r.cap then return r end
@@ -152,15 +190,13 @@ function ns.BuildProfLines(name, p)
                     milestone, milestoneName = nextUp[1], nextUp[2]
                 end
             end
-            local zone = (GetRealZoneText and GetRealZoneText()) or
-                             (GetZoneText and GetZoneText())
-            if not zone or zone == "" then zone = "this zone" end
+            local context = GuideContext()
             if milestone and milestone <= pace then
-                add(string.format("Aim for %d (%s) before leaving %s",
-                                  milestone, milestoneName, zone), "warn")
+                add(string.format("Aim for %d (%s) before %s", milestone,
+                                  milestoneName, context), "warn")
             else
-                add(string.format("Catch up toward ~%d before leaving %s",
-                                  pace, zone), "warn")
+                add(string.format("Catch up toward ~%d before %s", pace,
+                                  context), "warn")
             end
         end
     end
@@ -221,7 +257,12 @@ function ns.BuildProfLines(name, p)
                 add(string.format("Craft: %s", display), "normal")
                 if fishCombo then
                     add(string.format("Mats: %s", current.fish), "dim")
-                    add(string.format("(fish: %s)", current.where), "dim")
+                    local spot = ns.ZoneWaterSpot(current)
+                    if spot then
+                        add(spot, "good")
+                    else
+                        add(string.format("(fish: %s)", current.where), "dim")
+                    end
                 elseif current[3] then
                     add("Mats: " .. current[3], "dim")
                 end
@@ -266,7 +307,12 @@ function ns.BuildProfLines(name, p)
                                                    cooking.rank)
             if current then
                 add(string.format("Catch: %s", current.fish), "normal")
-                add(string.format("Where: %s", current.where), "dim")
+                local spot = ns.ZoneWaterSpot(current)
+                if spot then
+                    add(spot, "good")
+                else
+                    add(string.format("Where: %s", current.where), "dim")
+                end
                 add("(feeds your Cooking bracket)", "dim")
             end
             if nextUp then
@@ -380,6 +426,13 @@ eventFrame:SetScript("OnEvent", function(_, event)
         if not ns.uiReady then
             ns.SetupUI()
             ns.uiReady = true
+            -- light refresh so guide-chapter context stays current even
+            -- without a skill event (RestedXP guide switches, etc.)
+            if C_Timer and C_Timer.NewTicker then
+                C_Timer.NewTicker(15, function()
+                    if ns.db then ns.UpdateUI() end
+                end)
+            end
         end
         if not ns.db.setupDone then ns.ShowSetup() end
     end
