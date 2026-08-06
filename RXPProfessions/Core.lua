@@ -123,6 +123,27 @@ function ns.ZoneWaterSpot(entry)
     return string.format("In %s: %s", zone, spot)
 end
 
+-- resolve {A=..., H=...} tables to the player's faction
+local function ForFaction(value)
+    if type(value) == "table" then
+        local faction = UnitFactionGroup and UnitFactionGroup("player")
+        return faction == "Horde" and value.H or value.A
+    end
+    return value
+end
+
+-- Notes with req/gate show only when actionable (rank >= req) and not yet
+-- done (maxRank <= gate - a raised cap proves the rank-up already happened).
+-- Notes without them use the old approach-window behavior.
+local function NoteVisible(note, rank, maxRank)
+    if note.req or note.gate then
+        if note.req and rank < note.req then return false end
+        if note.gate and maxRank > note.gate then return false end
+        return true
+    end
+    return rank >= note[1] - 40 and rank < note[1] + 15
+end
+
 local function RankInfo(maxRank)
     for _, r in ipairs(ns.RANKS) do
         if maxRank <= r.cap then return r end
@@ -289,10 +310,8 @@ function ns.BuildProfLines(name, p)
                 add(string.format("At %d: %s", nextUp[1], nextUp[2]), "dim")
             end
             for _, note in ipairs(craft.notes or {}) do
-                -- surface milestone notes early enough to plan the trip,
-                -- drop them once comfortably past
-                if p.rank >= note[1] - 40 and p.rank < note[1] + 15 then
-                    add(note[2], "warn")
+                if NoteVisible(note, p.rank, p.maxRank) then
+                    add(ForFaction(note[2]), "warn")
                 end
             end
             if craft.primary and ns.db and ns.db.useAH then
@@ -316,16 +335,29 @@ function ns.BuildProfLines(name, p)
                 add("(feeds your Cooking bracket)", "dim")
             end
             if nextUp then
-                add(string.format("At Cooking %d: %s", nextUp[1], nextUp.fish),
-                    "dim")
+                add(string.format("Later (Cooking %d): %s", nextUp[1],
+                                  nextUp.fish), "dim")
             end
         else
             add("Fish anywhere - each catch can skill up", "normal")
             add("Higher-level zones need higher skill (use lures)", "dim")
         end
+        -- fish escape when the zone needs more skill than you have; escaped
+        -- catches give no skill, so this is the one real fishing mistake
+        local zone = (GetRealZoneText and GetRealZoneText()) or ""
+        local waters = ns.ZONE_WATERS[zone]
+        if waters and waters.minskill then
+            if p.rank < waters.minskill then
+                add(string.format("Fish escape here! %s needs ~%d skill (you: %d)",
+                                  zone, waters.minskill, p.rank), "warn")
+            else
+                add(string.format("Skill OK for %s (needs %d)", zone,
+                                  waters.minskill), "dim")
+            end
+        end
         for _, note in ipairs(ns.FISHING_NOTES) do
-            if p.rank >= note[1] - 40 and p.rank < note[1] + 15 then
-                add(note[2], "warn")
+            if NoteVisible(note, p.rank, p.maxRank) then
+                add(ForFaction(note[2]), "warn")
             end
         end
     elseif p.kind == "skinning" then

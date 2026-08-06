@@ -75,8 +75,11 @@ ns.CRAFT = {
             {290, "Heavy Runecloth Bandage", "2 Runecloth"}
         },
         notes = {
-            {150, "Expert rank: book |cFFFFCC00Expert First Aid - Under Wraps|r (vendor)"},
-            {225, "Artisan rank: |cFFFFCC00Triage|r quest (Theramore / Hammerfall)"}
+            {150, {A = "Expert rank: book |cFFFFCC00Expert First Aid - Under Wraps|r - Deneb Walker, Stromgarde (Arathi)",
+                   H = "Expert rank: book |cFFFFCC00Expert First Aid - Under Wraps|r - Balai Lok'Wein, Brackenwall (Dustwallow)"},
+             req = 125, gate = 150},
+            {225, "Artisan rank: |cFFFFCC00Triage|r quest (Theramore / Hammerfall)",
+             req = 225, gate = 225}
         }
     },
     ["Alchemy"] = {
@@ -97,7 +100,9 @@ ns.CRAFT = {
         },
         notes = {
             {1, "Vials: Alchemy supplies vendor (near trainers)"},
-            {225, "Artisan trainer: Un'Goro Crater (Alliance) / Rogek path - see trainer dialog"}
+            {225, {A = "Artisan trainer: Kylanna Windwhisper - Feathermoon Stronghold, Feralas",
+                   H = "Artisan trainer: Rogvar - Stonard, Swamp of Sorrows"},
+             req = 200, gate = 225}
         }
     },
     ["Blacksmithing"] = {
@@ -119,7 +124,7 @@ ns.CRAFT = {
         },
         notes = {
             {1, "Pairs best with Mining"},
-            {225, "Artisan trainer: Brikk Keencraft, Booty Bay"}
+            {225, "Artisan trainer: Brikk Keencraft, Booty Bay", req = 200, gate = 225}
         }
     },
     ["Engineering"] = {
@@ -166,7 +171,7 @@ ns.CRAFT = {
         },
         notes = {
             {1, "Pairs best with Skinning"},
-            {225, "Artisan trainers: Feralas (both factions)"}
+            {225, "Artisan trainers: Feralas (both factions)", req = 200, gate = 225}
         }
     },
     ["Tailoring"] = {
@@ -212,7 +217,7 @@ ns.CRAFT = {
             {100, "Craft Runed Silver Rod (Silver Rod + dusts/essences)"},
             {155, "Craft Runed Golden Rod"},
             {200, "Craft Runed Truesilver Rod"},
-            {225, "Artisan trainer: Annora, Uldaman (inside the dungeon)"},
+            {225, "Artisan trainer: Annora, Uldaman (inside the dungeon)", req = 200, gate = 225},
             {290, "Craft Runed Arcanite Rod"}
         }
     },
@@ -236,8 +241,11 @@ ns.CRAFT = {
              source = "quest reward (Silithus)"}
         },
         notes = {
-            {150, "Expert rank: |cFFFFCC00Expert Cookbook|r (vendors in Desolace / Shimmering Flats)"},
-            {225, "Artisan rank: |cFFFFCC00Clamlette Surprise|r quest (Dirge, Gadgetzan)"},
+            {150, {A = "Expert rank: buy |cFFFFCC00Expert Cookbook|r from Shandrina - Ashenvale (49, 67)",
+                   H = "Expert rank: buy |cFFFFCC00Expert Cookbook|r from Wulan - Shadowprey Village, Desolace (26, 69)"},
+             req = 125, gate = 150},
+            {225, "Artisan rank: |cFFFFCC00Clamlette Surprise|r quest (Dirge, Gadgetzan)",
+             req = 225, gate = 225},
             {285, "Dumplings recipe: quest in Silithus"}
         }
     }
@@ -251,37 +259,37 @@ ns.CRAFT = {
 -- Notable fishing waters per zone (inland vs coast), used to turn "inland
 -- lakes & rivers" into "Lake Everstill" when we know the player's zone.
 ns.ZONE_WATERS = {
-    ["Elwynn Forest"] = {lvl = 5, inland = "Crystal Lake at Goldshire / Stone Cairn Lake"},
-    ["Redridge Mountains"] = {lvl = 20, inland = "Lake Everstill"},
-    ["Duskwood"] = {lvl = 25, inland = "the northern river"},
-    ["Westfall"] = {lvl = 15, coast = "Longshore (west coast)"},
-    ["Loch Modan"] = {lvl = 15, inland = "the Loch"},
-    ["Wetlands"] = {lvl = 25, coast = "the Baradin Bay coast", inland = "the inland pools"},
-    ["Darkshore"] = {lvl = 15, coast = "the Darkshore coastline"},
-    ["Teldrassil"] = {lvl = 5, inland = "the ponds near Dolanaar"},
-    ["Ashenvale"] = {lvl = 25, inland = "Mystral Lake / Falfarren River"},
-    ["The Barrens"] = {lvl = 15, inland = "the oases", coast = "the coast at Ratchet"},
-    ["Durotar"] = {lvl = 5, inland = "Southfury River", coast = "the Sen'jin coast"},
-    ["Mulgore"] = {lvl = 5, inland = "Stonebull Lake"},
-    ["Tirisfal Glades"] = {lvl = 5, inland = "Brightwater Lake"},
-    ["Silverpine Forest"] = {lvl = 15, inland = "Lordamere Lake"},
-    ["Hillsbrad Foothills"] = {lvl = 25, inland = "the streams", coast = "the western coast"},
-    ["Arathi Highlands"] = {lvl = 35, coast = "Faldir's Cove", inland = "the streams"},
-    ["Stranglethorn Vale"] = {lvl = 40, coast = "anywhere along the coast", inland = "Lake Nazferiti"},
-    ["Swamp of Sorrows"] = {lvl = 40, inland = "the swamp pools", coast = "the eastern coast"},
-    ["Dustwallow Marsh"] = {lvl = 40, coast = "the coast by Theramore", inland = "the marsh waters"},
-    ["Desolace"] = {lvl = 35, coast = "the western coast"},
-    ["Tanaris"] = {lvl = 45, coast = "the Steamwheedle Port coast"},
-    ["Feralas"] = {lvl = 45, coast = "the Feathermoon coast", inland = "the rivers"},
-    ["The Hinterlands"] = {lvl = 45, coast = "the eastern coast", inland = "the river"},
-    ["Azshara"] = {lvl = 50, coast = "the bays", inland = "the rivers"},
-    ["Un'Goro Crater"] = {lvl = 52, inland = "the pools"},
-    ["Felwood"] = {lvl = 50, inland = "the ponds and rivers"},
-    ["Winterspring"] = {lvl = 55, inland = "Lake Kel'Theril"},
-    ["Western Plaguelands"] = {lvl = 55, inland = "the lakes"},
-    ["Moonglade"] = {lvl = 55, inland = "Lake Elune'ara"},
-    ["Stormwind City"] = {lvl = 5, inland = "the canals"},
-    ["Orgrimmar"] = {lvl = 5, inland = "the Valley of Honor pond"},
+    ["Elwynn Forest"] = {minskill = 25, lvl = 5, inland = "Crystal Lake at Goldshire / Stone Cairn Lake"},
+    ["Redridge Mountains"] = {minskill = 55, lvl = 20, inland = "Lake Everstill"},
+    ["Duskwood"] = {minskill = 130, lvl = 25, inland = "the northern river"},
+    ["Westfall"] = {minskill = 55, lvl = 15, coast = "Longshore (west coast)"},
+    ["Loch Modan"] = {minskill = 55, lvl = 15, inland = "the Loch"},
+    ["Wetlands"] = {minskill = 130, lvl = 25, coast = "the Baradin Bay coast", inland = "the inland pools"},
+    ["Darkshore"] = {minskill = 55, lvl = 15, coast = "the Darkshore coastline"},
+    ["Teldrassil"] = {minskill = 25, lvl = 5, inland = "the ponds near Dolanaar"},
+    ["Ashenvale"] = {minskill = 130, lvl = 25, inland = "Mystral Lake / Falfarren River"},
+    ["The Barrens"] = {minskill = 55, lvl = 15, inland = "the oases", coast = "the coast at Ratchet"},
+    ["Durotar"] = {minskill = 25, lvl = 5, inland = "Southfury River", coast = "the Sen'jin coast"},
+    ["Mulgore"] = {minskill = 25, lvl = 5, inland = "Stonebull Lake"},
+    ["Tirisfal Glades"] = {minskill = 25, lvl = 5, inland = "Brightwater Lake"},
+    ["Silverpine Forest"] = {minskill = 55, lvl = 15, inland = "Lordamere Lake"},
+    ["Hillsbrad Foothills"] = {minskill = 130, lvl = 25, inland = "the streams", coast = "the western coast"},
+    ["Arathi Highlands"] = {minskill = 205, lvl = 35, coast = "Faldir's Cove", inland = "the streams"},
+    ["Stranglethorn Vale"] = {minskill = 205, lvl = 40, coast = "anywhere along the coast", inland = "Lake Nazferiti"},
+    ["Swamp of Sorrows"] = {minskill = 205, lvl = 40, inland = "the swamp pools", coast = "the eastern coast"},
+    ["Dustwallow Marsh"] = {minskill = 205, lvl = 40, coast = "the coast by Theramore", inland = "the marsh waters"},
+    ["Desolace"] = {minskill = 205, lvl = 35, coast = "the western coast"},
+    ["Tanaris"] = {minskill = 255, lvl = 45, coast = "the Steamwheedle Port coast"},
+    ["Feralas"] = {minskill = 255, lvl = 45, coast = "the Feathermoon coast", inland = "the rivers"},
+    ["The Hinterlands"] = {minskill = 255, lvl = 45, coast = "the eastern coast", inland = "the river"},
+    ["Azshara"] = {minskill = 330, lvl = 50, coast = "the bays", inland = "the rivers"},
+    ["Un'Goro Crater"] = {minskill = 330, lvl = 52, inland = "the pools"},
+    ["Felwood"] = {minskill = 330, lvl = 50, inland = "the ponds and rivers"},
+    ["Winterspring"] = {minskill = 330, lvl = 55, inland = "Lake Kel'Theril"},
+    ["Western Plaguelands"] = {minskill = 330, lvl = 55, inland = "the lakes"},
+    ["Moonglade"] = {minskill = 330, lvl = 55, inland = "Lake Elune'ara"},
+    ["Stormwind City"] = {minskill = 55, lvl = 5, inland = "the canals"},
+    ["Orgrimmar"] = {minskill = 55, lvl = 5, inland = "the Valley of Honor pond"},
     ["Ironforge"] = {lvl = 5, inland = "the Forlorn Cavern pool"}
 }
 
@@ -313,8 +321,10 @@ ns.FISH_COOKING = {
 }
 
 ns.FISHING_NOTES = {
-    {130, "Expert rank: book |cFFFFCC00Expert Fishing - The Bass and You|r (Booty Bay)"},
-    {225, "Artisan rank: Nat Pagle quest (Dustwallow Marsh)"}
+    {130, "Expert rank: book |cFFFFCC00Expert Fishing - The Bass and You|r - Old Man Heming, Booty Bay",
+     req = 125, gate = 150},
+    {225, "Artisan rank: Nat Pagle quest (Dustwallow Marsh)",
+     req = 225, gate = 225}
 }
 
 -- Professions the tracker understands (skill line names, English clients)
