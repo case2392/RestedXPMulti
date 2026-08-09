@@ -267,10 +267,10 @@ function ns.UpdateUI()
             Line(string.format("%s  -  step %d/%d", name, p.step or 0,
                                p.total or 0), tc[1], tc[2], tc[3])
             Line(string.format(
-                     "    |cFFFF9933guide revisions differ (you v%s, them v%s)|r",
+                     "    |cFFFF9933guide routes differ (you v%s, them v%s)|r",
                      tostring(my.version or "?"), tostring(p.gv or "?")), 0.9,
                  0.6, 0.3)
-            Line("    |cFFFF9933go to restedxp.com and update your guide files|r",
+            Line("    |cFFFF9933match your dungeon choice in RestedXP's guide settings, or update guide files at restedxp.com|r",
                  0.9, 0.6, 0.3)
             if p.stepLines then
                 for _, stepLine in ipairs(p.stepLines) do
