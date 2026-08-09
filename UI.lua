@@ -266,8 +266,17 @@ function ns.UpdateUI()
         elseif (p.gv or 0) ~= (my.version or 0) then
             Line(string.format("%s  -  step %d/%d", name, p.step or 0,
                                p.total or 0), tc[1], tc[2], tc[3])
-            Line("    |cFFFF9933guide version differs - update addons|r", 0.9,
+            Line(string.format(
+                     "    |cFFFF9933guide revisions differ (you v%s, them v%s)|r",
+                     tostring(my.version or "?"), tostring(p.gv or "?")), 0.9,
                  0.6, 0.3)
+            Line("    |cFFFF9933update RestedXP / re-import guides on both|r",
+                 0.9, 0.6, 0.3)
+            if p.stepLines then
+                for _, stepLine in ipairs(p.stepLines) do
+                    Line("    " .. stepLine, 0.75, 0.75, 0.75)
+                end
+            end
         else
             -- fully synced, same guide: compare positions via stepId so
             -- class-specific steps don't skew the picture
