@@ -270,7 +270,7 @@ function ns.UpdateUI()
                      "    |cFFFF9933guide revisions differ (you v%s, them v%s)|r",
                      tostring(my.version or "?"), tostring(p.gv or "?")), 0.9,
                  0.6, 0.3)
-            Line("    |cFFFF9933update RestedXP / re-import guides on both|r",
+            Line("    |cFFFF9933go to restedxp.com and update your guide files|r",
                  0.9, 0.6, 0.3)
             if p.stepLines then
                 for _, stepLine in ipairs(p.stepLines) do
