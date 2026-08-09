@@ -264,18 +264,25 @@ function ns.UpdateUI()
                 end
             end
         elseif (p.gv or 0) ~= (my.version or 0) then
-            Line(string.format("%s  -  step %d/%d", name, p.step or 0,
-                               p.total or 0), tc[1], tc[2], tc[3])
-            Line(string.format(
-                     "    |cFFFF9933guide routes differ (you v%s, them v%s)|r",
-                     tostring(my.version or "?"), tostring(p.gv or "?")), 0.9,
-                 0.6, 0.3)
-            Line("    |cFFFF9933match your dungeon choice in RestedXP's guide settings, or update guide files at restedxp.com|r",
-                 0.9, 0.6, 0.3)
+            -- routes differ (usually the add-dungeons choice): keep showing
+            -- everything normally, speak up only when it matters
+            Line(string.format("%s  -  step %d/%d%s", name, p.step or 0,
+                               p.total or 0,
+                               p.done and " |cFF66FF66(ready)|r" or ""),
+                 tc[1], tc[2], tc[3])
             if p.stepLines then
                 for _, stepLine in ipairs(p.stepLines) do
-                    Line("    " .. stepLine, 0.75, 0.75, 0.75)
+                    Line("    " .. stepLine, 0.8, 0.8, 0.8)
                 end
+            end
+            if p.dungeonTag then
+                Line("    |cFFFFAA00on a dungeon route step - continue as normal|r",
+                     1, 0.7, 0.2)
+                Line("    (match dungeon choices in RestedXP settings to re-sync)",
+                     0.55, 0.55, 0.55)
+            else
+                Line("    routes differ (dungeon choice?) - lockstep paused",
+                     0.55, 0.55, 0.55)
             end
         else
             -- fully synced, same guide: compare positions via stepId so
@@ -300,8 +307,13 @@ function ns.UpdateUI()
                 end
                 local myIdx = ns.FindMyStepByStepId(theirId)
                 if not myIdx and theirId > 0 then
-                    Line("    |cFFFFCC00(their class/race step - not in your guide)|r",
-                         0.7, 0.65, 0.45)
+                    if p.dungeonTag then
+                        Line("    |cFFFFAA00(they're on a dungeon step - not in your route)|r",
+                             1, 0.7, 0.2)
+                    else
+                        Line("    |cFFFFCC00(their class/race step - not in your guide)|r",
+                             0.7, 0.65, 0.45)
+                    end
                 end
             else
                 -- partner on an older RXP Multi that doesn't broadcast step

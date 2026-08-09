@@ -79,6 +79,10 @@ function ns.RefreshMyState()
     my.key, my.guideName, my.version = key, gname, version
     my.step, my.total = step, total
     my.stepId, my.nextStepId = stepId, nextStepId
+    -- RestedXP tags dungeon-route steps; partners use this to explain
+    -- route divergence precisely
+    local stepTable = steps and steps[step]
+    my.dungeonTag = stepTable and stepTable.dungeon or nil
     my.level = UnitLevel("player")
     return changed
 end

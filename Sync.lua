@@ -36,7 +36,8 @@ local function BuildPayload(msgType)
         d = my.done and true or false,
         l = my.level or 0,
         pd = pd,
-        st = my.stepLines or {}
+        st = my.stepLines or {},
+        dg = my.dungeonTag and tostring(my.dungeonTag) or nil
     }
 end
 
@@ -168,6 +169,7 @@ local function OnCommReceived(prefix, message, distribution, sender)
         p.done = msg.d and true or false
         p.level = tonumber(msg.l) or 0
         p.version = tonumber(msg.v) or 1
+        p.dungeonTag = type(msg.dg) == "string" and msg.dg or nil
 
         -- live text of the step they're on, as their RestedXP renders it
         p.stepLines = nil
