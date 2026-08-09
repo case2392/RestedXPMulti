@@ -10,7 +10,7 @@ local Multi = AceAddon:NewAddon("RestedXPMulti", "AceEvent-3.0", "AceComm-3.0",
                                 "AceSerializer-3.0")
 ns.Multi = Multi
 
-ns.VERSION = 3
+ns.VERSION = 4
 ns.PREFIX = "RXPMulti"
 ns.STALE_SECONDS = 90 -- partner counts as offline after this long without a message
 ns.PRUNE_SECONDS = 600 -- partner removed from the window after this long
@@ -92,6 +92,12 @@ function ns.IsSynced(name, p)
     return (ns.db.paired[name] and p.pairedBack) and true or false
 end
 
+-- Partner on a differently-compiled route but the same step content as us?
+function ns.SameStepContent(p)
+    local mySig = ns.my and ns.my.contentSig
+    return mySig and mySig ~= 0 and p.contentSig == mySig
+end
+
 -- Snapshot the live text lines of our current step, exactly as RestedXP
 -- renders them (quest objectives keep their running "3/7" counts because
 -- RestedXP rewrites element.text in place as you play). These are broadcast
@@ -99,13 +105,37 @@ end
 -- doesn't contain, like class quests.
 local MAX_LINES = 6
 local MAX_LINE_LEN = 90
+
+-- cheap stable string hash (djb2), exact within Lua doubles
+local function HashString(s)
+    local h = 5381
+    for i = 1, #s do h = (h * 33 + s:byte(i)) % 4294967296 end
+    return h
+end
+
 function ns.CollectMyStepLines()
     local guide = ns.RXP.currentGuide
     local stepIdx = RXPCData and RXPCData.currentStep
     local step = guide and guide.steps and stepIdx and guide.steps[stepIdx]
     local lines, sig = {}, ""
+    -- content fingerprint: step text with numbers masked (progress counts
+    -- change as you play) plus quest ids - identical for the same step even
+    -- across differently-compiled guide routes
+    local content = {}
     if step then
         -- RestedXP keeps a step's tasks in step.elements
+        for _, element in ipairs(step.elements or step) do
+            if type(element.text) == "string" then
+                local norm = element.text:gsub("|T.-|t", "")
+                                 :gsub("|A.-|a", "")
+                                 :gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
+                                 :gsub("%d+", "#"):gsub("%s+", " ")
+                table.insert(content, norm)
+            end
+            if element.questId then
+                table.insert(content, "q" .. tostring(element.questId))
+            end
+        end
         for _, element in ipairs(step.elements or step) do
             if #lines >= MAX_LINES then break end
             local text = element.text
@@ -128,17 +158,20 @@ function ns.CollectMyStepLines()
         end
     end
     for _, l in ipairs(lines) do sig = sig .. l .. "\001" end
-    return lines, sig
+    local contentSig = #content > 0 and
+                           HashString(table.concat(content, ";")) or 0
+    return lines, sig, contentSig
 end
 
 -- Returns true when our step's visible text (objective counts etc.) changed.
 function ns.RefreshMyProgress()
     local my = ns.my
     if not my then return end
-    local lines, sig = ns.CollectMyStepLines()
-    if sig ~= my.stepSig then
+    local lines, sig, contentSig = ns.CollectMyStepLines()
+    if sig ~= my.stepSig or contentSig ~= my.contentSig then
         my.stepSig = sig
         my.stepLines = lines
+        my.contentSig = contentSig
         return true
     end
 end
@@ -244,14 +277,25 @@ function ns.ShouldBlock(target)
     local waitingOn
     for name, p in pairs(ns.partners) do
         local fresh = now - (p.lastSeen or 0) < ns.STALE_SECONDS
-        -- only gate on partners we're synced with, on the same guide AND the
-        -- same guide version (a version difference shifts stepIds)
-        if fresh and ns.IsSynced(name, p) and p.key ~= "" and p.key == my.key and
-            (p.gv or 0) == (my.version or 0) then
-            anyPartner = true
-            if not PartnerReady(p, target, targetId) then
-                waitingOn = waitingOn or {}
-                table.insert(waitingOn, name)
+        if fresh and ns.IsSynced(name, p) then
+            local eligible, ready
+            if p.key ~= "" and p.key == my.key and
+                (p.gv or 0) == (my.version or 0) then
+                -- same guide, same revision: full positional lockstep
+                eligible = true
+                ready = PartnerReady(p, target, targetId)
+            elseif ns.SameStepContent(p) then
+                -- different guide/route, but the step CONTENT matches ours:
+                -- demonstrably the same step, so hold until they finish it
+                eligible = true
+                ready = p.done
+            end
+            if eligible then
+                anyPartner = true
+                if not ready then
+                    waitingOn = waitingOn or {}
+                    table.insert(waitingOn, name)
+                end
             end
         end
     end

@@ -256,12 +256,16 @@ function ns.UpdateUI()
         elseif p.key ~= my.key then
             Line(string.format("%s  -  |cFFFFCC00other guide:|r %s", name,
                                p.guideName), 0.9, 0.85, 0.6)
-            Line(string.format("    step %d/%d", p.step or 0, p.total or 0),
-                 0.6, 0.6, 0.6)
+            Line(string.format("    step %d/%d%s", p.step or 0, p.total or 0,
+                               p.done and " |cFF66FF66(ready)|r" or ""), 0.6,
+                 0.6, 0.6)
             if p.stepLines then
                 for _, stepLine in ipairs(p.stepLines) do
                     Line("    " .. stepLine, 0.75, 0.75, 0.75)
                 end
+            end
+            if ns.IsSynced(name, p) and ns.SameStepContent(p) then
+                Line("    |cFF66FF66same step - lock active|r", 0.4, 0.9, 0.4)
             end
         elseif (p.gv or 0) ~= (my.version or 0) then
             -- routes differ (usually the add-dungeons choice): keep showing
@@ -275,13 +279,15 @@ function ns.UpdateUI()
                     Line("    " .. stepLine, 0.8, 0.8, 0.8)
                 end
             end
-            if p.dungeonTag then
+            if ns.IsSynced(name, p) and ns.SameStepContent(p) then
+                Line("    |cFF66FF66same step - lock active|r", 0.4, 0.9, 0.4)
+            elseif p.dungeonTag then
                 Line("    |cFFFFAA00on a dungeon route step - continue as normal|r",
                      1, 0.7, 0.2)
                 Line("    (match dungeon choices in RestedXP settings to re-sync)",
                      0.55, 0.55, 0.55)
             else
-                Line("    routes differ (dungeon choice?) - lockstep paused",
+                Line("    routes differ - lock resumes on matching steps",
                      0.55, 0.55, 0.55)
             end
         else
