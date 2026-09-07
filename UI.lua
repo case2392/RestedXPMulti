@@ -132,6 +132,28 @@ local function CreateWindow()
     skip:SetScript("OnClick", function() ns.SkipWait() end)
     skip:Hide()
 
+    -- step lock: uncheck to never be held (partner info keeps syncing)
+    local lockBox = CreateFrame("CheckButton", nil, frame,
+                                "UICheckButtonTemplate")
+    frame.lockCheck = lockBox
+    lockBox:SetWidth(20)
+    lockBox:SetHeight(20)
+    frame.lockLabel = frame:CreateFontString(nil, "OVERLAY",
+                                             "GameFontHighlightSmall")
+    frame.lockLabel:SetPoint("LEFT", lockBox, "RIGHT", 1, 0)
+    frame.lockLabel:SetText("hold my steps for the party")
+    lockBox:SetScript("OnClick", function(self)
+        ns.db.lock = self:GetChecked() and true or false
+        if ns.db.lock then
+            ns.Print("step lock |cFF66FF66ON|r - the guide waits for your partners on each step.")
+        else
+            ns.Print("step lock |cFFFF6666OFF|r - you'll never be held; partner info keeps syncing.")
+            ns.TryRelease()
+        end
+        ns.UpdateUI()
+    end)
+    lockBox:Hide()
+
     -- auto-skip: held waits release themselves after a delay
     local auto = CreateFrame("CheckButton", nil, frame,
                              "UICheckButtonTemplate")
@@ -381,18 +403,28 @@ function ns.UpdateUI()
         frame.skipButton:Hide()
     end
 
-    -- auto-skip checkbox row
-    frame.autoSkipCheck:SetChecked(ns.db.autoSkip and true or false)
-    frame.autoSkipCheck:ClearAllPoints()
-    frame.autoSkipCheck:SetPoint("TOPLEFT", PADDING - 4, -y + 2)
-    frame.autoSkipLabel:SetText(string.format("auto-skip waits (%ds)",
-                                              ns.db.autoSkipDelay or 60))
-    frame.autoSkipCheck:Show()
+    -- checkbox rows: step lock, then auto-skip (only relevant while locked)
+    frame.lockCheck:SetChecked(ns.db.lock and true or false)
+    frame.lockCheck:ClearAllPoints()
+    frame.lockCheck:SetPoint("TOPLEFT", PADDING - 4, -y + 2)
+    frame.lockCheck:Show()
     y = y + 20
+    if ns.db.lock then
+        frame.autoSkipCheck:SetChecked(ns.db.autoSkip and true or false)
+        frame.autoSkipCheck:ClearAllPoints()
+        frame.autoSkipCheck:SetPoint("TOPLEFT", PADDING - 4, -y + 2)
+        frame.autoSkipLabel:SetText(string.format("auto-skip waits (%ds)",
+                                                  ns.db.autoSkipDelay or 60))
+        frame.autoSkipCheck:Show()
+        frame.autoSkipLabel:Show()
+        y = y + 20
+    else
+        frame.autoSkipCheck:Hide()
+        frame.autoSkipLabel:Hide()
+    end
 
     -- footer
-    local lockText = ns.db.lock and "|cFF66FF66on|r" or "|cFFFF6666off|r"
-    Line(string.format("lock: %s   /rxpm help", lockText), 0.45, 0.45, 0.5)
+    Line("/rxpm help", 0.45, 0.45, 0.5)
 
     frame:SetHeight(y + PADDING - LINE_GAP)
 end

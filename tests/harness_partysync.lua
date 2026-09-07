@@ -407,6 +407,23 @@ Pam.events["GROUP_ROSTER_UPDATE"]("GROUP_ROSTER_UPDATE")
 advanceTime(9)
 check(Pam.env.RXPCData.currentStep == 4, "Pam released after Quinn left")
 
+print("\n=== lock off: never held, sync keeps flowing ===")
+Quinn.inGroup = true
+Pam.events["GROUP_ROSTER_UPDATE"]("GROUP_ROSTER_UPDATE")
+advanceTime(10)
+Pam.env.SlashCmdList["RXPMULTI"]("lock off")
+-- Quinn is behind Pam; Pam must advance freely anyway
+Pam.RXP.SetStep(3)
+Pam.RXP.SetStep(4)
+check(Pam.env.RXPCData.currentStep == 4,
+      "lock off: Pam never held despite Quinn being behind")
+-- and visibility sync still updates
+Quinn.RXP.SetStep(5)
+advanceTime(2)
+check(Pam.ns.partners["Quinn"].step == 5,
+      "lock off: partner info still syncs")
+Pam.env.SlashCmdList["RXPMULTI"]("lock on")
+
 print("\n=== slash commands run clean ===")
 Pam.env.SlashCmdList["RXPMULTI"]("status")
 Pam.env.SlashCmdList["RXPMULTI"]("help")
