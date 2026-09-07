@@ -38,7 +38,8 @@ local function BuildPayload(msgType)
         pd = pd,
         st = my.stepLines or {},
         dg = my.dungeonTag and tostring(my.dungeonTag) or nil,
-        sg = my.contentSig or 0
+        sg = my.contentSig or 0,
+        xh = my.xph or 0
     }
 end
 
@@ -172,6 +173,7 @@ local function OnCommReceived(prefix, message, distribution, sender)
         p.version = tonumber(msg.v) or 1
         p.dungeonTag = type(msg.dg) == "string" and msg.dg or nil
         p.contentSig = tonumber(msg.sg) or 0
+        p.xph = tonumber(msg.xh) or 0
 
         -- live text of the step they're on, as their RestedXP renders it
         p.stepLines = nil
@@ -256,10 +258,19 @@ end
 -- Local progress + housekeeping
 --------------------------------------------------------------------------
 
+local lastQuestScan = 0
+local function RescanGroupQuests(force)
+    if force or GetTime() - lastQuestScan > 5 then
+        lastQuestScan = GetTime()
+        if ns.ScanGroupQuests then ns.ScanGroupQuests() end
+    end
+end
+
 local function OnLocalProgress()
     ns.RefreshMyProgress()
     -- send right away: a partner may be holding on this very step
     if ns.RefreshMyState() then ns.BroadcastState(true) end
+    RescanGroupQuests(true)
     ns.UpdateUI()
 end
 
@@ -267,6 +278,8 @@ end
 -- share the new numbers, coalesced by the broadcast throttle
 local function OnObjectiveProgress()
     if ns.RefreshMyProgress() then ns.BroadcastState() end
+    RescanGroupQuests()
+    ns.UpdateUI()
 end
 
 local function PruneParted()
@@ -282,6 +295,7 @@ local function OnTick()
     tickCount = tickCount + 1
     if ns.RefreshMyState() then sendDirty = true end
     if ns.RefreshMyProgress() then sendDirty = true end
+    if ns.TickStats then ns.TickStats(8) end
 
     local now = GetTime()
     for name, p in pairs(ns.partners) do

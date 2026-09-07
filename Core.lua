@@ -46,6 +46,7 @@ function Multi:OnEnable()
 
     ns.InstallStepHook()
     ns.SetupSync()
+    ns.SetupDuo()
     ns.SetupUI()
     ns.RefreshMyState()
     ns.RefreshMyProgress()
@@ -382,6 +383,8 @@ local function ShowHelp()
     print("  |cFFFFCC00/rxpm skip|r - stop waiting and advance to the next step now")
     print("  |cFFFFCC00/rxpm autoskip on|off|<seconds>|r - release held waits automatically (default 60s)")
     print("  |cFFFFCC00/rxpm status|r - print what your partners are doing")
+    print("  |cFFFFCC00/rxpm stats|r - your XP/hour per guide chapter")
+    print("  |cFFFFCC00/rxpm duo|r - group quests in your log that the solo route skips")
 end
 
 -- case-insensitive match against detected partners
@@ -477,6 +480,10 @@ SlashCmdList["RXPMULTI"] = function(input)
         ns.UpdateUI()
     elseif cmd == "status" then
         ns.PrintStatus()
+    elseif cmd == "stats" then
+        ns.PrintStats()
+    elseif cmd == "duo" or cmd == "party" then
+        ns.PrintDuo()
     else
         ShowHelp()
     end

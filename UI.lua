@@ -248,10 +248,13 @@ function ns.UpdateUI()
     end
 
     -- our own row
+    local myRate = (my.xph or 0) > 0 and
+                       string.format("  |cFF888888%s XP/hr|r",
+                                     ns.FormatXP(my.xph)) or ""
     if my.total and my.total > 0 then
-        Line(string.format("You  -  step %d/%d %s", my.step or 0, my.total,
-                           my.done and "|cFF66FF66(ready)|r" or ""), tc[1],
-             tc[2], tc[3])
+        Line(string.format("You  -  step %d/%d %s%s", my.step or 0, my.total,
+                           my.done and "|cFF66FF66(ready)|r" or "", myRate),
+             tc[1], tc[2], tc[3])
     else
         Line("You  -  no guide loaded", 0.6, 0.6, 0.6)
     end
@@ -347,8 +350,12 @@ function ns.UpdateUI()
             elseif theirId > 0 and myId > 0 and theirId > myId then
                 marker = " |cFF66CCFF(ahead)|r"
             end
-            Line(string.format("%s  -  step %d/%d%s", name, p.step or 0,
-                               p.total or 0, marker), tc[1], tc[2], tc[3])
+            local theirRate = (p.xph or 0) > 0 and
+                                  string.format("  |cFF888888%s XP/hr|r",
+                                                ns.FormatXP(p.xph)) or ""
+            Line(string.format("%s  -  step %d/%d%s%s", name, p.step or 0,
+                               p.total or 0, marker, theirRate), tc[1], tc[2],
+                 tc[3])
             if p.stepLines then
                 -- live step text as THEIR RestedXP renders it, running
                 -- objective counts included - works even for steps our own
@@ -380,6 +387,28 @@ function ns.UpdateUI()
                          0.6, 0.6)
                 end
             end
+        end
+    end
+
+    -- party bonus section: what a duo/trio can do that the solo route can't
+    local grind = ns.CurrentStepIsGrind and ns.CurrentStepIsGrind()
+    local quests = ns.duoQuests or {}
+    if grind or #quests > 0 then
+        Line("|cFF66CCFFParty bonus|r |cFF888888(kill XP splits, quest XP doesn't)|r",
+             0.7, 0.85, 1)
+        if grind then
+            Line("    grind step: lean on quests while grouped", 1, 0.7, 0.2)
+        end
+        for i, q in ipairs(quests) do
+            if i > 3 then
+                Line(string.format("    ...and %d more (/rxpm duo)",
+                                   #quests - 3), 0.55, 0.55, 0.55)
+                break
+            end
+            Line(string.format("    %s quest in log: %s (lvl %d)%s", q.kind,
+                               q.title, q.level,
+                               q.complete and " |cFF66FF66ready!|r" or
+                                   " - route skips it"), 0.85, 0.85, 0.85)
         end
     end
 

@@ -116,7 +116,7 @@ local function makePlayer(name, stepLines, guideVersion, guideKey)
 
     env.GetTime = function() return clock end
     env.UnitName = function() return name end
-    env.UnitLevel = function() return 20 end
+    env.UnitLevel = function() return P.level or 20 end
     env.Ambiguate = function(s) return s end
     env.LE_PARTY_CATEGORY_INSTANCE = 2
     env.IsInGroup = function(cat)
@@ -129,6 +129,20 @@ local function makePlayer(name, stepLines, guideVersion, guideKey)
         return other and other.inGroup and P.inGroup
     end
     env.UnitInRaid = function() return nil end
+    env.GetRealmName = function() return "TestRealm" end
+    env.UnitXP = function() return P.xp or 0 end
+    env.UnitXPMax = function() return P.xpMax or 1000 end
+    env.GetNumQuestLogEntries = function() return #(P.questLog or {}) end
+    env.GetQuestLogTitle = function(i)
+        local q = P.questLog[i]
+        return q.title, q.level, q.tag, q.header or false, false,
+               q.complete or false, 0, q.id
+    end
+    env.GetQuestTagInfo = function(id)
+        for _, q in ipairs(P.questLog or {}) do
+            if q.id == id and q.tagID then return q.tagID, q.tagName end
+        end
+    end
     env.C_Timer = {
         After = function(d, fn) schedule(d, fn) end,
         NewTicker = function(period, fn) schedule(period, fn, period) end
@@ -249,7 +263,7 @@ local function makePlayer(name, stepLines, guideVersion, guideKey)
 
     local ns = {}
     P.ns = ns
-    for _, file in ipairs({"Core.lua", "Sync.lua", "UI.lua"}) do
+    for _, file in ipairs({"Core.lua", "Sync.lua", "Duo.lua", "UI.lua"}) do
         local chunk, err = loadfile(ADDON_DIR .. "/" .. file)
         assert(chunk, err)
         setfenv(chunk, env)
@@ -423,6 +437,52 @@ advanceTime(2)
 check(Pam.ns.partners["Quinn"].step == 5,
       "lock off: partner info still syncs")
 Pam.env.SlashCmdList["RXPMULTI"]("lock on")
+
+print("\n=== duo layer: XP telemetry per chapter ===")
+Pam.xp, Pam.xpMax = 100, 1000
+Pam.ns.xpLast, Pam.ns.xpLastMax, Pam.ns.xpLastLevel = 100, 1000, 20
+Pam.xp = 400
+Pam.ns.OnXPUpdate()
+Pam.level, Pam.xp, Pam.xpMax = 21, 50, 1200 -- level-up: 600 left + 50 new
+Pam.ns.OnXPUpdate()
+Pam.ns.OnDeath()
+advanceTime(120) -- ~15 ticks of 8s
+local ch = Pam.ns.stats.chapters["Test Guide"]
+check(ch and ch.xp == 300 + 650, "XP gained tracked across a level-up (950)")
+check(ch and ch.deaths == 1, "death counted")
+check(ch and ch.seconds >= 100, "time accrues per chapter")
+check(Pam.ns.CurrentXPH() > 0, "XP/hour computed")
+advanceTime(10)
+check((Quinn.ns.partners["Pam"].xph or 0) > 0, "partner receives XP/hr")
+
+print("\n=== duo layer: group quests the solo route skips ===")
+Pam.questLog = {
+    {title = "Zone Header", header = true},
+    {title = "Solo Errand", level = 22, tag = 0, id = 501},
+    {title = "Elite Beast", level = 24, tag = 2, id = 502, tagID = 1,
+     tagName = "Group"},
+    {title = "Route Elite", level = 23, tag = 2, id = 503, tagID = 1,
+     tagName = "Group"},
+    {title = "Deadmines", level = 20, tag = 0, id = 504, tagID = 81,
+     tagName = "Dungeon", complete = true}
+}
+-- the route turns in 503 later on; 502 and 504 are off-route bonuses
+Pam.guide.steps[4].elements[2] = {tag = "turnin", questId = 503}
+Pam.ns.ScanGroupQuests()
+local found = {}
+for _, q in ipairs(Pam.ns.duoQuests) do found[q.title] = q end
+check(found["Elite Beast"] and found["Elite Beast"].kind == "Group",
+      "off-route group quest surfaced")
+check(found["Deadmines"] and found["Deadmines"].complete,
+      "dungeon quest surfaced, flagged ready to turn in")
+check(found["Route Elite"] == nil, "group quest the route turns in is not listed")
+check(found["Solo Errand"] == nil, "ordinary quests are not listed")
+Pam.guide.steps[Pam.env.RXPCData.currentStep].elements[2] = {tag = "xp"}
+check(Pam.ns.CurrentStepIsGrind(), "grind step detected")
+Pam.ns.UpdateUI()
+Pam.env.SlashCmdList["RXPMULTI"]("stats")
+Pam.env.SlashCmdList["RXPMULTI"]("duo")
+check(true, "party bonus section + stats/duo commands render without error")
 
 print("\n=== slash commands run clean ===")
 Pam.env.SlashCmdList["RXPMULTI"]("status")

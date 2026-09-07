@@ -74,7 +74,24 @@ or download it from the project page. Both players need it installed.
 |  `/rxpm skip` (or the window's **Skip wait** button) | Stop waiting and advance to the next step right now |
 | `/rxpm autoskip on\|off\|<seconds>` | Auto-release held waits after a delay (also a checkbox in the window; default 60s) |
 | `/rxpm status` | Print your partners' progress to chat |
+| `/rxpm stats` | Your XP/hour, time, and deaths per guide chapter |
+| `/rxpm duo` | Group/elite/dungeon quests in your log that the solo route skips |
 | `/rxpm help` | List the commands |
+
+## Duo/Trio layer
+
+RestedXP's speedrun routes are tuned for one player. In a party, **kill XP
+splits between members but quest XP doesn't**, and group/elite/dungeon quests
+become worth doing. Rather than guessing at a "better" route, the addon
+measures and surfaces:
+
+- **XP/hour per guide chapter** for you and each partner (shown next to your
+  names, detailed via `/rxpm stats`) — so you can see where your route
+  actually bleeds time as a group.
+- **Party bonus** section while grouped: group/elite/dungeon quests already in
+  your quest log that your remaining route never turns in (read live from the
+  game — no made-up quest data), and a heads-up on grind steps where split
+  kill XP hurts.
 
 ## How the step lock decides you're "ready"
 
