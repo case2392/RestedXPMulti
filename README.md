@@ -72,6 +72,7 @@ or download it from the project page. Both players need it installed.
 | `/rxpm unsync <name>` | Stop syncing with a player (no name = everyone) |
 | `/rxpm lock` | Toggle the step lock on/off (`/rxpm lock on`, `/rxpm lock off` also work) |
 |  `/rxpm skip` (or the window's **Skip wait** button) | Stop waiting and advance to the next step right now |
+| `/rxpm autoskip on\|off\|<seconds>` | Auto-release held waits after a delay (also a checkbox in the window; default 60s) |
 | `/rxpm status` | Print your partners' progress to chat |
 | `/rxpm help` | List the commands |
 

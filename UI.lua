@@ -132,6 +132,29 @@ local function CreateWindow()
     skip:SetScript("OnClick", function() ns.SkipWait() end)
     skip:Hide()
 
+    -- auto-skip: held waits release themselves after a delay
+    local auto = CreateFrame("CheckButton", nil, frame,
+                             "UICheckButtonTemplate")
+    frame.autoSkipCheck = auto
+    auto:SetWidth(20)
+    auto:SetHeight(20)
+    frame.autoSkipLabel = frame:CreateFontString(nil, "OVERLAY",
+                                                 "GameFontHighlightSmall")
+    frame.autoSkipLabel:SetPoint("LEFT", auto, "RIGHT", 1, 0)
+    auto:SetScript("OnClick", function(self)
+        ns.db.autoSkip = self:GetChecked() and true or false
+        if ns.db.autoSkip then
+            ns.Print("auto-skip |cFF66FF66ON|r - waits release after %ds (/rxpm autoskip <seconds> to tune).",
+                     ns.db.autoSkipDelay or 60)
+            ns.ArmAutoSkip(ns.pendingStep)
+        else
+            ns.autoSkipArmed = nil
+            ns.Print("auto-skip |cFFFF6666OFF|r.")
+        end
+        ns.UpdateUI()
+    end)
+    auto:Hide()
+
     ApplySkin()
 end
 
@@ -345,6 +368,11 @@ function ns.UpdateUI()
             Line(string.format("|cFFFFAA00Waiting for: %s|r",
                                table.concat(waitingOn, ", ")), 1, 0.7, 0.2)
         end
+        if ns.db.autoSkip and ns.autoSkipArmed == ns.pendingStep and
+            ns.autoSkipAt then
+            local left = math.max(0, math.ceil(ns.autoSkipAt - now))
+            Line(string.format("auto-skipping in ~%ds", left), 0.6, 0.6, 0.65)
+        end
         frame.skipButton:ClearAllPoints()
         frame.skipButton:SetPoint("TOPLEFT", PADDING, -y)
         frame.skipButton:Show()
@@ -352,6 +380,15 @@ function ns.UpdateUI()
     else
         frame.skipButton:Hide()
     end
+
+    -- auto-skip checkbox row
+    frame.autoSkipCheck:SetChecked(ns.db.autoSkip and true or false)
+    frame.autoSkipCheck:ClearAllPoints()
+    frame.autoSkipCheck:SetPoint("TOPLEFT", PADDING - 4, -y + 2)
+    frame.autoSkipLabel:SetText(string.format("auto-skip waits (%ds)",
+                                              ns.db.autoSkipDelay or 60))
+    frame.autoSkipCheck:Show()
+    y = y + 20
 
     -- footer
     local lockText = ns.db.lock and "|cFF66FF66on|r" or "|cFFFF6666off|r"

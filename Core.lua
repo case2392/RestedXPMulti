@@ -23,6 +23,8 @@ function Multi:OnInitialize()
     if db.lock == nil then db.lock = true end
     if db.show == nil then db.show = true end
     db.paired = db.paired or {} -- names we've agreed to sync with (persistent)
+    if db.autoSkip == nil then db.autoSkip = false end
+    db.autoSkipDelay = db.autoSkipDelay or 60
     ns.db = db
 end
 
@@ -236,7 +238,25 @@ end
 function ns.AdvanceNow(n)
     if not origSetStep then return end
     ns.pendingStep = nil
+    ns.autoSkipArmed = nil
     CallOrigSetStep(n)
+end
+
+-- Auto-skip: when enabled, a held wait releases itself after the delay
+function ns.ArmAutoSkip(target)
+    if not (ns.db and ns.db.autoSkip) or not target then return end
+    if ns.autoSkipArmed == target then return end
+    ns.autoSkipArmed = target
+    local delay = ns.db.autoSkipDelay or 60
+    ns.autoSkipAt = GetTime() + delay
+    C_Timer.After(delay, function()
+        if ns.db and ns.db.autoSkip and ns.pendingStep and
+            ns.pendingStep == target and ns.autoSkipArmed == target then
+            ns.autoSkipArmed = nil
+            ns.Print("auto-skipping the wait (%ds passed).", delay)
+            ns.SkipWait()
+        end
+    end)
 end
 
 -- Is this partner far enough along for us to start step `targetIdx`?
@@ -319,6 +339,7 @@ function ns.OnBlocked(target, waitingOn)
                  (RXPCData and RXPCData.currentStep) or (target - 1),
                  table.concat(waitingOn, ", "))
     end
+    ns.ArmAutoSkip(target)
     ns.UpdateUI()
 end
 
@@ -359,6 +380,7 @@ local function ShowHelp()
     print("  |cFFFFCC00/rxpm unsync <name>|r - stop syncing with a player (no name = everyone)")
     print("  |cFFFFCC00/rxpm lock|r - toggle the step lock (wait for partners before advancing)")
     print("  |cFFFFCC00/rxpm skip|r - stop waiting and advance to the next step now")
+    print("  |cFFFFCC00/rxpm autoskip on|off|<seconds>|r - release held waits automatically (default 60s)")
     print("  |cFFFFCC00/rxpm status|r - print what your partners are doing")
 end
 
@@ -431,6 +453,28 @@ SlashCmdList["RXPMULTI"] = function(input)
         if not ns.SkipWait() then
             ns.Print("nothing to skip - you aren't waiting on anyone.")
         end
+    elseif cmd == "autoskip" then
+        local arg = rest:gsub("%s+", ""):lower()
+        local secs = tonumber(arg)
+        if arg == "off" then
+            ns.db.autoSkip = false
+            ns.autoSkipArmed = nil
+            ns.Print("auto-skip |cFFFF6666OFF|r - waits hold until released or skipped.")
+        elseif secs and secs >= 5 then
+            ns.db.autoSkip = true
+            ns.db.autoSkipDelay = math.floor(secs)
+            ns.Print("auto-skip |cFF66FF66ON|r - waits release after %ds.",
+                     ns.db.autoSkipDelay)
+            ns.ArmAutoSkip(ns.pendingStep)
+        elseif arg == "on" or arg == "" then
+            ns.db.autoSkip = true
+            ns.Print("auto-skip |cFF66FF66ON|r - waits release after %ds.",
+                     ns.db.autoSkipDelay or 60)
+            ns.ArmAutoSkip(ns.pendingStep)
+        else
+            ns.Print("usage: /rxpm autoskip on | off | <seconds>")
+        end
+        ns.UpdateUI()
     elseif cmd == "status" then
         ns.PrintStatus()
     else
