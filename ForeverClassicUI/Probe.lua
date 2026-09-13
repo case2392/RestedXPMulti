@@ -93,6 +93,14 @@ function ns.BuildProbe()
     local style = (C_CVar and C_CVar.GetCVar and C_CVar.GetCVar("nameplateStyle")) or
                       (GetCVar and GetCVar("nameplateStyle"))
     line("nameplateStyle cvar: %s", tostring(style))
+    local function cvar(name)
+        return tostring((C_CVar and C_CVar.GetCVar and C_CVar.GetCVar(name)) or
+                            (GetCVar and GetCVar(name)))
+    end
+    line("nameplates shown: enemies=%s friends=%s (V toggles enemies)",
+         cvar("nameplateShowEnemies"), cvar("nameplateShowFriends"))
+    line("nameplateSize=%s nameplateShowAll=%s", cvar("nameplateSize"),
+         cvar("nameplateShowAll"))
     line("Enum.NamePlateStyle.Classic: %s",
          tostring(Enum and Enum.NamePlateStyle and Enum.NamePlateStyle.Classic))
     line("NamePlateDriverFrame: %s", yn(has("NamePlateDriverFrame")))
