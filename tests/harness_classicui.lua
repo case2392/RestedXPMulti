@@ -23,7 +23,7 @@ end
 
 local function Region(kind, init)
     local r = {
-        kind = kind, points = {}, shown = true, alpha = 1, width = 0,
+        kind = kind, anchors = {}, shown = true, alpha = 1, width = 0,
         height = 0, texture = init and init.file, atlas = init and init.atlas
     }
     function r:SetTexture(t) self.texture = t; self.atlas = nil end
@@ -39,9 +39,9 @@ local function Region(kind, init)
     function r:SetHeight(h) self.height = h end
     function r:GetWidth() return self.width end
     function r:GetHeight() return self.height end
-    function r:ClearAllPoints() self.points = {} end
-    function r:SetPoint(...) table.insert(self.points, {...}) end
-    function r:SetAllPoints(rel) self.points = {{"ALL", rel}} end
+    function r:ClearAllPoints() self.anchors = {} end
+    function r:SetPoint(...) table.insert(self.anchors, {...}) end
+    function r:SetAllPoints(rel) self.anchors = {{"ALL", rel}} end
     function r:Show() self.shown = true end
     function r:Hide() self.shown = false end
     function r:IsShown() return self.shown end
@@ -75,6 +75,11 @@ local function Frame(name)
     function f:SetFocus() end
     function f:ClearFocus() end
     function f:HighlightText() end
+    function f:CreateTexture() return Region("Texture") end
+    function f:SetParent(p) self.parent = p end
+    function f:UnregisterAllEvents() self.events = {} end
+    function f:RegisterUnitEvent(e) self.events[e] = true end
+    function f:GetAlpha() return self.alpha end
     return f
 end
 
@@ -235,9 +240,22 @@ local function NewWorld(opts)
     _G.PlayerCastingBarFrame = ModernBar("PlayerCastingBarFrame", opts.classicBars)
     _G.TargetFrameSpellBar = ModernBar("TargetFrameSpellBar", opts.classicBars)
 
+    -- combo points: classic client has Blizzard's ComboFrame only, a
+    -- retail-style client has the modern bar (and keeps a hidden ComboFrame)
+    _G.TargetFrame = Frame("TargetFrame")
+    _G.ComboFrame = Frame("ComboFrame")
+    if not opts.classicBars then
+        _G.RogueComboPointBarFrame = Frame("RogueComboPointBarFrame")
+        _G.RogueComboPointBarFrame.events = {UNIT_POWER_FREQUENT = true}
+    end
+    w.combo = 0
+    _G.GetComboPoints = function() return w.combo end
+    _G.UnitPowerMax = function() return 5 end
+    w.inCombat = opts.inCombat
+
     -- load the addon
     local ns = {}
-    for _, file in ipairs({"Core.lua", "Nameplates.lua", "CastBar.lua", "Probe.lua"}) do
+    for _, file in ipairs({"Core.lua", "Nameplates.lua", "CastBar.lua", "Combo.lua", "Probe.lua"}) do
         local chunk, err = loadfile(root .. "/ClassicUI/" .. file)
         assert(chunk, err)
         chunk("ClassicUI", ns)
@@ -265,6 +283,8 @@ do
     check(w.ns.db.savedNameplateStyle == nil, "era: nothing to restore")
     check(w.ns.modules.castbar.mode == "native", "era: cast bar recognised as classic already")
     check(PlayerCastingBarFrame.lookCalls == 0, "era: cast bar not touched")
+    check(w.ns.modules.combo.mode == "native", "era: combo points left to Blizzard")
+    check(w.ns.modules.combo.frame == nil and ComboFrame.parent == nil, "era: no combo frame built, Blizzard's untouched")
     check(#w.ns.errors == 0, "era: no errors")
 end
 
@@ -351,7 +371,59 @@ do
     check(text:find("Nameplate-Border: id 130000", 1, true), "probe: lists textures the client has")
     check(text:find("errors recorded", 1, true) and text:find("none", 1, true), "probe: no errors")
     check(Printed("probe window opened"), "probe: told the player what to do")
+    check(text:find("RogueComboPointBarFrame (modern): yes", 1, true) and text:find("mode=restyled", 1, true), "probe: reports combo state")
+
+    -- combo points
+    local combo = w.ns.modules.combo
+    check(combo.mode == "restyled", "retail: classic combo points drawn")
+    local modern = RogueComboPointBarFrame
+    check(modern.shown == false and modern.parent ~= nil and modern.parent.shown == false and next(modern.events) == nil, "retail: modern combo bar parked on a hidden frame")
+    check(ComboFrame.parent ~= nil and ComboFrame.shown == false, "retail: Blizzard's leftover ComboFrame parked too")
+    local cf = combo.frame
+    check(cf ~= nil and cf.shown == false and #cf.points == 5, "retail: our five-dot frame exists, hidden")
+    check(cf.width == 256 and cf.height == 32, "retail: frame is classic size")
+    local function LastAnchor(region) return region.anchors[#region.anchors] end
+    local a1, a5 = LastAnchor(cf.points[1]), LastAnchor(cf.points[5])
+    check(a1[4] == 0 and a1[5] == 0 and a5[4] == 13 and a5[5] == -40, "retail: dots follow the classic arc offsets")
+    local fa = LastAnchor(cf)
+    check(fa[2] == TargetFrame and fa[4] == -26 and fa[5] == -13, "retail: frame anchored to the target frame at the classic offset")
+    check(cf.points[1].Highlight.alpha == 0, "retail: dots start unlit")
+    w.combo = 3
+    cf:Fire("UNIT_POWER_FREQUENT", "player")
+    check(cf.shown == true and cf.alpha == 1, "retail: frame shows with points")
+    check(cf.points[1].Highlight.alpha == 1 and cf.points[3].Highlight.alpha == 1 and cf.points[4].Highlight.alpha == 0, "retail: three dots lit, two dark")
+    cf:Fire("UNIT_POWER_FREQUENT", "target")
+    check(cf.points[3].Highlight.alpha == 1, "retail: other units' power ignored")
+    w.combo = 5
+    cf:Fire("UNIT_POWER_FREQUENT", "player")
+    check(cf.points[5].Highlight.alpha == 1, "retail: all five lit")
+    w.combo = 0
+    cf:Fire("PLAYER_TARGET_CHANGED")
+    check(cf.shown == false and cf.points[5].Highlight.alpha == 0, "retail: hidden and cleared when points drop to zero")
+
+    -- modern target frame gets the retail offset, nudged by the offset command
+    TargetFrame.TargetFrameContainer = {}
+    w.slash("combo offset 5 -3")
+    check(w.ns.db.comboOffset.x == 5 and w.ns.db.comboOffset.y == -3, "combo offset saved")
+    fa = LastAnchor(cf)
+    check(fa[4] == -44 + 5 and fa[5] == -9 - 3, "combo offset applied on top of the modern-frame anchor")
+    check(Printed("offset set to 5, -3"), "combo offset acknowledged")
+    w.slash("combo offset")
+    check(w.ns.db.comboOffset == nil and Printed("offset reset"), "combo offset reset")
     check(#w.ns.errors == 0, "retail: no errors")
+end
+
+--------------------------------------------------------------------------
+-- 3b. Retail-style client logging in during combat: parking is deferred
+--------------------------------------------------------------------------
+do
+    local w = NewWorld({style = "0", maxStyle = 5, inCombat = true})
+    local modern = RogueComboPointBarFrame
+    check(modern.parent == nil and modern.shown == true, "combat: protected bar left alone in combat")
+    w.inCombat = false
+    w.ns.modules.combo.frame:Fire("PLAYER_REGEN_ENABLED")
+    check(modern.parent ~= nil and modern.shown == false, "combat: bar parked once combat ends")
+    check(#w.ns.errors == 0, "combat: no errors")
 end
 
 --------------------------------------------------------------------------
@@ -373,6 +445,11 @@ do
     -- nameplates force uses the override even though the cvar works
     w.slash("nameplates force")
     check(w.ns.modules.nameplates.mode == "override" and NamePlateSetupOptions.useClassicHealthBar == true, "force applies the override")
+
+    -- combo force on a classic client swaps Blizzard's frame for ours
+    w.slash("combo force")
+    check(Printed("classic combo points drawn"), "combo force acknowledged")
+    check(w.ns.modules.combo.frame ~= nil and ComboFrame.parent ~= nil, "combo force builds ours and parks Blizzard's")
 end
 
 do

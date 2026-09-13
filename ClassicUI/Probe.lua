@@ -20,6 +20,7 @@ local CLASSIC_TEXTURES = {
     "Interface\\CastingBar\\UI-CastingBar-Flash-Small",
     "Interface\\CastingBar\\UI-CastingBar-Spark",
     "Interface\\CastingBar\\UI-CastingBar-Small-Shield",
+    "Interface\\ComboFrame\\ComboPoint",
     "Interface\\TargetingFrame\\UI-TargetingFrame",
     "Interface\\TargetingFrame\\UI-TargetingFrame-Rare",
     "Interface\\Minimap\\UI-Minimap-Border",
@@ -129,6 +130,18 @@ function ns.BuildProbe()
          yn(has("TargetFrameSpellBar")), yn(has("FocusFrameSpellBar")))
     local cb = ns.modules.castbar
     line("module: mode=%s", tostring(cb and cb.mode))
+
+    line("")
+    line("-- combo points")
+    line("ComboFrame (classic): %s  RogueComboPointBarFrame (modern): %s  DruidComboPointBarFrame: %s",
+         yn(has("ComboFrame")), yn(has("RogueComboPointBarFrame")),
+         yn(has("DruidComboPointBarFrame")))
+    line("GetComboPoints: %s  UnitPower: %s  comboPointLocation cvar: %s",
+         yn(GetComboPoints), yn(UnitPower),
+         tostring((C_CVar and C_CVar.GetCVar and C_CVar.GetCVar("comboPointLocation")) or
+                      (GetCVar and GetCVar("comboPointLocation"))))
+    local combo = ns.modules.combo
+    line("module: mode=%s", tostring(combo and combo.mode))
 
     line("")
     line("-- other frames (for later phases)")

@@ -1,7 +1,7 @@
 ## Interface: 11509
 ## Interface-Classic: 11509
 ## Title: Classic UI
-## Notes: Brings back the classic-look nameplates and cast bars on World of Warcraft Forever (works on Classic Era too)
+## Notes: Brings back the classic-look nameplates, cast bars and combo points on World of Warcraft Forever (works on Classic Era too)
 ## Author: case2392
 ## Version: 0.1.0
 ## SavedVariables: ClassicUIDB
@@ -10,4 +10,5 @@
 Core.lua
 Nameplates.lua
 CastBar.lua
+Combo.lua
 Probe.lua

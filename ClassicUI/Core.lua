@@ -12,7 +12,8 @@ ns.errors = {}
 
 local DEFAULTS = {
     nameplates = true,
-    castbar = true
+    castbar = true,
+    combo = true
 }
 
 function ns.Print(fmt, ...)
@@ -93,6 +94,9 @@ local function PrintHelp()
     ns.Print("  /cui nameplates force - force the Lua fallback (testing)")
     ns.Print("  /cui castbar on|off - classic-look cast bars")
     ns.Print("  /cui castbar force - re-skin the cast bars now (testing)")
+    ns.Print("  /cui combo on|off - classic combo points on the target frame")
+    ns.Print("  /cui combo offset <x> <y> - nudge the combo points (no numbers = reset)")
+    ns.Print("  /cui combo force - draw the classic combo points now (testing)")
     ns.Print("  /cui probe - client report to copy and send for support")
 end
 
@@ -117,6 +121,8 @@ function ns.HandleSlash(input)
             ns.Print("%s off.", cmd)
         elseif arg == "force" and mod.Force then
             ns.SafeCall(cmd .. " force", mod.Force, mod)
+        elseif arg ~= "" and mod.Command and mod:Command(arg) then
+            -- handled by the module
         else
             ns.Print("%s: %s", cmd, mod.Status and mod:Status() or "")
         end

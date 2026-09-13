@@ -1,6 +1,6 @@
 # Classic UI
 
-Brings the classic-look **nameplates** and **cast bars** back on
+Brings the classic-look **nameplates**, **cast bars** and **combo points** back on
 *World of Warcraft Forever* (and runs harmlessly on Classic Era, where it is
 also testable today).
 
@@ -18,6 +18,12 @@ also testable today).
   uninterruptible casts) and Blizzard's own code is switched to its classic
   behaviour (yellow/green/red fill colours, static spark). Clients that
   already draw the classic bar are left alone.
+- **Combo points** — the five red dots arcing down the right side of the
+  target frame, with the classic highlight fade and shine (same art, offsets
+  and timings as the old ComboFrame). Retail-style clients draw combo points
+  as a pip bar under the player frame instead; that bar (rogue and druid)
+  is parked on a hidden frame, out of combat, and the dots take over.
+  Classic clients that still draw the original are left alone.
 - **Probe** — `/cui probe` opens a copyable report of everything the addon
   depends on: client build and toc number, which Blizzard UI pieces are
   loaded, nameplate style support, cast bar art, whether the classic textures
@@ -36,6 +42,9 @@ takes the other parts down.
 | `/cui nameplates force` | Force the Lua fallback even if the option exists (testing) |
 | `/cui castbar on\|off` | Classic-look cast bars (`/reload` after off) |
 | `/cui castbar force` | Re-skin the cast bars right now (testing) |
+| `/cui combo on\|off` | Classic combo points on the target frame (`/reload` after off) |
+| `/cui combo offset <x> <y>` | Nudge the dots if the target frame art differs (no numbers = reset) |
+| `/cui combo force` | Draw the classic combo points right now, replacing Blizzard's (testing) |
 | `/cui probe` | Client report to copy and send for support |
 
 ## Testing on Classic Era today
@@ -47,7 +56,11 @@ takes the other parts down.
    that hides the option.
 3. `/cui castbar force` — the cast bars should look unchanged (they are
    already classic on Era); the point is that the re-skin path runs clean.
-4. `/cui probe` — the report should list every classic texture with an id and
+4. On a rogue: `/cui combo force`, then build combo points on a target. The
+   dots should look identical to Blizzard's (it is the same art and offsets;
+   the point is that our copy drives correctly). `/cui combo offset 0 0`
+   nudges them if they sit wrong.
+5. `/cui probe` — the report should list every classic texture with an id and
    "none" under errors.
 
 ## When the Forever beta opens
