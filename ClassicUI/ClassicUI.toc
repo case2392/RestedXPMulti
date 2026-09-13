@@ -1,0 +1,13 @@
+## Interface: 11509
+## Interface-Classic: 11509
+## Title: Classic UI
+## Notes: Brings back the classic-look nameplates and cast bars on World of Warcraft Forever (works on Classic Era too)
+## Author: case2392
+## Version: 0.1.0
+## SavedVariables: ClassicUIDB
+## X-Forever: Interface number above is Classic Era's. Run /cui probe on the Forever beta and add its "toc" number to the Interface line.
+
+Core.lua
+Nameplates.lua
+CastBar.lua
+Probe.lua
