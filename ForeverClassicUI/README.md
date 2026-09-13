@@ -1,4 +1,4 @@
-# Classic UI
+# Forever Classic UI
 
 Brings the classic-look **nameplates**, **cast bars** and **combo points** back on
 *World of Warcraft Forever* (and runs harmlessly on Classic Era, where it is
@@ -67,7 +67,7 @@ takes the other parts down.
 
 Run `/cui probe` on the beta and send the report (plus a screenshot of
 anything that still looks wrong). The report's `toc` number goes on the
-`## Interface:` line of `ClassicUI.toc`; until then enable *Load out of date
+`## Interface:` line of `ForeverClassicUI.toc`; until then enable *Load out of date
 AddOns* in the AddOns list so the game loads it.
 
 ## Offline tests

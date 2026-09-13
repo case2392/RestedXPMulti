@@ -1,4 +1,4 @@
--- Classic UI - cast bars
+-- Forever Classic UI - cast bars
 --
 -- The player cast bar and the target's spell bar share one Lua mixin on every
 -- client; only the XML art differs. Classic clients build them from the old

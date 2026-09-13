@@ -1,4 +1,4 @@
--- Classic UI - nameplates
+-- Forever Classic UI - nameplates
 --
 -- Blizzard's current nameplate code (shared by Classic Era, the newer Classic
 -- branch and retail) contains a complete "Classic" style: the old rounded

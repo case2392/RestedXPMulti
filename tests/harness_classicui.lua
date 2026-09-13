@@ -1,4 +1,4 @@
--- Offline harness for the Classic UI addon (Lua 5.1, no game needed).
+-- Offline harness for the Forever Classic UI addon (Lua 5.1, no game needed).
 --   lua5.1 tests/harness_classicui.lua .
 -- Stubs just enough of the WoW API to load the addon and drives it through
 -- the two client shapes it has to cope with: a Classic client that already
@@ -256,13 +256,13 @@ local function NewWorld(opts)
     -- load the addon
     local ns = {}
     for _, file in ipairs({"Core.lua", "Nameplates.lua", "CastBar.lua", "Combo.lua", "Probe.lua"}) do
-        local chunk, err = loadfile(root .. "/ClassicUI/" .. file)
+        local chunk, err = loadfile(root .. "/ForeverClassicUI/" .. file)
         assert(chunk, err)
-        chunk("ClassicUI", ns)
+        chunk("ForeverClassicUI", ns)
     end
     w.ns = ns
     -- login
-    ns.eventFrame:Fire("ADDON_LOADED", "ClassicUI")
+    ns.eventFrame:Fire("ADDON_LOADED", "ForeverClassicUI")
     ns.eventFrame:Fire("PLAYER_LOGIN")
     w.slash = function(s) SlashCmdList["CLASSICUI"](s) end
     return w
@@ -479,5 +479,5 @@ do
     check(Printed("could not restyle"), "no driver: asks for a probe")
 end
 
-realPrint(("Classic UI harness: %d passed, %d failed"):format(passed, failed))
+realPrint(("Forever Classic UI harness: %d passed, %d failed"):format(passed, failed))
 os.exit(failed == 0 and 0 or 1)

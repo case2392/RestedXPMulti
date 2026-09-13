@@ -1,4 +1,4 @@
--- Classic UI - /cui probe
+-- Forever Classic UI - /cui probe
 -- Builds a plain-text report of everything that decides how this addon has
 -- to behave on a given client (build, which Blizzard UI pieces are loaded,
 -- nameplate style support, cast bar art, whether the classic textures still
@@ -63,7 +63,7 @@ function ns.BuildProbe()
         out[#out + 1] = fmt
     end
 
-    line("Classic UI %s probe", ns.VERSION)
+    line("Forever Classic UI %s probe", ns.VERSION)
     if GetBuildInfo then
         local version, build, date, toc = GetBuildInfo()
         line("client: version %s build %s (%s) toc %s", tostring(version),
@@ -186,7 +186,7 @@ end
 local probeFrame
 
 local function CreateProbeFrame()
-    local f = CreateFrame("Frame", "ClassicUIProbeFrame", UIParent,
+    local f = CreateFrame("Frame", "ForeverClassicUIProbeFrame", UIParent,
                           "BackdropTemplate")
     f:SetSize(620, 440)
     f:SetPoint("CENTER")
@@ -207,17 +207,17 @@ local function CreateProbeFrame()
 
     local title = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     title:SetPoint("TOP", 0, -16)
-    title:SetText("Classic UI probe - Ctrl+A, Ctrl+C, then paste it to me")
+    title:SetText("Forever Classic UI probe - Ctrl+A, Ctrl+C, then paste it to me")
 
     local close = CreateFrame("Button", nil, f, "UIPanelCloseButton")
     close:SetPoint("TOPRIGHT", -6, -6)
 
-    local scroll = CreateFrame("ScrollFrame", "ClassicUIProbeScroll", f,
+    local scroll = CreateFrame("ScrollFrame", "ForeverClassicUIProbeScroll", f,
                                "UIPanelScrollFrameTemplate")
     scroll:SetPoint("TOPLEFT", 20, -40)
     scroll:SetPoint("BOTTOMRIGHT", -40, 20)
 
-    local edit = CreateFrame("EditBox", "ClassicUIProbeEdit", scroll)
+    local edit = CreateFrame("EditBox", "ForeverClassicUIProbeEdit", scroll)
     edit:SetMultiLine(true)
     edit:SetAutoFocus(false)
     edit:SetFontObject("ChatFontNormal")

@@ -1,4 +1,4 @@
--- Classic UI - core
+-- Forever Classic UI - core
 -- Small module loader + saved settings + /cui slash command. Every module
 -- runs inside pcall so one thing breaking on a new client build never takes
 -- the rest of the addon down; errors are collected for /cui probe.
@@ -19,7 +19,7 @@ local DEFAULTS = {
 function ns.Print(fmt, ...)
     local msg = fmt
     if select("#", ...) > 0 then msg = fmt:format(...) end
-    print("|cFF66CCFFClassic UI|r: " .. msg)
+    print("|cFF66CCFFForever Classic UI|r: " .. msg)
 end
 
 function ns.RegisterModule(name, mod)
@@ -54,11 +54,11 @@ local function DisableModule(name)
 end
 
 function ns.InitDB()
-    ClassicUIDB = ClassicUIDB or {}
+    ForeverClassicUIDB = ForeverClassicUIDB or {}
     for k, v in pairs(DEFAULTS) do
-        if ClassicUIDB[k] == nil then ClassicUIDB[k] = v end
+        if ForeverClassicUIDB[k] == nil then ForeverClassicUIDB[k] = v end
     end
-    ns.db = ClassicUIDB
+    ns.db = ForeverClassicUIDB
 end
 
 function ns.OnLogin()
@@ -151,8 +151,8 @@ end
 
 if SlashCmdList then
     SLASH_CLASSICUI1 = "/cui"
-    SLASH_CLASSICUI2 = "/classicui"
+    SLASH_CLASSICUI2 = "/fcui"
     SlashCmdList["CLASSICUI"] = ns.HandleSlash
 end
 
-_G.ClassicUI = ns
+_G.ForeverClassicUI = ns

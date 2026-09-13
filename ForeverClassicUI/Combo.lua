@@ -1,4 +1,4 @@
--- Classic UI - combo points
+-- Forever Classic UI - combo points
 --
 -- Classic draws combo points as five red dots arcing down the right side of
 -- the target frame (Interface\ComboFrame\ComboPoint, with a highlight that
@@ -169,7 +169,7 @@ end
 
 local function Build()
     if M.frame then return M.frame end
-    local f = CreateFrame("Frame", "ClassicUIComboFrame", UIParent)
+    local f = CreateFrame("Frame", "ForeverClassicUIComboFrame", UIParent)
     f:SetSize(256, 32)
     f:SetFrameStrata("MEDIUM")
     f:SetAlpha(0)
