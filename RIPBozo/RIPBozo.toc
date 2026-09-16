@@ -1,0 +1,9 @@
+## Interface: 11509
+## Interface-Classic: 11509
+## Title: RIP Bozo
+## Notes: Hardcore death roasts. Whispers a random "RIPBOZO" line to guildmates, friends and party members when they die; roasts every death in your own chat; /rip to roast on demand.
+## Author: case2392
+## Version: 1.0.0
+## SavedVariables: RIPBozoDB
+
+RIPBozo.lua
