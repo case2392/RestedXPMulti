@@ -860,6 +860,14 @@ do
     -- options panel
     local panel = w.ns.optionsPanel
     check(panel ~= nil and panel.checks.unitframes ~= nil and panel.checks.minimap ~= nil, "forever: options panel lists every part")
+    panel.deselectAll:Click()
+    local allOff = true
+    for _, key in ipairs(w.ns.moduleOrder) do if w.ns.db[key] ~= false then allOff = false end end
+    check(allOff and w.ns.modules.unitframes.mode == "off" and panel.checks.minimap.checked == false, "forever: Deselect all switches every part off and unticks the boxes")
+    panel.selectAll:Click()
+    local allOn = true
+    for _, key in ipairs(w.ns.moduleOrder) do if w.ns.db[key] ~= true then allOn = false end end
+    check(allOn and w.ns.modules.unitframes.mode == "restyled" and panel.checks.minimap.checked == true, "forever: Select all switches every part back on")
     panel.Refresh()
     check(panel.checks.nameplates.checked == true, "forever: panel reflects settings")
     panel.checks.minimap:Click()

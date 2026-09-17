@@ -7,13 +7,25 @@ local LABELS = {
     nameplates = "Classic nameplates (rounded border, level in the border, small cast bar)",
     castbar = "Classic cast bars (player and target)",
     combo = "Classic combo points on the target frame",
-    unitframes = "Classic player and target frames",
+    unitframes = "Classic player, target and pet frames",
     actionbars = "Classic main action bar art (stone bar under the buttons, gryphons)",
     minimap = "Classic round minimap with the ring border",
     tracker = "Plain quest tracker (retail header boxes hidden)"
 }
 
 local panel
+
+-- switch one part on or off: saved setting + module enable/disable
+local function SetPart(key, on)
+    if ns.db[key] == on then return end
+    ns.db[key] = on
+    local mod = ns.modules[key]
+    if on then
+        if mod and mod.Enable then ns.SafeCall(key, mod.Enable, mod) end
+    else
+        if mod and mod.Disable then ns.SafeCall(key, mod.Disable, mod) end
+    end
+end
 
 local function MakeCheck(parent, y, key)
     local cb = CreateFrame("CheckButton", nil, parent, "UICheckButtonTemplate")
@@ -24,17 +36,22 @@ local function MakeCheck(parent, y, key)
     label:SetText(LABELS[key] or key)
     cb.key = key
     cb:SetScript("OnClick", function(self)
-        local on = self:GetChecked() and true or false
-        ns.db[self.key] = on
-        local mod = ns.modules[self.key]
-        if on then
-            if mod and mod.Enable then ns.SafeCall(self.key, mod.Enable, mod) end
-        else
-            if mod and mod.Disable then ns.SafeCall(self.key, mod.Disable, mod) end
-        end
+        SetPart(self.key, self:GetChecked() and true or false)
         if panel and panel.RefreshStatus then panel.RefreshStatus() end
     end)
     return cb
+end
+
+local function MakeAllButton(parent, anchor, text, on)
+    local b = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
+    b:SetSize(110, 22)
+    b:SetText(text)
+    b:SetScript("OnClick", function()
+        for _, key in ipairs(ns.moduleOrder) do SetPart(key, on) end
+        if panel and panel.Refresh then panel.Refresh() end
+    end)
+    if anchor then b:SetPoint("LEFT", anchor, "RIGHT", 6, 0) end
+    return b
 end
 
 function ns.BuildOptionsPanel()
@@ -49,8 +66,12 @@ function ns.BuildOptionsPanel()
     sub:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -6)
     sub:SetText("Tick what should look classic. Turning something off takes effect after /reload. Slash: /cui")
 
+    panel.selectAll = MakeAllButton(panel, nil, "Select all", true)
+    panel.selectAll:SetPoint("TOPLEFT", sub, "BOTTOMLEFT", 0, -8)
+    panel.deselectAll = MakeAllButton(panel, panel.selectAll, "Deselect all", false)
+
     panel.checks = {}
-    local y = -64
+    local y = -96
     for _, key in ipairs(ns.moduleOrder) do
         panel.checks[key] = MakeCheck(panel, y, key)
         y = y - 30

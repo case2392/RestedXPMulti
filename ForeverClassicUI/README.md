@@ -3,7 +3,7 @@
 Brings the classic look back on *World of Warcraft Forever*: nameplates,
 cast bars, combo points, player and target frames, the main action bar art
 and the minimap. Every part has its own switch under Options > AddOns >
-Forever Classic UI. On Classic Era it recognises the classic look is already
+Classic UI for Forever, with Select all / Deselect all buttons. On Classic Era it recognises the classic look is already
 there and does nothing, which makes it safe to test today.
 
 Forever runs the retail UI engine with a "Camelot" flavor on top (that is
