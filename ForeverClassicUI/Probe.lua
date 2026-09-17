@@ -284,60 +284,86 @@ local function KeyOf(parent, child)
     end
 end
 
+-- secret values (Forever, retail) cannot be formatted or concatenated;
+-- every piece is built in its own pcall and replaced by "<secret>" on failure
+local function IsSecret(v)
+    return issecretvalue ~= nil and issecretvalue(v)
+end
+
+local function Piece(fn)
+    local ok, r = pcall(fn)
+    if not ok then return "<secret>" end
+    if r == nil then return nil end
+    if IsSecret(r) then return "<secret>" end
+    return r
+end
+
 local function Describe(obj, label)
     local parts = {label}
-    local kind = obj.GetObjectType and obj:GetObjectType() or "?"
-    parts[#parts + 1] = kind
+    local function add(fn)
+        local v = Piece(fn)
+        if v ~= nil then parts[#parts + 1] = tostring(v) end
+    end
+    local kind = Piece(function() return obj.GetObjectType and obj:GetObjectType() end) or "?"
+    parts[#parts + 1] = tostring(kind)
     if obj.GetSize then
-        local w, h = obj:GetSize()
-        parts[#parts + 1] = ("%dx%d"):format(math.floor((w or 0) + 0.5), math.floor((h or 0) + 0.5))
+        add(function()
+            local w, h = obj:GetSize()
+            return ("%dx%d"):format(math.floor((w or 0) + 0.5), math.floor((h or 0) + 0.5))
+        end)
     end
     if obj.GetPoint then
-        local ok, point, rel, relPoint, x, y = pcall(obj.GetPoint, obj, 1)
-        if ok and point then
+        add(function()
+            local point, rel, relPoint, x, y = obj:GetPoint(1)
+            if not point then return "no-anchor" end
             local relName = rel and rel.GetName and rel:GetName() or (rel and "parent") or "nil"
-            parts[#parts + 1] = ("%s>%s.%s %+.1f,%+.1f"):format(point, relName, tostring(relPoint), x or 0, y or 0)
-        else
-            parts[#parts + 1] = "no-anchor"
-        end
+            return ("%s>%s.%s %+.1f,%+.1f"):format(point, relName, tostring(relPoint), x or 0, y or 0)
+        end)
     end
-    if obj.GetAtlas and obj:GetAtlas() then
-        parts[#parts + 1] = "atlas=" .. tostring(obj:GetAtlas())
-    elseif obj.GetTexture and obj:GetTexture() then
-        parts[#parts + 1] = "tex=" .. tostring(obj:GetTexture())
-    end
+    add(function()
+        if obj.GetAtlas and obj:GetAtlas() then return "atlas=" .. tostring(obj:GetAtlas()) end
+        if obj.GetTexture and obj:GetTexture() then return "tex=" .. tostring(obj:GetTexture()) end
+    end)
     if obj.GetVertexColor then
-        local ok, r, g, b, a = pcall(obj.GetVertexColor, obj)
-        if ok and r and (r < 0.99 or g < 0.99 or b < 0.99) then
-            parts[#parts + 1] = ("rgb=%.2f,%.2f,%.2f"):format(r, g, b)
-        end
+        add(function()
+            local r, g, b = obj:GetVertexColor()
+            if r and (r < 0.99 or g < 0.99 or b < 0.99) then
+                return ("rgb=%.2f,%.2f,%.2f"):format(r, g, b)
+            end
+        end)
     end
     if obj.GetAlpha then
-        local a = obj:GetAlpha()
-        if a and a < 0.99 then parts[#parts + 1] = ("alpha=%.2f"):format(a) end
+        add(function()
+            local a = obj:GetAlpha()
+            if a and a < 0.99 then return ("alpha=%.2f"):format(a) end
+        end)
     end
     if obj.GetDrawLayer then
-        local ok, layer = pcall(obj.GetDrawLayer, obj)
-        if ok and layer then parts[#parts + 1] = tostring(layer) end
+        add(function() local layer = obj:GetDrawLayer(); return layer and tostring(layer) end)
     end
-    if kind == "FontString" and obj.GetText and obj:GetText() then
-        parts[#parts + 1] = ("text=%q"):format(tostring(obj:GetText()))
+    if kind == "FontString" and obj.GetText then
+        add(function() local t = obj:GetText(); return t and ("text=%q"):format(tostring(t)) end)
     end
-    if kind == "StatusBar" and obj.GetStatusBarTexture then
-        local fill = obj:GetStatusBarTexture()
-        if fill then
-            local ok, r, g, b = pcall(fill.GetVertexColor, fill)
-            if ok and r then parts[#parts + 1] = ("fill=%.2f,%.2f,%.2f"):format(r, g, b) end
-            if fill.GetAtlas and fill:GetAtlas() then
-                parts[#parts + 1] = "filltex=" .. tostring(fill:GetAtlas())
-            elseif fill.GetTexture then
-                parts[#parts + 1] = "filltex=" .. tostring(fill:GetTexture())
-            end
+    if kind == "StatusBar" then
+        if obj.GetStatusBarTexture then
+            add(function()
+                local fill = obj:GetStatusBarTexture()
+                if not fill then return end
+                local r, g, b = fill:GetVertexColor()
+                local tex = (fill.GetAtlas and fill:GetAtlas()) or (fill.GetTexture and fill:GetTexture())
+                return ("fill=%.2f,%.2f,%.2f filltex=%s"):format(r or 1, g or 1, b or 1, tostring(tex))
+            end)
         end
         if obj.GetMinMaxValues and obj.GetValue then
-            local lo, hi = obj:GetMinMaxValues()
-            parts[#parts + 1] = ("value=%s/%s..%s"):format(tostring(obj:GetValue()), tostring(lo), tostring(hi))
+            add(function()
+                local lo, hi = obj:GetMinMaxValues()
+                return ("value=%s/%s..%s"):format(tostring(obj:GetValue()), tostring(lo), tostring(hi))
+            end)
         end
+    end
+    -- a secret string can slip through tostring(); drop it rather than fail
+    for i = #parts, 1, -1 do
+        if IsSecret(parts[i]) then parts[i] = "<secret>" end
     end
     return table.concat(parts, "  ")
 end

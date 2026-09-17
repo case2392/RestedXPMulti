@@ -16,19 +16,21 @@ from Classic Era's own UI code.
 - **Nameplates** — the old rounded nameplate border with the level in it,
   the name centered above the bar, and the small classic cast bar with its
   spark. Blizzard's nameplate code still contains this whole style (it is what
-  Classic Era draws); the addon selects it. On clients that expose it as an
-  option (`nameplateStyle` = Classic) that is all it does. On clients that hide
-  the option and refuse the value, it hooks Blizzard's nameplate driver and
-  forces the classic layout values through the same code path. Forever
-  accepts the value but hides the option, so the addon also hides Forever's
-  extra level badge next to every plate (the classic border has its own level
-  slot) and puts the classic style back when Forever's Options > Nameplates
-  page writes one of its own styles over it.
+  Classic Era draws); it is selected by the `nameplateStyle` CVar. On Classic
+  Era the addon just sets it. **On Forever you type `/console nameplateStyle 6`
+  once** (the addon tells you at login): Forever protects unit health with
+  "secret values", and a CVar set by an addon taints Blizzard's nameplate
+  code so every plate errors out half-built. The value is saved with your
+  character. The addon then hides Forever's extra level badge next to each
+  plate with a plain alpha change (the classic border has its own level
+  slot) and warns you if Forever's Options > Nameplates page overwrites the
+  style.
 - **Cast bars** — the player cast bar and the target's spell bar get the
   classic art back (`UI-CastingBar-Border`, `-Flash`, `-Spark`, the shield for
-  uninterruptible casts) and Blizzard's own code is switched to its classic
-  behaviour (yellow/green/red fill colours, static spark). Clients that
-  already draw the classic bar are left alone.
+  uninterruptible casts, yellow/green fill). Only widget calls and
+  `hooksecurefunc` are used, never writes into the bar's Lua tables, because
+  Forever's enemy cast times are secret values. Clients that already draw the
+  classic bar are left alone.
 - **Combo points** — the five red dots arcing down the right side of the
   target frame, with the classic highlight fade and shine (same art, offsets
   and timings as the old ComboFrame). Retail-style clients draw combo points
@@ -59,7 +61,7 @@ takes the other parts down.
 |---|---|
 | `/cui` | Status of each part and how it was applied |
 | `/cui nameplates on\|off` | Classic-look nameplates (off restores your previous style) |
-| `/cui nameplates size small\|medium\|large\|xl\|huge` | Nameplate size (Blizzard's `nameplateSize`) |
+| `/cui nameplates size small\|medium\|large\|xl\|huge` | Nameplate size (Blizzard's `nameplateSize`; on Forever it prints the `/console` command for you to type) |
 | `/cui nameplates force` | Force the Lua fallback even if the option exists (testing) |
 | `/cui castbar on\|off` | Classic-look cast bars (`/reload` after off) |
 | `/cui castbar force` | Re-skin the cast bars right now (testing) |
@@ -89,10 +91,20 @@ takes the other parts down.
 
 ## On the Forever beta
 
-Confirmed on 1.60.1 (build 69893, toc 16001): every part loads without
-errors. Nameplates take the CVar path, cast bars, unit frames, action bar and
-minimap are re-skinned, combo points use Blizzard's classic frame. For
-anything that still looks wrong, send `/cui probe`, a screenshot, and
+Confirmed on 1.60.1 (build 69893, toc 16001). After installing, type
+`/console nameplateStyle 6` once for the classic nameplates. Cast bars, unit
+frames, action bar and minimap are re-skinned, combo points use Blizzard's
+classic frame.
+
+Rule for every part on this client: no Lua field writes into Blizzard's
+frames and no calls into Blizzard's nameplate/unit-frame functions from addon
+code. Forever wraps unit health, cast times and similar in "secret values"
+that only untainted Blizzard code may compare; one tainted field and the
+frame errors on its next update. Textures, anchors, sizes and alpha are set
+with widget calls, and `hooksecurefunc` re-applies them after Blizzard's own
+code runs.
+
+For anything that still looks wrong, send `/cui probe`, a screenshot, and
 `/cui dump <FrameName>` for the frame in question.
 
 ## Offline tests

@@ -3,30 +3,45 @@
 -- The player cast bar and the target's spell bar share one Lua mixin on every
 -- client; only the XML art differs. Classic clients build them from the old
 -- UI-CastingBar-Border / -Flash / -Spark textures and flag the bar with
--- classicStyleCastBar = true. Retail-style clients build the modern
+-- classicStyleCastBar = true. Retail-style clients (Forever) build the modern
 -- atlas-based bar (glow, flakes, text box...) with the flag off.
 --
--- We flip the flag (so Blizzard's own code uses the classic fill colors and
--- static spark), hide the modern-only art, and put the classic textures and
--- anchors back - the same values the classic XML uses.
+-- Forever protects enemy cast times with "secret values", so the bar's Lua
+-- tables must stay untouched: writing the classic flag into the frame would
+-- taint Blizzard's code and make it error on the next enemy cast. Instead the
+-- classic textures and anchors are applied with plain widget calls, the
+-- modern-only art is left without anchors (so it never draws, whatever
+-- Blizzard's animations do to it), and hooksecurefunc re-applies the classic
+-- fill, flash and spark every time Blizzard's modern code sets its atlases.
 
 local addonName, ns = ...
 
-local M = {mode = "off", bars = {}}
+local M = {mode = "off", bars = {}, hooked = {}}
 
 local ART = "Interface\\CastingBar\\"
+local FILL = "Interface\\TargetingFrame\\UI-StatusBar"
 local MODERN_ONLY = {
     "DropShadow", "TextBorder", "InterruptGlow", "ChargeGlow", "EnergyGlow",
     "Flakes01", "Flakes02", "Flakes03", "BaseGlow", "WispGlow", "Sparkles01",
-    "Sparkles02", "Shine", "StandardGlow", "CraftGlow", "ChannelShadow",
-    "ChargeFlash"
+    "Sparkles02", "Shine", "StandardGlow", "CraftGlow", "CraftingGlow",
+    "ChannelShadow", "ChargeFlash", "ChannelGlow", "StandardFinish"
 }
+local CLASSIC_YELLOW = {1.0, 0.7, 0.0}
+local CLASSIC_GREEN = {0.0, 1.0, 0.0}
 
 local function SetFile(region, path)
     if region and region.SetTexture then
         region:SetTexture(path)
         if region.SetTexCoord then region:SetTexCoord(0, 1, 0, 1) end
     end
+end
+
+-- a region with no anchors has no rectangle and is never drawn
+local function Unanchor(region)
+    if not region then return end
+    if region.ClearAllPoints then region:ClearAllPoints() end
+    if region.SetAlpha then region:SetAlpha(0) end
+    if region.Hide then region:Hide() end
 end
 
 local function IsClassicAlready(bar)
@@ -44,32 +59,53 @@ local function IsClassicAlready(bar)
     return false
 end
 
+-- classic fill: UI-StatusBar coloured by bar type (yellow while casting,
+-- green when full/channeling), the same colours Blizzard's classic path uses
+local function ApplyFill(bar, isFull)
+    if not bar.SetStatusBarTexture then return end
+    local info = CastingBarTypeInfo and bar.barType and CastingBarTypeInfo[bar.barType]
+    local color = isFull and (info and info.classicFullColor) or (info and info.classicFillColor)
+    bar:SetStatusBarTexture(FILL)
+    if color and color.GetRGB then
+        bar:SetStatusBarColor(color:GetRGB())
+    else
+        local c = isFull and CLASSIC_GREEN or CLASSIC_YELLOW
+        bar:SetStatusBarColor(c[1], c[2], c[3])
+    end
+    local fill = bar.GetStatusBarTexture and bar:GetStatusBarTexture()
+    if fill and bar.BorderMask and fill.RemoveMaskTexture then
+        pcall(fill.RemoveMaskTexture, fill, bar.BorderMask)
+    end
+end
+
+local function ApplyFlash(flash)
+    if not flash then return end
+    SetFile(flash, M.flashFile[flash] or ART .. "UI-CastingBar-Flash")
+    if flash.SetVertexColor then flash:SetVertexColor(1.0, 0.7, 0.0) end
+    if flash.SetBlendMode then flash:SetBlendMode("ADD") end
+end
+
+local function ApplySpark(spark)
+    if not spark then return end
+    SetFile(spark, ART .. "UI-CastingBar-Spark")
+    spark:SetSize(32, 32)
+    if spark.SetBlendMode then spark:SetBlendMode("ADD") end
+end
+
+M.flashFile = setmetatable({}, {__mode = "k"})
+
 -- look: "CLASSIC" = big player bar, "UNITFRAME" = small bar under a unit frame
 function M.Restyle(bar, look)
     if not bar then return false end
     local inner = M.restyling
     M.restyling = true
 
-    bar.classicStyleCastBar = true
-    bar.playCastFX = false
-
-    for _, key in ipairs(MODERN_ONLY) do
-        local r = bar[key]
-        if r then
-            if r.Hide then r:Hide() end
-            if r.SetAlpha then r:SetAlpha(0) end
+    for _, key in ipairs(MODERN_ONLY) do Unanchor(bar[key]) end
+    if CastingBarTypeInfo then
+        for _, info in pairs(CastingBarTypeInfo) do
+            if info.sparkFx then Unanchor(bar[info.sparkFx]) end
         end
     end
-
-    -- the modern bar masks its fill to a rounded shape; drop that
-    local fill = bar.GetStatusBarTexture and bar:GetStatusBarTexture()
-    if fill and bar.BorderMask and fill.RemoveMaskTexture then
-        pcall(fill.RemoveMaskTexture, fill, bar.BorderMask)
-    end
-    if bar.SetStatusBarTexture then
-        bar:SetStatusBarTexture("Interface\\TargetingFrame\\UI-StatusBar")
-    end
-    if bar.SetStatusBarColor then bar:SetStatusBarColor(1.0, 0.7, 0.0) end
 
     local bg = bar.Background
     if bg and bg.SetColorTexture then
@@ -102,16 +138,11 @@ function M.Restyle(bar, look)
             shield:SetPoint("TOPRIGHT", bar, "TOPRIGHT", 18, 23)
         end
         if flash then
-            SetFile(flash, ART .. "UI-CastingBar-Flash-Small")
+            M.flashFile[flash] = ART .. "UI-CastingBar-Flash-Small"
             flash:ClearAllPoints()
             flash:SetHeight(56)
             flash:SetPoint("TOPLEFT", bar, "TOPLEFT", -23, 23)
             flash:SetPoint("TOPRIGHT", bar, "TOPRIGHT", 23, 23)
-        end
-        if spark then
-            SetFile(spark, ART .. "UI-CastingBar-Spark")
-            spark:SetSize(32, 32)
-            spark.offsetY = 0
         end
         if text then
             text:ClearAllPoints()
@@ -137,15 +168,10 @@ function M.Restyle(bar, look)
             shield:SetPoint("TOP", bar, "TOP", 0, 28)
         end
         if flash then
-            SetFile(flash, ART .. "UI-CastingBar-Flash")
+            M.flashFile[flash] = ART .. "UI-CastingBar-Flash"
             flash:ClearAllPoints()
             flash:SetSize(256, 64)
             flash:SetPoint("TOP", bar, "TOP", 0, 28)
-        end
-        if spark then
-            SetFile(spark, ART .. "UI-CastingBar-Spark")
-            spark:SetSize(32, 32)
-            spark.offsetY = 2
         end
         if text then
             text:ClearAllPoints()
@@ -156,11 +182,9 @@ function M.Restyle(bar, look)
         end
     end
 
-    if flash then
-        if flash.SetVertexColor then flash:SetVertexColor(1.0, 0.7, 0.0) end
-        if flash.SetBlendMode then flash:SetBlendMode("ADD") end
-    end
-    if spark and spark.SetBlendMode then spark:SetBlendMode("ADD") end
+    ApplyFlash(flash)
+    ApplySpark(spark)
+    ApplyFill(bar, false)
     if icon then
         icon:ClearAllPoints()
         icon:SetSize(18, 18)
@@ -175,15 +199,37 @@ local function Attach(bar, look)
     if not bar then return end
     M.bars[bar] = look
     M.Restyle(bar, look)
-    if hooksecurefunc and not bar.classicUIHooked then
-        bar.classicUIHooked = true
-        -- Blizzard (edit mode, unit frame layout) may re-apply its look
-        -- later; re-skin after it does
-        hooksecurefunc(bar, "SetLook", function(self, newLook)
-            if M.restyling or M.mode == "off" then return end
-            M.Restyle(self, newLook == "UNITFRAME" and "UNITFRAME" or
-                          "CLASSIC")
-        end)
+    if hooksecurefunc and not M.hooked[bar] then
+        M.hooked[bar] = true
+        -- Blizzard (edit mode, unit frame layout) re-applies its look later;
+        -- re-skin after it does
+        if bar.SetLook then
+            hooksecurefunc(bar, "SetLook", function(self, newLook)
+                if M.restyling or M.mode == "off" then return end
+                M.Restyle(self, newLook == "UNITFRAME" and "UNITFRAME" or "CLASSIC")
+            end)
+        end
+        -- every cast: modern fill atlas -> classic fill
+        if bar.UpdateBarFillTexture then
+            hooksecurefunc(bar, "UpdateBarFillTexture", function(self, isFull)
+                if M.mode == "off" then return end
+                ApplyFill(self, isFull)
+            end)
+        end
+        -- finish/interrupt: modern glow atlas on the flash -> classic flash
+        if bar.Flash and bar.Flash.SetAtlas then
+            hooksecurefunc(bar.Flash, "SetAtlas", function(self)
+                if M.mode == "off" then return end
+                ApplyFlash(self)
+            end)
+        end
+        -- each cast: modern pip atlas on the spark -> classic spark
+        if bar.Spark and bar.Spark.SetAtlas then
+            hooksecurefunc(bar.Spark, "SetAtlas", function(self)
+                if M.mode == "off" then return end
+                ApplySpark(self)
+            end)
+        end
     end
 end
 

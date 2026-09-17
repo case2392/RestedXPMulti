@@ -373,6 +373,24 @@ local function NewWorld(opts)
         end
         _G.NamePlateDriverFrame.OnNamePlateAdded = function(self, token) w.added = token end
         _G.NamePlateDriverFrame.GetNamePlateForUnit = function(self, token) return w.plateByToken and w.plateByToken[token] end
+        -- Forever protects unit values: an addon touching the nameplate code path is fatal
+        _G.C_Secrets = {}
+        _G.issecretvalue = function(v) return type(v) == "table" and v.__secret == true end
+        _G.C_NamePlate.GetNamePlates = function() return w.plates end
+        _G.C_NamePlate.GetNamePlateForUnit = function(token) return w.plateByToken and w.plateByToken[token] end
+        _G.CastingBarTypeInfo = {
+            [1] = {filling = "ui-castingbar-filling-standard", full = "ui-castingbar-full-standard", glow = "ui-castingbar-full-glow-standard", sparkFx = "StandardGlow",
+                   classicFillColor = {GetRGB = function() return 1, 0.7, 0 end}, classicFullColor = {GetRGB = function() return 0, 1, 0 end}}
+        }
+        for _, bar in ipairs({PlayerCastingBarFrame, TargetFrameSpellBar}) do
+            bar.barType = 1
+            bar.StandardGlow = Frame("glow"); bar.StandardGlow:SetPoint("CENTER", bar, "CENTER", 0, 0)
+            function bar:UpdateBarFillTexture(isFull)
+                local info = CastingBarTypeInfo[self.barType]
+                self:SetStatusBarTexture(isFull and info.full or info.filling)
+                self:SetStatusBarColor(1, 1, 1)
+            end
+        end
     end
     w.combo = 0
     _G.GetComboPoints = function() return w.combo end
@@ -486,10 +504,10 @@ do
     local cb = w.ns.modules.castbar
     check(cb.mode == "restyled", "retail: cast bars re-skinned")
     local bar = PlayerCastingBarFrame
-    check(bar.classicStyleCastBar == true, "retail: classic flag set so Blizzard code uses classic colors")
+    check(bar.classicStyleCastBar == false and bar.playCastFX == nil, "retail: no Lua fields written into Blizzard's cast bar (taint)")
     check(bar.Border.texture == "Interface\\CastingBar\\UI-CastingBar-Border", "retail: classic border art")
     check(bar.Flash.texture == "Interface\\CastingBar\\UI-CastingBar-Flash", "retail: classic flash art")
-    check(bar.Spark.texture == "Interface\\CastingBar\\UI-CastingBar-Spark" and bar.Spark.offsetY == 2, "retail: classic spark")
+    check(bar.Spark.texture == "Interface\\CastingBar\\UI-CastingBar-Spark" and bar.Spark.offsetY == nil, "retail: classic spark")
     check(bar.width == 195 and bar.height == 13, "retail: classic player bar size")
     check(bar.TextBorder.shown == false and bar.DropShadow.shown == false and bar.StandardGlow.shown == false, "retail: modern art hidden")
     check(bar.fill.texture == "Interface\\TargetingFrame\\UI-StatusBar", "retail: classic fill texture")
@@ -501,7 +519,7 @@ do
 
     -- Blizzard re-applies its look (edit mode) -> we re-skin
     bar:SetLook("CLASSIC")
-    check(bar.classicStyleCastBar == true and bar.Border.texture == "Interface\\CastingBar\\UI-CastingBar-Border", "retail: re-skin after Blizzard SetLook")
+    check(bar.classicStyleCastBar == false and bar.Border.texture == "Interface\\CastingBar\\UI-CastingBar-Border", "retail: re-skin after Blizzard SetLook")
 
     -- probe report
     local text = w.ns.ShowProbe()
@@ -574,29 +592,74 @@ end
 do
     local w = NewWorld({style = "1", maxStyle = 5, noClassicEnum = true, forever = true})
     local np = w.ns.modules.nameplates
-    check(np.mode == "override", "forever: Lua override in use")
-    check(NamePlateSetupOptions.useClassicHealthBar == true and NamePlateSetupOptions.unitNameAnchorStyle == 3, "forever: classic layout forced")
-    check(NamePlateSetupOptions.playerLevelDiffWidth == 28 and NamePlateSetupOptions.playerLevelDiffHeight == 16, "forever: level badge sizes filled so ApplyFrameOptions cannot hit nil")
-    check(w.sizes[#w.sizes][1] == 152, "forever: width read from CLASSIC_NAME_PLATE_WIDTH")
+    -- the addon must not set the CVar or touch Blizzard's option tables here
+    check(np.mode == "console", "forever: waits for the player to type the console command")
+    check(w.cvars.nameplateStyle == "1", "forever: nameplateStyle left alone (an addon SetCVar taints the callback)")
+    check(NamePlateSetupOptions.useClassicHealthBar == false, "forever: Blizzard's option tables untouched")
+    check(Printed("/console nameplateStyle 6"), "forever: console command printed at login")
     for i, p in ipairs(w.plates) do
-        check(p.UnitFrame.PlayerLevelDiffFrame:ShouldDisplay("nameplate1") == false and p.UnitFrame.PlayerLevelDiffFrame.shown == false, "forever: level badge switched off on plate " .. i)
+        check(p.UnitFrame.PlayerLevelDiffFrame.alpha == 1 and p.UnitFrame.anchorsUpdated == 0, "forever: plate " .. i .. " untouched while waiting")
     end
-    -- a plate added later gets the same treatment
+    -- the player types it: the CVar changes, the badge goes invisible
+    printed = {}
+    w.cvars.nameplateStyle = "6"
+    np.watcher:Fire("CVAR_UPDATE", "nameplateStyle", "6")
+    check(np.mode == "cvar" and Printed("classic style on"), "forever: switches to the CVar mode when the style arrives")
+    for i, p in ipairs(w.plates) do
+        check(p.UnitFrame.PlayerLevelDiffFrame.alpha == 0, "forever: level badge invisible on plate " .. i)
+        check(p.UnitFrame.PlayerLevelDiffFrame.forevercuiPatched == nil and p.UnitFrame.PlayerLevelDiffFrame:ShouldDisplay() == true and p.UnitFrame.anchorsUpdated == 0, "forever: plate " .. i .. " Lua tables untouched")
+    end
+    -- a plate added later: only the badge alpha changes
     local late = {ApplyFrameOptions = function() end}
-    local badge = Frame("badge"); badge.shown = true; function badge:ShouldDisplay() return true end
+    local badge = Frame("badge")
     late.UnitFrame = {PlayerLevelDiffFrame = badge, anchorsUpdated = 0}
     function late.UnitFrame:UpdateAnchors() self.anchorsUpdated = self.anchorsUpdated + 1 end
     w.plateByToken = {nameplate9 = late}
-    NamePlateDriverFrame:OnNamePlateAdded("nameplate9")
-    check(badge:ShouldDisplay() == false and late.UnitFrame.anchorsUpdated == 1, "forever: late plate patched and re-laid out")
-    NamePlateDriverFrame:OnNamePlateAdded("nameplate9")
-    check(late.UnitFrame.anchorsUpdated == 1, "forever: already-patched plate not re-laid out again")
+    table.insert(w.plates, late) -- C_NamePlate.GetNamePlates lists it from now on
+    np.watcher:Fire("NAME_PLATE_UNIT_ADDED", "nameplate9")
+    check(badge.alpha == 0 and late.UnitFrame.anchorsUpdated == 0 and badge.ShouldDisplay == nil, "forever: late plate badge hidden by alpha only")
+    -- Forever's settings page writes Thin back: no fighting it, tell the player
+    printed = {}
+    w.cvars.nameplateStyle = "1"
+    np.watcher:Fire("CVAR_UPDATE", "nameplateStyle", "1")
+    check(np.mode == "console" and w.cvars.nameplateStyle == "1", "forever: style change accepted, back to waiting")
+    check(Printed("/console nameplateStyle 6"), "forever: console command printed again")
+    check(badge.alpha == 1 and w.plates[1].UnitFrame.PlayerLevelDiffFrame.alpha == 1, "forever: badges restored while waiting")
+    w.cvars.nameplateStyle = "6"
+    np.watcher:Fire("CVAR_UPDATE", "nameplateStyle", "6")
+    check(np.mode == "cvar" and badge.alpha == 0, "forever: back on when the player types it again")
+    -- size: same rule, tell the player the console command
+    _G.Enum.NamePlateSize.ExtraLarge = 3; _G.Enum.NamePlateSize.Huge = 4
+    printed = {}
+    w.slash("nameplates size large")
+    check(w.cvars.nameplateSize == "1" and Printed("/console nameplateSize 2"), "forever: size command prints the console command instead of setting it")
+    -- the Lua fallback is refused on this client
+    printed = {}
+    w.slash("nameplates force")
+    check(np.mode == "cvar" and NamePlateSetupOptions.useClassicHealthBar == false and Printed("fallback unavailable"), "forever: Lua fallback refused")
+    -- off: badges back, no CVar write
+    w.slash("nameplates off")
+    check(np.mode == "off" and badge.alpha == 1 and w.cvars.nameplateStyle == "6", "forever: off restores badges, leaves the CVar")
+    w.slash("nameplates on")
+    check(np.mode == "cvar" and badge.alpha == 0, "forever: on again")
 
     local combo = w.ns.modules.combo
     check(combo.mode == "native" and combo.enabledBlizzard == true, "forever: Blizzard's classic combo frame used, switched on")
     check(w.cvars.comboPointLocation == "1" and w.comboLoaded == true and ComboFrame:IsEventRegistered("UNIT_POWER_FREQUENT"), "forever: comboPointLocation set to 1 and ComboFrame_OnLoad re-run")
     check(combo.frame == nil, "forever: no duplicate combo frame drawn")
     check(w.ns.modules.castbar.mode == "restyled" and PlayerCastingBarFrame.Border.texture == "Interface\\CastingBar\\UI-CastingBar-Border", "forever: cast bar re-skinned")
+    local pcb = PlayerCastingBarFrame
+    check(pcb.classicStyleCastBar == false and pcb.playCastFX == nil and pcb.Spark.offsetY == nil, "forever: no Lua fields written into Blizzard's cast bar")
+    check(#pcb.TextBorder.anchors == 0 and pcb.TextBorder.alpha == 0 and #pcb.StandardGlow.anchors == 0, "forever: modern-only cast bar art left without anchors")
+    check(pcb.fill.texture == "Interface\\TargetingFrame\\UI-StatusBar" and pcb.barColor[1] == 1 and pcb.barColor[2] == 0.7, "forever: classic yellow fill")
+    pcb:UpdateBarFillTexture(true)
+    check(pcb.fill.texture == "Interface\\TargetingFrame\\UI-StatusBar" and pcb.barColor[2] == 1 and pcb.barColor[1] == 0, "forever: Blizzard's fill atlas replaced by the classic green full fill")
+    pcb.Flash:SetAtlas("ui-castingbar-full-glow-standard")
+    check(pcb.Flash.texture == "Interface\\CastingBar\\UI-CastingBar-Flash" and pcb.Flash.atlas == nil, "forever: flash atlas replaced by the classic flash")
+    pcb.Spark:SetAtlas("ui-castingbar-pip")
+    check(pcb.Spark.texture == "Interface\\CastingBar\\UI-CastingBar-Spark" and pcb.Spark.width == 32, "forever: spark atlas replaced by the classic spark")
+    TargetFrameSpellBar.Flash:SetAtlas("ui-castingbar-full-glow-standard")
+    check(TargetFrameSpellBar.Flash.texture == "Interface\\CastingBar\\UI-CastingBar-Flash-Small", "forever: target bar keeps the small classic flash")
 
     -- unit frames
     local uf = w.ns.modules.unitframes
@@ -641,53 +704,19 @@ do
 end
 
 --------------------------------------------------------------------------
--- 3d. WoW Forever as the beta really behaves: the CVar accepts 6 and the
---     Classic enum exists, but every plate still carries the level badge
---     and the settings page writes its own style back
+-- 3d. WoW Forever with the console command already typed on an earlier
+--     login: straight to the CVar mode, plus the /cui dump diagnostic
 --------------------------------------------------------------------------
 do
-    local w = NewWorld({style = "1", forever = true})
+    local w = NewWorld({style = "6", forever = true})
     local np = w.ns.modules.nameplates
-    check(np.mode == "cvar" and w.cvars.nameplateStyle == "6", "beta: CVar path taken")
+    check(np.mode == "cvar" and w.cvars.nameplateStyle == "6", "beta: CVar mode straight away")
+    check(not Printed("/console nameplateStyle 6"), "beta: no nag when the style is already classic")
     for i, p in ipairs(w.plates) do
-        check(p.UnitFrame.PlayerLevelDiffFrame:ShouldDisplay("nameplate1") == false and p.UnitFrame.PlayerLevelDiffFrame.shown == false, "beta: level badge hidden on plate " .. i .. " in CVar mode")
-        check(p.UnitFrame.anchorsUpdated == 1, "beta: plate " .. i .. " re-laid out without the badge")
+        check(p.UnitFrame.PlayerLevelDiffFrame.alpha == 0 and p.UnitFrame.anchorsUpdated == 0, "beta: badge invisible on plate " .. i .. ", nothing else touched")
     end
-    local late = {ApplyFrameOptions = function() end}
-    local badge = Frame("badge"); badge.shown = true; function badge:ShouldDisplay() return true end
-    late.UnitFrame = {PlayerLevelDiffFrame = badge, anchorsUpdated = 0}
-    function late.UnitFrame:UpdateAnchors() self.anchorsUpdated = self.anchorsUpdated + 1 end
-    w.plateByToken = {nameplate3 = late}
-    NamePlateDriverFrame:OnNamePlateAdded("nameplate3")
-    check(badge:ShouldDisplay() == false and badge.shown == false and late.UnitFrame.anchorsUpdated == 1, "beta: late plate loses the badge in CVar mode")
-
-    -- Options > Nameplates writes "Thin" back: the classic style is restored
-    w.cvars.nameplateStyle = "1"
-    np.watcher:Fire("CVAR_UPDATE", "nameplateStyle", "1")
-    check(w.cvars.nameplateStyle == "6", "beta: style put back after the settings page changed it")
-    check(Printed("kept the classic style"), "beta: user told once why")
-    printed = {}
-    w.cvars.nameplateStyle = "2"
-    np.watcher:Fire("CVAR_UPDATE", "nameplateStyle", "2")
-    check(w.cvars.nameplateStyle == "6" and not Printed("kept the classic style"), "beta: second reset silent")
     np.watcher:Fire("CVAR_UPDATE", "someOtherCVar", "x")
-    check(w.cvars.nameplateStyle == "6", "beta: unrelated CVars ignored")
-
-    -- size command
-    _G.Enum.NamePlateSize.ExtraLarge = 3; _G.Enum.NamePlateSize.Huge = 4
-    w.slash("nameplates size large")
-    check(w.cvars.nameplateSize == "2", "beta: /cui nameplates size large sets nameplateSize")
-    w.slash("nameplates size bogus")
-    check(w.cvars.nameplateSize == "2" and Printed("size is small|medium|large|xl|huge"), "beta: bad size lists the choices")
-
-    -- off: the badge comes back and the user's style is restored, watcher stays quiet
-    w.slash("nameplates off")
-    check(w.cvars.nameplateStyle == "1", "beta: off restores the style the player had")
-    check(badge:ShouldDisplay("nameplate3") == true, "beta: off gives Forever its badge back")
-    np.watcher:Fire("CVAR_UPDATE", "nameplateStyle", "1")
-    check(w.cvars.nameplateStyle == "1", "beta: watcher idle while off")
-    w.slash("nameplates on")
-    check(w.cvars.nameplateStyle == "6" and badge:ShouldDisplay("nameplate3") == false, "beta: on again")
+    check(np.mode == "cvar", "beta: unrelated CVars ignored")
 
     -- /cui dump lists the target frame's visible pieces with art and anchors
     w.slash("dump TargetFrame")
@@ -700,6 +729,12 @@ do
     check(w.ns.lastDump:find("dump of TargetFrame", 1, true), "beta: dump finds frames typed in the wrong case")
     w.slash("dump NoSuchFrame")
     check(Printed("no frame called NoSuchFrame"), "beta: dump reports unknown frames")
+    -- secret values: sizes and texts that cannot be read are marked, not fatal
+    local secretRegion = TargetFrame.TargetFrameContent.TargetFrameContentMain.Name
+    function secretRegion:GetSize() error("attempt to perform arithmetic on a secret value") end
+    function secretRegion:GetText() return {__secret = true} end
+    w.slash("dump TargetFrame")
+    check(w.ns.lastDump:find("Name  FontString  <secret>", 1, true) and not Printed("dump hit an error"), "beta: dump survives secret values")
     check(#w.ns.errors == 0, "beta: no errors")
 end
 
