@@ -58,18 +58,28 @@ local function DisableModule(name)
 end
 
 function ns.InitDB()
+    -- remember whether the client handed us a saved table at all: if this
+    -- stays "no" after a /reload, the settings file is not being written
+    ns.dbLoaded = ForeverClassicUIDB ~= nil
     ForeverClassicUIDB = ForeverClassicUIDB or {}
     for k, v in pairs(DEFAULTS) do
         if ForeverClassicUIDB[k] == nil then ForeverClassicUIDB[k] = v end
     end
+    ForeverClassicUIDB.logins = (tonumber(ForeverClassicUIDB.logins) or 0) + 1
     ns.db = ForeverClassicUIDB
 end
 
 function ns.OnLogin()
     if not ns.db then ns.InitDB() end
+    local off = {}
     for _, name in ipairs(ns.moduleOrder) do
-        if ns.db[name] ~= false then EnableModule(name) end
+        if ns.db[name] ~= false then
+            EnableModule(name)
+        else
+            off[#off + 1] = name
+        end
     end
+    if #off > 0 then ns.Print("off (saved): %s", table.concat(off, ", ")) end
     if ns.BuildOptionsPanel then ns.SafeCall("options", ns.BuildOptionsPanel) end
 end
 

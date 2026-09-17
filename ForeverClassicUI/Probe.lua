@@ -97,6 +97,8 @@ function ns.BuildProbe()
 
     line("")
     line("-- settings (saved) and module state")
+    line("saved file found at login: %s  logins counted in it: %s  (a /reload should raise the count; if not, the client is not writing ForeverClassicUI.lua)",
+         yn(ns.dbLoaded), tostring(ns.db and ns.db.logins))
     for _, name in ipairs(ns.moduleOrder) do
         local mod = ns.modules[name]
         line("%s: setting=%s mode=%s", name,

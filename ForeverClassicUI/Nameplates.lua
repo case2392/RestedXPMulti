@@ -430,7 +430,7 @@ function M:Disable()
     M.mode = "off"
     ForAllPlates(function(plate) SetBadgeAlpha(plate, 1) end)
     if wasCVar and HasSecrets() then
-        ns.Print("nameplates: pick a style in Options > Nameplates (or type /console nameplateStyle 1) to leave the classic plates.")
+        ns.Print("nameplates: the classic plates are Blizzard's own style, saved with your character. Type  /console nameplateStyle 0  (or pick a style in Options > Nameplates) to go back to the modern ones.")
     elseif wasCVar and ns.db and ns.db.savedNameplateStyle then
         pcall(SetCVarSafe, "nameplateStyle", ns.db.savedNameplateStyle)
         ns.db.savedNameplateStyle = nil

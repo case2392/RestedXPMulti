@@ -189,6 +189,8 @@ local function NewWorld(opts)
             _G[k] = nil
         end
     end
+    -- what the client hands back from the SavedVariables file on the next login
+    if opts.savedDB then _G.ForeverClassicUIDB = opts.savedDB end
 
     printed = {}
     _G.print = function(...)
@@ -988,6 +990,25 @@ do
     w.ns.modules.nameplates:Enable()
     check(w.ns.modules.nameplates.mode == "unavailable", "no driver: reported unavailable")
     check(Printed("could not restyle"), "no driver: asks for a probe")
+end
+
+--------------------------------------------------------------------------
+-- 6. Settings survive a /reload (the saved table comes back from the client)
+--------------------------------------------------------------------------
+do
+    local w = NewWorld({style = "6", forever = true})
+    check(w.ns.dbLoaded == false and w.ns.db.logins == 1, "first login: no saved file yet, one login counted")
+    w.ns.optionsPanel.deselectAll:Click()
+    w.slash("castbar on")
+    local saved = w.ns.db  -- the client writes this table to ForeverClassicUI.lua
+    w = NewWorld({style = "6", forever = true, savedDB = saved})
+    check(w.ns.dbLoaded == true and w.ns.db.logins == 2, "reload: saved file found, login count raised")
+    check(w.ns.db.unitframes == false and w.ns.modules.unitframes.mode == "off" and w.ns.modules.minimap.mode == "off", "reload: parts turned off stay off")
+    check(w.ns.db.castbar == true and w.ns.modules.castbar.mode == "restyled", "reload: the part turned back on is on")
+    check(Printed("off (saved): nameplates, combo, unitframes, actionbars, minimap, tracker"), "reload: login line names the parts that are off")
+    check(w.ns.optionsPanel.checks.unitframes.checked == false and w.ns.optionsPanel.checks.castbar.checked == true, "reload: options boxes match the saved settings")
+    w.slash("probe")
+    check(w.ns.lastProbe and w.ns.lastProbe:find("saved file found at login: yes  logins counted in it: 2", 1, true), "reload: probe reports the saved file and login count")
 end
 
 realPrint(("Forever Classic UI harness: %d passed, %d failed"):format(passed, failed))

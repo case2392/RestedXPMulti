@@ -119,6 +119,7 @@ function ns.BuildOptionsPanel()
     end
     panel:SetScript("OnShow", panel.Refresh)
     panel.OnRefresh = panel.Refresh
+    panel.Refresh()
 
     if Settings and Settings.RegisterCanvasLayoutCategory and Settings.RegisterAddOnCategory then
         local category = Settings.RegisterCanvasLayoutCategory(panel, panel.name)
