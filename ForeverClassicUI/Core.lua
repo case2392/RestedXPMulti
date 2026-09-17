@@ -22,7 +22,7 @@ local DEFAULTS = {
 function ns.Print(fmt, ...)
     local msg = fmt
     if select("#", ...) > 0 then msg = fmt:format(...) end
-    print("|cFF66CCFFForever Classic UI|r: " .. msg)
+    print("|cFF66CCFFClassic UI for Forever|r: " .. msg)
 end
 
 function ns.RegisterModule(name, mod)
@@ -102,7 +102,7 @@ local function PrintHelp()
     ns.Print("  /cui combo offset <x> <y> - nudge the combo points (no numbers = reset)")
     ns.Print("  /cui combo force - draw the classic combo points now (testing)")
     ns.Print("  /cui unitframes|actionbars|minimap on|off|force - the other classic parts")
-    ns.Print("  /cui options - open the settings panel (Options > AddOns > Forever Classic UI)")
+    ns.Print("  /cui options - open the settings panel (Options > AddOns > Classic UI for Forever)")
     ns.Print("  /cui probe - client report to copy and send for support")
 end
 

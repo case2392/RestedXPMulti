@@ -597,7 +597,7 @@ do
     panel.checks.minimap:Click()
     check(w.ns.db.minimap == false and w.ns.modules.minimap.mode == "off", "forever: unticking a part turns it off")
     w.slash("options")
-    check(_G.__openedCategory == "cat_Forever Classic UI", "forever: /cui options opens the panel")
+    check(_G.__openedCategory == "cat_Classic UI for Forever", "forever: /cui options opens the panel")
     check(#w.ns.errors == 0, "forever: no errors")
 end
 

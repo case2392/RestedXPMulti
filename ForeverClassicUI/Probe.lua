@@ -63,7 +63,7 @@ function ns.BuildProbe()
         out[#out + 1] = fmt
     end
 
-    line("Forever Classic UI %s probe", ns.VERSION)
+    line("Classic UI for Forever %s probe", ns.VERSION)
     if GetBuildInfo then
         local version, build, date, toc = GetBuildInfo()
         line("client: version %s build %s (%s) toc %s", tostring(version),
@@ -222,7 +222,7 @@ local function CreateProbeFrame()
 
     local title = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     title:SetPoint("TOP", 0, -16)
-    title:SetText("Forever Classic UI probe - Ctrl+A, Ctrl+C, then paste it to me")
+    title:SetText("Classic UI for Forever probe - Ctrl+A, Ctrl+C, then paste it to me")
 
     local close = CreateFrame("Button", nil, f, "UIPanelCloseButton")
     close:SetPoint("TOPRIGHT", -6, -6)

@@ -1,4 +1,4 @@
-# Forever Classic UI
+# Classic UI for Forever
 
 Brings the classic look back on *World of Warcraft Forever*: nameplates,
 cast bars, combo points, player and target frames, the main action bar art
@@ -62,7 +62,7 @@ takes the other parts down.
 | `/cui combo offset <x> <y>` | Nudge the dots if the target frame art differs (no numbers = reset) |
 | `/cui combo force` | Draw the classic combo points right now, replacing Blizzard's (testing) |
 | `/cui unitframes\|actionbars\|minimap on\|off\|force` | The other parts |
-| `/cui options` | Open the settings panel (Options > AddOns > Forever Classic UI) |
+| `/cui options` | Open the settings panel (Options > AddOns > Classic UI for Forever) |
 | `/cui probe` | Client report to copy and send for support |
 
 ## Testing on Classic Era today
