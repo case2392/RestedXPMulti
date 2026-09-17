@@ -39,8 +39,12 @@ local function NewWorld(opts)
     _G.UnitInRaid = function() return false end
     math.randomseed(opts.seed or 1)
     local ns = {}
-    local chunk = assert(loadfile(root .. "/RIPBozo/RIPBozo.lua"))
-    chunk("RIPBozo", ns)
+    _G.GetSubZoneText = function() return opts.subzone end
+    _G.GetRealZoneText = function() return opts.zone end
+    for _, f in ipairs({"Zones.lua", "RIPBozo.lua"}) do
+        local chunk = assert(loadfile(root .. "/RIPBozo/" .. f))
+        chunk("RIPBozo", ns)
+    end
     ns.OnEvent("ADDON_LOADED", "RIPBozo")
     ns.OnEvent("PLAYER_LOGIN")
     return ns
@@ -96,6 +100,26 @@ do
         if k == "killer" and l:find("Mrgl", 1, true) then gotKiller = true end
     end
     check(gotKiller, "murloc kill gets the murloc line sometimes")
+    -- subzones resolve to their zone
+    line, kind = ctx("Pkizaz has been slain by a Riverpaw Outrunner in Alexston Farmstead! They were level 16")
+    check(kind == "range" and line:find("Westfall", 1, true), "Alexston Farmstead -> Westfall, level 16 in range")
+    check(ns.ResolveZone("Alexston Farmstead") == "Westfall", "the real death from the screenshot resolves to Westfall")
+    line, kind = ctx("Pkizaz has been slain by a Defias Pillager in Alexston Farmstead! They were level 30")
+    check(kind == "high" and line:find("Westfall", 1, true), "level 30 in a Westfall subzone: outleveled")
+    line, kind = ctx("Bob has been slain by a Ghoul in Corin's Crossing! They were level 30")
+    check(kind == "low" and line:find("Eastern Plaguelands", 1, true), "Corin's Crossing -> Eastern Plaguelands")
+    line, kind = ctx("Bob has been slain by a Guard in Trade District! They were level 30")
+    check(kind == "city" and line:find("Stormwind City", 1, true), "Trade District -> Stormwind City")
+    check(ns.ResolveZone("the crossroads") == "The Barrens" and ns.ResolveZone("The Crossroads") == "The Barrens", "subzone lookup is case-insensitive")
+    -- learned subzones fill the gaps
+    check(ns.ResolveZone("Some New Cave") == nil, "unknown subzone: nothing")
+    _G.GetSubZoneText = function() return "Some New Cave" end
+    _G.GetRealZoneText = function() return "Redridge Mountains" end
+    ns.OnEvent("ZONE_CHANGED")
+    check(_G.RIPBozoDB.learned["some new cave"] == "Redridge Mountains", "walking through a subzone records its zone")
+    check(ns.ResolveZone("Some New Cave") == "Redridge Mountains", "learned subzone resolves")
+    line, kind = ctx("Bob has been slain by a Gnoll in Some New Cave! They were level 40")
+    check(kind == "high" and line:find("Redridge Mountains", 1, true), "learned subzone feeds the roast")
     line, kind = ctx("Rheaper has been slain by a Thing in Nowhere Land! They were level 24")
     check(line == nil, "unknown zone: no context line (generic used instead)")
     line = ns.ContextLine(ns.ParseDeath("Old has died at level 23."))

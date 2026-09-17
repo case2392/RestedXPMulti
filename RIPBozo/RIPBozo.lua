@@ -10,7 +10,7 @@
 
 local addonName, ns = ...
 
-ns.VERSION = "1.0.0"
+ns.VERSION = "1.0.1"
 
 --------------------------------------------------------------------------
 -- the lines
@@ -57,65 +57,13 @@ local DEFAULTS = {
     minLevel = 10, -- "everyone" mode ignores deaths below this level
     self = true, -- roast yourself in chat when you die
     feed = true, -- roast every death you see, in your own chat only
-    custom = {} -- extra lines added with /ripbozo add
+    custom = {}, -- extra lines added with /ripbozo add
+    learned = {} -- subzone -> zone picked up as you travel
 }
 
 --------------------------------------------------------------------------
--- where people die: level ranges so the roast can do the math
+-- context lines (zone level ranges + subzones live in Zones.lua)
 --------------------------------------------------------------------------
-
-ns.ZONES = {
-    -- dungeons
-    ["Ragefire Chasm"] = {13, 18, dungeon = true},
-    ["Wailing Caverns"] = {17, 24, dungeon = true},
-    ["The Deadmines"] = {17, 26, dungeon = true},
-    ["Deadmines"] = {17, 26, dungeon = true},
-    ["Shadowfang Keep"] = {22, 30, dungeon = true},
-    ["The Stockade"] = {22, 30, dungeon = true},
-    ["Stormwind Stockade"] = {22, 30, dungeon = true},
-    ["Blackfathom Deeps"] = {24, 32, dungeon = true},
-    ["Gnomeregan"] = {29, 38, dungeon = true},
-    ["Razorfen Kraul"] = {29, 38, dungeon = true},
-    ["Scarlet Monastery"] = {34, 45, dungeon = true},
-    ["Razorfen Downs"] = {37, 46, dungeon = true},
-    ["Uldaman"] = {41, 51, dungeon = true},
-    ["Zul'Farrak"] = {44, 54, dungeon = true},
-    ["Maraudon"] = {46, 55, dungeon = true},
-    ["The Temple of Atal'Hakkar"] = {50, 60, dungeon = true},
-    ["Sunken Temple"] = {50, 60, dungeon = true},
-    ["Blackrock Depths"] = {52, 60, dungeon = true},
-    ["Blackrock Spire"] = {55, 60, dungeon = true},
-    ["Lower Blackrock Spire"] = {55, 60, dungeon = true},
-    ["Upper Blackrock Spire"] = {58, 60, dungeon = true},
-    ["Dire Maul"] = {55, 60, dungeon = true},
-    ["Stratholme"] = {58, 60, dungeon = true},
-    ["Scholomance"] = {58, 60, dungeon = true},
-    -- cities
-    ["Stormwind City"] = {1, 60, city = true},
-    ["Ironforge"] = {1, 60, city = true},
-    ["Darnassus"] = {1, 60, city = true},
-    ["Orgrimmar"] = {1, 60, city = true},
-    ["Thunder Bluff"] = {1, 60, city = true},
-    ["Undercity"] = {1, 60, city = true},
-    -- zones
-    ["Elwynn Forest"] = {1, 10}, ["Dun Morogh"] = {1, 10}, ["Teldrassil"] = {1, 10},
-    ["Durotar"] = {1, 10}, ["Mulgore"] = {1, 10}, ["Tirisfal Glades"] = {1, 10},
-    ["Westfall"] = {10, 20}, ["Loch Modan"] = {10, 20}, ["Darkshore"] = {10, 20},
-    ["The Barrens"] = {10, 25}, ["Silverpine Forest"] = {10, 20},
-    ["Redridge Mountains"] = {15, 25}, ["Stonetalon Mountains"] = {15, 27},
-    ["Duskwood"] = {18, 30}, ["Ashenvale"] = {18, 30}, ["Wetlands"] = {20, 30},
-    ["Hillsbrad Foothills"] = {20, 30}, ["Thousand Needles"] = {25, 35},
-    ["Desolace"] = {30, 40}, ["Arathi Highlands"] = {30, 40},
-    ["Alterac Mountains"] = {30, 40}, ["Stranglethorn Vale"] = {30, 45},
-    ["Dustwallow Marsh"] = {35, 45}, ["Badlands"] = {35, 45},
-    ["Swamp of Sorrows"] = {35, 45}, ["The Hinterlands"] = {40, 50},
-    ["Tanaris"] = {40, 50}, ["Feralas"] = {40, 50}, ["Searing Gorge"] = {43, 50},
-    ["Azshara"] = {45, 55}, ["Blasted Lands"] = {45, 55},
-    ["Un'Goro Crater"] = {48, 55}, ["Felwood"] = {48, 55},
-    ["Burning Steppes"] = {50, 58}, ["Western Plaguelands"] = {51, 58},
-    ["Eastern Plaguelands"] = {53, 60}, ["Winterspring"] = {53, 60},
-    ["Silithus"] = {55, 60}, ["Deadwind Pass"] = {55, 60}
-}
 
 -- {name} {level} {killer} {zone} {min} {max} get filled in
 ns.CONTEXT = {
@@ -173,15 +121,23 @@ local function Expand(template, vars)
     return (template:gsub("{(%w+)}", function(k) return tostring(vars[k] or "") end))
 end
 
-local function ZoneInfo(zone)
-    if not zone then return nil end
-    local z = ns.ZONES[zone]
-    if z then return z end
-    local lower = zone:lower()
-    for name, data in pairs(ns.ZONES) do
-        if lower:find(name:lower(), 1, true) then return data end
+-- the zone a death location belongs to (the announcement names subzones)
+function ns.ResolveZone(place)
+    if not place then return nil end
+    if ns.ZONES[place] then return place end
+    local lower = place:lower()
+    local parent = (ns.SUBZONES and ns.SUBZONES[lower]) or
+                       (ns.db and ns.db.learned and ns.db.learned[lower])
+    if parent and ns.ZONES[parent] then return parent end
+    for name in pairs(ns.ZONES) do
+        if lower:find(name:lower(), 1, true) then return name end
     end
     return nil
+end
+
+local function ZoneInfo(place)
+    local zone = ns.ResolveZone(place)
+    return zone and ns.ZONES[zone] or nil, zone
 end
 
 -- a line that uses the death details, or nil when there's nothing to say
@@ -193,11 +149,11 @@ function ns.ContextLine(info)
             return k[2], "killer"
         end
     end
-    local z = ZoneInfo(info.zone)
+    local z, zoneName = ZoneInfo(info.zone)
     if not z or not info.level then return nil end
     local vars = {
         name = info.name, level = info.level, killer = info.killer or "something",
-        zone = info.zone, min = z[1], max = z[2]
+        zone = zoneName, min = z[1], max = z[2]
     }
     local kind
     if z.city then
@@ -524,6 +480,21 @@ function ns.OnEvent(event, ...)
         if info and info.level then ns.OnDeath(info, "system") end
     elseif event == "PLAYER_DEAD" then
         ns.OnOwnDeath()
+    elseif event == "ZONE_CHANGED" or event == "ZONE_CHANGED_INDOORS" or event ==
+        "ZONE_CHANGED_NEW_AREA" then
+        ns.LearnZone()
+    end
+end
+
+-- remember which zone the subzone we're standing in belongs to
+function ns.LearnZone()
+    if not ns.db or not GetSubZoneText or not GetRealZoneText then return end
+    local sub, zone = GetSubZoneText(), GetRealZoneText()
+    if sub and zone and sub ~= "" and sub ~= zone and ns.ZONES[zone] then
+        local key = sub:lower()
+        if not ns.SUBZONES[key] and ns.db.learned[key] ~= zone then
+            ns.db.learned[key] = zone
+        end
     end
 end
 
@@ -531,7 +502,8 @@ if CreateFrame then
     local frame = CreateFrame("Frame")
     for _, e in ipairs({
         "ADDON_LOADED", "PLAYER_LOGIN", "HARDCORE_DEATHS", "CHAT_MSG_CHANNEL",
-        "CHAT_MSG_SYSTEM", "PLAYER_DEAD"
+        "CHAT_MSG_SYSTEM", "PLAYER_DEAD", "ZONE_CHANGED", "ZONE_CHANGED_INDOORS",
+        "ZONE_CHANGED_NEW_AREA"
     }) do pcall(frame.RegisterEvent, frame, e) end
     frame:SetScript("OnEvent", function(_, event, ...) ns.OnEvent(event, ...) end)
     ns.frame = frame
