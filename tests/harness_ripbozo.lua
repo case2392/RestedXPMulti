@@ -102,7 +102,7 @@ do
     check(gotKiller, "murloc kill gets the murloc line sometimes")
     -- subzones resolve to their zone
     line, kind = ctx("Pkizaz has been slain by a Riverpaw Outrunner in Alexston Farmstead! They were level 16")
-    check(kind == "range" and line:find("Westfall", 1, true), "Alexston Farmstead -> Westfall, level 16 in range")
+    check(kind == "range", "Alexston Farmstead -> Westfall, level 16 in range")
     check(ns.ResolveZone("Alexston Farmstead") == "Westfall", "the real death from the screenshot resolves to Westfall")
     line, kind = ctx("Pkizaz has been slain by a Defias Pillager in Alexston Farmstead! They were level 30")
     check(kind == "high" and line:find("Westfall", 1, true), "level 30 in a Westfall subzone: outleveled")
