@@ -366,11 +366,12 @@ local function NewWorld(opts)
         _G.NamePlateConstants.SMALL_LEVEL_INDICATOR_HEIGHT = 16
         _G.NameplateLevelFrameMixin = {}
         for _, p in ipairs(w.plates) do
-            local badge = Frame("badge"); badge.shown = true
+            local badge = Frame("badge"); badge.shown = true; badge:SetSize(23, 13)
             function badge:ShouldDisplay() return true end
-            p.UnitFrame = {PlayerLevelDiffFrame = badge, anchorsUpdated = 0}
+            p.UnitFrame = {PlayerLevelDiffFrame = badge, anchorsUpdated = 0, HealthBarsContainer = Frame("hc"), CastBarsContainer = Frame("cc")}
             function p.UnitFrame:UpdateAnchors() self.anchorsUpdated = self.anchorsUpdated + 1 end
         end
+        _G.NamePlateSetupOptions.castBarToHealthBarSpacing = 4
         _G.NamePlateDriverFrame.OnNamePlateAdded = function(self, token) w.added = token end
         _G.NamePlateDriverFrame.GetNamePlateForUnit = function(self, token) return w.plateByToken and w.plateByToken[token] end
         -- Forever protects unit values: an addon touching the nameplate code path is fatal
@@ -606,18 +607,24 @@ do
     np.watcher:Fire("CVAR_UPDATE", "nameplateStyle", "6")
     check(np.mode == "cvar" and Printed("classic style on"), "forever: switches to the CVar mode when the style arrives")
     for i, p in ipairs(w.plates) do
-        check(p.UnitFrame.PlayerLevelDiffFrame.alpha == 0, "forever: level badge invisible on plate " .. i)
+        local b = p.UnitFrame.PlayerLevelDiffFrame
+        check(b.alpha == 0, "forever: level badge invisible on plate " .. i)
+        check(b.width == 0, "forever: badge width zeroed on plate " .. i .. " so the layout reserves no room")
+        b:SetSize(23, 13) -- Blizzard's ApplyFrameOptions sizing it again
+        check(b.width == 0 and b.height == 13, "forever: secure hook zeroes the badge width again on plate " .. i)
+        local a = p.UnitFrame.HealthBarsContainer.anchors[#p.UnitFrame.HealthBarsContainer.anchors]
+        check(a and a[1] == "BOTTOMRIGHT" and a[2] == p.UnitFrame.CastBarsContainer and a[4] == 0 and a[5] == 4, "forever: health container given its full width back on plate " .. i)
         check(p.UnitFrame.PlayerLevelDiffFrame.forevercuiPatched == nil and p.UnitFrame.PlayerLevelDiffFrame:ShouldDisplay() == true and p.UnitFrame.anchorsUpdated == 0, "forever: plate " .. i .. " Lua tables untouched")
     end
     -- a plate added later: only the badge alpha changes
     local late = {ApplyFrameOptions = function() end}
-    local badge = Frame("badge")
-    late.UnitFrame = {PlayerLevelDiffFrame = badge, anchorsUpdated = 0}
+    local badge = Frame("badge"); badge:SetSize(23, 13)
+    late.UnitFrame = {PlayerLevelDiffFrame = badge, anchorsUpdated = 0, HealthBarsContainer = Frame("hc"), CastBarsContainer = Frame("cc")}
     function late.UnitFrame:UpdateAnchors() self.anchorsUpdated = self.anchorsUpdated + 1 end
     w.plateByToken = {nameplate9 = late}
     table.insert(w.plates, late) -- C_NamePlate.GetNamePlates lists it from now on
     np.watcher:Fire("NAME_PLATE_UNIT_ADDED", "nameplate9")
-    check(badge.alpha == 0 and late.UnitFrame.anchorsUpdated == 0 and badge.ShouldDisplay == nil, "forever: late plate badge hidden by alpha only")
+    check(badge.alpha == 0 and badge.width == 0 and late.UnitFrame.anchorsUpdated == 0 and badge.forevercuiPatched == nil, "forever: late plate badge hidden and zero-width, no Lua fields, no Blizzard calls")
     -- Forever's settings page writes Thin back: no fighting it, tell the player
     printed = {}
     w.cvars.nameplateStyle = "1"
@@ -669,6 +676,9 @@ do
     local pm = PlayerFrame.PlayerFrameContent.PlayerFrameContentMain
     check(pm.HealthBarsContainer.width == 119 and pm.HealthBarsContainer.height == 12 and pm.HealthBarsContainer.HealthBar.barTexture == "Interface\\TargetingFrame\\UI-StatusBar", "forever: player health bar is 119x12 classic")
     check(pm.HealthBarsContainer.HealthBar.fill.maskRemoved == pm.HealthBarsContainer.HealthBar.HealthBarMask, "forever: retail health mask removed")
+    local hmask = pm.HealthBarsContainer.HealthBar.HealthBarMask
+    check(hmask.texture == "Interface\\Buttons\\WHITE8x8" and #hmask.anchors == 2 and hmask.shown == false, "forever: retail health mask made a harmless white square over the bar")
+    check(pm.ManaBarArea.ManaBar.ManaBarMask.texture == "Interface\\Buttons\\WHITE8x8", "forever: retail mana mask neutralised too")
     check(pm.ManaBarArea.ManaBar.barTexture == "Interface\\TargetingFrame\\UI-StatusBar" and pm.ManaBarArea.ManaBar.barColor[3] == 1, "forever: mana bar classic texture, coloured by power type")
     check(pm.LevelBackgroundCircle.shown == false and pc.forevercuiBackdrop ~= nil, "forever: level circle hidden, dark backdrop added")
     local tc = TargetFrame.TargetFrameContainer

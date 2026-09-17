@@ -16,8 +16,9 @@
 --   * never sets nameplateStyle itself - the player types
 --     /console nameplateStyle 6 once (chat commands run untainted, and the
 --     CVar is saved with the character),
---   * hides Forever's level badge with a widget call (SetAlpha) from its
---     own NAME_PLATE_UNIT_ADDED handler, no hooks, no table writes.
+--   * hides Forever's level badge with widget calls (SetAlpha, SetWidth 0
+--     kept by a hooksecurefunc on its SetSize) from its own
+--     NAME_PLATE_UNIT_ADDED handler - no table writes, no Blizzard calls.
 -- Clients without secret values keep the cheap path (set the CVar) and the
 -- Lua fallback that forces the classic layout through Blizzard's option
 -- tables when the CVar is refused.
@@ -79,13 +80,41 @@ end
 -- Forever's level badge (PlayerLevelDiffFrame on every plate)
 --------------------------------------------------------------------------
 
--- The classic border has its own level slot, so the badge is made invisible.
--- Only widget calls: SetAlpha leaves no taint on the plate's Lua tables and
--- Blizzard never sets the badge's alpha itself.
+-- The classic border has its own level slot, so the badge is made invisible
+-- and, since Blizzard's UpdateAnchors still shortens the health container by
+-- the badge's width (it asks the badge's ShouldDisplay, which is always true
+-- on Forever), the badge is also kept at width 0: ApplyFrameOptions sets its
+-- size right before UpdateAnchors reads it back, so a secure hook on that
+-- SetSize zeroes the width again. Only widget calls and hooksecurefunc, no
+-- writes into the plate's Lua tables, so Blizzard's code stays untainted.
+M.badgeHooked = setmetatable({}, {__mode = "k"})
+
 local function SetBadgeAlpha(plate, alpha)
     local uf = plate and plate.UnitFrame
     local badge = uf and uf.PlayerLevelDiffFrame
     if badge and badge.SetAlpha then badge:SetAlpha(alpha) end
+end
+
+local function FixPlate(plate)
+    local uf = plate and plate.UnitFrame
+    local badge = uf and uf.PlayerLevelDiffFrame
+    if not badge then return end
+    if hooksecurefunc and badge.SetSize and not M.badgeHooked[badge] then
+        M.badgeHooked[badge] = true
+        hooksecurefunc(badge, "SetSize", function(self)
+            if M.enabled and M.mode == "cvar" and self.SetWidth then self:SetWidth(0) end
+        end)
+    end
+    if badge.SetAlpha then badge:SetAlpha(0) end
+    if badge.SetWidth then badge:SetWidth(0) end
+    -- Blizzard already laid this plate out with room for the badge; give
+    -- the health container its full width back the same way UpdateAnchors
+    -- would with a zero-width badge
+    local hc, cc = uf.HealthBarsContainer, uf.CastBarsContainer
+    local o = NamePlateSetupOptions
+    if hc and cc and hc.SetPoint and o and o.castBarToHealthBarSpacing then
+        hc:SetPoint("BOTTOMRIGHT", cc, "TOPRIGHT", 0, o.castBarToHealthBarSpacing)
+    end
 end
 
 local function ForAllPlates(fn)
@@ -108,7 +137,7 @@ local function InstallWatcher()
         if event == "NAME_PLATE_UNIT_ADDED" then
             if M.mode == "cvar" and C_NamePlate and C_NamePlate.GetNamePlateForUnit then
                 local ok, plate = pcall(C_NamePlate.GetNamePlateForUnit, arg)
-                if ok then SetBadgeAlpha(plate, 0) end
+                if ok then FixPlate(plate) end
             end
         elseif event == "CVAR_UPDATE" and arg ~= "nameplateStyle" then
             return
@@ -118,7 +147,7 @@ local function InstallWatcher()
             if OnClassicStyle() then
                 if M.mode == "console" then
                     M.mode = "cvar"
-                    ForAllPlates(function(plate) SetBadgeAlpha(plate, 0) end)
+                    ForAllPlates(FixPlate)
                     ns.Print("nameplates: classic style on.")
                 end
             elseif M.mode == "cvar" then
@@ -293,7 +322,7 @@ function M:Enable()
     local ok, why = TryCVar()
     if ok then
         M.mode = "cvar"
-        ForAllPlates(function(plate) SetBadgeAlpha(plate, 0) end)
+        ForAllPlates(FixPlate)
         return
     end
     M.cvarReason = why

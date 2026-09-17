@@ -33,13 +33,26 @@ local function SetFile(tex, path, l, r, t, b)
     end
 end
 
+-- Retail clips each bar to a rounded shape with a mask texture (attached at
+-- load, re-pointed by Blizzard's art swaps). Detach it from the fill and,
+-- in case it is still attached to anything, make it a solid white square
+-- over the bar so it clips nothing.
+local WHITE = "Interface\\Buttons\\WHITE8x8"
 local function Unmask(bar, maskKey)
     local tex = bar and bar.GetStatusBarTexture and bar:GetStatusBarTexture()
     local mask = bar and bar[maskKey]
     if tex and mask and tex.RemoveMaskTexture then
         pcall(tex.RemoveMaskTexture, tex, mask)
     end
-    if mask and mask.Hide then mask:Hide() end
+    if mask then
+        if mask.SetTexture then pcall(mask.SetTexture, mask, WHITE) end
+        if mask.ClearAllPoints and mask.SetPoint then
+            mask:ClearAllPoints()
+            mask:SetPoint("TOPLEFT", bar, "TOPLEFT", -4, 4)
+            mask:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", 4, -4)
+        end
+        if mask.Hide then mask:Hide() end
+    end
 end
 
 local function Hide(region)
