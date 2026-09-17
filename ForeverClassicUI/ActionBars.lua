@@ -30,12 +30,16 @@ function M.Apply()
         art:SetFrameLevel(math.max((bar:GetFrameLevel() or 1) - 1, 0))
         art:SetPoint("TOPLEFT", bar, "TOPLEFT", -8, 8)
         art:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", 8, -8)
-        -- the classic bar tile is 256 wide; three tiles cover a 12-button bar
+        -- UI-MainMenuBar-Dwarf is 256x256 holding four 256x43 strips. Era's
+        -- MainMenuBar.xml puts strips 0 and 1 (the two with six button
+        -- slots each) under the twelve action buttons; the other two carry
+        -- the page arrows and the bag slots.
+        local STRIPS = {{0.83203125, 1.0}, {0.58203125, 0.75}, {0.33203125, 0.5}}
         art.tiles = {}
         for i = 1, 3 do
             local t = art:CreateTexture(nil, "BACKGROUND")
             t:SetTexture(BAR_ART)
-            t:SetTexCoord(0, 1, 0, 43 / 64)
+            t:SetTexCoord(0, 1, STRIPS[i][1], STRIPS[i][2])
             t:SetHeight(43)
             art.tiles[i] = t
         end

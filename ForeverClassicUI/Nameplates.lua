@@ -95,10 +95,52 @@ local function SetBadgeAlpha(plate, alpha)
     if badge and badge.SetAlpha then badge:SetAlpha(alpha) end
 end
 
+-- Forever ships the retail Nameplate-Border image: 256 px wide with the
+-- border art (the same border Era has, plus a slightly longer level slot)
+-- in the left 136 px and nothing in the rest. Era's file is 128 px wide and
+-- all border. Blizzard's classic layout stretches the whole image over the
+-- bar, so on Forever the border stops halfway along the bar with the level
+-- slot in the middle. Crop the texture to the art and size it so the border
+-- keeps Era's pixel scale, right after every Blizzard SetSize on it.
+local RETAIL_BORDER_ART = 136 -- px of the 256 px image that carry the border
+local RETAIL_BORDER_IMAGE = 256
+local CLASSIC_BORDER_ART = 128
+M.retailBorderArt = WOW_PROJECT_ID ~= nil and WOW_PROJECT_MAINLINE ~= nil and
+                        WOW_PROJECT_ID == WOW_PROJECT_MAINLINE
+M.borderHooked = setmetatable({}, {__mode = "k"})
+
+local function ApplyBorderCrop(bg, container)
+    if M.inBorder or not (M.enabled and M.mode == "cvar") then return end
+    local o = NamePlateSetupOptions
+    local w = o and o.healthBarBorderWidth
+    local h = o and o.healthBarBorderHeight
+    if not w or not h then return end
+    M.inBorder = true
+    bg:SetTexCoord(0, RETAIL_BORDER_ART / RETAIL_BORDER_IMAGE, 0.5, 1)
+    bg:ClearAllPoints()
+    bg:SetPoint("LEFT", container, "LEFT", 0, 0)
+    bg:SetSize(w * RETAIL_BORDER_ART / CLASSIC_BORDER_ART, h)
+    M.inBorder = false
+end
+
+local function FixBorder(uf)
+    if not M.retailBorderArt then return end
+    local container = uf.HealthBarsContainer
+    local hb = container and container.healthBar
+    local bg = hb and hb.bgTexture
+    if not bg or not bg.SetTexCoord or not bg.SetSize then return end
+    if hooksecurefunc and not M.borderHooked[bg] then
+        M.borderHooked[bg] = true
+        hooksecurefunc(bg, "SetSize", function(self) ApplyBorderCrop(self, container) end)
+    end
+    ApplyBorderCrop(bg, container)
+end
+
 local function FixPlate(plate)
     local uf = plate and plate.UnitFrame
     local badge = uf and uf.PlayerLevelDiffFrame
     if not badge then return end
+    FixBorder(uf)
     if hooksecurefunc and badge.SetSize and not M.badgeHooked[badge] then
         M.badgeHooked[badge] = true
         hooksecurefunc(badge, "SetSize", function(self)

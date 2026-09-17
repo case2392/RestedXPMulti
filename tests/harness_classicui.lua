@@ -34,7 +34,7 @@ local function Region(kind, init)
     function r:GetTexture() return self.texture end
     function r:SetAtlas(a) self.atlas = a; self.texture = nil end
     function r:GetAtlas() return self.atlas end
-    function r:SetTexCoord() end
+    function r:SetTexCoord(...) self.texcoord = {...} end
     function r:SetColorTexture(...) self.color = {...}; self.texture = nil; self.atlas = nil end
     function r:SetVertexColor(...) self.vertex = {...} end
     function r:SetBlendMode(m) self.blend = m end
@@ -371,9 +371,14 @@ local function NewWorld(opts)
             local badge = Frame("badge"); badge.shown = true; badge:SetSize(23, 13)
             function badge:ShouldDisplay() return true end
             p.UnitFrame = {PlayerLevelDiffFrame = badge, anchorsUpdated = 0, HealthBarsContainer = Frame("hc"), CastBarsContainer = Frame("cc")}
+            p.UnitFrame.HealthBarsContainer.healthBar = Frame("healthBar")
+            p.UnitFrame.HealthBarsContainer.healthBar.bgTexture = Region("Texture", {file = "Interface\\Tooltips\\Nameplate-Border"})
             function p.UnitFrame:UpdateAnchors() self.anchorsUpdated = self.anchorsUpdated + 1 end
         end
         _G.NamePlateSetupOptions.castBarToHealthBarSpacing = 4
+        _G.NamePlateSetupOptions.healthBarBorderWidth = 102.4
+        _G.NamePlateSetupOptions.healthBarBorderHeight = 12.8
+        _G.WOW_PROJECT_ID = 1 -- Forever reports itself as mainline
         _G.NamePlateDriverFrame.OnNamePlateAdded = function(self, token) w.added = token end
         _G.NamePlateDriverFrame.GetNamePlateForUnit = function(self, token) return w.plateByToken and w.plateByToken[token] end
         -- Forever protects unit values: an addon touching the nameplate code path is fatal
@@ -616,6 +621,10 @@ do
         check(b.width == 0 and b.height == 13, "forever: secure hook zeroes the badge width again on plate " .. i)
         local a = p.UnitFrame.HealthBarsContainer.anchors[#p.UnitFrame.HealthBarsContainer.anchors]
         check(a and a[1] == "BOTTOMRIGHT" and a[2] == p.UnitFrame.CastBarsContainer and a[4] == 0 and a[5] == 4, "forever: health container given its full width back on plate " .. i)
+        local bg = p.UnitFrame.HealthBarsContainer.healthBar.bgTexture
+        check(bg.texcoord and bg.texcoord[2] == 136 / 256 and bg.texcoord[3] == 0.5 and math.abs(bg.width - 108.8) < 0.01 and bg.anchors[1][1] == "LEFT", "forever: retail border image cropped to its art and left-aligned on plate " .. i)
+        bg:SetTexCoord(0, 1, 0.5, 1); bg:ClearAllPoints(); bg:SetPoint("CENTER", p.UnitFrame.HealthBarsContainer, "CENTER", 0, 0); bg:SetSize(102.4, 12.8) -- Blizzard re-laying out
+        check(bg.texcoord[2] == 136 / 256 and math.abs(bg.width - 108.8) < 0.01 and bg.anchors[1][1] == "LEFT" and #bg.anchors == 1, "forever: border crop re-applied after Blizzard's SetSize on plate " .. i)
         check(p.UnitFrame.PlayerLevelDiffFrame.forevercuiPatched == nil and p.UnitFrame.PlayerLevelDiffFrame:ShouldDisplay() == true and p.UnitFrame.anchorsUpdated == 0, "forever: plate " .. i .. " Lua tables untouched")
     end
     -- a plate added later: only the badge alpha changes
@@ -718,6 +727,8 @@ do
     -- action bar + minimap
     check(w.ns.modules.actionbars.mode == "restyled" and MainActionBar.BorderArt.shown == false and w.ns.modules.actionbars.art ~= nil, "forever: retail bar border hidden, classic bar art added")
     check(MainActionBar.EndCaps.LeftEndCap.visibilitySetting == true, "forever: gryphons forced on")
+    local tiles = w.ns.modules.actionbars.art.tiles
+    check(tiles[1].texcoord[3] == 0.83203125 and tiles[1].texcoord[4] == 1.0 and tiles[2].texcoord[3] == 0.58203125 and tiles[2].texcoord[4] == 0.75, "forever: bar tiles use Era's two button-slot strips of the 256x256 image")
     check(w.ns.modules.minimap.mode == "restyled" and Minimap.width == 140 and MinimapCompassTexture.texture == "Interface\\Minimap\\UI-Minimap-Border", "forever: minimap 140px with the classic ring")
     check(w.ns.modules.minimap.header ~= nil and MinimapCluster.DielFrame.shown == false, "forever: classic header strip added, day/night dial hidden")
 
