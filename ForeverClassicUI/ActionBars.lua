@@ -48,9 +48,21 @@ function M.Apply()
         art.tiles[2]:SetPoint("BOTTOMLEFT", art, "BOTTOM", 0, 0)
         art.tiles[2]:SetPoint("BOTTOMRIGHT", art, "BOTTOMRIGHT", 0, 0)
         art.tiles[3]:Hide()
+        -- each strip is 256x43 in the image; keep that shape whatever
+        -- width Forever's bar (and its bigger buttons) stretch it to
+        local function Resize()
+            local w = art:GetWidth()
+            if not w or w <= 0 then return end
+            local h = (w / 2) * 43 / 256
+            for i = 1, 2 do art.tiles[i]:SetHeight(h) end
+        end
+        art:SetScript("OnSizeChanged", Resize)
+        art.Resize = Resize
         M.art = art
     end
     M.art:Show()
+    if M.art.Resize then M.art.Resize() end
+    M.HideDividers()
 
     local caps = bar.EndCaps
     if caps then
@@ -68,6 +80,23 @@ function M.Apply()
     return true
 end
 
+-- Forever draws retail divider strips between the buttons over the bar art
+-- (pooled frames laid out by MainActionBarMixin:UpdateDividers). Fade them
+-- out after every refresh; Blizzard shows them, alpha 0 keeps them unseen.
+function M.HideDividers(alpha)
+    local bar = MainActionBar
+    if not bar then return end
+    alpha = alpha or 0
+    for _, key in ipairs({"HorizontalDividersPool", "VerticalDividersPool"}) do
+        local pool = bar[key]
+        if pool and pool.EnumerateActive then
+            for divider in pool:EnumerateActive() do
+                if divider.SetAlpha then divider:SetAlpha(alpha) end
+            end
+        end
+    end
+end
+
 local function IsNative()
     return MainMenuBarArtFrame ~= nil and MainActionBar == nil
 end
@@ -83,12 +112,18 @@ function M:Enable()
     end
     if M.Apply() then
         M.mode = "restyled"
-        if hooksecurefunc and not M.hooked and EditModeManagerFrame and
-            EditModeManagerFrame.ExitEditMode then
+        if hooksecurefunc and not M.hooked then
             M.hooked = true
-            hooksecurefunc(EditModeManagerFrame, "ExitEditMode", function()
-                if M.mode == "restyled" then M.Apply() end
-            end)
+            if EditModeManagerFrame and EditModeManagerFrame.ExitEditMode then
+                hooksecurefunc(EditModeManagerFrame, "ExitEditMode", function()
+                    if M.mode == "restyled" then M.Apply() end
+                end)
+            end
+            if MainActionBar and MainActionBar.UpdateDividers then
+                hooksecurefunc(MainActionBar, "UpdateDividers", function()
+                    if M.mode == "restyled" then M.HideDividers() end
+                end)
+            end
         end
     else
         M.mode = "unavailable"
@@ -102,13 +137,14 @@ end
 
 function M:Disable()
     if M.art then M.art:Hide() end
+    M.HideDividers(1)
     M.mode = "off"
     ns.Print("action bars: type /reload to restore Blizzard's bar art.")
 end
 
 function M:Status()
     if M.mode == "native" then return "(client already draws the classic bar)" end
-    if M.mode == "restyled" then return "(classic bar art under the main bar, gryphons on)" end
+    if M.mode == "restyled" then return "(classic bar art under the main bar, gryphons on, retail dividers hidden)" end
     if M.mode == "unavailable" then return "(unavailable on this client)" end
     return ""
 end

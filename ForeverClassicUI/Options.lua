@@ -9,7 +9,8 @@ local LABELS = {
     combo = "Classic combo points on the target frame",
     unitframes = "Classic player and target frames",
     actionbars = "Classic main action bar art (stone bar under the buttons, gryphons)",
-    minimap = "Classic round minimap with the ring border"
+    minimap = "Classic round minimap with the ring border",
+    tracker = "Plain quest tracker (retail header boxes hidden)"
 }
 
 local panel

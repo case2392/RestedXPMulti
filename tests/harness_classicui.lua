@@ -316,6 +316,7 @@ local function NewWorld(opts)
     _G.date = function() return "12:00:00" end
     if opts.classicBars then
         -- classic client: the old frames exist by name
+        _G.QuestWatchFrame = Frame("QuestWatchFrame")
         _G.PlayerFrame = Frame("PlayerFrame"); _G.PlayerFrameTexture = Region("Texture")
         _G.MainMenuBarArtFrame = Frame("MainMenuBarArtFrame")
         _G.Minimap = Frame("Minimap"); _G.MinimapCluster = Frame("MinimapCluster"); _G.MinimapBorder = Region("Texture")
@@ -362,7 +363,19 @@ local function NewWorld(opts)
         bar.EndCaps = {LeftEndCap = Frame("cap"), RightEndCap = Frame("cap")}
         for _, c in pairs(bar.EndCaps) do function c:SetVisibilitySetting(v) self.visibilitySetting = v end end
         _G.MainActionBar = bar
+        bar.width = 562
+        local function Pool() local p = {active = {}}; function p:EnumerateActive() local i = 0; return function() i = i + 1; return self.active[i] end end; return p end
+        bar.HorizontalDividersPool = Pool(); bar.VerticalDividersPool = Pool()
+        function bar:UpdateDividers() self.HorizontalDividersPool.active = {Frame("div1"), Frame("div2")}; for _, d in ipairs(self.HorizontalDividersPool.active) do d:Show(); d.alpha = 1 end end
+        bar:UpdateDividers()
         _G.EditModeManagerFrame = {ExitEditMode = function() end}
+        -- objective tracker (retail)
+        local tracker = Frame("ObjectiveTrackerFrame")
+        tracker.Header = Frame("Header"); tracker.Header.Background = Region("Texture", {atlas = "ui-questtracker-primary-objective-header"})
+        local questModule = Frame("QuestObjectiveTracker"); questModule.Header = Frame("Header"); questModule.Header.Background = Region("Texture", {atlas = "UI-QuestTracker-Secondary-Objective-Header"})
+        tracker.modules = {questModule}
+        function tracker:Update() self.Header.Background:SetAlpha(1); questModule.Header.Background:SetAlpha(1) end
+        _G.ObjectiveTrackerFrame = tracker
         -- minimap
         _G.Minimap = Frame("Minimap"); _G.MinimapCluster = Frame("MinimapCluster"); _G.MinimapCluster.MinimapContainer = Frame("mc"); _G.MinimapCluster.BorderTop = Frame("BorderTop"); _G.MinimapCluster.DielFrame = Frame("Diel")
         _G.MinimapBackdrop = Frame("MinimapBackdrop"); _G.MinimapCompassTexture = Region("Texture", {atlas = "ui-hud-minimap-frame"}); _G.MinimapCompassTextureUnderlay = Region("Texture")
@@ -413,7 +426,7 @@ local function NewWorld(opts)
 
     -- load the addon
     local ns = {}
-    for _, file in ipairs({"Core.lua", "Nameplates.lua", "CastBar.lua", "Combo.lua", "UnitFrames.lua", "ActionBars.lua", "Minimap.lua", "Options.lua", "Probe.lua"}) do
+    for _, file in ipairs({"Core.lua", "Nameplates.lua", "CastBar.lua", "Combo.lua", "UnitFrames.lua", "ActionBars.lua", "Minimap.lua", "Tracker.lua", "Options.lua", "Probe.lua"}) do
         local chunk, err = loadfile(root .. "/ForeverClassicUI/" .. file)
         assert(chunk, err)
         chunk("ForeverClassicUI", ns)
@@ -439,6 +452,7 @@ do
     local w = NewWorld({style = "6", classicBars = true})
     check(w.ns.modules.nameplates.mode == "cvar", "era: nameplates use the built-in style")
     check(w.cvars.nameplateStyle == "6", "era: cvar untouched")
+    check(w.ns.modules.tracker.mode == "native", "era: classic quest watch left alone")
     check(w.ns.db.savedNameplateStyle == nil, "era: nothing to restore")
     check(w.ns.modules.castbar.mode == "native", "era: cast bar recognised as classic already")
     check(PlayerCastingBarFrame.lookCalls == 0, "era: cast bar not touched")
@@ -741,6 +755,19 @@ do
     -- action bar + minimap
     check(w.ns.modules.actionbars.mode == "restyled" and MainActionBar.BorderArt.shown == false and w.ns.modules.actionbars.art ~= nil, "forever: retail bar border hidden, classic bar art added")
     check(MainActionBar.EndCaps.LeftEndCap.visibilitySetting == true, "forever: gryphons forced on")
+    local divs = MainActionBar.HorizontalDividersPool.active
+    check(divs[1].alpha == 0 and divs[2].alpha == 0, "forever: retail button dividers faded out")
+    MainActionBar:UpdateDividers()
+    check(MainActionBar.HorizontalDividersPool.active[1].alpha == 0, "forever: dividers faded again after Blizzard's refresh")
+    w.ns.modules.actionbars.art.width = 578; w.ns.modules.actionbars.art.Resize()
+    check(math.abs(w.ns.modules.actionbars.art.tiles[1].height - 289 * 43 / 256) < 0.01, "forever: bar strips keep the image's 256x43 shape at the bar's width")
+    local tr = w.ns.modules.tracker
+    check(tr.mode == "restyled" and ObjectiveTrackerFrame.Header.Background.alpha == 0 and ObjectiveTrackerFrame.modules[1].Header.Background.alpha == 0, "forever: tracker header boxes faded out")
+    ObjectiveTrackerFrame:Update()
+    check(ObjectiveTrackerFrame.Header.Background.alpha == 0 and ObjectiveTrackerFrame.modules[1].Header.Background.alpha == 0, "forever: tracker header boxes faded again after Blizzard's update")
+    w.slash("tracker off")
+    check(tr.mode == "off" and ObjectiveTrackerFrame.Header.Background.alpha == 1, "forever: tracker off restores the boxes")
+    w.slash("tracker on")
     local tiles = w.ns.modules.actionbars.art.tiles
     check(tiles[1].texcoord[3] == 0.83203125 and tiles[1].texcoord[4] == 1.0 and tiles[2].texcoord[3] == 0.58203125 and tiles[2].texcoord[4] == 0.75, "forever: bar tiles use Era's two button-slot strips of the 256x256 image")
     check(w.ns.modules.minimap.mode == "restyled" and Minimap.width == 140 and MinimapCompassTexture.texture == "Interface\\Minimap\\UI-Minimap-Border", "forever: minimap 140px with the classic ring")
@@ -801,7 +828,7 @@ do
     w.slash("report")
     local rep = w.ns.lastReport
     check(rep and rep:find("probe", 1, true) and rep:find("dump of PlayerFrame", 1, true) and rep:find("dump of TargetFrame", 1, true) and rep:find("dump of NamePlate7 (target)", 1, true), "beta: report bundles the probe and the frame dumps")
-    check(rep:find("dump of MinimapCluster", 1, true) and rep:find("ObjectiveTrackerFrame: no frame called", 1, true), "beta: report lists missing frames instead of failing")
+    check(rep:find("dump of MinimapCluster", 1, true) and rep:find("dump of ObjectiveTrackerFrame", 1, true), "beta: report covers every frame it should")
     check(rep:find("x2 Interface/AddOns/Blizzard_NamePlates/x.lua:1", 1, true) and rep:find("stack line 1", 1, true) and rep:find("something else broke", 1, true), "beta: report includes the Lua error log with stacks")
     -- secret values: sizes and texts that cannot be read are marked, not fatal
     local secretRegion = TargetFrame.TargetFrameContent.TargetFrameContentMain.Name

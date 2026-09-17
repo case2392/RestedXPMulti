@@ -43,9 +43,13 @@ from Classic Era's own UI code.
   too. Blizzard's own redraws (vehicle art, power-type changes, target
   classification) are re-skinned as they happen.
 - **Action bar art** — the classic stone bar under the main action bar
-  between the gryphons; the retail frame border is hidden.
+  between the gryphons; the retail frame border and the divider strips
+  between buttons are hidden.
 - **Minimap** — the 140px round map with the classic ring border and the
   zone-name strip; the day/night dial is hidden.
+- **Quest tracker** — the retail header boxes ("All Objectives", "Quests")
+  are faded out so the tracker reads as plain text like the classic quest
+  watch. Layout and text stay Blizzard's.
 - **Probe** — `/cui probe` opens a copyable report of everything the addon
   depends on: client build and toc number, which Blizzard UI pieces are
   loaded, nameplate style support, cast bar art, whether the classic textures
@@ -68,7 +72,7 @@ takes the other parts down.
 | `/cui combo on\|off` | Classic combo points on the target frame (`/reload` after off) |
 | `/cui combo offset <x> <y>` | Nudge the dots if the target frame art differs (no numbers = reset) |
 | `/cui combo force` | Draw the classic combo points right now, replacing Blizzard's (testing) |
-| `/cui unitframes\|actionbars\|minimap on\|off\|force` | The other parts |
+| `/cui unitframes\|actionbars\|minimap\|tracker on\|off\|force` | The other parts |
 | `/cui options` | Open the settings panel (Options > AddOns > Classic UI for Forever) |
 | `/cui report` | Everything for support in one copyable window: the probe, a dump of every frame the addon touches (plus your target's nameplate), and the last Lua errors the client raised |
 | `/cui probe` | The client report on its own |

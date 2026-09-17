@@ -16,7 +16,8 @@ local DEFAULTS = {
     combo = true,
     unitframes = true,
     actionbars = true,
-    minimap = true
+    minimap = true,
+    tracker = true
 }
 
 function ns.Print(fmt, ...)
@@ -102,7 +103,7 @@ local function PrintHelp()
     ns.Print("  /cui combo on|off - classic combo points on the target frame")
     ns.Print("  /cui combo offset <x> <y> - nudge the combo points (no numbers = reset)")
     ns.Print("  /cui combo force - draw the classic combo points now (testing)")
-    ns.Print("  /cui unitframes|actionbars|minimap on|off|force - the other classic parts")
+    ns.Print("  /cui unitframes|actionbars|minimap|tracker on|off|force - the other classic parts")
     ns.Print("  /cui options - open the settings panel (Options > AddOns > Classic UI for Forever)")
     ns.Print("  /cui report - everything for support in one window: probe, every frame, Lua errors")
     ns.Print("  /cui probe - client report only")
