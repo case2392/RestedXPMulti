@@ -277,8 +277,38 @@ function M.RestyleTarget(frame)
         if level then skull:SetPoint("CENTER", level, "CENTER", 0, 0) end
     end
 
+    M.RestyleTargetBars(frame)
+
+    M.inRestyle = false
+    return true
+end
+
+-- Blizzard's CheckClassification (every target change) resizes the health
+-- container to the retail 126x20 and puts the atlas fill back, so this part
+-- is re-applied from that hook. Sizes and anchors on the (protected) unit
+-- frame wait for combat to end; the fill texture can change any time.
+function M.RestyleTargetBars(frame)
+    local content = frame and frame.TargetFrameContent
+    local main = content and content.TargetFrameContentMain
+    if not main then return end
     local hc = main.HealthBarsContainer
     local hb = hc and hc.HealthBar
+    local mb = main.ManaBar
+    if hb then
+        Unmask(hb, "HealthBarMask")
+        hb:SetStatusBarTexture(BAR_TEX)
+        hb:SetStatusBarColor(0, 1, 0)
+    end
+    if mb then
+        Unmask(mb, "ManaBarMask")
+        mb:SetStatusBarTexture(BAR_TEX)
+        ColorManaBar(mb, frame.unit)
+    end
+    if InCombatLockdown and InCombatLockdown() then
+        M.pendingBars = M.pendingBars or {}
+        M.pendingBars[frame] = true
+        return
+    end
     if hc then
         hc:ClearAllPoints()
         hc:SetSize(119, 12)
@@ -288,22 +318,12 @@ function M.RestyleTarget(frame)
         hb:ClearAllPoints()
         hb:SetSize(119, 12)
         hb:SetPoint("TOPLEFT", hc, "TOPLEFT", 0, 0)
-        Unmask(hb, "HealthBarMask")
-        hb:SetStatusBarTexture(BAR_TEX)
-        hb:SetStatusBarColor(0, 1, 0)
     end
-    local mb = main.ManaBar
     if mb then
         mb:ClearAllPoints()
         mb:SetSize(119, 12)
         mb:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -90, -56)
-        Unmask(mb, "ManaBarMask")
-        mb:SetStatusBarTexture(BAR_TEX)
-        ColorManaBar(mb, frame.unit)
     end
-
-    M.inRestyle = false
-    return true
 end
 
 --------------------------------------------------------------------------
@@ -352,7 +372,10 @@ local function InstallHooks()
         if f then
             if f.CheckClassification then
                 hooksecurefunc(f, "CheckClassification", function(frame)
-                    if M.mode == "restyled" and not M.inRestyle then M.RestyleTargetArt(frame) end
+                    if M.mode == "restyled" and not M.inRestyle then
+                        M.RestyleTargetArt(frame)
+                        M.RestyleTargetBars(frame)
+                    end
                 end)
             end
             if f.CheckFaction then
@@ -373,11 +396,24 @@ local function IsNative()
     return PlayerFrameTexture ~= nil and not (PlayerFrame and PlayerFrame.PlayerFrameContainer)
 end
 
+local function InstallCombatWaiter()
+    if M.barWaiter or not CreateFrame then return end
+    M.barWaiter = CreateFrame("Frame")
+    M.barWaiter:RegisterEvent("PLAYER_REGEN_ENABLED")
+    M.barWaiter:SetScript("OnEvent", function()
+        if M.mode ~= "restyled" or not M.pendingBars then return end
+        local pending = M.pendingBars
+        M.pendingBars = nil
+        for frame in pairs(pending) do M.RestyleTargetBars(frame) end
+    end)
+end
+
 function M:Enable()
     if not PlayerFrame then
         M.mode = "unavailable"
         return
     end
+    InstallCombatWaiter()
     if IsNative() then
         M.mode = "native"
         return

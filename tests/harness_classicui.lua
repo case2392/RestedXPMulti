@@ -680,6 +680,17 @@ do
     w.classification = "elite"
     TargetFrame:CheckClassification()
     check(tc.FrameTexture.texture == "Interface\\TargetingFrame\\UI-TargetingFrame-Elite", "forever: elite target gets the classic elite art after Blizzard's redraw")
+    -- Blizzard's CheckClassification also resizes the health container to 126x20 and puts its atlas fill back
+    tm.HealthBarsContainer:SetSize(126, 20); tm.HealthBarsContainer.HealthBar:SetStatusBarTexture("UI-HUD-UnitFrame-Target-PortraitOn-Bar-Health")
+    TargetFrame:CheckClassification()
+    check(tm.HealthBarsContainer.width == 119 and tm.HealthBarsContainer.height == 12 and tm.HealthBarsContainer.HealthBar.barTexture == "Interface\\TargetingFrame\\UI-StatusBar", "forever: classic bar size and fill restored after Blizzard's classification update")
+    w.inCombat = true
+    tm.HealthBarsContainer:SetSize(126, 20); tm.HealthBarsContainer.HealthBar:SetStatusBarTexture("atlas")
+    TargetFrame:CheckClassification()
+    check(tm.HealthBarsContainer.width == 126 and tm.HealthBarsContainer.HealthBar.barTexture == "Interface\\TargetingFrame\\UI-StatusBar", "forever: in combat only the fill changes, layout waits")
+    w.inCombat = false
+    uf.barWaiter:Fire("PLAYER_REGEN_ENABLED")
+    check(tm.HealthBarsContainer.width == 119, "forever: layout applied once combat ends")
     UnitFrameManaBar_UpdateType(pm.ManaBarArea.ManaBar)
     check(pm.ManaBarArea.ManaBar.barTexture == "Interface\\TargetingFrame\\UI-StatusBar", "forever: mana texture restored after Blizzard's power-type update")
     PlayerFrame_ToPlayerArt()
