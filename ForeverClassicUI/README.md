@@ -71,7 +71,7 @@ takes the other parts down.
 | `/cui unitframes\|actionbars\|minimap on\|off\|force` | The other parts |
 | `/cui options` | Open the settings panel (Options > AddOns > Classic UI for Forever) |
 | `/cui probe` | Client report to copy and send for support |
-| `/cui dump <FrameName>` | Copyable list of a frame's visible textures, text and child frames with size, anchor, art and colour (e.g. `/cui dump TargetFrame` with something targeted) |
+| `/cui dump <FrameName>` or `/cui dump target` | Copyable list of a frame's visible textures, text and child frames with size, anchor, art and colour (e.g. `/cui dump TargetFrame` with something targeted) |
 
 ## Testing on Classic Era today
 

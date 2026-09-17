@@ -106,6 +106,7 @@ local function PrintHelp()
     ns.Print("  /cui options - open the settings panel (Options > AddOns > Classic UI for Forever)")
     ns.Print("  /cui probe - client report to copy and send for support")
     ns.Print("  /cui dump <FrameName> - list a frame's visible parts (e.g. /cui dump TargetFrame)")
+    ns.Print("  /cui dump target - the same for your target's nameplate")
 end
 
 function ns.HandleSlash(input)

@@ -759,6 +759,14 @@ do
     check(w.ns.lastDump:find("dump of TargetFrame", 1, true), "beta: dump finds frames typed in the wrong case")
     w.slash("dump NoSuchFrame")
     check(Printed("no frame called NoSuchFrame"), "beta: dump reports unknown frames")
+    -- the target's nameplate by unit token
+    local plate = Frame("NamePlate7"); plate.UnitFrame = Frame("uf"); plate.UnitFrame.name = Region("FontString"); plate.UnitFrame.name:SetText("Young Wolf")
+    w.plateByToken = {target = plate}
+    w.slash("dump target")
+    check(w.ns.lastDump:find("dump of NamePlate7 (target)", 1, true) and w.ns.lastDump:find('text="Young Wolf"', 1, true), "beta: dump target walks the target's nameplate")
+    w.plateByToken = {}
+    w.slash("dump target")
+    check(Printed("no nameplate showing for target"), "beta: dump target with no plate says so")
     -- secret values: sizes and texts that cannot be read are marked, not fatal
     local secretRegion = TargetFrame.TargetFrameContent.TargetFrameContentMain.Name
     function secretRegion:GetSize() error("attempt to perform arithmetic on a secret value") end

@@ -400,6 +400,17 @@ end
 
 function ns.BuildDump(name)
     local frame = _G[name]
+    -- "target", "focus", "mouseover": that unit's nameplate
+    local unitName = tostring(name):lower()
+    if unitName == "target" or unitName == "focus" or unitName == "mouseover" then
+        local plate = C_NamePlate and C_NamePlate.GetNamePlateForUnit and
+                          C_NamePlate.GetNamePlateForUnit(unitName)
+        if type(plate) ~= "table" then
+            return nil, ("no nameplate showing for %s"):format(unitName)
+        end
+        frame = plate
+        name = ((plate.GetName and plate:GetName()) or "NamePlate") .. " (" .. unitName .. ")"
+    end
     if type(frame) ~= "table" then
         -- typed in the wrong case? one scan of the globals
         local wanted = tostring(name):lower()
