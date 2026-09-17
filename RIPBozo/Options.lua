@@ -7,8 +7,7 @@ local CHECKS = {
     {key = "friends", label = "Whisper friends (friends list + Battle.net) when they die"},
     {key = "party", label = "Whisper party / raid members when they die"},
     {key = "everyone", label = "Whisper everyone on the realm when they die"},
-    {key = "self", label = "Roast me in chat when I die"},
-    {key = "feed", label = "Show every death in my chat with a roast"}
+    {key = "self", label = "Roast me in chat when I die"}
 }
 
 local panel

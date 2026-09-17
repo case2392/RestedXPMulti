@@ -2,7 +2,7 @@
 
 Hardcore death roasts for WoW Classic Hardcore. When someone dies, RIP Bozo
 whispers them a random line ("RIPBOZO", "Bro, you shouldn't have done that.",
-"See you in Forever."...) and roasts every death in your own chat. It reads
+"See you in Forever."...). It reads
 the death announcement, so it knows *what* killed them, *where*, and at what
 level, and it uses that:
 
@@ -34,8 +34,7 @@ list has been used) plus any lines you add yourself.
 Everyone mode is off by default because unsolicited whispers to strangers get
 reported. When you turn it on it whispers once per death, never the same
 person twice, and skips deaths below level 10 (`/ripbozo minlevel` changes
-that). Every death still shows in your own chat with a roast regardless of
-the setting, and `/rip` roasts anyone on demand.
+that). `/rip` roasts anyone on demand.
 
 All of this has checkboxes under **Options > AddOns > RIP Bozo**
 (`/ripbozo options` opens it).
@@ -51,7 +50,6 @@ All of this has checkboxes under **Options > AddOns > RIP Bozo**
 | `/ripbozo guild\|friends\|party\|everyone on\|off` | Who gets auto-whispered when they die |
 | `/ripbozo minlevel <n>` | Everyone mode ignores deaths below this level (default 10) |
 | `/ripbozo self on\|off` | Roast yourself in chat when you die |
-| `/ripbozo feed on\|off` | Roast every death you see, in your chat only |
 | `/ripbozo test` | Print a random line |
 | `/ripbozo list` | Print every line |
 | `/ripbozo add <text>` | Add your own line |

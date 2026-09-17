@@ -1,16 +1,16 @@
 -- RIP Bozo - hardcore death roasts
 --
 -- Listens for hardcore death announcements (the HARDCORE_DEATHS alert event,
--- the HardcoreDeaths chat channel, and the system-message fallback), prints
--- a roast for every death in your own chat, and whispers a random line to
--- the fallen player. By default that whisper only goes to people you know
+-- the HardcoreDeaths chat channel, and the system-message fallback) and
+-- whispers a random roast to the fallen player. Nothing extra is printed:
+-- the outgoing whisper in your chat is the confirmation. By default that whisper only goes to people you know
 -- (guildmates, friends, party/raid members). "Everyone" mode whispers any
 -- death on the realm (one whisper per death, skipping brand-new characters).
 -- Options > AddOns > RIP Bozo has switches for all of it.
 
 local addonName, ns = ...
 
-ns.VERSION = "1.1.0"
+ns.VERSION = "1.1.1"
 
 --------------------------------------------------------------------------
 -- the lines
@@ -56,7 +56,6 @@ local DEFAULTS = {
     everyone = false, -- whisper anyone who dies
     minLevel = 10, -- "everyone" mode ignores deaths below this level
     self = true, -- roast yourself in chat when you die
-    feed = true, -- roast every death you see, in your own chat only
     custom = {}, -- extra lines added with /ripbozo add
     learned = {} -- subzone -> zone picked up as you travel
 }
@@ -368,22 +367,12 @@ function ns.OnDeath(info, source)
     ns.lastInfo = info
 
     local line = ns.ContextLine(info) or ns.PickLine()
-    local who = Short(name)
-    if level then who = ("%s (level %d)"):format(who, level) end
-    if info.killer and info.zone then
-        who = ("%s, %s in %s"):format(who, info.killer, info.zone)
-    end
 
     local relation = ns.Relationship(name, level, now)
     if relation then
         local delay = WHISPER_DELAY_MIN +
                           math.random() * (WHISPER_DELAY_MAX - WHISPER_DELAY_MIN)
         Later(delay, function() Whisper(name, line) end)
-        local label = ({party = "your party member", guild = "your guildmate",
-                        friend = "your friend", everyone = "them"})[relation]
-        ns.Print("%s died. Whispering %s: \"%s\"", who, label, line)
-    elseif ns.db.feed then
-        ns.Print("%s died. %s", who, line)
     end
 end
 
@@ -509,9 +498,9 @@ local function OnOff(v) return v and "|cFF66FF66on|r" or "|cFFFF6666off|r" end
 
 local function PrintStatus()
     local db = ns.db
-    ns.Print("v%s - auto-whisper: guild %s, friends %s, party %s, everyone %s (min level %d) | self-roast %s | death feed %s",
+    ns.Print("v%s - auto-whisper: guild %s, friends %s, party %s, everyone %s (min level %d) | self-roast %s",
              ns.VERSION, OnOff(db.guild), OnOff(db.friends), OnOff(db.party),
-             OnOff(db.everyone), db.minLevel or 0, OnOff(db.self), OnOff(db.feed))
+             OnOff(db.everyone), db.minLevel or 0, OnOff(db.self))
     ns.Print("%d lines (%d custom). /ripbozo help for commands.",
              #ns.AllLines(), #db.custom)
 end
@@ -525,7 +514,6 @@ local function PrintHelp()
     ns.Print("  /ripbozo options - open the settings panel (also under Options > AddOns)")
     ns.Print("  /ripbozo minlevel <n> - everyone mode ignores deaths below this level")
     ns.Print("  /ripbozo self on|off - roast yourself in chat when you die")
-    ns.Print("  /ripbozo feed on|off - roast every death you see, in your chat only")
     ns.Print("  /ripbozo test - print a random line")
     ns.Print("  /ripbozo list - print every line")
     ns.Print("  /ripbozo add <text> - add your own line")
@@ -552,7 +540,7 @@ function ns.HandleOptions(input)
             ns.Print("usage: /ripbozo minlevel <level> (currently %d)", db.minLevel or 0)
         end
     elseif cmd == "guild" or cmd == "friends" or cmd == "party" or cmd ==
-        "self" or cmd == "feed" or cmd == "everyone" then
+        "self" or cmd == "everyone" then
         arg = arg:lower()
         if arg == "on" then
             db[cmd] = true

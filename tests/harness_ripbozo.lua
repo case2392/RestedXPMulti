@@ -163,7 +163,7 @@ do
     check(timers[1][1] >= 2 and timers[1][1] <= 5, "guildmate: whisper delayed a few seconds")
     RunTimers()
     check(#whispers == 1 and whispers[1].kind == "WHISPER" and whispers[1].target == "Rheaper", "guildmate: whispered")
-    check(Printed("Rheaper (level 23) died. Whispering your guildmate"), "guildmate: announced in chat")
+    check(#printed == 0, "guildmate: nothing printed, the whisper is the only output")
 
     ns.OnEvent("CHAT_MSG_CHANNEL", "Sneaky has died at level 40", "Sneaky", "", "1. HardcoreDeaths", "", "", 0, 1, "HardcoreDeaths")
     RunTimers()
@@ -173,13 +173,13 @@ do
     check(#whispers == 3 and whispers[3].target == "Bnetbud", "battle.net friend: whispered")
     ns.OnEvent("HARDCORE_DEATHS", "Groupie has died at level 9")
     RunTimers()
-    check(#whispers == 4 and whispers[4].target == "Groupie" and Printed("Whispering your party member"), "party member: whispered")
+    check(#whispers == 4 and whispers[4].target == "Groupie", "party member: whispered")
 
     -- strangers: chat feed only, never a whisper
     ns.OnEvent("HARDCORE_DEATHS", "Randomguy has died at level 31")
     RunTimers()
     check(#whispers == 4, "stranger: no whisper")
-    check(Printed("Randomguy (level 31) died."), "stranger: roasted in own chat")
+    check(#printed == 0, "stranger: nothing printed either")
 
     -- other channels are ignored
     ns.OnEvent("CHAT_MSG_CHANNEL", "Rheaper has died lol", "Someone", "", "2. Trade", "", "", 0, 2, "Trade")
@@ -206,10 +206,10 @@ do
     ns.HandleOptions("everyone on")
     check(_G.RIPBozoDB.everyone == true and Printed("heads up"), "everyone on: saved with a warning")
     ns.OnEvent("HARDCORE_DEATHS", "Newbie has been slain by a Wolf in Elwynn Forest! They were level 8")
-    check(#timers == 0 and Printed("Newbie (level 8)"), "everyone on: level 8 skipped (min level 10), still in the feed")
+    check(#timers == 0, "everyone on: level 8 skipped (min level 10)")
     ns.OnEvent("HARDCORE_DEATHS", "Stranger2 has been slain by a Defias Captive in The Stockade! They were level 31")
     RunTimers()
-    check(#whispers == 1 and whispers[1].target == "Stranger2" and Printed("Whispering them"), "everyone on: stranger whispered")
+    check(#whispers == 1 and whispers[1].target == "Stranger2", "everyone on: stranger whispered")
     check(whispers[1].msg:find("31", 1, true) or whispers[1].msg:find("Captive", 1, true) or #whispers[1].msg > 0, "everyone on: whisper has content")
     ns.HandleOptions("minlevel 30")
     ns.OnEvent("HARDCORE_DEATHS", "Stranger3 has been slain by a Boar in Durotar! They were level 25")
@@ -232,17 +232,14 @@ do
     local ns = NewWorld({guild = {"Rheaper"}, party = {Groupie = true}})
     ns.HandleOptions("guild off")
     ns.OnEvent("HARDCORE_DEATHS", "Rheaper has died at level 23")
-    check(#timers == 0 and Printed("Rheaper (level 23) died."), "guild off: guildmate only roasted locally")
-    ns.HandleOptions("feed off")
-    ns.OnEvent("HARDCORE_DEATHS", "Nobody has died at level 5")
-    check(not Printed("Nobody (level 5)"), "feed off: strangers silent")
+    check(#timers == 0, "guild off: guildmate not whispered")
     ns.OnEvent("HARDCORE_DEATHS", "Groupie has died at level 5")
-    check(#timers == 1, "feed off: party member still whispered")
+    check(#timers == 1, "party member still whispered")
     ns.HandleOptions("self off")
     printed = {}
     ns.OnEvent("PLAYER_DEAD")
     check(#printed == 0, "self off: no self roast")
-    check(_G.RIPBozoDB.guild == false and _G.RIPBozoDB.feed == false and _G.RIPBozoDB.self == false, "toggles saved")
+    check(_G.RIPBozoDB.guild == false and _G.RIPBozoDB.self == false, "toggles saved")
     ns.HandleOptions("")
     check(Printed("auto-whisper: guild"), "status prints")
 end
