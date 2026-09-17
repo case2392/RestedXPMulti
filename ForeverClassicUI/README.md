@@ -1,8 +1,15 @@
 # Forever Classic UI
 
-Brings the classic-look **nameplates**, **cast bars** and **combo points** back on
-*World of Warcraft Forever* (and runs harmlessly on Classic Era, where it is
-also testable today).
+Brings the classic look back on *World of Warcraft Forever*: nameplates,
+cast bars, combo points, player and target frames, the main action bar art
+and the minimap. Every part has its own switch under Options > AddOns >
+Forever Classic UI. On Classic Era it recognises the classic look is already
+there and does nothing, which makes it safe to test today.
+
+Forever runs the retail UI engine with a "Camelot" flavor on top (that is
+what its UI source calls it). This addon reads the same Blizzard frames retail
+addons do and moves their art, sizes and anchors to the Classic values taken
+from Classic Era's own UI code.
 
 ## What it does
 
@@ -24,6 +31,15 @@ also testable today).
   as a pip bar under the player frame instead; that bar (rogue and druid)
   is parked on a hidden frame, out of combat, and the dots take over.
   Classic clients that still draw the original are left alone.
+- **Player and target frames** — the classic UI-TargetingFrame art (mirrored
+  for the player), 119x12 health and mana bars, level in the frame corner,
+  elite / rare / rare-elite target art, the classic combat flash. Focus frame
+  too. Blizzard's own redraws (vehicle art, power-type changes, target
+  classification) are re-skinned as they happen.
+- **Action bar art** — the classic stone bar under the main action bar
+  between the gryphons; the retail frame border is hidden.
+- **Minimap** — the 140px round map with the classic ring border and the
+  zone-name strip; the day/night dial is hidden.
 - **Probe** — `/cui probe` opens a copyable report of everything the addon
   depends on: client build and toc number, which Blizzard UI pieces are
   loaded, nameplate style support, cast bar art, whether the classic textures
@@ -45,6 +61,8 @@ takes the other parts down.
 | `/cui combo on\|off` | Classic combo points on the target frame (`/reload` after off) |
 | `/cui combo offset <x> <y>` | Nudge the dots if the target frame art differs (no numbers = reset) |
 | `/cui combo force` | Draw the classic combo points right now, replacing Blizzard's (testing) |
+| `/cui unitframes\|actionbars\|minimap on\|off\|force` | The other parts |
+| `/cui options` | Open the settings panel (Options > AddOns > Forever Classic UI) |
 | `/cui probe` | Client report to copy and send for support |
 
 ## Testing on Classic Era today

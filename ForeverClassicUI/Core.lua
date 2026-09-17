@@ -13,7 +13,10 @@ ns.errors = {}
 local DEFAULTS = {
     nameplates = true,
     castbar = true,
-    combo = true
+    combo = true,
+    unitframes = true,
+    actionbars = true,
+    minimap = true
 }
 
 function ns.Print(fmt, ...)
@@ -66,6 +69,7 @@ function ns.OnLogin()
     for _, name in ipairs(ns.moduleOrder) do
         if ns.db[name] ~= false then EnableModule(name) end
     end
+    if ns.BuildOptionsPanel then ns.SafeCall("options", ns.BuildOptionsPanel) end
 end
 
 --------------------------------------------------------------------------
@@ -97,6 +101,8 @@ local function PrintHelp()
     ns.Print("  /cui combo on|off - classic combo points on the target frame")
     ns.Print("  /cui combo offset <x> <y> - nudge the combo points (no numbers = reset)")
     ns.Print("  /cui combo force - draw the classic combo points now (testing)")
+    ns.Print("  /cui unitframes|actionbars|minimap on|off|force - the other classic parts")
+    ns.Print("  /cui options - open the settings panel (Options > AddOns > Forever Classic UI)")
     ns.Print("  /cui probe - client report to copy and send for support")
 end
 
@@ -107,6 +113,8 @@ function ns.HandleSlash(input)
         PrintStatus()
     elseif cmd == "probe" then
         if ns.ShowProbe then ns.SafeCall("probe", ns.ShowProbe) end
+    elseif cmd == "options" or cmd == "config" then
+        if ns.OpenOptions then ns.SafeCall("options", ns.OpenOptions) end
     elseif cmd == "help" then
         PrintHelp()
     elseif ns.modules[cmd] then
@@ -115,10 +123,12 @@ function ns.HandleSlash(input)
             ns.db[cmd] = true
             EnableModule(cmd)
             ns.Print("%s on.", cmd)
+            if ns.optionsPanel and ns.optionsPanel.Refresh then ns.optionsPanel.Refresh() end
         elseif arg == "off" then
             ns.db[cmd] = false
             DisableModule(cmd)
             ns.Print("%s off.", cmd)
+            if ns.optionsPanel and ns.optionsPanel.Refresh then ns.optionsPanel.Refresh() end
         elseif arg == "force" and mod.Force then
             ns.SafeCall(cmd .. " force", mod.Force, mod)
         elseif arg ~= "" and mod.Command and mod:Command(arg) then

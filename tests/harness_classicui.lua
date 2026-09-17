@@ -8,12 +8,16 @@
 local root = arg and arg[1] or "."
 local realPrint = print
 local passed, failed = 0, 0
+local lastNs
 local function check(cond, label)
     if cond then
         passed = passed + 1
     else
         failed = failed + 1
         realPrint("FAIL: " .. label)
+        if label:find("no errors") and lastNs then
+            for _, e in ipairs(lastNs.errors) do realPrint("   error: " .. e) end
+        end
     end
 end
 
@@ -47,6 +51,9 @@ local function Region(kind, init)
     function r:IsShown() return self.shown end
     function r:SetAlpha(a) self.alpha = a end
     function r:SetFontObject(f) self.font = f end
+    function r:SetJustifyH(j) self.justify = j end
+    function r:SetTextureSliceMargins() end
+    function r:SetDrawLayer() end
     function r:SetText(t) self.text = t end
     function r:GetText() return self.text end
     function r:RemoveMaskTexture(m) self.maskRemoved = m end
@@ -80,6 +87,17 @@ local function Frame(name)
     function f:UnregisterAllEvents() self.events = {} end
     function f:RegisterUnitEvent(e) self.events[e] = true end
     function f:GetAlpha() return self.alpha end
+    function f:SetStatusBarTexture(tex) self.barTexture = tex end
+    function f:GetStatusBarTexture() self.fill = self.fill or Region("Texture"); return self.fill end
+    function f:SetStatusBarColor(...) self.barColor = {...} end
+    function f:SetMaskTexture(m) self.mask = m end
+    function f:SetFrameLevel(l) self.level = l end
+    function f:GetFrameLevel() return self.level or 1 end
+    function f:SetJustifyH(j) self.justify = j end
+    function f:SetChecked(v) self.checked = v end
+    function f:GetChecked() return self.checked end
+    function f:Click() self.checked = not self.checked; self.scripts.OnClick(self) end
+    function f:SetWidth(w) self.width = w end
     return f
 end
 
@@ -178,7 +196,13 @@ local function NewWorld(opts)
     end
     _G.UIParent = Frame("UIParent")
     _G.SlashCmdList = {}
+    _G.Settings = {
+        RegisterCanvasLayoutCategory = function(frame, name) return {ID = "cat_" .. name, frame = frame} end,
+        RegisterAddOnCategory = function(cat) _G.__registeredCategory = cat end,
+        OpenToCategory = function(id) _G.__openedCategory = id end
+    }
     _G.hooksecurefunc = function(tbl, name, hook)
+        if type(tbl) == "string" then tbl, name, hook = _G, tbl, name end
         local orig = tbl[name]
         tbl[name] = function(...)
             local r = orig(...)
@@ -256,7 +280,59 @@ local function NewWorld(opts)
         _G.RogueComboPointBarFrame = Frame("RogueComboPointBarFrame")
         _G.RogueComboPointBarFrame.events = {UNIT_POWER_FREQUENT = true}
     end
+    _G.ReloadUI = function() w.reloaded = true end
+    if opts.classicBars then
+        -- classic client: the old frames exist by name
+        _G.PlayerFrame = Frame("PlayerFrame"); _G.PlayerFrameTexture = Region("Texture")
+        _G.MainMenuBarArtFrame = Frame("MainMenuBarArtFrame")
+        _G.Minimap = Frame("Minimap"); _G.MinimapCluster = Frame("MinimapCluster"); _G.MinimapBorder = Region("Texture")
+        _G.MinimapCompassTexture = Region("Texture", {file = "Interface\\Minimap\\CompassRing"})
+    end
     if opts.forever then
+        -- Forever: retail-style player/target frames, main action bar, minimap
+        local pf = Frame("PlayerFrame")
+        pf.PlayerFrameContainer = Frame("container")
+        pf.PlayerFrameContainer.FrameTexture = Region("Texture", {atlas = "UI-HUD-UnitFrame-Player-PortraitOn"})
+        pf.PlayerFrameContainer.FrameFlash = Region("Texture", {atlas = "flash"})
+        pf.PlayerFrameContainer.AlternatePowerFrameTexture = Region("Texture")
+        pf.PlayerFrameContainer.PlayerPortrait = Region("Texture")
+        pf.PlayerFrameContainer.PlayerPortraitMask = Region("MaskTexture")
+        local main = Frame("main")
+        main.HealthBarsContainer = Frame("hc"); main.HealthBarsContainer.HealthBar = Frame("hb"); main.HealthBarsContainer.HealthBar.HealthBarMask = Region("MaskTexture")
+        main.ManaBarArea = Frame("ma"); main.ManaBarArea.ManaBar = Frame("mb"); main.ManaBarArea.ManaBar.ManaBarMask = Region("MaskTexture")
+        main.StatusTexture = Region("Texture", {atlas = "status"}); main.LevelBackgroundCircle = Region("Texture")
+        pf.PlayerFrameContent = Frame("content"); pf.PlayerFrameContent.PlayerFrameContentMain = main
+        pf.PlayerFrameContent.PlayerFrameContentContextual = Frame("ctx"); pf.PlayerFrameContent.PlayerFrameContentContextual.AttackIcon = Region("Texture"); pf.PlayerFrameContent.PlayerFrameContentContextual.PlayerPortraitCornerIcon = Region("Texture")
+        _G.PlayerFrame = pf; _G.PlayerName = Region("FontString"); _G.PlayerLevelText = Region("FontString"); _G.GameNormalNumberFont = {}
+        local function TargetLike(name, unit)
+            local tf = Frame(name); tf.unit = unit
+            tf.TargetFrameContainer = Frame("tcontainer")
+            tf.TargetFrameContainer.FrameTexture = Region("Texture", {atlas = "UI-HUD-UnitFrame-Target-PortraitOn"})
+            tf.TargetFrameContainer.Flash = Region("Texture"); tf.TargetFrameContainer.Portrait = Region("Texture"); tf.TargetFrameContainer.PortraitMask = Region("MaskTexture"); tf.TargetFrameContainer.BossPortraitFrameTexture = Region("Texture")
+            local tmain = Frame("tmain"); tmain.ReputationColor = Region("Texture", {atlas = "type"}); tmain.Name = Region("FontString"); tmain.LevelText = Region("FontString"); tmain.LevelBackgroundCircle = Region("Texture")
+            tmain.HealthBarsContainer = Frame("thc"); tmain.HealthBarsContainer.HealthBar = Frame("thb"); tmain.HealthBarsContainer.HealthBar.HealthBarMask = Region("MaskTexture")
+            tmain.ManaBar = Frame("tmb"); tmain.ManaBar.ManaBarMask = Region("MaskTexture")
+            tf.TargetFrameContent = Frame("tcontent"); tf.TargetFrameContent.TargetFrameContentMain = tmain
+            tf.TargetFrameContent.TargetFrameContentContextual = Frame("tctx"); tf.TargetFrameContent.TargetFrameContentContextual.HighLevelTexture = Region("Texture")
+            function tf:CheckClassification() self.TargetFrameContainer.FrameTexture:SetAtlas("UI-HUD-UnitFrame-Target-PortraitOn") end
+            function tf:CheckFaction() end
+            return tf
+        end
+        _G.TargetFrame = TargetLike("TargetFrame", "target"); _G.FocusFrame = TargetLike("FocusFrame", "focus")
+        _G.UnitPowerType = function(u) return 0, "MANA" end
+        _G.PowerBarColor = {MANA = {r = 0, g = 0, b = 1}, [0] = {r = 0, g = 0, b = 1}}
+        _G.UnitClassification = function(u) return w.classification or "normal" end
+        _G.UnitFrameManaBar_UpdateType = function(bar) bar:SetStatusBarTexture("UI-HUD-UnitFrame-Player-PortraitOn-Bar-Mana"); bar:SetStatusBarColor(1, 1, 1) end
+        _G.PlayerFrame_ToPlayerArt = function() pf.PlayerFrameContainer.FrameTexture:SetAtlas("UI-HUD-UnitFrame-Player-PortraitOn") end
+        -- action bar
+        local bar = Frame("MainActionBar"); bar.BorderArt = Region("Texture", {atlas = "UI-HUD-ActionBar-Frame"})
+        bar.EndCaps = {LeftEndCap = Frame("cap"), RightEndCap = Frame("cap")}
+        for _, c in pairs(bar.EndCaps) do function c:SetVisibilitySetting(v) self.visibilitySetting = v end end
+        _G.MainActionBar = bar
+        _G.EditModeManagerFrame = {ExitEditMode = function() end}
+        -- minimap
+        _G.Minimap = Frame("Minimap"); _G.MinimapCluster = Frame("MinimapCluster"); _G.MinimapCluster.MinimapContainer = Frame("mc"); _G.MinimapCluster.BorderTop = Frame("BorderTop"); _G.MinimapCluster.DielFrame = Frame("Diel")
+        _G.MinimapBackdrop = Frame("MinimapBackdrop"); _G.MinimapCompassTexture = Region("Texture", {atlas = "ui-hud-minimap-frame"}); _G.MinimapCompassTextureUnderlay = Region("Texture")
         -- Forever: level badge on every plate, Forever's constant names
         _G.NamePlateConstants.CLASSIC_NAMEPLATE_WIDTH = nil
         _G.NamePlateConstants.CLASSIC_NAME_PLATE_WIDTH = 152
@@ -279,12 +355,13 @@ local function NewWorld(opts)
 
     -- load the addon
     local ns = {}
-    for _, file in ipairs({"Core.lua", "Nameplates.lua", "CastBar.lua", "Combo.lua", "Probe.lua"}) do
+    for _, file in ipairs({"Core.lua", "Nameplates.lua", "CastBar.lua", "Combo.lua", "UnitFrames.lua", "ActionBars.lua", "Minimap.lua", "Options.lua", "Probe.lua"}) do
         local chunk, err = loadfile(root .. "/ForeverClassicUI/" .. file)
         assert(chunk, err)
         chunk("ForeverClassicUI", ns)
     end
     w.ns = ns
+    lastNs = ns
     -- login
     ns.eventFrame:Fire("ADDON_LOADED", "ForeverClassicUI")
     ns.eventFrame:Fire("PLAYER_LOGIN")
@@ -308,6 +385,7 @@ do
     check(w.ns.modules.castbar.mode == "native", "era: cast bar recognised as classic already")
     check(PlayerCastingBarFrame.lookCalls == 0, "era: cast bar not touched")
     check(w.ns.modules.combo.mode == "native", "era: combo points left to Blizzard")
+    check(w.ns.modules.unitframes.mode == "native" and w.ns.modules.actionbars.mode == "native" and w.ns.modules.minimap.mode == "native", "era: frames, bars and minimap left to Blizzard")
     check(w.ns.modules.combo.frame == nil and ComboFrame.parent == nil, "era: no combo frame built, Blizzard's untouched")
     check(#w.ns.errors == 0, "era: no errors")
 end
@@ -480,6 +558,46 @@ do
     check(w.cvars.comboPointLocation == "1" and w.comboLoaded == true and ComboFrame:IsEventRegistered("UNIT_POWER_FREQUENT"), "forever: comboPointLocation set to 1 and ComboFrame_OnLoad re-run")
     check(combo.frame == nil, "forever: no duplicate combo frame drawn")
     check(w.ns.modules.castbar.mode == "restyled" and PlayerCastingBarFrame.Border.texture == "Interface\\CastingBar\\UI-CastingBar-Border", "forever: cast bar re-skinned")
+
+    -- unit frames
+    local uf = w.ns.modules.unitframes
+    check(uf.mode == "restyled", "forever: unit frames re-skinned")
+    local pc = PlayerFrame.PlayerFrameContainer
+    check(pc.FrameTexture.texture == "Interface\\TargetingFrame\\UI-TargetingFrame" and pc.FrameTexture.width == 193 and pc.FrameTexture.height == 77, "forever: player frame uses the classic (mirrored) art")
+    local pm = PlayerFrame.PlayerFrameContent.PlayerFrameContentMain
+    check(pm.HealthBarsContainer.width == 119 and pm.HealthBarsContainer.height == 12 and pm.HealthBarsContainer.HealthBar.barTexture == "Interface\\TargetingFrame\\UI-StatusBar", "forever: player health bar is 119x12 classic")
+    check(pm.HealthBarsContainer.HealthBar.fill.maskRemoved == pm.HealthBarsContainer.HealthBar.HealthBarMask, "forever: retail health mask removed")
+    check(pm.ManaBarArea.ManaBar.barTexture == "Interface\\TargetingFrame\\UI-StatusBar" and pm.ManaBarArea.ManaBar.barColor[3] == 1, "forever: mana bar classic texture, coloured by power type")
+    check(pm.LevelBackgroundCircle.shown == false and pc.forevercuiBackdrop ~= nil, "forever: level circle hidden, dark backdrop added")
+    local tc = TargetFrame.TargetFrameContainer
+    check(tc.FrameTexture.texture == "Interface\\TargetingFrame\\UI-TargetingFrame" and tc.BossPortraitFrameTexture.shown == false, "forever: target frame classic art")
+    local tm = TargetFrame.TargetFrameContent.TargetFrameContentMain
+    check(tm.ReputationColor.texture == "Interface\\TargetingFrame\\UI-TargetingFrame-LevelBackground" and tm.HealthBarsContainer.width == 119, "forever: target name strip and health bar classic")
+    check(FocusFrame.TargetFrameContainer.FrameTexture.texture == "Interface\\TargetingFrame\\UI-TargetingFrame", "forever: focus frame too")
+    -- Blizzard redraws: elite target, mana type change, player art reset
+    w.classification = "elite"
+    TargetFrame:CheckClassification()
+    check(tc.FrameTexture.texture == "Interface\\TargetingFrame\\UI-TargetingFrame-Elite", "forever: elite target gets the classic elite art after Blizzard's redraw")
+    UnitFrameManaBar_UpdateType(pm.ManaBarArea.ManaBar)
+    check(pm.ManaBarArea.ManaBar.barTexture == "Interface\\TargetingFrame\\UI-StatusBar", "forever: mana texture restored after Blizzard's power-type update")
+    PlayerFrame_ToPlayerArt()
+    check(pc.FrameTexture.texture == "Interface\\TargetingFrame\\UI-TargetingFrame", "forever: player art restored after Blizzard's art swap")
+
+    -- action bar + minimap
+    check(w.ns.modules.actionbars.mode == "restyled" and MainActionBar.BorderArt.shown == false and w.ns.modules.actionbars.art ~= nil, "forever: retail bar border hidden, classic bar art added")
+    check(MainActionBar.EndCaps.LeftEndCap.visibilitySetting == true, "forever: gryphons forced on")
+    check(w.ns.modules.minimap.mode == "restyled" and Minimap.width == 140 and MinimapCompassTexture.texture == "Interface\\Minimap\\UI-Minimap-Border", "forever: minimap 140px with the classic ring")
+    check(w.ns.modules.minimap.header ~= nil and MinimapCluster.DielFrame.shown == false, "forever: classic header strip added, day/night dial hidden")
+
+    -- options panel
+    local panel = w.ns.optionsPanel
+    check(panel ~= nil and panel.checks.unitframes ~= nil and panel.checks.minimap ~= nil, "forever: options panel lists every part")
+    panel.Refresh()
+    check(panel.checks.nameplates.checked == true, "forever: panel reflects settings")
+    panel.checks.minimap:Click()
+    check(w.ns.db.minimap == false and w.ns.modules.minimap.mode == "off", "forever: unticking a part turns it off")
+    w.slash("options")
+    check(_G.__openedCategory == "cat_Forever Classic UI", "forever: /cui options opens the panel")
     check(#w.ns.errors == 0, "forever: no errors")
 end
 
