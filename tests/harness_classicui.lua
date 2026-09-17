@@ -204,7 +204,9 @@ local function NewWorld(opts)
     w.cvars.nameplateSize = "1"
     w.cvars.nameplateAuraScale = "1"
     w.cvars.nameplateDebuffPadding = "3"
+    if opts.cvars then for k, v in pairs(opts.cvars) do w.cvars[k] = v end end
     _G.C_CVar = {
+        RegisterCVar = function(n, default) if w.cvars[n] == nil then w.cvars[n] = tostring(default or "") end end,
         GetCVar = function(n) return w.cvars[n] end,
         SetCVar = function(n, v)
             v = tostring(v)
@@ -1001,6 +1003,7 @@ do
     w.ns.optionsPanel.deselectAll:Click()
     w.slash("castbar on")
     local saved = w.ns.db  -- the client writes this table to ForeverClassicUI.lua
+    local cvarCopy = w.cvars.ForeverClassicUI_settings
     w = NewWorld({style = "6", forever = true, savedDB = saved})
     check(w.ns.dbLoaded == true and w.ns.db.logins == 2, "reload: saved file found, login count raised")
     check(w.ns.db.unitframes == false and w.ns.modules.unitframes.mode == "off" and w.ns.modules.minimap.mode == "off", "reload: parts turned off stay off")
@@ -1008,7 +1011,16 @@ do
     check(Printed("off (saved): nameplates, combo, unitframes, actionbars, minimap, tracker"), "reload: login line names the parts that are off")
     check(w.ns.optionsPanel.checks.unitframes.checked == false and w.ns.optionsPanel.checks.castbar.checked == true, "reload: options boxes match the saved settings")
     w.slash("probe")
-    check(w.ns.lastProbe and w.ns.lastProbe:find("saved file found at login: yes  logins counted in it: 2", 1, true), "reload: probe reports the saved file and login count")
+    check(w.ns.lastProbe and w.ns.lastProbe:find("saved file found at login: yes  logins counted in it: 2", 1, true) and w.ns.lastProbe:find("settings came from: saved file", 1, true), "reload: probe reports the saved file and login count")
+    -- the same on a client that never writes the SavedVariables file: the CVar copy carries the settings
+    check(cvarCopy == "nameplates=0,castbar=1,combo=0,unitframes=0,actionbars=0,minimap=0,tracker=0", "reload: every change is also written to the settings CVar")
+    w = NewWorld({style = "6", forever = true, cvars = {ForeverClassicUI_settings = cvarCopy}})
+    check(w.ns.dbLoaded == false and w.ns.db.unitframes == false and w.ns.db.castbar == true and w.ns.modules.unitframes.mode == "off" and w.ns.modules.castbar.mode == "restyled", "no saved file: settings restored from the CVar copy")
+    check(w.ns.dbSource:find("cvar fallback", 1, true) and w.ns.optionsPanel.checks.minimap.checked == false, "no saved file: probe names the fallback, boxes match")
+    w.slash("minimap on")
+    check(w.cvars.ForeverClassicUI_settings:find("minimap=1", 1, true) and w.ns.db.minimap == true, "no saved file: slash changes go to the CVar copy too")
+    w = NewWorld({style = "6", forever = true, cvars = {ForeverClassicUI_settings = w.cvars.ForeverClassicUI_settings}})
+    check(w.ns.modules.minimap.mode == "restyled" and w.ns.modules.unitframes.mode == "off", "no saved file: second reload keeps the change")
 end
 
 realPrint(("Forever Classic UI harness: %d passed, %d failed"):format(passed, failed))

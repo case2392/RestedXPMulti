@@ -5,7 +5,7 @@
 
 local addonName, ns = ...
 
-ns.VERSION = "0.3.4"
+ns.VERSION = "0.3.5"
 ns.modules = {}
 ns.moduleOrder = {}
 ns.errors = {}
@@ -57,6 +57,47 @@ local function DisableModule(name)
     end
 end
 
+--------------------------------------------------------------------------
+-- settings storage
+-- Primary: the SavedVariables table (ForeverClassicUIDB). Fallback: a CVar
+-- of our own, because the Forever beta was seen never writing the
+-- SavedVariables file while CVars (nameplateStyle...) did persist. The
+-- on/off flags go to both on every change; at login the CVar is used only
+-- when the client handed back no saved table.
+--------------------------------------------------------------------------
+
+local SETTINGS_CVAR = "ForeverClassicUI_settings"
+
+local function SerializeSettings()
+    local parts = {}
+    for _, name in ipairs(ns.moduleOrder) do
+        parts[#parts + 1] = name .. "=" .. (ns.db[name] == false and "0" or "1")
+    end
+    return table.concat(parts, ",")
+end
+
+local function CVarAPI()
+    if C_CVar and C_CVar.RegisterCVar and C_CVar.GetCVar and C_CVar.SetCVar then return C_CVar end
+end
+
+function ns.SaveFallback()
+    local api = CVarAPI()
+    if not api or not ns.db then return end
+    pcall(api.RegisterCVar, SETTINGS_CVAR, "")
+    pcall(api.SetCVar, SETTINGS_CVAR, SerializeSettings())
+end
+
+local function LoadFallback()
+    local api = CVarAPI()
+    if not api then return nil end
+    pcall(api.RegisterCVar, SETTINGS_CVAR, "")
+    local ok, value = pcall(api.GetCVar, SETTINGS_CVAR)
+    if not ok or type(value) ~= "string" or value == "" then return nil end
+    local t = {}
+    for key, v in value:gmatch("(%w+)=([01])") do t[key] = (v == "1") end
+    return t, value
+end
+
 function ns.InitDB()
     -- remember whether the client handed us a saved table at all: if this
     -- stays "no" after a /reload, the settings file is not being written
@@ -67,6 +108,24 @@ function ns.InitDB()
     end
     ForeverClassicUIDB.logins = (tonumber(ForeverClassicUIDB.logins) or 0) + 1
     ns.db = ForeverClassicUIDB
+    ns.dbSource = ns.dbLoaded and "saved file" or "defaults"
+    if not ns.dbLoaded then
+        local fb, raw = LoadFallback()
+        if fb then
+            for k, v in pairs(fb) do
+                if DEFAULTS[k] ~= nil then ns.db[k] = v end
+            end
+            ns.dbSource = "cvar fallback (" .. raw .. ")"
+        end
+    end
+end
+
+-- switch one part on or off: saved setting + module enable/disable
+function ns.SetPart(key, on)
+    if ns.db[key] == on then return end
+    ns.db[key] = on
+    ns.SaveFallback()
+    if on then EnableModule(key) else DisableModule(key) end
 end
 
 function ns.OnLogin()
@@ -144,13 +203,11 @@ function ns.HandleSlash(input)
     elseif ns.modules[cmd] then
         local mod = ns.modules[cmd]
         if arg == "on" then
-            ns.db[cmd] = true
-            EnableModule(cmd)
+            ns.SetPart(cmd, true)
             ns.Print("%s on.", cmd)
             if ns.optionsPanel and ns.optionsPanel.Refresh then ns.optionsPanel.Refresh() end
         elseif arg == "off" then
-            ns.db[cmd] = false
-            DisableModule(cmd)
+            ns.SetPart(cmd, false)
             ns.Print("%s off.", cmd)
             if ns.optionsPanel and ns.optionsPanel.Refresh then ns.optionsPanel.Refresh() end
         elseif arg == "force" and mod.Force then

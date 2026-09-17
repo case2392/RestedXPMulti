@@ -109,6 +109,12 @@ Confirmed on 1.60.1 (build 69893, toc 16001). After installing, type
 frames, action bar and minimap are re-skinned, combo points use Blizzard's
 classic frame.
 
+Settings are kept in the usual SavedVariables file and, because the beta
+was seen never writing that file, also in a CVar of the addon's own
+(`ForeverClassicUI_settings`), which the client does persist. At login the
+CVar copy is used when no saved file comes back; `/cui probe` says which
+one the settings came from.
+
 Rule for every part on this client: no Lua field writes into Blizzard's
 frames and no calls into Blizzard's nameplate/unit-frame functions from addon
 code. Forever wraps unit health, cast times and similar in "secret values"

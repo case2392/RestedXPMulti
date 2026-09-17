@@ -15,16 +15,9 @@ local LABELS = {
 
 local panel
 
--- switch one part on or off: saved setting + module enable/disable
+-- switch one part on or off: saved setting (file + CVar fallback) and module enable/disable
 local function SetPart(key, on)
-    if ns.db[key] == on then return end
-    ns.db[key] = on
-    local mod = ns.modules[key]
-    if on then
-        if mod and mod.Enable then ns.SafeCall(key, mod.Enable, mod) end
-    else
-        if mod and mod.Disable then ns.SafeCall(key, mod.Disable, mod) end
-    end
+    ns.SetPart(key, on)
 end
 
 local function MakeCheck(parent, y, key)
