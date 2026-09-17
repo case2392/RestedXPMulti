@@ -373,6 +373,7 @@ local function NewWorld(opts)
             p.UnitFrame = {PlayerLevelDiffFrame = badge, anchorsUpdated = 0, HealthBarsContainer = Frame("hc"), CastBarsContainer = Frame("cc")}
             p.UnitFrame.HealthBarsContainer.healthBar = Frame("healthBar")
             p.UnitFrame.HealthBarsContainer.healthBar.bgTexture = Region("Texture", {file = "Interface\\Tooltips\\Nameplate-Border"})
+            p.UnitFrame.LevelFrame = Frame("LevelFrame")
             function p.UnitFrame:UpdateAnchors() self.anchorsUpdated = self.anchorsUpdated + 1 end
         end
         _G.NamePlateSetupOptions.castBarToHealthBarSpacing = 4
@@ -625,6 +626,10 @@ do
         check(bg.texcoord and bg.texcoord[2] == 136 / 256 and bg.texcoord[3] == 0.5 and math.abs(bg.width - 108.8) < 0.01 and bg.anchors[1][1] == "LEFT", "forever: retail border image cropped to its art and left-aligned on plate " .. i)
         bg:SetTexCoord(0, 1, 0.5, 1); bg:ClearAllPoints(); bg:SetPoint("CENTER", p.UnitFrame.HealthBarsContainer, "CENTER", 0, 0); bg:SetSize(102.4, 12.8) -- Blizzard re-laying out
         check(bg.texcoord[2] == 136 / 256 and math.abs(bg.width - 108.8) < 0.01 and bg.anchors[1][1] == "LEFT" and #bg.anchors == 1, "forever: border crop re-applied after Blizzard's SetSize on plate " .. i)
+        local lv = p.UnitFrame.LevelFrame
+        check(#lv.anchors == 1 and lv.anchors[1][2] == bg and lv.anchors[1][3] == "RIGHT" and math.abs(lv.anchors[1][4] + 12.4) < 0.01, "forever: level centred in the longer slot on plate " .. i)
+        lv:ClearAllPoints(); lv:SetPoint("CENTER", bg, "RIGHT", -8.8, 0) -- Blizzard's own anchor
+        check(#lv.anchors == 1 and math.abs(lv.anchors[1][4] + 12.4) < 0.01, "forever: level anchor re-applied after Blizzard's SetPoint on plate " .. i)
         check(p.UnitFrame.PlayerLevelDiffFrame.forevercuiPatched == nil and p.UnitFrame.PlayerLevelDiffFrame:ShouldDisplay() == true and p.UnitFrame.anchorsUpdated == 0, "forever: plate " .. i .. " Lua tables untouched")
     end
     -- a plate added later: only the badge alpha changes

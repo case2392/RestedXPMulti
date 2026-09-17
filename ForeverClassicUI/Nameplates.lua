@@ -105,6 +105,11 @@ end
 local RETAIL_BORDER_ART = 136 -- px of the 256 px image that carry the border
 local RETAIL_BORDER_IMAGE = 256
 local CLASSIC_BORDER_ART = 128
+-- centre of the level slot, measured from the art's right edge: Era's slot
+-- runs 106..127 of 128 (Blizzard anchors the level 11 px in); Forever's
+-- runs 106..135 of 136
+local RETAIL_LEVEL_INSET = 15.5
+M.levelHooked = setmetatable({}, {__mode = "k"})
 M.retailBorderArt = WOW_PROJECT_ID ~= nil and WOW_PROJECT_MAINLINE ~= nil and
                         WOW_PROJECT_ID == WOW_PROJECT_MAINLINE
 M.borderHooked = setmetatable({}, {__mode = "k"})
@@ -123,6 +128,20 @@ local function ApplyBorderCrop(bg, container)
     M.inBorder = false
 end
 
+-- Blizzard anchors the level 11 px (scaled) in from the border's right edge,
+-- which is Era's slot centre; on Forever's longer slot that is off-centre.
+-- Re-anchor to the slot centre after Blizzard's own SetPoint on it.
+local function ApplyLevelAnchor(level, bg)
+    if M.inLevel or not (M.enabled and M.mode == "cvar") then return end
+    local o = NamePlateSetupOptions
+    local w = o and o.healthBarBorderWidth
+    if not w then return end
+    M.inLevel = true
+    level:ClearAllPoints()
+    level:SetPoint("CENTER", bg, "RIGHT", -RETAIL_LEVEL_INSET * (w / CLASSIC_BORDER_ART), 0)
+    M.inLevel = false
+end
+
 local function FixBorder(uf)
     if not M.retailBorderArt then return end
     local container = uf.HealthBarsContainer
@@ -134,6 +153,14 @@ local function FixBorder(uf)
         hooksecurefunc(bg, "SetSize", function(self) ApplyBorderCrop(self, container) end)
     end
     ApplyBorderCrop(bg, container)
+    local level = uf.LevelFrame
+    if level and level.SetPoint and level.ClearAllPoints then
+        if hooksecurefunc and not M.levelHooked[level] then
+            M.levelHooked[level] = true
+            hooksecurefunc(level, "SetPoint", function(self) ApplyLevelAnchor(self, bg) end)
+        end
+        ApplyLevelAnchor(level, bg)
+    end
 end
 
 local function FixPlate(plate)
