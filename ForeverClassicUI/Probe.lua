@@ -341,6 +341,30 @@ local function Describe(obj, label)
     if obj.GetDrawLayer then
         add(function() local layer = obj:GetDrawLayer(); return layer and tostring(layer) end)
     end
+    if obj.GetTexCoord and (kind == "Texture" or kind == "MaskTexture") then
+        add(function()
+            local ulx, uly, llx, lly, urx, ury, lrx, lry = obj:GetTexCoord()
+            if ulx == nil then return end
+            if ulx ~= 0 or uly ~= 0 or urx ~= 1 or lry ~= 1 or llx ~= 0 or lly ~= 1 or lrx ~= 1 or ury ~= 0 then
+                return ("coord=%.4f,%.4f,%.4f,%.4f"):format(ulx, urx, uly, lly) -- left,right,top,bottom
+            end
+        end)
+    end
+    if obj.GetBlendMode then
+        add(function() local m = obj:GetBlendMode(); if m and m ~= "BLEND" then return "blend=" .. tostring(m) end end)
+    end
+    if kind == "FontString" and obj.GetFont then
+        add(function()
+            local path, size, flags = obj:GetFont()
+            if path then
+                return ("font=%s/%s%s"):format(tostring(path):match("[^\\/]+$") or tostring(path), tostring(math.floor((size or 0) + 0.5)), (flags and flags ~= "") and ("/" .. flags) or "")
+            end
+        end)
+    end
+    if obj.GetFrameLevel and obj.GetFrameStrata then
+        add(function() return ("lvl=%s/%s"):format(tostring(obj:GetFrameStrata()), tostring(obj:GetFrameLevel())) end)
+    end
+    if obj.IsShown and not obj:IsShown() then parts[#parts + 1] = "(hidden)" end
     if kind == "FontString" and obj.GetText then
         add(function() local t = obj:GetText(); return t and ("text=%q"):format(tostring(t)) end)
     end
@@ -368,7 +392,7 @@ local function Describe(obj, label)
     return table.concat(parts, "  ")
 end
 
-local function Walk(frame, label, depth, out, seen)
+local function Walk(frame, label, depth, out, seen, includeHidden)
     if depth > MAX_DEPTH or seen[frame] then return end
     seen[frame] = true
     out[#out + 1] = ("%s%s"):format(("  "):rep(depth), Describe(frame, label))
@@ -377,7 +401,7 @@ local function Walk(frame, label, depth, out, seen)
         if regions[1] then
             for i = 2, #regions do
                 local r = regions[i]
-                if type(r) == "table" and (not r.IsShown or r:IsShown()) then
+                if type(r) == "table" and (includeHidden or not r.IsShown or r:IsShown()) then
                     local key = KeyOf(frame, r) or (r.GetName and r:GetName()) or ("region" .. (i - 1))
                     out[#out + 1] = ("%s%s"):format(("  "):rep(depth + 1), Describe(r, key))
                 end
@@ -389,16 +413,16 @@ local function Walk(frame, label, depth, out, seen)
         if children[1] then
             for i = 2, #children do
                 local c = children[i]
-                if type(c) == "table" and (not c.IsShown or c:IsShown()) then
+                if type(c) == "table" and (includeHidden or not c.IsShown or c:IsShown()) then
                     local key = KeyOf(frame, c) or (c.GetName and c:GetName()) or ("child" .. (i - 1))
-                    Walk(c, key, depth + 1, out, seen)
+                    Walk(c, key, depth + 1, out, seen, includeHidden)
                 end
             end
         end
     end
 end
 
-function ns.BuildDump(name)
+function ns.BuildDump(name, includeHidden)
     local frame = _G[name]
     -- "target", "focus", "mouseover": that unit's nameplate
     local unitName = tostring(name):lower()
@@ -424,13 +448,13 @@ function ns.BuildDump(name)
     if type(frame) ~= "table" then
         return nil, ("no frame called %s"):format(tostring(name))
     end
-    local out = {("Classic UI for Forever %s - dump of %s (visible parts only)"):format(ns.VERSION, name)}
-    Walk(frame, name, 0, out, {})
+    local out = {("Classic UI for Forever %s - dump of %s (%s)"):format(ns.VERSION, name, includeHidden and "all parts, hidden ones marked" or "visible parts only")}
+    Walk(frame, name, 0, out, {}, includeHidden)
     return table.concat(out, "\n")
 end
 
-function ns.DumpFrame(name)
-    local text, why = ns.BuildDump(name)
+function ns.DumpFrame(name, includeHidden)
+    local text, why = ns.BuildDump(name, includeHidden)
     if not text then
         ns.Print("dump: %s", why)
         return
@@ -451,10 +475,16 @@ local REPORT_FRAMES = {
     "ObjectiveTrackerFrame"
 }
 
-function ns.BuildReport()
+-- classic clients name their pieces differently; both sets are tried
+local REPORT_FRAMES_CLASSIC = {"FocusFrame", "TargetFrameToT", "MainMenuBar", "MainMenuBarArtFrame", "QuestWatchFrame", "MinimapBorder", "MinimapZoneTextButton"}
+
+function ns.BuildReport(includeHidden)
     local parts = {ns.BuildProbe()}
-    for _, name in ipairs(REPORT_FRAMES) do
-        local text, why = ns.BuildDump(name)
+    local names = {}
+    for _, n in ipairs(REPORT_FRAMES) do names[#names + 1] = n end
+    for _, n in ipairs(REPORT_FRAMES_CLASSIC) do if _G[n] then names[#names + 1] = n end end
+    for _, name in ipairs(names) do
+        local text, why = ns.BuildDump(name, includeHidden)
         parts[#parts + 1] = text or ("-- " .. name .. ": " .. tostring(why))
     end
     local errs = {"-- Lua errors this session (last " .. #(ns.luaErrors or {}) .. ", newest last)"}
@@ -467,8 +497,8 @@ function ns.BuildReport()
     return table.concat(parts, "\n\n")
 end
 
-function ns.ShowReport()
-    local text = ns.BuildReport()
+function ns.ShowReport(includeHidden)
+    local text = ns.BuildReport(includeHidden)
     ns.lastReport = text
     return ns.ShowText(text)
 end

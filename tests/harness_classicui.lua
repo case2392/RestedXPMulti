@@ -66,6 +66,9 @@ local function Region(kind, init)
     function r:GetVertexColor() if self.vertex then return unpack(self.vertex) end return 1, 1, 1, 1 end
     function r:GetAlpha() return self.alpha end
     function r:GetDrawLayer() return "ARTWORK", 0 end
+    function r:GetTexCoord() local c = self.texcoord; if c then return c[1], c[3], c[1], c[4], c[2], c[3], c[2], c[4] end return 0, 0, 0, 1, 1, 0, 1, 1 end
+    function r:GetBlendMode() return self.blend or "BLEND" end
+    function r:GetFont() return "Fonts\\FRIZQT__.TTF", 12, "" end
     return r
 end
 
@@ -102,6 +105,7 @@ local function Frame(name)
     function f:SetMaskTexture(m) self.mask = m end
     function f:SetFrameLevel(l) self.level = l end
     function f:GetFrameLevel() return self.level or 1 end
+    function f:GetFrameStrata() return "MEDIUM" end
     function f:SetJustifyH(j) self.justify = j end
     function f:SetChecked(v) self.checked = v end
     function f:GetChecked() return self.checked end
@@ -830,6 +834,12 @@ do
     check(rep and rep:find("probe", 1, true) and rep:find("dump of PlayerFrame", 1, true) and rep:find("dump of TargetFrame", 1, true) and rep:find("dump of NamePlate7 (target)", 1, true), "beta: report bundles the probe and the frame dumps")
     check(rep:find("dump of MinimapCluster", 1, true) and rep:find("dump of ObjectiveTrackerFrame", 1, true), "beta: report covers every frame it should")
     check(rep:find("x2 Interface/AddOns/Blizzard_NamePlates/x.lua:1", 1, true) and rep:find("stack line 1", 1, true) and rep:find("something else broke", 1, true), "beta: report includes the Lua error log with stacks")
+    check(rep:find("coord=0.1016,1.0000,0.0078,0.781", 1, true) and rep:find("font=FRIZQT__.TTF/12", 1, true) and rep:find("lvl=MEDIUM/", 1, true), "beta: dumps carry texture crops, fonts and frame levels")
+    check(rep:find("(hidden)", 1, true) == nil, "beta: plain report lists visible pieces only")
+    w.slash("report all")
+    check(w.ns.lastReport:find("all parts, hidden ones marked", 1, true) and w.ns.lastReport:find("LevelBackgroundCircle  Texture", 1, true) and w.ns.lastReport:find("(hidden)", 1, true), "beta: report all includes hidden pieces, marked")
+    w.slash("dump TargetFrame all")
+    check(w.ns.lastDump:find("(hidden)", 1, true), "beta: dump <frame> all includes hidden pieces")
     -- secret values: sizes and texts that cannot be read are marked, not fatal
     local secretRegion = TargetFrame.TargetFrameContent.TargetFrameContentMain.Name
     function secretRegion:GetSize() error("attempt to perform arithmetic on a secret value") end

@@ -106,6 +106,7 @@ local function PrintHelp()
     ns.Print("  /cui unitframes|actionbars|minimap|tracker on|off|force - the other classic parts")
     ns.Print("  /cui options - open the settings panel (Options > AddOns > Classic UI for Forever)")
     ns.Print("  /cui report - everything for support in one window: probe, every frame, Lua errors")
+    ns.Print("  /cui report all - the same including hidden parts (use this on Classic Era for comparison)")
     ns.Print("  /cui probe - client report only")
     ns.Print("  /cui dump <FrameName> - list a frame's visible parts (e.g. /cui dump TargetFrame)")
     ns.Print("  /cui dump target - the same for your target's nameplate")
@@ -119,11 +120,12 @@ function ns.HandleSlash(input)
     elseif cmd == "probe" then
         if ns.ShowProbe then ns.SafeCall("probe", ns.ShowProbe) end
     elseif cmd == "report" then
-        if ns.ShowReport then ns.SafeCall("report", ns.ShowReport) end
+        if ns.ShowReport then ns.SafeCall("report", ns.ShowReport, arg == "all") end
     elseif cmd == "dump" then
         -- frame names are case-sensitive globals, keep the arg as typed
         if ns.DumpFrame then
-            ns.SafeCall("dump", ns.DumpFrame, rawArg ~= "" and rawArg or "TargetFrame")
+            local target, mode = rawArg:match("^(%S*)%s*(%S*)$")
+            ns.SafeCall("dump", ns.DumpFrame, target ~= "" and target or "TargetFrame", mode:lower() == "all")
         end
     elseif cmd == "options" or cmd == "config" then
         if ns.OpenOptions then ns.SafeCall("options", ns.OpenOptions) end
