@@ -32,10 +32,13 @@ list has been used) plus any lines you add yourself.
 | `everyone` | **off** | anyone who dies on the realm |
 
 Everyone mode is off by default because unsolicited whispers to strangers get
-reported. When you turn it on it is capped at 20 whispers an hour, one per
-death, and it skips deaths below level 10 (`/ripbozo minlevel` changes that).
-Every death still shows in your own chat with a roast regardless of the
-setting, and `/rip` roasts anyone on demand.
+reported. When you turn it on it whispers once per death, never the same
+person twice, and skips deaths below level 10 (`/ripbozo minlevel` changes
+that). Every death still shows in your own chat with a roast regardless of
+the setting, and `/rip` roasts anyone on demand.
+
+All of this has checkboxes under **Options > AddOns > RIP Bozo**
+(`/ripbozo options` opens it).
 
 ## Commands
 
@@ -44,6 +47,7 @@ setting, and `/rip` roasts anyone on demand.
 | `/rip` | Whisper a roast to your target (or the last death you saw) |
 | `/rip <name>` | Whisper a roast to that player |
 | `/ripbozo` | Show settings |
+| `/ripbozo options` | Open the settings panel (Options > AddOns > RIP Bozo) |
 | `/ripbozo guild\|friends\|party\|everyone on\|off` | Who gets auto-whispered when they die |
 | `/ripbozo minlevel <n>` | Everyone mode ignores deaths below this level (default 10) |
 | `/ripbozo self on\|off` | Roast yourself in chat when you die |

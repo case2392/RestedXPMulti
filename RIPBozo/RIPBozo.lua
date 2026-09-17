@@ -5,12 +5,12 @@
 -- a roast for every death in your own chat, and whispers a random line to
 -- the fallen player. By default that whisper only goes to people you know
 -- (guildmates, friends, party/raid members). "Everyone" mode whispers any
--- death on the realm, rate limited and skipping brand-new characters, so it
--- stays banter rather than a spam cannon.
+-- death on the realm (one whisper per death, skipping brand-new characters).
+-- Options > AddOns > RIP Bozo has switches for all of it.
 
 local addonName, ns = ...
 
-ns.VERSION = "1.0.1"
+ns.VERSION = "1.1.0"
 
 --------------------------------------------------------------------------
 -- the lines
@@ -53,7 +53,7 @@ local DEFAULTS = {
     guild = true, -- whisper guildmates who die
     friends = true, -- whisper friends (friends list + Battle.net) who die
     party = true, -- whisper party/raid members who die
-    everyone = false, -- whisper anyone who dies (rate limited, see below)
+    everyone = false, -- whisper anyone who dies
     minLevel = 10, -- "everyone" mode ignores deaths below this level
     self = true, -- roast yourself in chat when you die
     feed = true, -- roast every death you see, in your own chat only
@@ -171,12 +171,10 @@ end
 
 local DEDUPE_SECONDS = 600 -- same name dying twice inside this = same death
 local WHISPER_DELAY_MIN, WHISPER_DELAY_MAX = 2, 5
-local STRANGER_LIMIT, STRANGER_WINDOW = 20, 3600 -- "everyone" whispers per hour
 
 ns.db = nil
 ns.seen = {} -- name -> time of last roast (dedupe)
 ns.lastDeath = nil -- name of the most recent death we saw
-ns.strangerTimes = {} -- when we whispered strangers (rate limit window)
 local used = {} -- lines handed out since the last full cycle
 local usedCount = 0
 
@@ -276,16 +274,6 @@ function ns.IsGroupmate(name)
     return false
 end
 
--- strangers: at most STRANGER_LIMIT whispers per STRANGER_WINDOW seconds
-function ns.StrangerAllowed(now)
-    local kept = {}
-    for _, t in ipairs(ns.strangerTimes) do
-        if now - t < STRANGER_WINDOW then kept[#kept + 1] = t end
-    end
-    ns.strangerTimes = kept
-    return #kept < STRANGER_LIMIT
-end
-
 -- returns why we'd whisper them, or nil
 function ns.Relationship(name, level, now)
     local db = ns.db
@@ -294,7 +282,6 @@ function ns.Relationship(name, level, now)
     if db.friends and ns.IsFriend(name) then return "friend" end
     if db.everyone then
         if level and level < (db.minLevel or 0) then return nil end
-        if not ns.StrangerAllowed(now or 0) then return nil end
         return "everyone"
     end
     return nil
@@ -389,9 +376,6 @@ function ns.OnDeath(info, source)
 
     local relation = ns.Relationship(name, level, now)
     if relation then
-        if relation == "everyone" then
-            ns.strangerTimes[#ns.strangerTimes + 1] = now
-        end
         local delay = WHISPER_DELAY_MIN +
                           math.random() * (WHISPER_DELAY_MAX - WHISPER_DELAY_MIN)
         Later(delay, function() Whisper(name, line) end)
@@ -440,6 +424,13 @@ end
 -- events
 --------------------------------------------------------------------------
 
+function ns.OnOptionChanged(key)
+    if key == "everyone" and ns.db.everyone then
+        ns.Print("everyone mode on: whispering strangers who die (one per death, deaths below level %d skipped).",
+                 ns.db.minLevel or 0)
+    end
+end
+
 function ns.InitDB()
     RIPBozoDB = RIPBozoDB or {}
     for k, v in pairs(DEFAULTS) do
@@ -465,6 +456,7 @@ function ns.OnEvent(event, ...)
         if (...) == addonName then ns.InitDB() end
     elseif event == "PLAYER_LOGIN" then
         if not ns.db then ns.InitDB() end
+        if ns.BuildOptionsPanel then pcall(ns.BuildOptionsPanel) end
     elseif event == "HARDCORE_DEATHS" then
         local info = ns.ParseDeath((...))
         if info then ns.OnDeath(info, "alert") end
@@ -529,7 +521,8 @@ local function PrintHelp()
     ns.Print("  /rip - whisper a roast to your target (or the last death you saw)")
     ns.Print("  /rip <name> - whisper a roast to that player")
     ns.Print("  /ripbozo guild|friends|party on|off - who gets auto-whispered when they die")
-    ns.Print("  /ripbozo everyone on|off - whisper anyone who dies (max %d an hour, skips low levels)", STRANGER_LIMIT)
+    ns.Print("  /ripbozo everyone on|off - whisper anyone who dies (skips low levels)")
+    ns.Print("  /ripbozo options - open the settings panel (also under Options > AddOns)")
     ns.Print("  /ripbozo minlevel <n> - everyone mode ignores deaths below this level")
     ns.Print("  /ripbozo self on|off - roast yourself in chat when you die")
     ns.Print("  /ripbozo feed on|off - roast every death you see, in your chat only")
@@ -548,6 +541,8 @@ function ns.HandleOptions(input)
         PrintStatus()
     elseif cmd == "help" then
         PrintHelp()
+    elseif cmd == "options" or cmd == "config" then
+        if ns.OpenOptions then ns.OpenOptions() end
     elseif cmd == "minlevel" then
         local n = tonumber(arg)
         if n then
@@ -567,9 +562,10 @@ function ns.HandleOptions(input)
             db[cmd] = not db[cmd]
         end
         ns.Print("%s %s.", cmd, OnOff(db[cmd]))
+        if ns.optionsPanel and ns.optionsPanel.Refresh then ns.optionsPanel.Refresh() end
         if cmd == "everyone" and db.everyone then
-            ns.Print("heads up: this whispers strangers. It's capped at %d an hour, one per death, and skips deaths below level %d. Unsolicited whispers can get reported, so keep it to banter.",
-                     STRANGER_LIMIT, db.minLevel or 0)
+            ns.Print("heads up: this whispers strangers. One per death, never the same person twice, and deaths below level %d are skipped. Unsolicited whispers can get reported, so keep it to banter.",
+                     db.minLevel or 0)
         end
     elseif cmd == "test" then
         ns.Print(ns.PickLine())

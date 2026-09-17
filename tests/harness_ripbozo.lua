@@ -17,7 +17,33 @@ local function NewWorld(opts)
     printed, whispers, timers = {}, {}, {}
     _G.print = function(...) local t = {} for i = 1, select("#", ...) do t[i] = tostring(select(i, ...)) end table.insert(printed, table.concat(t, " ")) end
     _G.RIPBozoDB = opts.db
-    _G.CreateFrame = function() local f = {} function f:RegisterEvent() end function f:SetScript(_, fn) self.fn = fn end return f end
+    local function Widget()
+        local f = {children = {}}
+        function f:RegisterEvent() end
+        function f:SetScript(k, fn) self.scripts = self.scripts or {}; self.scripts[k] = fn end
+        function f:SetPoint() end function f:SetSize() end function f:SetWidth() end
+        function f:SetText(v) self.text = v end function f:GetText() return self.text end
+        function f:SetJustifyH() end function f:SetOrientation() end
+        function f:SetMinMaxValues(a, b) self.min, self.max = a, b end
+        function f:SetValueStep() end function f:SetObeyStepOnDrag() end
+        function f:SetValue(v) self.value = v; if self.scripts and self.scripts.OnValueChanged then self.scripts.OnValueChanged(self, v) end end
+        function f:GetValue() return self.value end
+        function f:SetChecked(v) self.checked = v end function f:GetChecked() return self.checked end
+        function f:Click() self.checked = not self.checked; self.scripts.OnClick(self) end
+        function f:CreateFontString() return Widget() end
+        return f
+    end
+    _G.CreateFrame = function(kind, name, parent, template)
+        local f = Widget()
+        f.kind, f.template = kind, template
+        if parent and parent.children then table.insert(parent.children, f) end
+        return f
+    end
+    _G.Settings = {
+        RegisterCanvasLayoutCategory = function(frame, name) return {ID = "cat_" .. name, frame = frame} end,
+        RegisterAddOnCategory = function(cat) _G.__registeredCategory = cat end,
+        OpenToCategory = function(id) _G.__openedCategory = id end
+    }
     _G.SlashCmdList = {}
     _G.C_Timer = {After = function(s, fn) table.insert(timers, {s, fn}) end}
     _G.SendChatMessage = function(msg, kind, _, target) table.insert(whispers, {msg = msg, kind = kind, target = target}) end
@@ -41,7 +67,7 @@ local function NewWorld(opts)
     local ns = {}
     _G.GetSubZoneText = function() return opts.subzone end
     _G.GetRealZoneText = function() return opts.zone end
-    for _, f in ipairs({"Zones.lua", "RIPBozo.lua"}) do
+    for _, f in ipairs({"Zones.lua", "RIPBozo.lua", "Options.lua"}) do
         local chunk = assert(loadfile(root .. "/RIPBozo/" .. f))
         chunk("RIPBozo", ns)
     end
@@ -189,14 +215,14 @@ do
     ns.OnEvent("HARDCORE_DEATHS", "Stranger3 has been slain by a Boar in Durotar! They were level 25")
     check(#timers == 0, "minlevel 30: level 25 skipped")
     ns.HandleOptions("minlevel 1")
-    for i = 4, 30 do
+    for i = 4, 40 do
         ns.OnEvent("HARDCORE_DEATHS", ("Stranger%d has been slain by a Boar in Durotar! They were level 25"):format(i))
     end
     RunTimers()
-    check(#whispers == 20, "rate limit: at most 20 stranger whispers an hour")
-    ns.OnEvent("HARDCORE_DEATHS", "Sneaky has been slain by a Boar in Durotar! They were level 25")
+    check(#whispers == 38, "everyone on: no hourly cap, every stranger whispered once")
+    ns.OnEvent("HARDCORE_DEATHS", "Stranger4 has been slain by a Boar in Durotar! They were level 25")
     RunTimers()
-    check(#whispers == 21 and whispers[21].target == "Sneaky", "rate limit: friends are not limited")
+    check(#whispers == 38, "same person announced again: not whispered twice")
     ns.HandleOptions("everyone off")
     check(_G.RIPBozoDB.everyone == false, "everyone off again")
 end
@@ -258,6 +284,27 @@ do
     check(ns2.RoastNow(nil) == "Fresh", "/rip falls back to the last death seen")
     SlashCmdList["RIP"]("  Spaced  ")
     check(whispers[#whispers].target == "Spaced", "slash trims the name")
+end
+
+-- options panel
+do
+    local ns = NewWorld()
+    local panel = ns.optionsPanel
+    check(panel ~= nil and panel.name == "RIP Bozo", "options panel built at login")
+    check(_G.__registeredCategory and _G.__registeredCategory.ID == "cat_RIP Bozo", "panel registered under Options > AddOns")
+    panel.Refresh()
+    check(panel.checks.guild.checked == true and panel.checks.everyone.checked == false, "panel reflects saved settings")
+    check(panel.slider.value == 10 and panel.slider.label.text:find("level 10", 1, true), "slider shows the minimum level")
+    panel.checks.everyone:Click()
+    check(_G.RIPBozoDB.everyone == true and Printed("everyone mode on"), "ticking everyone saves it and warns")
+    panel.checks.guild:Click()
+    check(_G.RIPBozoDB.guild == false, "unticking guild saves it")
+    panel.slider:SetValue(25)
+    check(_G.RIPBozoDB.minLevel == 25, "slider saves the minimum level")
+    ns.HandleOptions("guild on")
+    check(panel.checks.guild.checked == true, "slash command updates the panel")
+    ns.HandleOptions("options")
+    check(_G.__openedCategory == "cat_RIP Bozo", "/ripbozo options opens the panel")
 end
 
 realPrint(("RIP Bozo harness: %d passed, %d failed"):format(passed, failed))
