@@ -40,8 +40,10 @@ from Classic Era's own UI code.
 - **Player, target and pet frames** — the classic UI-TargetingFrame art
   (mirrored for the player) drawn *over* 119x12 health and mana bars the
   way Classic does (retail draws the bars over the art, which is why they
-  looked flat and stuck out), square portraits under the art instead of
-  retail's circle masks, level in the frame corner in the small gold font,
+  looked flat and stuck out; Forever locks the bar frames to their parent's
+  level, so the art sits on a frame of the addon's one level above them,
+  with a copy of the level text on it), round portraits filling the art's
+  ring, level in the frame corner in the small gold font,
   elite / rare / rare-elite target art, the classic combat flash and rest
   icon, and the small classic pet frame. Focus frame too. Every size and
   anchor comes from a `/cui report all` taken on Classic Era. Blizzard's own

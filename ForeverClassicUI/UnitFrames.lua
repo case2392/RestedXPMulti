@@ -11,6 +11,17 @@
 -- classic ones. Every number here comes from a `/cui report all` taken on
 -- Classic Era 1.15.9. Classic clients already draw this and are left alone.
 --
+-- Draw order is the part retail got backwards for this art: Classic draws
+-- the frame texture *over* the bars (the bevel around each bar is part of
+-- the art, the bar ends vanish under it) and the level text over the art.
+-- Forever draws the art on the *Container child under the bars, and the
+-- bar frames are locked to their parent's frame level (useParentLevel), so
+-- they cannot be moved down. Instead the classic art goes on a "skin"
+-- frame of ours one level above the bars, with a copy of the level text on
+-- it (the art is opaque where the level sits; the name area is transparent
+-- so Blizzard's name shows through), and the contextual icons (combat,
+-- skull, raid marks, auras) are raised above that.
+--
 -- Rule (Forever wraps unit health in secret values): no Lua field writes
 -- into Blizzard's frames, no calls into Blizzard's unit frame functions.
 -- Widget calls and hooksecurefunc only. Anything of ours that hangs off a
@@ -77,29 +88,39 @@ local function Fade(frame)
     if frame and frame.SetAlpha then frame:SetAlpha(0) end
 end
 
--- Retail clips portraits and bars with MaskTextures (attached at load and
--- re-attached by Blizzard's art swaps). A mask cannot be detached from
--- everything it clips without writing into Blizzard's tables, so instead it
--- is turned into a plain white square over the region it clips: white means
--- "show", and the mask's clamp-to-black wrap keeps it from revealing
--- anything outside that square.
-local function Whiten(mask, region, pad)
-    if not mask or not region then return end
-    if mask.SetTexture then pcall(mask.SetTexture, mask, WHITE) end
-    if mask.ClearAllPoints and mask.SetPoint then
-        mask:ClearAllPoints()
-        mask:SetPoint("TOPLEFT", region, "TOPLEFT", -pad, pad)
-        mask:SetPoint("BOTTOMRIGHT", region, "BOTTOMRIGHT", pad, -pad)
-    end
-    if mask.Show then mask:Show() end
-end
-
+-- Retail clips the bars with MaskTextures (attached at load and re-attached
+-- by Blizzard's art swaps). A mask cannot be detached from everything it
+-- clips without writing into Blizzard's tables, so instead it is turned
+-- into a plain white square over the bar: white means "show", and the
+-- mask's clamp-to-black wrap keeps it from revealing anything outside.
 local function Unmask(bar, mask)
     local tex = bar and bar.GetStatusBarTexture and bar:GetStatusBarTexture()
     if tex and mask and tex.RemoveMaskTexture then
         pcall(tex.RemoveMaskTexture, tex, mask)
     end
-    Whiten(mask, bar, 4)
+    if not mask then return end
+    if mask.SetTexture then pcall(mask.SetTexture, mask, WHITE) end
+    if mask.ClearAllPoints and mask.SetPoint then
+        mask:ClearAllPoints()
+        mask:SetPoint("TOPLEFT", bar, "TOPLEFT", -4, 4)
+        mask:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", 4, -4)
+    end
+    if mask.Show then mask:Show() end
+end
+
+-- Portraits stay round: the classic art is transparent at the portrait's
+-- corners (Classic's own portrait renders were round). The plain circle
+-- mask, the full size of the portrait, fills the art's ring edge to edge;
+-- Forever's player-specific mask is smaller and left a dark gap.
+local function RoundPortrait(mask, portrait)
+    if not mask or not portrait then return end
+    if mask.SetAtlas then pcall(mask.SetAtlas, mask, "CircleMask") end
+    if mask.ClearAllPoints and mask.SetPoint then
+        mask:ClearAllPoints()
+        mask:SetPoint("TOPLEFT", portrait, "TOPLEFT", 0, 0)
+        mask:SetPoint("BOTTOMRIGHT", portrait, "BOTTOMRIGHT", 0, 0)
+    end
+    if mask.Show then mask:Show() end
 end
 
 -- black 50% box behind the bars, like PlayerFrameBackground /
@@ -118,22 +139,78 @@ local function Backdrop(frame, point, x, y, height)
     return tex
 end
 
--- Classic draws the frame art over the bars: the bevel around each bar is
--- part of the art and the bar ends disappear under it. Retail draws the
--- bars over the art. On Forever the art lives on the *Container child
--- (unit frame level + 1) and the bars on *ContentMain (level + 2); moving
--- the bar frames down to the unit frame's own level puts them under the art
--- while the name and level texts on *ContentMain stay on top, exactly the
--- Era order (HealthBar level 2, PlayerFrameTexture and texts level 3).
-local function LowerBars(frame, ...)
-    if not frame.GetFrameLevel then return end
-    local level = frame:GetFrameLevel()
-    for i = 1, select("#", ...) do
-        local f = select(i, ...)
-        if f and f.GetFrameLevel and f.SetFrameLevel and f:GetFrameLevel() ~= level then
-            f:SetFrameLevel(level)
+-- The skin frame: ours, one frame level above the bars (which are locked to
+-- the *ContentMain child's level), carrying the classic art and a copy of
+-- the level text. Re-levelled on every restyle in case Blizzard moved.
+local function Skin(frame, main)
+    local own = Own(frame)
+    local skin = own.skin
+    if not skin then
+        if not CreateFrame then return end
+        skin = CreateFrame("Frame", nil, frame)
+        skin:SetAllPoints(frame)
+        skin.art = skin:CreateTexture(nil, "BORDER")
+        skin.glow = skin:CreateTexture(nil, "ARTWORK")
+        skin.glow:SetAlpha(0)
+        skin.levelText = skin:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        if skin.levelText.SetJustifyH then skin.levelText:SetJustifyH("CENTER") end
+        own.skin = skin
+    end
+    if skin.SetFrameLevel and main and main.GetFrameLevel then
+        skin:SetFrameLevel(main:GetFrameLevel() + 1)
+    end
+    return skin
+end
+
+-- icons that Classic drew over the art (combat icon, skull, raid mark,
+-- auras) live on the *ContentContextual child: put it above the skin
+local function RaiseContextual(contextual, main)
+    if contextual and contextual.SetFrameLevel and main and main.GetFrameLevel then
+        local want = main:GetFrameLevel() + 2
+        if contextual:GetFrameLevel() ~= want then contextual:SetFrameLevel(want) end
+    end
+end
+
+-- Keep a region of ours in step with one of Blizzard's: text, colour,
+-- alpha and shown state are copied now and again after every Blizzard
+-- call that changes them (hooksecurefunc on the widget methods). White
+-- level text (Forever's choice for the player) becomes classic gold.
+local function Sync(src)
+    local dst = Own(src).mirror
+    if not dst then return end
+    if src.GetText and dst.SetText then
+        local ok, text = pcall(src.GetText, src)
+        if ok then dst:SetText(text or "") end
+    end
+    if src.GetVertexColor and dst.SetVertexColor then
+        local ok, r, g, b = pcall(src.GetVertexColor, src)
+        if ok and r then
+            if r == 1 and g == 1 and b == 1 then dst:SetVertexColor(1, 0.82, 0)
+            else dst:SetVertexColor(r, g, b) end
         end
     end
+    local isText = src.GetObjectType and src:GetObjectType() == "FontString"
+    if src.GetAlpha and dst.SetAlpha and not isText then
+        local ok, a = pcall(src.GetAlpha, src)
+        if ok and a then dst:SetAlpha(a) end
+    end
+    if src.IsShown then
+        if src:IsShown() then dst:Show() else dst:Hide() end
+    end
+end
+
+local MIRROR_METHODS = {"SetText", "SetFormattedText", "SetVertexColor", "SetTextColor", "SetAlpha", "Show", "Hide", "SetShown"}
+local function Mirror(src, dst)
+    if not src or not dst then return end
+    local own = Own(src)
+    local first = own.mirror == nil
+    own.mirror = dst
+    if first and hooksecurefunc then
+        for _, m in ipairs(MIRROR_METHODS) do
+            if src[m] then hooksecurefunc(src, m, function() Sync(src) end) end
+        end
+    end
+    Sync(src)
 end
 
 -- power-type colour for a UI-StatusBar mana bar (retail draws typed atlases)
@@ -144,47 +221,25 @@ local function ColorManaBar(bar, unit)
     if info and info.r then bar:SetStatusBarColor(info.r, info.g, info.b) end
 end
 
--- classic level text: GameFontNormalSmall, gold. Blizzard's update paints
--- the player's white on every level change (Forever's PlayerFrame_GetLevelRGBA);
--- the target's keeps Blizzard's difficulty colour.
-local function ClassicLevelFont(fs)
-    if not fs then return end
-    if fs.SetFontObject and GameFontNormalSmall then fs:SetFontObject("GameFontNormalSmall") end
-    if fs.SetJustifyH then fs:SetJustifyH("CENTER") end
-end
-
-local function GoldLevel(fs)
-    if not fs or not fs.GetVertexColor then return end
-    local ok, r, g, b = pcall(fs.GetVertexColor, fs)
-    if ok and r == 1 and g == 1 and b == 1 and fs.SetVertexColor then
-        fs:SetVertexColor(1, 0.82, 0)
-    end
-end
-
 --------------------------------------------------------------------------
 -- player
 --------------------------------------------------------------------------
 
--- the classic "Zzz" rest icon (Forever plays a flipbook animation there)
-local function RestIcon(pf)
-    local own = Own(pf)
-    if own.rest or not CreateFrame then return end
-    local f = CreateFrame("Frame", nil, pf)
-    f:SetSize(31, 33)
-    f:SetPoint("TOPLEFT", pf, "TOPLEFT", 19.5, -52)
-    if f.SetFrameLevel and pf.GetFrameLevel then f:SetFrameLevel(pf:GetFrameLevel() + 4) end
-    local tex = f:CreateTexture(nil, "OVERLAY")
-    tex:SetAllPoints(f)
+-- the classic "Zzz" rest icon on the skin (Forever plays a flipbook there)
+local function RestIcon(pf, skin)
+    if skin.rest then return end
+    local tex = skin:CreateTexture(nil, "OVERLAY")
+    tex:SetSize(31, 33)
+    tex:SetPoint("TOPLEFT", pf, "TOPLEFT", 19.5, -52)
     SetFile(tex, STATE_ICON_TEX, 0, 0.5, 0, 0.421875)
-    f.tex = tex
+    skin.rest = tex
     local function Update()
-        f:SetAlpha((IsResting and IsResting()) and 1 or 0)
+        tex:SetAlpha((IsResting and IsResting()) and 1 or 0)
     end
-    f:RegisterEvent("PLAYER_UPDATE_RESTING")
-    f:RegisterEvent("PLAYER_ENTERING_WORLD")
-    f:SetScript("OnEvent", Update)
+    skin:RegisterEvent("PLAYER_UPDATE_RESTING")
+    skin:RegisterEvent("PLAYER_ENTERING_WORLD")
+    skin:SetScript("OnEvent", Update)
     Update()
-    own.rest = f
 end
 
 function M.RestylePlayer()
@@ -193,20 +248,20 @@ function M.RestylePlayer()
     local content = pf and pf.PlayerFrameContent
     local main = content and content.PlayerFrameContentMain
     if not container or not main then return false end
+    local skin = Skin(pf, main)
+    if not skin then return false end
     M.inRestyle = true
     -- frames under the (protected) player frame only move out of combat
     local layout = not InCombat()
     if not layout then M.pendingPlayer = true end
 
-    -- frame art: classic player frame is the target texture mirrored
-    local art = container.FrameTexture
-    if art then
-        SetFile(art, FRAME_TEX, 0.85546875, 0.1015625, 0.0625, 0.6640625)
-        art:ClearAllPoints()
-        art:SetSize(193, 77)
-        art:SetPoint("CENTER", pf, "CENTER", 0, 0)
-        art:Show()
-    end
+    -- frame art: classic player frame is the target texture mirrored, on
+    -- the skin above the bars; Blizzard's copy under them goes transparent
+    SetFile(skin.art, FRAME_TEX, 0.85546875, 0.1015625, 0.0625, 0.6640625)
+    skin.art:ClearAllPoints()
+    skin.art:SetSize(193, 77)
+    skin.art:SetPoint("CENTER", pf, "CENTER", 0, 0)
+    Hide(container.FrameTexture)
     Hide(container.AlternatePowerFrameTexture)
     local flash = container.FrameFlash
     if flash then
@@ -217,18 +272,19 @@ function M.RestylePlayer()
         flash:SetPoint("TOPLEFT", pf, "TOPLEFT", -3, -4)
     end
 
-    -- portrait: a plain 64x64 square, the art above it rounds it off
+    -- portrait: 64x64 round, filling the art's ring
     local portrait = container.PlayerPortrait
     if portrait then
         portrait:ClearAllPoints()
         portrait:SetSize(64, 64)
         portrait:SetPoint("TOPLEFT", pf, "TOPLEFT", 24, -16)
-        Whiten(container.PlayerPortraitMask, portrait, 0)
+        RoundPortrait(container.PlayerPortraitMask, portrait)
     end
 
     Backdrop(pf, "TOPLEFT", 89.5, -26, 41)
 
-    -- name / level
+    -- name shows through the art's transparent strip; the level sits on
+    -- the art's opaque corner circle, so a copy of it lives on the skin
     if PlayerName then
         PlayerName:ClearAllPoints()
         PlayerName:SetSize(100, 12)
@@ -236,14 +292,14 @@ function M.RestylePlayer()
         if PlayerName.SetJustifyH then PlayerName:SetJustifyH("CENTER") end
     end
     Hide(main.LevelBackgroundCircle)
+    skin.levelText:ClearAllPoints()
+    skin.levelText:SetPoint("CENTER", pf, "BOTTOMLEFT", 35.25, 30)
     if PlayerLevelText then
-        PlayerLevelText:ClearAllPoints()
-        PlayerLevelText:SetPoint("CENTER", pf, "BOTTOMLEFT", 35.25, 30)
-        ClassicLevelFont(PlayerLevelText)
-        GoldLevel(PlayerLevelText)
+        Mirror(PlayerLevelText, skin.levelText)
+        Fade(PlayerLevelText)
     end
 
-    -- bars: fill any time, size / anchor / draw order out of combat
+    -- bars: fill any time, size / anchor out of combat
     local hc = main.HealthBarsContainer
     local hb = hc and hc.HealthBar
     local mb = main.ManaBarArea and main.ManaBarArea.ManaBar
@@ -262,6 +318,7 @@ function M.RestylePlayer()
         mb:SetStatusBarTexture(BAR_TEX)
         ColorManaBar(mb, "player")
     end
+    local contextual = content.PlayerFrameContentContextual
     if layout then
         if hc then
             hc:ClearAllPoints()
@@ -278,19 +335,22 @@ function M.RestylePlayer()
             mb:SetSize(119, 12)
             mb:SetPoint("TOPLEFT", pf, "TOPLEFT", 90, -56)
         end
-        LowerBars(pf, hc, main.ManaBarArea)
+        RaiseContextual(contextual, main)
     end
 
-    -- rested / combat glow around the frame, combat icon, rest icon
+    -- rested / combat glow around the frame: Classic draws it over the art,
+    -- so ours on the skin follows Blizzard's (shown, colour, pulse alpha)
+    -- and Blizzard's, under the art, loses its image
     local status = main.StatusTexture
     if status then
-        SetFile(status, STATUS_TEX, 0, 0.74609375, 0, 0.53125)
-        status:ClearAllPoints()
-        status:SetSize(190, 66)
-        status:SetPoint("TOPLEFT", pf, "TOPLEFT", 19, -12)
-        if status.SetBlendMode then status:SetBlendMode("ADD") end
+        SetFile(skin.glow, STATUS_TEX, 0, 0.74609375, 0, 0.53125)
+        skin.glow:ClearAllPoints()
+        skin.glow:SetSize(190, 66)
+        skin.glow:SetPoint("TOPLEFT", pf, "TOPLEFT", 19, -12)
+        if skin.glow.SetBlendMode then skin.glow:SetBlendMode("ADD") end
+        Mirror(status, skin.glow)
+        if status.SetTexture then status:SetTexture(nil) end
     end
-    local contextual = content.PlayerFrameContentContextual
     if contextual then
         local attack = contextual.AttackIcon
         if attack then
@@ -302,7 +362,7 @@ function M.RestylePlayer()
         Hide(contextual.PlayerPortraitCornerIcon)
         Fade(contextual.PlayerRestLoop)
     end
-    RestIcon(pf)
+    RestIcon(pf, skin)
 
     M.inRestyle = false
     return true
@@ -324,19 +384,21 @@ end
 
 function M.RestyleTargetArt(frame)
     local container = frame and frame.TargetFrameContainer
-    if not container then return end
-    local art = container.FrameTexture
-    if art then
-        local kind = Classification(frame.unit)
-        SetFile(art, TARGET_ART[kind] or FRAME_TEX, 0.1015625, 1.0, 0.0078125, 0.78125)
-        art:ClearAllPoints()
-        art:SetSize(230, 99)
-        art:SetPoint("CENTER", frame, "CENTER", 18.5, -4)
-        art:Show()
-    end
+    local content = frame and frame.TargetFrameContent
+    local main = content and content.TargetFrameContentMain
+    if not container or not main then return end
+    local skin = Skin(frame, main)
+    if not skin then return end
+    local kind = Classification(frame.unit)
+    SetFile(skin.art, TARGET_ART[kind] or FRAME_TEX, 0.1015625, 1.0, 0.0078125, 0.78125)
+    skin.art:ClearAllPoints()
+    skin.art:SetSize(230, 99)
+    skin.art:SetPoint("CENTER", frame, "CENTER", 18.5, -4)
+    -- Blizzard's CheckClassification puts its atlas back on every target
+    -- change; it stays transparent under the bars
+    Hide(container.FrameTexture)
     Hide(container.BossPortraitFrameTexture)
-    -- Blizzard's CheckClassification also puts the retail combat flash atlas
-    -- back (with the atlas size) on every target change
+    -- ...and the retail combat flash atlas (with the atlas size)
     local flash = container.Flash
     if flash then
         SetFile(flash, FLASH_TEX, 0, 0.9453125, 0, 0.181640625)
@@ -351,6 +413,8 @@ function M.RestyleTarget(frame)
     local content = frame and frame.TargetFrameContent
     local main = content and content.TargetFrameContentMain
     if not container or not main then return false end
+    local skin = Skin(frame, main)
+    if not skin then return false end
     M.inRestyle = true
 
     M.RestyleTargetArt(frame)
@@ -360,7 +424,7 @@ function M.RestyleTarget(frame)
         portrait:ClearAllPoints()
         portrait:SetSize(64, 64)
         portrait:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -24, -16)
-        Whiten(container.PortraitMask, portrait, 0)
+        RoundPortrait(container.PortraitMask, portrait)
     end
 
     Backdrop(frame, "TOPRIGHT", -89.5, -26, 25)
@@ -382,11 +446,12 @@ function M.RestyleTarget(frame)
         if name.SetJustifyH then name:SetJustifyH("CENTER") end
     end
     Hide(main.LevelBackgroundCircle)
+    skin.levelText:ClearAllPoints()
+    skin.levelText:SetPoint("CENTER", frame, "BOTTOMRIGHT", -35.25, 30)
     local level = main.LevelText
     if level then
-        level:ClearAllPoints()
-        level:SetPoint("CENTER", frame, "BOTTOMRIGHT", -35.25, 30)
-        ClassicLevelFont(level)
+        Mirror(level, skin.levelText)
+        Fade(level)
     end
     local contextual = content.TargetFrameContentContextual
     local skull = contextual and contextual.HighLevelTexture
@@ -394,7 +459,7 @@ function M.RestyleTarget(frame)
         SetFile(skull, SKULL_TEX)
         skull:ClearAllPoints()
         skull:SetSize(16, 16)
-        if level then skull:SetPoint("CENTER", level, "CENTER", 0, 0) end
+        skull:SetPoint("CENTER", skin.levelText, "CENTER", 0, 0)
     end
 
     M.RestyleTargetBars(frame)
@@ -405,7 +470,7 @@ end
 
 -- Blizzard's CheckClassification (every target change) resizes the health
 -- container to the retail 126x20 and puts the atlas fill back, so this part
--- is re-applied from that hook. Sizes, anchors and draw order on the
+-- is re-applied from that hook. Sizes, anchors and frame levels on the
 -- (protected) unit frame wait for combat to end; the fill can change any time.
 function M.RestyleTargetBars(frame)
     local content = frame and frame.TargetFrameContent
@@ -445,7 +510,7 @@ function M.RestyleTargetBars(frame)
         mb:SetSize(119, 12)
         mb:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -90, -56)
     end
-    LowerBars(frame, hc, mb)
+    RaiseContextual(content.TargetFrameContentContextual, main)
 end
 
 --------------------------------------------------------------------------
@@ -481,7 +546,7 @@ function M.RestylePet()
         PetPortrait:ClearAllPoints()
         PetPortrait:SetSize(37, 37)
         PetPortrait:SetPoint("TOPLEFT", pet, "TOPLEFT", 7, -6)
-        Whiten(pet.PortraitMask, PetPortrait, 0)
+        RoundPortrait(pet.PortraitMask, PetPortrait)
     end
     if PetName then
         PetName:ClearAllPoints()
@@ -556,12 +621,6 @@ local function InstallHooks()
                 if M.mode == "restyled" and not M.inRestyle then M.RestylePlayer() end
             end)
         end
-    end
-    -- Blizzard paints the player's level white on every level update
-    if PlayerFrame_UpdateLevel then
-        hooksecurefunc("PlayerFrame_UpdateLevel", function()
-            if M.mode == "restyled" then GoldLevel(PlayerLevelText) end
-        end)
     end
     -- retail re-textures mana bars per power type; put ours back with a colour
     if UnitFrameManaBar_UpdateType then
