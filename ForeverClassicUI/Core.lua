@@ -5,7 +5,7 @@
 
 local addonName, ns = ...
 
-ns.VERSION = "0.1.0"
+ns.VERSION = "0.2.1"
 ns.modules = {}
 ns.moduleOrder = {}
 ns.errors = {}

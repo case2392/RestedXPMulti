@@ -391,6 +391,18 @@ do
 end
 
 --------------------------------------------------------------------------
+-- 1b. Era reports the border texture as a file id, not a path
+--------------------------------------------------------------------------
+do
+    local w = NewWorld({style = "6", classicBars = true})
+    PlayerCastingBarFrame.Border.texture = 130874
+    _G.GetFileIDFromPath = function(p) if p == "Interface\\CastingBar\\UI-CastingBar-Border" then return 130874 end end
+    w.ns.modules.castbar.mode = "off"
+    w.ns.modules.castbar:Enable()
+    check(w.ns.modules.castbar.mode == "native", "era: classic cast bar recognised by file id")
+end
+
+--------------------------------------------------------------------------
 -- 2. Client that accepts the CVar but had another style selected
 --------------------------------------------------------------------------
 do

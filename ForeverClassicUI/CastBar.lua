@@ -33,9 +33,15 @@ local function IsClassicAlready(bar)
     if not bar or not bar.classicStyleCastBar then return false end
     local border = bar.Border
     local tex = border and border.GetTexture and border:GetTexture()
-    -- classic XML uses file textures; the modern one uses atlases (GetTexture
-    -- then returns the atlas' file id or nil, never our path)
-    return type(tex) == "string" and tex:lower():find("castingbar") ~= nil
+    -- classic XML uses the file texture; GetTexture returns its path on some
+    -- clients and its file id on others (Era 1.15.9 returns the id)
+    if type(tex) == "string" then
+        return tex:lower():find("castingbar") ~= nil
+    end
+    if type(tex) == "number" and GetFileIDFromPath then
+        return tex == GetFileIDFromPath(ART .. "UI-CastingBar-Border")
+    end
+    return false
 end
 
 -- look: "CLASSIC" = big player bar, "UNITFRAME" = small bar under a unit frame
