@@ -57,6 +57,15 @@ local function Region(kind, init)
     function r:SetText(t) self.text = t end
     function r:GetText() return self.text end
     function r:RemoveMaskTexture(m) self.maskRemoved = m end
+    -- read-back API used by /cui dump
+    function r:GetObjectType() return self.kind end
+    function r:GetSize() return self.width, self.height end
+    function r:GetName() return self.name end
+    function r:GetNumPoints() return #self.anchors end
+    function r:GetPoint(i) local a = self.anchors[i or 1]; if a then return unpack(a) end end
+    function r:GetVertexColor() if self.vertex then return unpack(self.vertex) end return 1, 1, 1, 1 end
+    function r:GetAlpha() return self.alpha end
+    function r:GetDrawLayer() return "ARTWORK", 0 end
     return r
 end
 
@@ -98,6 +107,23 @@ local function Frame(name)
     function f:GetChecked() return self.checked end
     function f:Click() self.checked = not self.checked; self.scripts.OnClick(self) end
     function f:SetWidth(w) self.width = w end
+    function f:GetMinMaxValues() return self.minmax and unpack(self.minmax) or 0, 0 end
+    function f:GetValue() return self.value or 0 end
+    -- children/regions are whatever tables hang off the frame by key
+    function f:GetRegions()
+        local t = {}
+        for k, v in pairs(self) do
+            if type(v) == "table" and v.kind and v.kind ~= "Frame" and type(k) == "string" then t[#t + 1] = v end
+        end
+        return unpack(t)
+    end
+    function f:GetChildren()
+        local t = {}
+        for k, v in pairs(self) do
+            if type(v) == "table" and v.kind == "Frame" and type(k) == "string" and k ~= "parent" then t[#t + 1] = v end
+        end
+        return unpack(t)
+    end
     return f
 end
 
@@ -612,6 +638,69 @@ do
     w.slash("options")
     check(_G.__openedCategory == "cat_Classic UI for Forever", "forever: /cui options opens the panel")
     check(#w.ns.errors == 0, "forever: no errors")
+end
+
+--------------------------------------------------------------------------
+-- 3d. WoW Forever as the beta really behaves: the CVar accepts 6 and the
+--     Classic enum exists, but every plate still carries the level badge
+--     and the settings page writes its own style back
+--------------------------------------------------------------------------
+do
+    local w = NewWorld({style = "1", forever = true})
+    local np = w.ns.modules.nameplates
+    check(np.mode == "cvar" and w.cvars.nameplateStyle == "6", "beta: CVar path taken")
+    for i, p in ipairs(w.plates) do
+        check(p.UnitFrame.PlayerLevelDiffFrame:ShouldDisplay("nameplate1") == false and p.UnitFrame.PlayerLevelDiffFrame.shown == false, "beta: level badge hidden on plate " .. i .. " in CVar mode")
+        check(p.UnitFrame.anchorsUpdated == 1, "beta: plate " .. i .. " re-laid out without the badge")
+    end
+    local late = {ApplyFrameOptions = function() end}
+    local badge = Frame("badge"); badge.shown = true; function badge:ShouldDisplay() return true end
+    late.UnitFrame = {PlayerLevelDiffFrame = badge, anchorsUpdated = 0}
+    function late.UnitFrame:UpdateAnchors() self.anchorsUpdated = self.anchorsUpdated + 1 end
+    w.plateByToken = {nameplate3 = late}
+    NamePlateDriverFrame:OnNamePlateAdded("nameplate3")
+    check(badge:ShouldDisplay() == false and badge.shown == false and late.UnitFrame.anchorsUpdated == 1, "beta: late plate loses the badge in CVar mode")
+
+    -- Options > Nameplates writes "Thin" back: the classic style is restored
+    w.cvars.nameplateStyle = "1"
+    np.watcher:Fire("CVAR_UPDATE", "nameplateStyle", "1")
+    check(w.cvars.nameplateStyle == "6", "beta: style put back after the settings page changed it")
+    check(Printed("kept the classic style"), "beta: user told once why")
+    printed = {}
+    w.cvars.nameplateStyle = "2"
+    np.watcher:Fire("CVAR_UPDATE", "nameplateStyle", "2")
+    check(w.cvars.nameplateStyle == "6" and not Printed("kept the classic style"), "beta: second reset silent")
+    np.watcher:Fire("CVAR_UPDATE", "someOtherCVar", "x")
+    check(w.cvars.nameplateStyle == "6", "beta: unrelated CVars ignored")
+
+    -- size command
+    _G.Enum.NamePlateSize.ExtraLarge = 3; _G.Enum.NamePlateSize.Huge = 4
+    w.slash("nameplates size large")
+    check(w.cvars.nameplateSize == "2", "beta: /cui nameplates size large sets nameplateSize")
+    w.slash("nameplates size bogus")
+    check(w.cvars.nameplateSize == "2" and Printed("size is small|medium|large|xl|huge"), "beta: bad size lists the choices")
+
+    -- off: the badge comes back and the user's style is restored, watcher stays quiet
+    w.slash("nameplates off")
+    check(w.cvars.nameplateStyle == "1", "beta: off restores the style the player had")
+    check(badge:ShouldDisplay("nameplate3") == true, "beta: off gives Forever its badge back")
+    np.watcher:Fire("CVAR_UPDATE", "nameplateStyle", "1")
+    check(w.cvars.nameplateStyle == "1", "beta: watcher idle while off")
+    w.slash("nameplates on")
+    check(w.cvars.nameplateStyle == "6" and badge:ShouldDisplay("nameplate3") == false, "beta: on again")
+
+    -- /cui dump lists the target frame's visible pieces with art and anchors
+    w.slash("dump TargetFrame")
+    local dump = w.ns.lastDump
+    check(type(dump) == "string" and dump:find("dump of TargetFrame", 1, true), "beta: dump opens for TargetFrame")
+    check(dump:find("FrameTexture", 1, true) and dump:find("UI-TargetingFrame", 1, true), "beta: dump shows the classic frame texture")
+    check(dump:find("ReputationColor", 1, true) and dump:find("TOPRIGHT>", 1, true), "beta: dump shows anchors of restyled regions")
+    check(dump:find("HealthBar  StatusBar", 1, true) or dump:find("HealthBar  Frame", 1, true), "beta: dump walks into child frames")
+    w.slash("dump targetframe")
+    check(w.ns.lastDump:find("dump of TargetFrame", 1, true), "beta: dump finds frames typed in the wrong case")
+    w.slash("dump NoSuchFrame")
+    check(Printed("no frame called NoSuchFrame"), "beta: dump reports unknown frames")
+    check(#w.ns.errors == 0, "beta: no errors")
 end
 
 --------------------------------------------------------------------------

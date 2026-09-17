@@ -5,7 +5,7 @@
 
 local addonName, ns = ...
 
-ns.VERSION = "0.2.1"
+ns.VERSION = "0.3.0"
 ns.modules = {}
 ns.moduleOrder = {}
 ns.errors = {}
@@ -95,6 +95,7 @@ local function PrintHelp()
     ns.Print("commands:")
     ns.Print("  /cui - status of each part")
     ns.Print("  /cui nameplates on|off - classic-look nameplates")
+    ns.Print("  /cui nameplates size small|medium|large|xl|huge - nameplate size")
     ns.Print("  /cui nameplates force - force the Lua fallback (testing)")
     ns.Print("  /cui castbar on|off - classic-look cast bars")
     ns.Print("  /cui castbar force - re-skin the cast bars now (testing)")
@@ -104,15 +105,21 @@ local function PrintHelp()
     ns.Print("  /cui unitframes|actionbars|minimap on|off|force - the other classic parts")
     ns.Print("  /cui options - open the settings panel (Options > AddOns > Classic UI for Forever)")
     ns.Print("  /cui probe - client report to copy and send for support")
+    ns.Print("  /cui dump <FrameName> - list a frame's visible parts (e.g. /cui dump TargetFrame)")
 end
 
 function ns.HandleSlash(input)
-    input = (input or ""):lower()
-    local cmd, arg = input:match("^(%S*)%s*(.-)$")
+    local rawCmd, rawArg = (input or ""):match("^(%S*)%s*(.-)$")
+    local cmd, arg = rawCmd:lower(), rawArg:lower()
     if cmd == "" or cmd == "status" then
         PrintStatus()
     elseif cmd == "probe" then
         if ns.ShowProbe then ns.SafeCall("probe", ns.ShowProbe) end
+    elseif cmd == "dump" then
+        -- frame names are case-sensitive globals, keep the arg as typed
+        if ns.DumpFrame then
+            ns.SafeCall("dump", ns.DumpFrame, rawArg ~= "" and rawArg or "TargetFrame")
+        end
     elseif cmd == "options" or cmd == "config" then
         if ns.OpenOptions then ns.SafeCall("options", ns.OpenOptions) end
     elseif cmd == "help" then

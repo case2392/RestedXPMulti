@@ -252,8 +252,7 @@ local function CreateProbeFrame()
     return f
 end
 
-function ns.ShowProbe()
-    local text = ns.BuildProbe()
+function ns.ShowText(text)
     if CreateFrame and UIParent then
         probeFrame = probeFrame or CreateProbeFrame()
         probeFrame.edit:SetText(text)
@@ -264,4 +263,141 @@ function ns.ShowProbe()
     ns.lastProbe = text
     ns.Print("probe window opened - copy the text and send it over.")
     return text
+end
+
+function ns.ShowProbe()
+    return ns.ShowText(ns.BuildProbe())
+end
+
+--------------------------------------------------------------------------
+-- /cui dump <FrameName>: every visible texture, font string and child frame
+-- of a Blizzard frame with size, anchor, art and colour - for finding
+-- stray pieces on a client we cannot see.
+--------------------------------------------------------------------------
+
+local MAX_DEPTH = 6
+
+local function KeyOf(parent, child)
+    if type(parent) ~= "table" then return nil end
+    for k, v in pairs(parent) do
+        if v == child and type(k) == "string" then return k end
+    end
+end
+
+local function Describe(obj, label)
+    local parts = {label}
+    local kind = obj.GetObjectType and obj:GetObjectType() or "?"
+    parts[#parts + 1] = kind
+    if obj.GetSize then
+        local w, h = obj:GetSize()
+        parts[#parts + 1] = ("%dx%d"):format(math.floor((w or 0) + 0.5), math.floor((h or 0) + 0.5))
+    end
+    if obj.GetPoint then
+        local ok, point, rel, relPoint, x, y = pcall(obj.GetPoint, obj, 1)
+        if ok and point then
+            local relName = rel and rel.GetName and rel:GetName() or (rel and "parent") or "nil"
+            parts[#parts + 1] = ("%s>%s.%s %+.1f,%+.1f"):format(point, relName, tostring(relPoint), x or 0, y or 0)
+        else
+            parts[#parts + 1] = "no-anchor"
+        end
+    end
+    if obj.GetAtlas and obj:GetAtlas() then
+        parts[#parts + 1] = "atlas=" .. tostring(obj:GetAtlas())
+    elseif obj.GetTexture and obj:GetTexture() then
+        parts[#parts + 1] = "tex=" .. tostring(obj:GetTexture())
+    end
+    if obj.GetVertexColor then
+        local ok, r, g, b, a = pcall(obj.GetVertexColor, obj)
+        if ok and r and (r < 0.99 or g < 0.99 or b < 0.99) then
+            parts[#parts + 1] = ("rgb=%.2f,%.2f,%.2f"):format(r, g, b)
+        end
+    end
+    if obj.GetAlpha then
+        local a = obj:GetAlpha()
+        if a and a < 0.99 then parts[#parts + 1] = ("alpha=%.2f"):format(a) end
+    end
+    if obj.GetDrawLayer then
+        local ok, layer = pcall(obj.GetDrawLayer, obj)
+        if ok and layer then parts[#parts + 1] = tostring(layer) end
+    end
+    if kind == "FontString" and obj.GetText and obj:GetText() then
+        parts[#parts + 1] = ("text=%q"):format(tostring(obj:GetText()))
+    end
+    if kind == "StatusBar" and obj.GetStatusBarTexture then
+        local fill = obj:GetStatusBarTexture()
+        if fill then
+            local ok, r, g, b = pcall(fill.GetVertexColor, fill)
+            if ok and r then parts[#parts + 1] = ("fill=%.2f,%.2f,%.2f"):format(r, g, b) end
+            if fill.GetAtlas and fill:GetAtlas() then
+                parts[#parts + 1] = "filltex=" .. tostring(fill:GetAtlas())
+            elseif fill.GetTexture then
+                parts[#parts + 1] = "filltex=" .. tostring(fill:GetTexture())
+            end
+        end
+        if obj.GetMinMaxValues and obj.GetValue then
+            local lo, hi = obj:GetMinMaxValues()
+            parts[#parts + 1] = ("value=%s/%s..%s"):format(tostring(obj:GetValue()), tostring(lo), tostring(hi))
+        end
+    end
+    return table.concat(parts, "  ")
+end
+
+local function Walk(frame, label, depth, out, seen)
+    if depth > MAX_DEPTH or seen[frame] then return end
+    seen[frame] = true
+    out[#out + 1] = ("%s%s"):format(("  "):rep(depth), Describe(frame, label))
+    if frame.GetRegions then
+        local regions = {pcall(frame.GetRegions, frame)}
+        if regions[1] then
+            for i = 2, #regions do
+                local r = regions[i]
+                if type(r) == "table" and (not r.IsShown or r:IsShown()) then
+                    local key = KeyOf(frame, r) or (r.GetName and r:GetName()) or ("region" .. (i - 1))
+                    out[#out + 1] = ("%s%s"):format(("  "):rep(depth + 1), Describe(r, key))
+                end
+            end
+        end
+    end
+    if frame.GetChildren then
+        local children = {pcall(frame.GetChildren, frame)}
+        if children[1] then
+            for i = 2, #children do
+                local c = children[i]
+                if type(c) == "table" and (not c.IsShown or c:IsShown()) then
+                    local key = KeyOf(frame, c) or (c.GetName and c:GetName()) or ("child" .. (i - 1))
+                    Walk(c, key, depth + 1, out, seen)
+                end
+            end
+        end
+    end
+end
+
+function ns.BuildDump(name)
+    local frame = _G[name]
+    if type(frame) ~= "table" then
+        -- typed in the wrong case? one scan of the globals
+        local wanted = tostring(name):lower()
+        for k, v in pairs(_G) do
+            if type(k) == "string" and type(v) == "table" and k:lower() == wanted and v.GetObjectType then
+                frame, name = v, k
+                break
+            end
+        end
+    end
+    if type(frame) ~= "table" then
+        return nil, ("no frame called %s"):format(tostring(name))
+    end
+    local out = {("Classic UI for Forever %s - dump of %s (visible parts only)"):format(ns.VERSION, name)}
+    Walk(frame, name, 0, out, {})
+    return table.concat(out, "\n")
+end
+
+function ns.DumpFrame(name)
+    local text, why = ns.BuildDump(name)
+    if not text then
+        ns.Print("dump: %s", why)
+        return
+    end
+    ns.lastDump = text
+    return ns.ShowText(text)
 end

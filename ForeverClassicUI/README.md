@@ -19,7 +19,11 @@ from Classic Era's own UI code.
   Classic Era draws); the addon selects it. On clients that expose it as an
   option (`nameplateStyle` = Classic) that is all it does. On clients that hide
   the option and refuse the value, it hooks Blizzard's nameplate driver and
-  forces the classic layout values through the same code path.
+  forces the classic layout values through the same code path. Forever
+  accepts the value but hides the option, so the addon also hides Forever's
+  extra level badge next to every plate (the classic border has its own level
+  slot) and puts the classic style back when Forever's Options > Nameplates
+  page writes one of its own styles over it.
 - **Cast bars** — the player cast bar and the target's spell bar get the
   classic art back (`UI-CastingBar-Border`, `-Flash`, `-Spark`, the shield for
   uninterruptible casts) and Blizzard's own code is switched to its classic
@@ -55,6 +59,7 @@ takes the other parts down.
 |---|---|
 | `/cui` | Status of each part and how it was applied |
 | `/cui nameplates on\|off` | Classic-look nameplates (off restores your previous style) |
+| `/cui nameplates size small\|medium\|large\|xl\|huge` | Nameplate size (Blizzard's `nameplateSize`) |
 | `/cui nameplates force` | Force the Lua fallback even if the option exists (testing) |
 | `/cui castbar on\|off` | Classic-look cast bars (`/reload` after off) |
 | `/cui castbar force` | Re-skin the cast bars right now (testing) |
@@ -64,6 +69,7 @@ takes the other parts down.
 | `/cui unitframes\|actionbars\|minimap on\|off\|force` | The other parts |
 | `/cui options` | Open the settings panel (Options > AddOns > Classic UI for Forever) |
 | `/cui probe` | Client report to copy and send for support |
+| `/cui dump <FrameName>` | Copyable list of a frame's visible textures, text and child frames with size, anchor, art and colour (e.g. `/cui dump TargetFrame` with something targeted) |
 
 ## Testing on Classic Era today
 
@@ -81,12 +87,13 @@ takes the other parts down.
 5. `/cui probe` — the report should list every classic texture with an id and
    "none" under errors.
 
-## When the Forever beta opens
+## On the Forever beta
 
-Run `/cui probe` on the beta and send the report (plus a screenshot of
-anything that still looks wrong). The report's `toc` number goes on the
-`## Interface:` line of `ForeverClassicUI.toc`; until then enable *Load out of date
-AddOns* in the AddOns list so the game loads it.
+Confirmed on 1.60.1 (build 69893, toc 16001): every part loads without
+errors. Nameplates take the CVar path, cast bars, unit frames, action bar and
+minimap are re-skinned, combo points use Blizzard's classic frame. For
+anything that still looks wrong, send `/cui probe`, a screenshot, and
+`/cui dump <FrameName>` for the frame in question.
 
 ## Offline tests
 

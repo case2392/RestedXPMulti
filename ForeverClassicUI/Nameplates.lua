@@ -5,13 +5,14 @@
 -- rounded Nameplate-Border art, level in the border, name centered above the
 -- bar, the small classic cast bar with its spark. On Classic clients it is
 -- exposed as the nameplateStyle CVar (value 6) and shown in Options >
--- Nameplates; on retail-style clients (Forever included) the option is
--- hidden, the enum value is gone and the CVar refuses 6.
+-- Nameplates. Forever (checked on the beta) accepts the CVar too but hides
+-- the option, keeps its own level badge next to every plate, and its
+-- settings page writes one of its own styles back. Plain retail refuses 6.
 --
--- So we try the cheap path first (set the CVar and let Blizzard do the work),
--- and if the client refuses we hook the nameplate driver and force the
--- classic layout values ourselves - the drawing code for that layout is still
--- there, it just never gets selected.
+-- So we try the cheap path first (set the CVar and let Blizzard do the work,
+-- hide the badge, guard the CVar), and if the client refuses we hook the
+-- nameplate driver and force the classic layout values ourselves - the
+-- drawing code for that layout is still there, it just never gets selected.
 
 local addonName, ns = ...
 
@@ -65,16 +66,75 @@ local function Const(name, default, altName)
 end
 
 -- Forever's nameplates carry a level badge to the right of the health bar
--- (PlayerLevelDiffFrame). The classic border has its own level slot, so the
--- badge is switched off per plate; UpdateAnchors then lays out without it.
+-- (PlayerLevelDiffFrame) on every unit. The classic border has its own level
+-- slot, so the badge is switched off per plate while the part is on;
+-- UpdateAnchors then lays out without it. Works in both the CVar and the
+-- Lua paths - Forever keeps the badge even on its built-in classic style.
 local function PatchPlate(namePlateFrameBase)
     local uf = namePlateFrameBase and namePlateFrameBase.UnitFrame
     local badge = uf and uf.PlayerLevelDiffFrame
     if badge and not badge.forevercuiPatched then
         badge.forevercuiPatched = true
-        badge.ShouldDisplay = function() return false end
-        if badge.Hide then badge:Hide() end
+        local orig = badge.ShouldDisplay
+        badge.ShouldDisplay = function(self, unit)
+            if not M.enabled and orig then return orig(self, unit) end
+            return false
+        end
     end
+    if badge and M.enabled and badge.Hide then badge:Hide() end
+end
+
+-- patch every plate that exists now and every plate acquired later
+local function InstallPlateHooks()
+    local driver = NamePlateDriverFrame
+    if not driver then return end
+    if driver.ForEachNamePlate then
+        pcall(driver.ForEachNamePlate, driver, function(frame)
+            PatchPlate(frame)
+            if frame.UnitFrame and frame.UnitFrame.UpdateAnchors then
+                pcall(frame.UnitFrame.UpdateAnchors, frame.UnitFrame)
+            end
+        end)
+    end
+    if not M.plateHooked and hooksecurefunc and driver.OnNamePlateAdded then
+        M.plateHooked = true
+        hooksecurefunc(driver, "OnNamePlateAdded", function(drv, unitToken)
+            if not M.enabled then return end
+            local frame = drv.GetNamePlateForUnit and drv:GetNamePlateForUnit(unitToken)
+            if frame and frame.UnitFrame and frame.UnitFrame.PlayerLevelDiffFrame and
+                not frame.UnitFrame.PlayerLevelDiffFrame.forevercuiPatched then
+                PatchPlate(frame)
+                if frame.UnitFrame.UpdateAnchors then
+                    pcall(frame.UnitFrame.UpdateAnchors, frame.UnitFrame)
+                end
+            end
+        end)
+    end
+end
+
+-- Forever's Options > Nameplates page only lists its own styles; opening it
+-- or picking one writes the CVar back. While this part is on, the classic
+-- style is put back, with a note the first time.
+local function InstallCVarWatcher()
+    if M.watcher or not CreateFrame then return end
+    M.watcher = CreateFrame("Frame")
+    M.watcher:RegisterEvent("CVAR_UPDATE")
+    M.watcher:RegisterEvent("PLAYER_ENTERING_WORLD")
+    M.watcher:SetScript("OnEvent", function(_, event, name)
+        if M.mode ~= "cvar" then return end
+        if event == "CVAR_UPDATE" and name ~= "nameplateStyle" then return end
+        if tonumber(GetCVarSafe("nameplateStyle")) == CLASSIC_STYLE then return end
+        local function reapply()
+            if M.mode ~= "cvar" then return end
+            pcall(SetCVarSafe, "nameplateStyle", CLASSIC_STYLE)
+            InstallPlateHooks()
+            if not M.notedReset then
+                M.notedReset = true
+                ns.Print("nameplates: kept the classic style. Untick 'Classic nameplates' in Options > AddOns > Classic UI for Forever to use Blizzard's styles.")
+            end
+        end
+        if C_Timer and C_Timer.After then C_Timer.After(0, reapply) else reapply() end
+    end)
 end
 
 local function ClassicScale()
@@ -192,21 +252,7 @@ local function InstallOverride()
                        function() M.ApplyOverride() end)
         -- plates acquired later pick up NamePlateSetupOptions on their own;
         -- they only need the level badge switched off and one re-layout
-        if NamePlateDriverFrame.OnNamePlateAdded then
-            hooksecurefunc(NamePlateDriverFrame, "OnNamePlateAdded",
-                           function(driver, unitToken)
-                local frame = driver.GetNamePlateForUnit and
-                                  driver:GetNamePlateForUnit(unitToken)
-                if frame and frame.UnitFrame and
-                    frame.UnitFrame.PlayerLevelDiffFrame and
-                    not frame.UnitFrame.PlayerLevelDiffFrame.forevercuiPatched then
-                    PatchPlate(frame)
-                    if frame.UnitFrame.UpdateAnchors then
-                        pcall(frame.UnitFrame.UpdateAnchors, frame.UnitFrame)
-                    end
-                end
-            end)
-        end
+        InstallPlateHooks()
         M.hooked = true
         if CreateFrame then
             local f = CreateFrame("Frame")
@@ -230,9 +276,14 @@ end
 --------------------------------------------------------------------------
 
 function M:Enable()
+    M.enabled = true
     local ok, why = TryCVar()
     if ok then
         M.mode = "cvar"
+        -- Blizzard draws the classic plates; only Forever's extra level
+        -- badge needs to go, and the style has to survive its settings page
+        InstallPlateHooks()
+        InstallCVarWatcher()
         return
     end
     M.cvarReason = why
@@ -249,6 +300,7 @@ end
 
 -- testing aid: skip the CVar and use the Lua fallback right now
 function M:Force()
+    M.enabled = true
     local installed, why = InstallOverride()
     if installed then
         M.mode = "override"
@@ -259,17 +311,43 @@ function M:Force()
 end
 
 function M:Disable()
-    if M.mode == "cvar" and ns.db and ns.db.savedNameplateStyle then
+    local wasCVar = M.mode == "cvar"
+    M.enabled = false
+    M.mode = "off" -- before the CVar goes back, so the watcher lets it
+    if wasCVar and ns.db and ns.db.savedNameplateStyle then
         pcall(SetCVarSafe, "nameplateStyle", ns.db.savedNameplateStyle)
         ns.db.savedNameplateStyle = nil
     end
-    M.mode = "off"
     ns.Print("nameplates: type /reload to fully restore Blizzard's layout.")
+end
+
+-- /cui nameplates size small|medium|large|xl|huge  (Blizzard's nameplateSize)
+local SIZES = {
+    small = "Small", medium = "Medium", large = "Large",
+    xl = "ExtraLarge", extralarge = "ExtraLarge", huge = "Huge"
+}
+function M:Command(arg)
+    local what, value = arg:match("^(%S+)%s*(%S*)$")
+    if what ~= "size" then return false end
+    local key = SIZES[value]
+    local enum = Enum and Enum.NamePlateSize
+    if not key or not enum or enum[key] == nil then
+        local names = {}
+        for _, k in ipairs({"small", "medium", "large", "xl", "huge"}) do
+            if enum and enum[SIZES[k]] ~= nil then names[#names + 1] = k end
+        end
+        ns.Print("nameplates: size is %s (now %s).", table.concat(names, "|"),
+                 tostring(GetCVarSafe("nameplateSize")))
+        return true
+    end
+    pcall(SetCVarSafe, "nameplateSize", enum[key])
+    ns.Print("nameplates: size %s.", value)
+    return true
 end
 
 function M:Status()
     if M.mode == "cvar" then
-        return "(using Blizzard's built-in Classic style)"
+        return "(Blizzard's built-in Classic style, Forever level badge hidden)"
     elseif M.mode == "override" then
         return "(Lua fallback: " .. tostring(M.cvarReason) .. ")"
     elseif M.mode == "unavailable" then
