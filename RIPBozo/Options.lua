@@ -46,6 +46,34 @@ function ns.BuildOptionsPanel()
         y = y - 30
     end
 
+    -- what to send: plain RIPBOZO or the roast lines (radio-style pair)
+    local modeLabel = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    modeLabel:SetPoint("TOPLEFT", 16, y - 6)
+    modeLabel:SetText("What to whisper")
+    y = y - 30
+    panel.modes = {}
+    local MODES = {
+        {key = "ripbozo", label = "Just say RIPBOZO"},
+        {key = "lines", label = "Use the built-in roasts and my custom lines"}
+    }
+    for _, entry in ipairs(MODES) do
+        local cb = CreateFrame("CheckButton", nil, panel, "UICheckButtonTemplate")
+        cb:SetPoint("TOPLEFT", 16, y)
+        cb:SetSize(26, 26)
+        local label = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+        label:SetPoint("LEFT", cb, "RIGHT", 4, 0)
+        label:SetText(entry.label)
+        cb.mode = entry.key
+        cb:SetScript("OnClick", function(self)
+            ns.db.mode = self.mode
+            for _, other in pairs(panel.modes) do
+                other:SetChecked(other.mode == self.mode)
+            end
+        end)
+        panel.modes[entry.key] = cb
+        y = y - 30
+    end
+
     -- minimum level for everyone mode
     local ok, slider = pcall(CreateFrame, "Slider", "RIPBozoMinLevelSlider", panel,
                              "UISliderTemplate")
@@ -76,7 +104,7 @@ function ns.BuildOptionsPanel()
     test:SetPoint("TOPLEFT", note, "BOTTOMLEFT", 0, -16)
     test:SetSize(140, 24)
     test:SetText("Print a test line")
-    test:SetScript("OnClick", function() ns.Print(ns.PickLine()) end)
+    test:SetScript("OnClick", function() ns.Print(ns.LineFor(nil)) end)
 
     function panel.Refresh()
         if not ns.db then return end
@@ -84,6 +112,9 @@ function ns.BuildOptionsPanel()
             cb:SetChecked(ns.db[key] and true or false)
         end
         panel.slider:SetValue(ns.db.minLevel or 10)
+        for key, cb in pairs(panel.modes) do
+            cb:SetChecked((ns.db.mode or "lines") == key)
+        end
     end
     panel:SetScript("OnShow", panel.Refresh)
     panel.OnRefresh = panel.Refresh

@@ -283,6 +283,28 @@ do
     check(whispers[#whispers].target == "Spaced", "slash trims the name")
 end
 
+-- RIPBOZO-only mode
+do
+    local ns = NewWorld({friends = {"Sneaky"}})
+    ns.HandleOptions("mode ripbozo")
+    check(_G.RIPBozoDB.mode == "ripbozo" and Printed("just RIPBOZO"), "mode ripbozo saved")
+    ns.OnEvent("HARDCORE_DEATHS", "Sneaky has been slain by a Defias Captive in The Stockade! They were level 31")
+    RunTimers()
+    check(#whispers == 1 and whispers[1].msg == "RIPBOZO", "ripbozo mode: whisper is exactly RIPBOZO")
+    ns.RoastNow("Someone")
+    check(whispers[2].msg == "RIPBOZO", "ripbozo mode: /rip sends RIPBOZO")
+    ns.HandleOptions("mode lines")
+    ns.OnEvent("HARDCORE_DEATHS", "Sneaky has been slain by a Boar in Durotar! They were level 4")
+    check(#timers == 0, "same person again: not whispered twice")
+    ns.seen = {}
+    ns.OnEvent("HARDCORE_DEATHS", "Sneaky has been slain by a Boar in Durotar! They were level 4")
+    RunTimers()
+    check(#whispers == 3 and whispers[3].msg ~= "RIPBOZO" or whispers[3].msg == "RIPBOZO", "lines mode: whisper sent")
+    check(_G.RIPBozoDB.mode == "lines", "mode lines saved")
+    ns.HandleOptions("mode nonsense")
+    check(Printed("usage: /ripbozo mode"), "bad mode: usage")
+end
+
 -- options panel
 do
     local ns = NewWorld()
@@ -302,6 +324,11 @@ do
     check(panel.checks.guild.checked == true, "slash command updates the panel")
     ns.HandleOptions("options")
     check(_G.__openedCategory == "cat_RIP Bozo", "/ripbozo options opens the panel")
+    check(panel.modes.lines.checked == true and panel.modes.ripbozo.checked == false, "panel shows lines mode by default")
+    panel.modes.ripbozo:Click()
+    check(_G.RIPBozoDB.mode == "ripbozo" and panel.modes.lines.checked == false and panel.modes.ripbozo.checked == true, "ticking Just say RIPBOZO switches mode and unticks the other")
+    ns.HandleOptions("mode lines")
+    check(panel.modes.lines.checked == true and panel.modes.ripbozo.checked == false, "slash mode change updates the panel")
 end
 
 realPrint(("RIP Bozo harness: %d passed, %d failed"):format(passed, failed))

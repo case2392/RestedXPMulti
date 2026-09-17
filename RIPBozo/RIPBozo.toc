@@ -3,7 +3,7 @@
 ## Title: RIP Bozo
 ## Notes: Hardcore death roasts. Whispers a random "RIPBOZO" line to guildmates, friends and party members when they die (or everyone, if you turn that on); /rip to roast on demand.
 ## Author: case2392
-## Version: 1.1.1
+## Version: 1.2.0
 ## SavedVariables: RIPBozoDB
 
 Zones.lua
