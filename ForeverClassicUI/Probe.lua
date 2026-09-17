@@ -86,6 +86,15 @@ function ns.BuildProbe()
     end
 
     line("")
+    line("-- settings (saved) and module state")
+    for _, name in ipairs(ns.moduleOrder) do
+        local mod = ns.modules[name]
+        line("%s: setting=%s mode=%s", name,
+             (ns.db and ns.db[name] == false) and "off" or "on",
+             tostring(mod and mod.mode))
+    end
+
+    line("")
     line("-- loaded Blizzard UI")
     for _, name in ipairs(BLIZZ_ADDONS) do
         line("%s: %s", name, tostring(AddOnLoaded(name)))

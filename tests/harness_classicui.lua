@@ -481,6 +481,7 @@ do
     local text = w.ns.ShowProbe()
     check(type(text) == "string" and text:find("nameplateStyle cvar: 0", 1, true), "probe: reports the cvar")
     check(text:find("mode=override", 1, true) and text:find("mode=restyled", 1, true), "probe: reports module modes")
+    check(text:find("nameplates: setting=on mode=override", 1, true) and text:find("minimap: setting=", 1, true), "probe: lists every part's saved setting and mode")
     check(text:find("UI-CastingBar-Border: MISSING", 1, true), "probe: flags textures the client lacks")
     check(text:find("Nameplate-Border: id 130000", 1, true), "probe: lists textures the client has")
     check(text:find("errors recorded", 1, true) and text:find("none", 1, true), "probe: no errors")
