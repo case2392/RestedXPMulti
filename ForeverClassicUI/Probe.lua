@@ -23,6 +23,16 @@ local CLASSIC_TEXTURES = {
     "Interface\\ComboFrame\\ComboPoint",
     "Interface\\TargetingFrame\\UI-TargetingFrame",
     "Interface\\TargetingFrame\\UI-TargetingFrame-Rare",
+    "Interface\\TargetingFrame\\UI-TargetingFrame-Elite",
+    "Interface\\TargetingFrame\\UI-TargetingFrame-Rare-Elite",
+    "Interface\\TargetingFrame\\UI-TargetingFrame-Minus",
+    "Interface\\TargetingFrame\\UI-TargetingFrame-Flash",
+    "Interface\\TargetingFrame\\UI-TargetingFrame-LevelBackground",
+    "Interface\\TargetingFrame\\UI-SmallTargetingFrame",
+    "Interface\\TargetingFrame\\UI-PartyFrame-Flash",
+    "Interface\\TargetingFrame\\UI-Player-AttackStatus",
+    "Interface\\CharacterFrame\\UI-Player-Status",
+    "Interface\\CharacterFrame\\UI-StateIcon",
     "Interface\\Minimap\\UI-Minimap-Border",
     "Interface\\MainMenuBar\\UI-MainMenuBar-Dwarf"
 }
@@ -470,7 +480,7 @@ end
 --------------------------------------------------------------------------
 
 local REPORT_FRAMES = {
-    "PlayerFrame", "TargetFrame", "target", "PlayerCastingBarFrame",
+    "PlayerFrame", "TargetFrame", "PetFrame", "target", "PlayerCastingBarFrame",
     "TargetFrameSpellBar", "ComboFrame", "MainActionBar", "MinimapCluster",
     "ObjectiveTrackerFrame"
 }

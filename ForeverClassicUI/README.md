@@ -37,11 +37,16 @@ from Classic Era's own UI code.
   as a pip bar under the player frame instead; that bar (rogue and druid)
   is parked on a hidden frame, out of combat, and the dots take over.
   Classic clients that still draw the original are left alone.
-- **Player and target frames** — the classic UI-TargetingFrame art (mirrored
-  for the player), 119x12 health and mana bars, level in the frame corner,
-  elite / rare / rare-elite target art, the classic combat flash. Focus frame
-  too. Blizzard's own redraws (vehicle art, power-type changes, target
-  classification) are re-skinned as they happen.
+- **Player, target and pet frames** — the classic UI-TargetingFrame art
+  (mirrored for the player) drawn *over* 119x12 health and mana bars the
+  way Classic does (retail draws the bars over the art, which is why they
+  looked flat and stuck out), square portraits under the art instead of
+  retail's circle masks, level in the frame corner in the small gold font,
+  elite / rare / rare-elite target art, the classic combat flash and rest
+  icon, and the small classic pet frame. Focus frame too. Every size and
+  anchor comes from a `/cui report all` taken on Classic Era. Blizzard's own
+  redraws (vehicle art, power-type changes, target classification, level
+  repaints) are re-skinned as they happen.
 - **Action bar art** — the classic stone bar under the main action bar
   between the gryphons; the retail frame border and the divider strips
   between buttons are hidden.

@@ -328,28 +328,37 @@ local function NewWorld(opts)
     end
     if opts.forever then
         -- Forever: retail-style player/target frames, main action bar, minimap
-        local pf = Frame("PlayerFrame")
-        pf.PlayerFrameContainer = Frame("container")
+        -- frame levels as on Forever: unit frame L, *Container and *Content L+1, *ContentMain and its bars L+2
+        local pf = Frame("PlayerFrame"); pf.level = 10
+        pf.PlayerFrameContainer = Frame("container"); pf.PlayerFrameContainer.level = 11
         pf.PlayerFrameContainer.FrameTexture = Region("Texture", {atlas = "UI-HUD-UnitFrame-Player-PortraitOn"})
         pf.PlayerFrameContainer.FrameFlash = Region("Texture", {atlas = "flash"})
         pf.PlayerFrameContainer.AlternatePowerFrameTexture = Region("Texture")
         pf.PlayerFrameContainer.PlayerPortrait = Region("Texture")
-        pf.PlayerFrameContainer.PlayerPortraitMask = Region("MaskTexture")
-        local main = Frame("main")
-        main.HealthBarsContainer = Frame("hc"); main.HealthBarsContainer.HealthBar = Frame("hb"); main.HealthBarsContainer.HealthBar.HealthBarMask = Region("MaskTexture")
-        main.ManaBarArea = Frame("ma"); main.ManaBarArea.ManaBar = Frame("mb"); main.ManaBarArea.ManaBar.ManaBarMask = Region("MaskTexture")
+        pf.PlayerFrameContainer.PlayerPortraitMask = Region("MaskTexture", {atlas = "UI-HUD-UnitFrame-Player-Portrait-Mask"})
+        local main = Frame("main"); main.level = 12
+        -- masks live where Forever puts them: the health one on the bars container, the mana one on the bar
+        main.HealthBarsContainer = Frame("hc"); main.HealthBarsContainer.level = 12; main.HealthBarsContainer.HealthBar = Frame("hb"); main.HealthBarsContainer.HealthBar.level = 12
+        main.HealthBarsContainer.HealthBarMask = Region("MaskTexture", {atlas = "UI-HUD-UnitFrame-Player-PortraitOn-Bar-Health-Mask"})
+        main.HealthBarsContainer.PlayerFrameHealthBarAnimatedLoss = Frame("loss"); main.HealthBarsContainer.PlayerFrameTempMaxHealthLoss = Frame("temploss")
+        main.ManaBarArea = Frame("ma"); main.ManaBarArea.level = 12; main.ManaBarArea.ManaBar = Frame("mb"); main.ManaBarArea.ManaBar.level = 12; main.ManaBarArea.ManaBar.ManaBarMask = Region("MaskTexture")
         main.StatusTexture = Region("Texture", {atlas = "status"}); main.LevelBackgroundCircle = Region("Texture")
-        pf.PlayerFrameContent = Frame("content"); pf.PlayerFrameContent.PlayerFrameContentMain = main
+        pf.PlayerFrameContent = Frame("content"); pf.PlayerFrameContent.level = 11; pf.PlayerFrameContent.PlayerFrameContentMain = main
         pf.PlayerFrameContent.PlayerFrameContentContextual = Frame("ctx"); pf.PlayerFrameContent.PlayerFrameContentContextual.AttackIcon = Region("Texture"); pf.PlayerFrameContent.PlayerFrameContentContextual.PlayerPortraitCornerIcon = Region("Texture")
-        _G.PlayerFrame = pf; _G.PlayerName = Region("FontString"); _G.PlayerLevelText = Region("FontString"); _G.GameNormalNumberFont = {}
+        pf.PlayerFrameContent.PlayerFrameContentContextual.PlayerRestLoop = Frame("restloop")
+        _G.PlayerFrame = pf; _G.PlayerName = Region("FontString"); _G.PlayerLevelText = Region("FontString"); _G.GameNormalNumberFont = {}; _G.GameFontNormalSmall = {}
+        _G.PlayerLevelText.vertex = {1, 1, 1, 1}
+        _G.PlayerFrame_UpdateLevel = function() PlayerLevelText:SetVertexColor(1, 1, 1, 1); PlayerLevelText:SetText("3") end
+        _G.IsResting = function() return w.resting end
         local function TargetLike(name, unit)
-            local tf = Frame(name); tf.unit = unit
-            tf.TargetFrameContainer = Frame("tcontainer")
+            local tf = Frame(name); tf.unit = unit; tf.level = 500
+            tf.TargetFrameContainer = Frame("tcontainer"); tf.TargetFrameContainer.level = 501
             tf.TargetFrameContainer.FrameTexture = Region("Texture", {atlas = "UI-HUD-UnitFrame-Target-PortraitOn"})
-            tf.TargetFrameContainer.Flash = Region("Texture"); tf.TargetFrameContainer.Portrait = Region("Texture"); tf.TargetFrameContainer.PortraitMask = Region("MaskTexture"); tf.TargetFrameContainer.BossPortraitFrameTexture = Region("Texture")
-            local tmain = Frame("tmain"); tmain.ReputationColor = Region("Texture", {atlas = "type"}); tmain.Name = Region("FontString"); tmain.LevelText = Region("FontString"); tmain.LevelBackgroundCircle = Region("Texture")
-            tmain.HealthBarsContainer = Frame("thc"); tmain.HealthBarsContainer.HealthBar = Frame("thb"); tmain.HealthBarsContainer.HealthBar.HealthBarMask = Region("MaskTexture")
-            tmain.ManaBar = Frame("tmb"); tmain.ManaBar.ManaBarMask = Region("MaskTexture")
+            tf.TargetFrameContainer.Flash = Region("Texture"); tf.TargetFrameContainer.Portrait = Region("Texture"); tf.TargetFrameContainer.PortraitMask = Region("MaskTexture", {atlas = "CircleMask"}); tf.TargetFrameContainer.BossPortraitFrameTexture = Region("Texture")
+            local tmain = Frame("tmain"); tmain.level = 502; tmain.ReputationColor = Region("Texture", {atlas = "type"}); tmain.Name = Region("FontString"); tmain.LevelText = Region("FontString"); tmain.LevelBackgroundCircle = Region("Texture")
+            tmain.HealthBarsContainer = Frame("thc"); tmain.HealthBarsContainer.level = 502; tmain.HealthBarsContainer.HealthBar = Frame("thb"); tmain.HealthBarsContainer.HealthBarMask = Region("MaskTexture")
+            tmain.HealthBarsContainer.TempMaxHealthLoss = Frame("ttemploss")
+            tmain.ManaBar = Frame("tmb"); tmain.ManaBar.level = 503; tmain.ManaBar.ManaBarMask = Region("MaskTexture")
             tf.TargetFrameContent = Frame("tcontent"); tf.TargetFrameContent.TargetFrameContentMain = tmain
             tf.TargetFrameContent.TargetFrameContentContextual = Frame("tctx"); tf.TargetFrameContent.TargetFrameContentContextual.HighLevelTexture = Region("Texture")
             function tf:CheckClassification() self.TargetFrameContainer.FrameTexture:SetAtlas("UI-HUD-UnitFrame-Target-PortraitOn") end
@@ -357,8 +366,17 @@ local function NewWorld(opts)
             return tf
         end
         _G.TargetFrame = TargetLike("TargetFrame", "target"); _G.FocusFrame = TargetLike("FocusFrame", "focus")
-        _G.UnitPowerType = function(u) return 0, "MANA" end
-        _G.PowerBarColor = {MANA = {r = 0, g = 0, b = 1}, [0] = {r = 0, g = 0, b = 1}}
+        -- pet frame: retail target-of-target atlas, named globals like Era
+        local pet = Frame("PetFrame"); pet.level = 6; pet.PortraitMask = Region("MaskTexture", {atlas = "CircleMask"})
+        _G.PetFrame = pet
+        _G.PetFrameTexture = Region("Texture", {atlas = "UI-HUD-UnitFrame-TargetofTarget-PortraitOn"})
+        _G.PetPortrait = Region("Texture"); _G.PetName = Region("FontString")
+        _G.PetFrameFlash = Region("Texture", {atlas = "UI-HUD-UnitFrame-TargetofTarget-PortraitOn-InCombat"})
+        _G.PetAttackModeTexture = Region("Texture", {atlas = "UI-HUD-UnitFrame-TargetofTarget-PortraitOn-Status"})
+        _G.PetFrameHealthBar = Frame("pethb"); _G.PetFrameManaBar = Frame("petmb")
+        _G.PetFrameHealthBarMask = Region("MaskTexture"); _G.PetFrameManaBarMask = Region("MaskTexture")
+        _G.UnitPowerType = function(u) if u == "pet" then return 2, "FOCUS" end return 0, "MANA" end
+        _G.PowerBarColor = {MANA = {r = 0, g = 0, b = 1}, [0] = {r = 0, g = 0, b = 1}, FOCUS = {r = 1, g = 0.5, b = 0.25}}
         _G.UnitClassification = function(u) return w.classification or "normal" end
         _G.UnitFrameManaBar_UpdateType = function(bar) bar:SetStatusBarTexture("UI-HUD-UnitFrame-Player-PortraitOn-Bar-Mana"); bar:SetStatusBarColor(1, 1, 1) end
         _G.PlayerFrame_ToPlayerArt = function() pf.PlayerFrameContainer.FrameTexture:SetAtlas("UI-HUD-UnitFrame-Player-PortraitOn") end
@@ -725,17 +743,47 @@ do
     check(tfl.texture == "Interface\\TargetingFrame\\UI-TargetingFrame-Flash" and tfl.texcoord[2] == 0.9453125 and tfl.width == 242, "forever: target combat flash restored after Blizzard's classification update")
     local pm = PlayerFrame.PlayerFrameContent.PlayerFrameContentMain
     check(pm.HealthBarsContainer.width == 119 and pm.HealthBarsContainer.height == 12 and pm.HealthBarsContainer.HealthBar.barTexture == "Interface\\TargetingFrame\\UI-StatusBar", "forever: player health bar is 119x12 classic")
-    check(pm.HealthBarsContainer.HealthBar.fill.maskRemoved == pm.HealthBarsContainer.HealthBar.HealthBarMask, "forever: retail health mask removed")
-    local hmask = pm.HealthBarsContainer.HealthBar.HealthBarMask
-    check(hmask.texture == "Interface\\Buttons\\WHITE8x8" and #hmask.anchors == 2 and hmask.shown == false, "forever: retail health mask made a harmless white square over the bar")
-    check(pm.ManaBarArea.ManaBar.ManaBarMask.texture == "Interface\\Buttons\\WHITE8x8", "forever: retail mana mask neutralised too")
+    check(pm.HealthBarsContainer.HealthBar.fill.maskRemoved == pm.HealthBarsContainer.HealthBarMask, "forever: retail health mask (on the bars container) removed from the fill")
+    local hmask = pm.HealthBarsContainer.HealthBarMask
+    check(hmask.texture == "Interface\\Buttons\\WHITE8x8" and hmask.atlas == nil and #hmask.anchors == 2 and hmask.anchors[1][2] == pm.HealthBarsContainer.HealthBar and hmask.shown == true, "forever: retail health mask made a white square over the bar (shown, so anything still masked stays visible)")
+    check(pm.ManaBarArea.ManaBar.ManaBarMask.texture == "Interface\\Buttons\\WHITE8x8" and pm.ManaBarArea.ManaBar.fill.maskRemoved == pm.ManaBarArea.ManaBar.ManaBarMask, "forever: retail mana mask neutralised too")
     check(pm.ManaBarArea.ManaBar.barTexture == "Interface\\TargetingFrame\\UI-StatusBar" and pm.ManaBarArea.ManaBar.barColor[3] == 1, "forever: mana bar classic texture, coloured by power type")
-    check(pm.LevelBackgroundCircle.shown == false and pc.forevercuiBackdrop ~= nil, "forever: level circle hidden, dark backdrop added")
+    local pmask = pc.PlayerPortraitMask
+    check(pmask.texture == "Interface\\Buttons\\WHITE8x8" and pmask.anchors[1][2] == pc.PlayerPortrait and pmask.anchors[1][4] == 0, "forever: portrait mask made a square so the classic art rounds the portrait off")
+    local own = uf.own[PlayerFrame]
+    check(pm.LevelBackgroundCircle.shown == false and own and own.backdrop and own.backdrop.height == 41 and own.backdrop.anchors[1][2] == PlayerFrame and pc.forevercuiBackdrop == nil, "forever: level circle hidden, 119x41 dark backdrop on the player frame itself (no field written into Blizzard's frame)")
+    -- draw order: bars under the art like Era (art on the container at level+1, bars moved to the unit frame's level, texts stay above)
+    check(pm.HealthBarsContainer.level == 10 and pm.ManaBarArea.level == 10 and pc.level == 11 and pm.level == 12, "forever: player bars lowered under the classic art, texts above it")
+    check(pm.HealthBarsContainer.PlayerFrameHealthBarAnimatedLoss.alpha == 0 and pm.HealthBarsContainer.PlayerFrameTempMaxHealthLoss.alpha == 0, "forever: retail red health-loss trail faded out")
+    check(PlayerLevelText.font == "GameFontNormalSmall" and PlayerLevelText.vertex[1] == 1 and PlayerLevelText.vertex[2] == 0.82 and PlayerLevelText.anchors[1][3] == "BOTTOMLEFT", "forever: player level in the classic small gold font in the frame corner")
+    PlayerFrame_UpdateLevel()
+    check(PlayerLevelText.vertex[2] == 0.82 and PlayerLevelText.text == "3", "forever: level stays gold after Blizzard's white repaint")
+    check(pm.StatusTexture.texture == "Interface\\CharacterFrame\\UI-Player-Status" and pm.StatusTexture.texcoord[2] == 0.74609375 and pm.StatusTexture.texcoord[4] == 0.53125, "forever: rest/combat glow cut like Era")
+    check(PlayerFrame.PlayerFrameContent.PlayerFrameContentContextual.PlayerRestLoop.alpha == 0 and own.rest and own.rest.tex.texture == "Interface\\CharacterFrame\\UI-StateIcon" and own.rest.alpha == 0, "forever: retail rest flipbook faded, classic rest icon added (hidden while not resting)")
+    w.resting = true; own.rest:Fire("PLAYER_UPDATE_RESTING")
+    check(own.rest.alpha == 1, "forever: rest icon shows when resting")
+    w.resting = false; own.rest:Fire("PLAYER_UPDATE_RESTING")
+    check(own.rest.alpha == 0, "forever: rest icon hides again")
     local tc = TargetFrame.TargetFrameContainer
     check(tc.FrameTexture.texture == "Interface\\TargetingFrame\\UI-TargetingFrame" and tc.BossPortraitFrameTexture.shown == false, "forever: target frame classic art")
     local tm = TargetFrame.TargetFrameContent.TargetFrameContentMain
     check(tm.ReputationColor.texture == "Interface\\TargetingFrame\\UI-TargetingFrame-LevelBackground" and tm.HealthBarsContainer.width == 119, "forever: target name strip and health bar classic")
+    check(tm.HealthBarsContainer.HealthBar.fill.maskRemoved == tm.HealthBarsContainer.HealthBarMask and tm.HealthBarsContainer.HealthBarMask.texture == "Interface\\Buttons\\WHITE8x8" and tc.PortraitMask.texture == "Interface\\Buttons\\WHITE8x8", "forever: target bar and portrait masks neutralised")
+    check(tm.HealthBarsContainer.level == 500 and tm.ManaBar.level == 500 and tc.level == 501, "forever: target bars lowered under the classic art")
+    check(uf.own[TargetFrame].backdrop.height == 25 and uf.own[TargetFrame].backdrop.anchors[1][1] == "TOPRIGHT", "forever: target backdrop is Era's 119x25")
+    check(tm.LevelText.font == "GameFontNormalSmall", "forever: target level in the classic small font")
     check(FocusFrame.TargetFrameContainer.FrameTexture.texture == "Interface\\TargetingFrame\\UI-TargetingFrame", "forever: focus frame too")
+    -- pet frame
+    local petOwn = uf.own[PetFrame]
+    check(petOwn and petOwn.art and petOwn.art.tex.texture == "Interface\\TargetingFrame\\UI-SmallTargetingFrame" and petOwn.art.tex.width == 128 and petOwn.art.level == 8, "forever: classic small pet frame art on a frame above the pet bars")
+    check(PetFrameTexture.alpha == 0 and PetFrame.width == 128 and PetFrame.height == 53, "forever: retail pet art faded, pet frame Era-sized")
+    check(PetPortrait.width == 37 and PetPortrait.anchors[1][4] == 7 and PetFrame.PortraitMask.texture == "Interface\\Buttons\\WHITE8x8", "forever: pet portrait 37px square")
+    check(PetFrameHealthBar.width == 69 and PetFrameHealthBar.height == 8 and PetFrameHealthBar.anchors[1][5] == -22 and PetFrameHealthBar.barTexture == "Interface\\TargetingFrame\\UI-StatusBar" and PetFrameHealthBar.fill.maskRemoved == PetFrameHealthBarMask, "forever: pet health bar 69x8 classic, unmasked")
+    check(PetFrameManaBar.anchors[1][5] == -29 and PetFrameManaBar.barColor[1] == 1 and PetFrameManaBar.barColor[2] == 0.5, "forever: pet mana bar under it, coloured by the pet's power type")
+    check(PetFrameFlash.texture == "Interface\\TargetingFrame\\UI-PartyFrame-Flash" and PetFrameFlash.texcoord[3] == 1 and PetAttackModeTexture.texture == "Interface\\TargetingFrame\\UI-Player-AttackStatus" and PetAttackModeTexture.blend == "ADD", "forever: pet flash and attack glow classic")
+    check(PetName.anchors[1][1] == "BOTTOMLEFT" and PetName.anchors[1][4] == 52 and PetName.anchors[1][5] == 33, "forever: pet name in the classic spot")
+    UnitFrameManaBar_UpdateType(PetFrameManaBar)
+    check(PetFrameManaBar.barTexture == "Interface\\TargetingFrame\\UI-StatusBar" and PetFrameManaBar.barColor[2] == 0.5, "forever: pet mana texture restored after Blizzard's power-type update")
     -- Blizzard redraws: elite target, mana type change, player art reset
     w.classification = "elite"
     TargetFrame:CheckClassification()
@@ -748,9 +796,14 @@ do
     tm.HealthBarsContainer:SetSize(126, 20); tm.HealthBarsContainer.HealthBar:SetStatusBarTexture("atlas")
     TargetFrame:CheckClassification()
     check(tm.HealthBarsContainer.width == 126 and tm.HealthBarsContainer.HealthBar.barTexture == "Interface\\TargetingFrame\\UI-StatusBar", "forever: in combat only the fill changes, layout waits")
+    -- Blizzard's art swap in combat: textures change now, the player's layout waits too
+    pm.HealthBarsContainer:SetSize(126, 20); pm.HealthBarsContainer.level = 12
+    PlayerFrame_ToPlayerArt()
+    check(pc.FrameTexture.texture == "Interface\\TargetingFrame\\UI-TargetingFrame" and pm.HealthBarsContainer.width == 126 and pm.HealthBarsContainer.level == 12 and uf.pendingPlayer == true, "forever: in combat the player art is put back at once, its bars wait")
     w.inCombat = false
     uf.barWaiter:Fire("PLAYER_REGEN_ENABLED")
     check(tm.HealthBarsContainer.width == 119, "forever: layout applied once combat ends")
+    check(pm.HealthBarsContainer.width == 119 and pm.HealthBarsContainer.level == 10 and uf.pendingPlayer == nil, "forever: player bars re-laid out and lowered once combat ends")
     UnitFrameManaBar_UpdateType(pm.ManaBarArea.ManaBar)
     check(pm.ManaBarArea.ManaBar.barTexture == "Interface\\TargetingFrame\\UI-StatusBar", "forever: mana texture restored after Blizzard's power-type update")
     PlayerFrame_ToPlayerArt()
