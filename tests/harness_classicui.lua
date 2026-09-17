@@ -298,6 +298,8 @@ local function NewWorld(opts)
     function _G.ComboFrame:IsEventRegistered(e) return self.events[e] == true end
     if opts.forever then
         w.cvars.comboPointLocation = "2"
+        _G.ComboFrame.ComboPoints = {}
+        for i = 1, 5 do local pt = Frame("ComboPoint" .. i); pt:SetPoint("TOPRIGHT", _G.ComboFrame, "TOPRIGHT", -39, 7); _G.ComboFrame.ComboPoints[i] = pt end
         _G.ComboFrame_OnLoad = function(f)
             if w.cvars.comboPointLocation ~= "1" then return end
             f:RegisterEvent("UNIT_POWER_FREQUENT"); w.comboLoaded = true
@@ -654,6 +656,13 @@ do
     check(combo.mode == "native" and combo.enabledBlizzard == true, "forever: Blizzard's classic combo frame used, switched on")
     check(w.cvars.comboPointLocation == "1" and w.comboLoaded == true and ComboFrame:IsEventRegistered("UNIT_POWER_FREQUENT"), "forever: comboPointLocation set to 1 and ComboFrame_OnLoad re-run")
     check(combo.frame == nil, "forever: no duplicate combo frame drawn")
+    local p1, p5 = ComboFrame.ComboPoints[1].anchors[1], ComboFrame.ComboPoints[5].anchors[1]
+    check(p1[4] == 0 and p1[5] == 0 and p5[4] == 13 and p5[5] == -40 and #ComboFrame.ComboPoints[1].anchors == 1, "forever: Blizzard's dots moved onto Era's arc")
+    check(ComboFrame.anchors[1][2] == TargetFrame and ComboFrame.anchors[1][4] == -26 and ComboFrame.anchors[1][5] == -13, "forever: ComboFrame at Era's anchor")
+    w.slash("combo offset 2 -3")
+    check(ComboFrame.ComboPoints[5].anchors[1][4] == 15 and ComboFrame.ComboPoints[5].anchors[1][5] == -43, "forever: offset nudges Blizzard's dots")
+    w.slash("combo offset")
+    check(ComboFrame.ComboPoints[5].anchors[1][4] == 13, "forever: offset reset")
     check(w.ns.modules.castbar.mode == "restyled" and PlayerCastingBarFrame.Border.texture == "Interface\\CastingBar\\UI-CastingBar-Border", "forever: cast bar re-skinned")
     local pcb = PlayerCastingBarFrame
     check(pcb.classicStyleCastBar == false and pcb.playCastFX == nil and pcb.Spark.offsetY == nil, "forever: no Lua fields written into Blizzard's cast bar")

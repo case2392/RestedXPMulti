@@ -239,6 +239,30 @@ local function IsNative()
     return true
 end
 
+-- Forever keeps Blizzard's ComboFrame and its classic dot art, but lays the
+-- dots out in a flat arc across the top of the target frame (nine slots,
+-- for retail rogues). Era's five run down the right side of the portrait.
+-- Move Blizzard's first five dots onto Era's arc - anchors only, the frame
+-- keeps driving them.
+local function NudgeNative()
+    local cf = ComboFrame
+    if not cf or not TargetFrame then return end
+    local off = (ns.db and ns.db.comboOffset) or {}
+    local dx, dy = off.x or 0, off.y or 0
+    if cf.ClearAllPoints then
+        cf:ClearAllPoints()
+        cf:SetPoint("TOPRIGHT", TargetFrame, "TOPRIGHT", ANCHOR_CLASSIC.x, ANCHOR_CLASSIC.y)
+    end
+    for i = 1, MAX_POINTS do
+        local point = (cf.ComboPoints and cf.ComboPoints[i]) or _G["ComboPoint" .. i]
+        if point and point.ClearAllPoints then
+            point:ClearAllPoints()
+            point:SetPoint("TOPRIGHT", cf, "TOPRIGHT", POINT_OFFSETS[i][1] + dx, POINT_OFFSETS[i][2] + dy)
+        end
+    end
+end
+M.NudgeNative = NudgeNative
+
 local function Activate()
     for _, bar in ipairs(ModernBars()) do Kill(bar) end
     -- retail keeps a copy of the old frame too; never show two sets of dots
@@ -258,6 +282,7 @@ function M:Enable()
     end
     if IsNative() then
         M.mode = "native"
+        NudgeNative()
         return
     end
     Activate()
@@ -289,12 +314,12 @@ function M:Command(arg)
     local x, y = arg:match("^offset%s+(-?%d+)%s+(-?%d+)$")
     if x then
         ns.db.comboOffset = {x = tonumber(x), y = tonumber(y)}
-        M.Anchor()
+        if M.mode == "native" then NudgeNative() else M.Anchor() end
         ns.Print("combo: offset set to %s, %s.", x, y)
         return true
     elseif arg == "offset" then
         ns.db.comboOffset = nil
-        M.Anchor()
+        if M.mode == "native" then NudgeNative() else M.Anchor() end
         ns.Print("combo: offset reset.")
         return true
     end
@@ -304,9 +329,9 @@ end
 function M:Status()
     if M.mode == "native" then
         if M.enabledBlizzard then
-            return "(Blizzard's classic combo points, switched on via comboPointLocation)"
+            return "(Blizzard's classic combo points, switched on via comboPointLocation, Era arc)"
         end
-        return "(client already draws classic combo points)"
+        return "(client already draws classic combo points, Era arc; /cui combo offset x y to nudge)"
     elseif M.mode == "restyled" then
         return "(classic dots on the target frame; /cui combo offset x y to nudge)"
     elseif M.mode == "unavailable" then
