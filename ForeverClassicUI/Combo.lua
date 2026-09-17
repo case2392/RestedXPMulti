@@ -208,9 +208,35 @@ local function ModernBars()
     return {RogueComboPointBarFrame, DruidComboPointBarFrame}
 end
 
+local function GetCVarSafe(name)
+    if C_CVar and C_CVar.GetCVar then return C_CVar.GetCVar(name) end
+    if GetCVar then return GetCVar(name) end
+end
+
+local function SetCVarSafe(name, value)
+    if C_CVar and C_CVar.SetCVar then return C_CVar.SetCVar(name, value) end
+    if SetCVar then return SetCVar(name, value) end
+end
+
+-- Blizzard's own target-frame combo frame with no modern bar in sight:
+-- Classic Era, and WoW Forever (its Camelot flavor drops the retail combo
+-- bar and anchors ComboFrame at the classic offsets). Forever gates the
+-- frame behind the comboPointLocation CVar ("1" = on the target frame), so
+-- make sure that's set and that the frame actually registered its events.
 local function IsNative()
-    -- a Classic client: Blizzard's own target-frame combo frame, no modern bar
-    return ComboFrame ~= nil and RogueComboPointBarFrame == nil
+    if ComboFrame == nil or RogueComboPointBarFrame ~= nil then return false end
+    local location = GetCVarSafe("comboPointLocation")
+    if location ~= nil and tostring(location) ~= "1" then
+        pcall(SetCVarSafe, "comboPointLocation", "1")
+        if tostring(GetCVarSafe("comboPointLocation")) ~= "1" then
+            return false
+        end
+        -- ComboFrame_OnLoad bails out early when the CVar wasn't 1 at load;
+        -- run it again now that it is
+        if ComboFrame_OnLoad then pcall(ComboFrame_OnLoad, ComboFrame) end
+        M.enabledBlizzard = true
+    end
+    return true
 end
 
 local function Activate()
@@ -277,6 +303,9 @@ end
 
 function M:Status()
     if M.mode == "native" then
+        if M.enabledBlizzard then
+            return "(Blizzard's classic combo points, switched on via comboPointLocation)"
+        end
         return "(client already draws classic combo points)"
     elseif M.mode == "restyled" then
         return "(classic dots on the target frame; /cui combo offset x y to nudge)"

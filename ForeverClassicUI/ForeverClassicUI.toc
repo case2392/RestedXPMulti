@@ -1,11 +1,11 @@
-## Interface: 11509
+## Interface: 16001, 11509
 ## Interface-Classic: 11509
 ## Title: Forever Classic UI
 ## Notes: Brings back the classic-look nameplates, cast bars and combo points on World of Warcraft Forever (works on Classic Era too)
 ## Author: case2392
 ## Version: 0.1.0
 ## SavedVariables: ForeverClassicUIDB
-## X-Forever: Interface number above is Classic Era's. Run /cui probe on the Forever beta and add its "toc" number to the Interface line.
+## X-Forever: 16001 is the guess for Forever 1.60.1; /cui probe prints the real "toc" number.
 
 Core.lua
 Nameplates.lua

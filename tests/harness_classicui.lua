@@ -241,12 +241,36 @@ local function NewWorld(opts)
     _G.TargetFrameSpellBar = ModernBar("TargetFrameSpellBar", opts.classicBars)
 
     -- combo points: classic client has Blizzard's ComboFrame only, a
-    -- retail-style client has the modern bar (and keeps a hidden ComboFrame)
+    -- retail-style client has the modern bar (and keeps a hidden ComboFrame),
+    -- Forever has ComboFrame only but gated behind comboPointLocation
     _G.TargetFrame = Frame("TargetFrame")
     _G.ComboFrame = Frame("ComboFrame")
-    if not opts.classicBars then
+    function _G.ComboFrame:IsEventRegistered(e) return self.events[e] == true end
+    if opts.forever then
+        w.cvars.comboPointLocation = "2"
+        _G.ComboFrame_OnLoad = function(f)
+            if w.cvars.comboPointLocation ~= "1" then return end
+            f:RegisterEvent("UNIT_POWER_FREQUENT"); w.comboLoaded = true
+        end
+    elseif not opts.classicBars then
         _G.RogueComboPointBarFrame = Frame("RogueComboPointBarFrame")
         _G.RogueComboPointBarFrame.events = {UNIT_POWER_FREQUENT = true}
+    end
+    if opts.forever then
+        -- Forever: level badge on every plate, Forever's constant names
+        _G.NamePlateConstants.CLASSIC_NAMEPLATE_WIDTH = nil
+        _G.NamePlateConstants.CLASSIC_NAME_PLATE_WIDTH = 152
+        _G.NamePlateConstants.LEVEL_INDICATOR_WIDTH = 28
+        _G.NamePlateConstants.SMALL_LEVEL_INDICATOR_HEIGHT = 16
+        _G.NameplateLevelFrameMixin = {}
+        for _, p in ipairs(w.plates) do
+            local badge = Frame("badge"); badge.shown = true
+            function badge:ShouldDisplay() return true end
+            p.UnitFrame = {PlayerLevelDiffFrame = badge, anchorsUpdated = 0}
+            function p.UnitFrame:UpdateAnchors() self.anchorsUpdated = self.anchorsUpdated + 1 end
+        end
+        _G.NamePlateDriverFrame.OnNamePlateAdded = function(self, token) w.added = token end
+        _G.NamePlateDriverFrame.GetNamePlateForUnit = function(self, token) return w.plateByToken and w.plateByToken[token] end
     end
     w.combo = 0
     _G.GetComboPoints = function() return w.combo end
@@ -424,6 +448,39 @@ do
     w.ns.modules.combo.frame:Fire("PLAYER_REGEN_ENABLED")
     check(modern.parent ~= nil and modern.shown == false, "combat: bar parked once combat ends")
     check(#w.ns.errors == 0, "combat: no errors")
+end
+
+--------------------------------------------------------------------------
+-- 3c. WoW Forever (Camelot flavor): retail engine, no Classic enum, level
+--     badges on plates, ComboFrame gated behind a CVar
+--------------------------------------------------------------------------
+do
+    local w = NewWorld({style = "1", maxStyle = 5, noClassicEnum = true, forever = true})
+    local np = w.ns.modules.nameplates
+    check(np.mode == "override", "forever: Lua override in use")
+    check(NamePlateSetupOptions.useClassicHealthBar == true and NamePlateSetupOptions.unitNameAnchorStyle == 3, "forever: classic layout forced")
+    check(NamePlateSetupOptions.playerLevelDiffWidth == 28 and NamePlateSetupOptions.playerLevelDiffHeight == 16, "forever: level badge sizes filled so ApplyFrameOptions cannot hit nil")
+    check(w.sizes[#w.sizes][1] == 152, "forever: width read from CLASSIC_NAME_PLATE_WIDTH")
+    for i, p in ipairs(w.plates) do
+        check(p.UnitFrame.PlayerLevelDiffFrame:ShouldDisplay("nameplate1") == false and p.UnitFrame.PlayerLevelDiffFrame.shown == false, "forever: level badge switched off on plate " .. i)
+    end
+    -- a plate added later gets the same treatment
+    local late = {ApplyFrameOptions = function() end}
+    local badge = Frame("badge"); badge.shown = true; function badge:ShouldDisplay() return true end
+    late.UnitFrame = {PlayerLevelDiffFrame = badge, anchorsUpdated = 0}
+    function late.UnitFrame:UpdateAnchors() self.anchorsUpdated = self.anchorsUpdated + 1 end
+    w.plateByToken = {nameplate9 = late}
+    NamePlateDriverFrame:OnNamePlateAdded("nameplate9")
+    check(badge:ShouldDisplay() == false and late.UnitFrame.anchorsUpdated == 1, "forever: late plate patched and re-laid out")
+    NamePlateDriverFrame:OnNamePlateAdded("nameplate9")
+    check(late.UnitFrame.anchorsUpdated == 1, "forever: already-patched plate not re-laid out again")
+
+    local combo = w.ns.modules.combo
+    check(combo.mode == "native" and combo.enabledBlizzard == true, "forever: Blizzard's classic combo frame used, switched on")
+    check(w.cvars.comboPointLocation == "1" and w.comboLoaded == true and ComboFrame:IsEventRegistered("UNIT_POWER_FREQUENT"), "forever: comboPointLocation set to 1 and ComboFrame_OnLoad re-run")
+    check(combo.frame == nil, "forever: no duplicate combo frame drawn")
+    check(w.ns.modules.castbar.mode == "restyled" and PlayerCastingBarFrame.Border.texture == "Interface\\CastingBar\\UI-CastingBar-Border", "forever: cast bar re-skinned")
+    check(#w.ns.errors == 0, "forever: no errors")
 end
 
 --------------------------------------------------------------------------

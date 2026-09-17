@@ -73,6 +73,10 @@ function ns.BuildProbe()
          tostring(WOW_PROJECT_ID), tostring(WOW_PROJECT_CLASSIC),
          tostring(WOW_PROJECT_MAINLINE))
     if C_GameRules then
+        local okMode, mode = pcall(function() return C_GameRules.GetActiveGameMode and C_GameRules.GetActiveGameMode() end)
+        local okInfo, info = pcall(function() return C_GameRules.GetCurrentGameModeDisplayInfo and C_GameRules.GetCurrentGameModeDisplayInfo() end)
+        line("game mode: %s / %s", okMode and tostring(mode) or "?",
+             okInfo and info and tostring(info.name or info.displayName or "?") or "?")
         local keys = {}
         for k in pairs(C_GameRules) do keys[#keys + 1] = tostring(k) end
         table.sort(keys)
@@ -111,8 +115,10 @@ function ns.BuildProbe()
              tostring(NamePlateSetupOptions.useClassicCastBar),
              tostring(NamePlateSetupOptions.unitNameAnchorStyle))
     end
-    line("NamePlateConstants.CLASSIC_NAMEPLATE_WIDTH: %s",
-         tostring(NamePlateConstants and NamePlateConstants.CLASSIC_NAMEPLATE_WIDTH))
+    line("NamePlateConstants classic width: %s (Era name) / %s (Forever name)",
+         tostring(NamePlateConstants and NamePlateConstants.CLASSIC_NAMEPLATE_WIDTH),
+         tostring(NamePlateConstants and NamePlateConstants.CLASSIC_NAME_PLATE_WIDTH))
+    line("nameplate level badge (Forever): %s", yn(NameplateLevelFrameMixin))
     line("C_NamePlate.SetNamePlateSize: %s",
          yn(C_NamePlate and C_NamePlate.SetNamePlateSize))
     local np = ns.modules.nameplates
@@ -144,6 +150,7 @@ function ns.BuildProbe()
     line("ComboFrame (classic): %s  RogueComboPointBarFrame (modern): %s  DruidComboPointBarFrame: %s",
          yn(has("ComboFrame")), yn(has("RogueComboPointBarFrame")),
          yn(has("DruidComboPointBarFrame")))
+    line("ComboFrame registered: %s", yn(ComboFrame and ComboFrame.IsEventRegistered and ComboFrame:IsEventRegistered("UNIT_POWER_FREQUENT")))
     line("GetComboPoints: %s  UnitPower: %s  comboPointLocation cvar: %s",
          yn(GetComboPoints), yn(UnitPower),
          tostring((C_CVar and C_CVar.GetCVar and C_CVar.GetCVar("comboPointLocation")) or

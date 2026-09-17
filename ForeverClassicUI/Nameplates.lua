@@ -1,11 +1,12 @@
 -- Forever Classic UI - nameplates
 --
--- Blizzard's current nameplate code (shared by Classic Era, the newer Classic
--- branch and retail) contains a complete "Classic" style: the old rounded
--- Nameplate-Border art, level in the border, name centered above the bar,
--- the small classic cast bar with its spark. On Classic clients it is exposed
--- as the nameplateStyle CVar (value 6) and shown in Options > Nameplates;
--- on retail-style clients the option is hidden and the CVar refuses 6.
+-- Blizzard's current nameplate code (shared by Classic Era, retail and WoW
+-- Forever's "Camelot" flavor) contains a complete "Classic" style: the old
+-- rounded Nameplate-Border art, level in the border, name centered above the
+-- bar, the small classic cast bar with its spark. On Classic clients it is
+-- exposed as the nameplateStyle CVar (value 6) and shown in Options >
+-- Nameplates; on retail-style clients (Forever included) the option is
+-- hidden, the enum value is gone and the CVar refuses 6.
 --
 -- So we try the cheap path first (set the CVar and let Blizzard do the work),
 -- and if the client refuses we hook the nameplate driver and force the
@@ -56,10 +57,24 @@ end
 -- path 2: force the classic layout through Blizzard's option tables
 --------------------------------------------------------------------------
 
-local function Const(name, default)
+local function Const(name, default, altName)
     local v = NamePlateConstants and NamePlateConstants[name]
+    if v == nil and altName then v = NamePlateConstants and NamePlateConstants[altName] end
     if v == nil then return default end
     return v
+end
+
+-- Forever's nameplates carry a level badge to the right of the health bar
+-- (PlayerLevelDiffFrame). The classic border has its own level slot, so the
+-- badge is switched off per plate; UpdateAnchors then lays out without it.
+local function PatchPlate(namePlateFrameBase)
+    local uf = namePlateFrameBase and namePlateFrameBase.UnitFrame
+    local badge = uf and uf.PlayerLevelDiffFrame
+    if badge and not badge.forevercuiPatched then
+        badge.forevercuiPatched = true
+        badge.ShouldDisplay = function() return false end
+        if badge.Hide then badge:Hide() end
+    end
 end
 
 local function ClassicScale()
@@ -112,6 +127,11 @@ function M.ApplyOverride()
     o.spellNameInsideCastBar = true
 
     o.classificationScale = sc.classification
+    -- Forever-only fields (harmless elsewhere)
+    o.playerLevelDiffWidth = Const("LEVEL_INDICATOR_WIDTH", 28) * sc.classification
+    o.playerLevelDiffHeight = Const("SMALL_LEVEL_INDICATOR_HEIGHT", 16) * sc.classification
+    o.nameJustificationWhenAboveHealthBar = "CENTER"
+    o.useOutlinedNameWhenAboveHealthBar = false
     o.levelFontHeight = Const("LEVEL_FONT_HEIGHT", 10) * v
     o.levelIconWidth = Const("LEVEL_ICON_WIDTH", 15) * h
     o.levelIconHeight = Const("LEVEL_ICON_HEIGHT", 15) * v
@@ -140,7 +160,7 @@ function M.ApplyOverride()
     local height = Const("AURA_ITEM_HEIGHT", 25) * auraScale * sc.aura +
                        debuffPadding + o.healthBarFontHeight +
                        o.healthBarHeight + o.castBarHeight
-    local width = Const("CLASSIC_NAMEPLATE_WIDTH", 152) * h
+    local width = Const("CLASSIC_NAMEPLATE_WIDTH", 152, "CLASSIC_NAME_PLATE_WIDTH") * h
     M.size = {width = width, height = height}
     if C_NamePlate and C_NamePlate.SetNamePlateSize then
         if InCombatLockdown and InCombatLockdown() then
@@ -154,6 +174,7 @@ function M.ApplyOverride()
     local driver = NamePlateDriverFrame
     if driver and driver.ForEachNamePlate then
         pcall(driver.ForEachNamePlate, driver, function(frame)
+            PatchPlate(frame)
             if frame.ApplyFrameOptions then frame:ApplyFrameOptions() end
         end)
     end
@@ -169,6 +190,23 @@ local function InstallOverride()
     if not M.hooked and hooksecurefunc then
         hooksecurefunc(NamePlateDriverFrame, "UpdateNamePlateOptions",
                        function() M.ApplyOverride() end)
+        -- plates acquired later pick up NamePlateSetupOptions on their own;
+        -- they only need the level badge switched off and one re-layout
+        if NamePlateDriverFrame.OnNamePlateAdded then
+            hooksecurefunc(NamePlateDriverFrame, "OnNamePlateAdded",
+                           function(driver, unitToken)
+                local frame = driver.GetNamePlateForUnit and
+                                  driver:GetNamePlateForUnit(unitToken)
+                if frame and frame.UnitFrame and
+                    frame.UnitFrame.PlayerLevelDiffFrame and
+                    not frame.UnitFrame.PlayerLevelDiffFrame.forevercuiPatched then
+                    PatchPlate(frame)
+                    if frame.UnitFrame.UpdateAnchors then
+                        pcall(frame.UnitFrame.UpdateAnchors, frame.UnitFrame)
+                    end
+                end
+            end)
+        end
         M.hooked = true
         if CreateFrame then
             local f = CreateFrame("Frame")
