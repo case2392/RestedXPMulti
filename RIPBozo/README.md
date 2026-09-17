@@ -37,8 +37,9 @@ person twice, and skips deaths below level 10 (`/ripbozo minlevel` changes
 that). `/rip` roasts anyone on demand.
 
 Prefer the classic? Tick **Just say RIPBOZO** in the options and every
-whisper is exactly `RIPBOZO`; otherwise the built-in roasts and your custom
-lines are used.
+whisper is exactly `RIPBOZO`, or **"RIPBOZO, see you in forever."** for that
+one every time; otherwise the built-in roasts and your custom lines are
+used. Custom lines can be typed straight into the options panel.
 
 All of this has checkboxes under **Options > AddOns > RIP Bozo**
 (`/ripbozo options` opens it).
@@ -53,7 +54,7 @@ All of this has checkboxes under **Options > AddOns > RIP Bozo**
 | `/ripbozo options` | Open the settings panel (Options > AddOns > RIP Bozo) |
 | `/ripbozo guild\|friends\|party\|everyone on\|off` | Who gets auto-whispered when they die |
 | `/ripbozo minlevel <n>` | Everyone mode ignores deaths below this level (default 10) |
-| `/ripbozo mode ripbozo\|lines` | Always send `RIPBOZO`, or use the built-in and custom lines |
+| `/ripbozo mode ripbozo\|forever\|lines` | Always `RIPBOZO`, always `RIPBOZO, see you in forever.`, or the built-in and custom lines |
 | `/ripbozo self on\|off` | Roast yourself in chat when you die |
 | `/ripbozo test` | Print a random line |
 | `/ripbozo list` | Print every line |

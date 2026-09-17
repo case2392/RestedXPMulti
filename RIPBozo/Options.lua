@@ -54,6 +54,7 @@ function ns.BuildOptionsPanel()
     panel.modes = {}
     local MODES = {
         {key = "ripbozo", label = "Just say RIPBOZO"},
+        {key = "forever", label = "Say \"RIPBOZO, see you in forever.\""},
         {key = "lines", label = "Use the built-in roasts and my custom lines"}
     }
     for _, entry in ipairs(MODES) do
@@ -106,6 +107,46 @@ function ns.BuildOptionsPanel()
     test:SetText("Print a test line")
     test:SetScript("OnClick", function() ns.Print(ns.LineFor(nil)) end)
 
+    -- custom lines
+    local customTitle = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    customTitle:SetPoint("TOPLEFT", test, "BOTTOMLEFT", 0, -20)
+    customTitle:SetText("Add your own line (used with the built-in roasts)")
+
+    local ok2, edit = pcall(CreateFrame, "EditBox", "RIPBozoCustomEditBox", panel,
+                            "InputBoxTemplate")
+    if not ok2 or not edit then edit = CreateFrame("EditBox", nil, panel) end
+    edit:SetPoint("TOPLEFT", customTitle, "BOTTOMLEFT", 6, -8)
+    edit:SetSize(380, 24)
+    edit:SetAutoFocus(false)
+    if edit.SetMaxLetters then edit:SetMaxLetters(255) end
+    panel.edit = edit
+
+    local function AddFromBox()
+        if ns.AddCustom(edit:GetText()) then edit:SetText("") end
+        edit:ClearFocus()
+    end
+    edit:SetScript("OnEnterPressed", AddFromBox)
+    edit:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+
+    local add = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+    add:SetPoint("LEFT", edit, "RIGHT", 8, 0)
+    add:SetSize(70, 24)
+    add:SetText("Add")
+    add:SetScript("OnClick", AddFromBox)
+    panel.addButton = add
+
+    local clear = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+    clear:SetPoint("LEFT", add, "RIGHT", 8, 0)
+    clear:SetSize(110, 24)
+    clear:SetText("Clear my lines")
+    clear:SetScript("OnClick", function() ns.ClearCustom() end)
+
+    local list = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+    list:SetPoint("TOPLEFT", edit, "BOTTOMLEFT", -6, -10)
+    list:SetWidth(560)
+    list:SetJustifyH("LEFT")
+    panel.list = list
+
     function panel.Refresh()
         if not ns.db then return end
         for key, cb in pairs(panel.checks) do
@@ -115,6 +156,15 @@ function ns.BuildOptionsPanel()
         for key, cb in pairs(panel.modes) do
             cb:SetChecked((ns.db.mode or "lines") == key)
         end
+        local lines = {}
+        for i, l in ipairs(ns.db.custom or {}) do
+            if i > 8 then
+                lines[#lines + 1] = ("... and %d more (/ripbozo list shows all)"):format(#ns.db.custom - 8)
+                break
+            end
+            lines[#lines + 1] = ("%d. %s"):format(i, l)
+        end
+        panel.list:SetText(#lines > 0 and table.concat(lines, "\n") or "No custom lines yet.")
     end
     panel:SetScript("OnShow", panel.Refresh)
     panel.OnRefresh = panel.Refresh

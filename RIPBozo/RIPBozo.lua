@@ -10,7 +10,7 @@
 
 local addonName, ns = ...
 
-ns.VERSION = "1.2.0"
+ns.VERSION = "1.3.0"
 
 --------------------------------------------------------------------------
 -- the lines
@@ -54,7 +54,7 @@ local DEFAULTS = {
     friends = true, -- whisper friends (friends list + Battle.net) who die
     party = true, -- whisper party/raid members who die
     everyone = false, -- whisper anyone who dies
-    mode = "lines", -- "lines" = built-in/custom roasts, "ripbozo" = always "RIPBOZO"
+    mode = "lines", -- "lines" = built-in/custom roasts, "ripbozo" = always "RIPBOZO", "forever" = "RIPBOZO, see you in forever."
     minLevel = 10, -- "everyone" mode ignores deaths below this level
     self = true, -- roast yourself in chat when you die
     custom = {}, -- extra lines added with /ripbozo add
@@ -171,6 +171,8 @@ end
 
 local DEDUPE_SECONDS = 600 -- same name dying twice inside this = same death
 local WHISPER_DELAY_MIN, WHISPER_DELAY_MAX = 2, 5
+
+ns.FIXED = {ripbozo = "RIPBOZO", forever = "RIPBOZO, see you in forever."}
 
 ns.db = nil
 ns.seen = {} -- name -> time of last roast (dedupe)
@@ -356,7 +358,8 @@ end
 
 -- what to send for a death: plain RIPBOZO, or a contextual/random line
 function ns.LineFor(info)
-    if ns.db and ns.db.mode == "ripbozo" then return "RIPBOZO" end
+    local fixed = ns.db and ns.FIXED[ns.db.mode]
+    if fixed then return fixed end
     return (info and ns.ContextLine(info)) or ns.PickLine()
 end
 
@@ -505,7 +508,7 @@ local function PrintStatus()
     ns.Print("v%s - auto-whisper: guild %s, friends %s, party %s, everyone %s (min level %d) | self-roast %s | message: %s",
              ns.VERSION, OnOff(db.guild), OnOff(db.friends), OnOff(db.party),
              OnOff(db.everyone), db.minLevel or 0, OnOff(db.self),
-             db.mode == "ripbozo" and "just RIPBOZO" or "built-in + custom lines")
+             ns.FIXED[db.mode] and ('"' .. ns.FIXED[db.mode] .. '"') or "built-in + custom lines")
     ns.Print("%d lines (%d custom). /ripbozo help for commands.",
              #ns.AllLines(), #db.custom)
 end
@@ -518,12 +521,28 @@ local function PrintHelp()
     ns.Print("  /ripbozo everyone on|off - whisper anyone who dies (skips low levels)")
     ns.Print("  /ripbozo options - open the settings panel (also under Options > AddOns)")
     ns.Print("  /ripbozo minlevel <n> - everyone mode ignores deaths below this level")
-    ns.Print("  /ripbozo mode ripbozo|lines - always send \"RIPBOZO\", or use the built-in and custom lines")
+    ns.Print("  /ripbozo mode ripbozo|forever|lines - always \"RIPBOZO\", always \"RIPBOZO, see you in forever.\", or the built-in and custom lines")
     ns.Print("  /ripbozo self on|off - roast yourself in chat when you die")
     ns.Print("  /ripbozo test - print a random line")
     ns.Print("  /ripbozo list - print every line")
     ns.Print("  /ripbozo add <text> - add your own line")
     ns.Print("  /ripbozo clear - remove your custom lines")
+end
+
+function ns.AddCustom(text)
+    text = (text or ""):match("^%s*(.-)%s*$")
+    if text == "" then return false end
+    if #text > 255 then text = text:sub(1, 255) end
+    table.insert(ns.db.custom, text)
+    ns.Print("added: \"%s\"", text)
+    if ns.optionsPanel and ns.optionsPanel.Refresh then ns.optionsPanel.Refresh() end
+    return true
+end
+
+function ns.ClearCustom()
+    ns.db.custom = {}
+    ns.Print("custom lines removed.")
+    if ns.optionsPanel and ns.optionsPanel.Refresh then ns.optionsPanel.Refresh() end
 end
 
 function ns.HandleOptions(input)
@@ -539,12 +558,12 @@ function ns.HandleOptions(input)
         if ns.OpenOptions then ns.OpenOptions() end
     elseif cmd == "mode" then
         arg = arg:lower()
-        if arg == "ripbozo" or arg == "lines" then
+        if arg == "ripbozo" or arg == "forever" or arg == "lines" then
             db.mode = arg
             if ns.optionsPanel and ns.optionsPanel.Refresh then ns.optionsPanel.Refresh() end
-            ns.Print("message: %s.", arg == "ripbozo" and "just RIPBOZO" or "built-in + custom lines")
+            ns.Print("message: %s.", ns.FIXED[arg] and ('"' .. ns.FIXED[arg] .. '"') or "built-in + custom lines")
         else
-            ns.Print("usage: /ripbozo mode ripbozo|lines (currently %s)", db.mode or "lines")
+            ns.Print("usage: /ripbozo mode ripbozo|forever|lines (currently %s)", db.mode or "lines")
         end
     elseif cmd == "minlevel" then
         local n = tonumber(arg)
@@ -575,15 +594,9 @@ function ns.HandleOptions(input)
     elseif cmd == "list" then
         for i, l in ipairs(ns.AllLines()) do ns.Print("%d. %s", i, l) end
     elseif cmd == "add" then
-        if arg == "" then
-            ns.Print("usage: /ripbozo add <text>")
-        else
-            table.insert(db.custom, arg)
-            ns.Print("added: \"%s\"", arg)
-        end
+        if not ns.AddCustom(arg) then ns.Print("usage: /ripbozo add <text>") end
     elseif cmd == "clear" then
-        db.custom = {}
-        ns.Print("custom lines removed.")
+        ns.ClearCustom()
     else
         PrintHelp()
     end

@@ -31,6 +31,8 @@ local function NewWorld(opts)
         function f:SetChecked(v) self.checked = v end function f:GetChecked() return self.checked end
         function f:Click() self.checked = not self.checked; self.scripts.OnClick(self) end
         function f:CreateFontString() return Widget() end
+        function f:SetAutoFocus() end function f:SetMaxLetters() end function f:ClearFocus() self.focused = false end
+        function f:Enter() self.scripts.OnEnterPressed(self) end
         return f
     end
     _G.CreateFrame = function(kind, name, parent, template)
@@ -287,7 +289,7 @@ end
 do
     local ns = NewWorld({friends = {"Sneaky"}})
     ns.HandleOptions("mode ripbozo")
-    check(_G.RIPBozoDB.mode == "ripbozo" and Printed("just RIPBOZO"), "mode ripbozo saved")
+    check(_G.RIPBozoDB.mode == "ripbozo" and Printed('message: "RIPBOZO"'), "mode ripbozo saved")
     ns.OnEvent("HARDCORE_DEATHS", "Sneaky has been slain by a Defias Captive in The Stockade! They were level 31")
     RunTimers()
     check(#whispers == 1 and whispers[1].msg == "RIPBOZO", "ripbozo mode: whisper is exactly RIPBOZO")
@@ -303,6 +305,11 @@ do
     check(_G.RIPBozoDB.mode == "lines", "mode lines saved")
     ns.HandleOptions("mode nonsense")
     check(Printed("usage: /ripbozo mode"), "bad mode: usage")
+    ns.HandleOptions("mode forever")
+    ns.seen = {}
+    ns.OnEvent("HARDCORE_DEATHS", "Sneaky has been slain by a Boar in Durotar! They were level 4")
+    RunTimers()
+    check(whispers[#whispers].msg == "RIPBOZO, see you in forever.", "forever mode: exact line")
 end
 
 -- options panel
@@ -329,6 +336,23 @@ do
     check(_G.RIPBozoDB.mode == "ripbozo" and panel.modes.lines.checked == false and panel.modes.ripbozo.checked == true, "ticking Just say RIPBOZO switches mode and unticks the other")
     ns.HandleOptions("mode lines")
     check(panel.modes.lines.checked == true and panel.modes.ripbozo.checked == false, "slash mode change updates the panel")
+    panel.modes.forever:Click()
+    check(_G.RIPBozoDB.mode == "forever" and panel.modes.lines.checked == false and panel.modes.ripbozo.checked == false, "third box: forever mode, others unticked")
+
+    -- custom lines from the panel
+    check(panel.list.text == "No custom lines yet.", "empty custom list")
+    panel.edit:SetText("  You're him. Were.  ")
+    panel.edit:Enter()
+    check(_G.RIPBozoDB.custom[1] == "You're him. Were." and panel.edit.text == "", "enter adds the trimmed line and clears the box")
+    check(panel.list.text:find("1. You're him. Were.", 1, true), "list shows the new line")
+    panel.edit:SetText("Second one")
+    panel.addButton.scripts.OnClick(panel.addButton)
+    check(#_G.RIPBozoDB.custom == 2 and panel.list.text:find("2. Second one", 1, true), "Add button adds too")
+    panel.edit:SetText("   ")
+    panel.edit:Enter()
+    check(#_G.RIPBozoDB.custom == 2, "blank input ignored")
+    ns.HandleOptions("clear")
+    check(#_G.RIPBozoDB.custom == 0 and panel.list.text == "No custom lines yet.", "clear empties the list and the panel")
 end
 
 realPrint(("RIP Bozo harness: %d passed, %d failed"):format(passed, failed))
