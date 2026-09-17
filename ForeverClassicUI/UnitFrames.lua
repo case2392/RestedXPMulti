@@ -105,7 +105,8 @@ function M.RestylePlayer()
     Hide(container.AlternatePowerFrameTexture)
     local flash = container.FrameFlash
     if flash then
-        SetFile(flash, TF .. "UI-TargetingFrame-Flash")
+        -- mirrored: the same red glow as the target frame, flipped
+        SetFile(flash, TF .. "UI-TargetingFrame-Flash", 0.9453125, 0, 0, 0.181640625)
         flash:ClearAllPoints()
         flash:SetSize(242, 93)
         flash:SetPoint("TOPLEFT", pf, "TOPLEFT", -3, -4)
@@ -223,6 +224,15 @@ function M.RestyleTargetArt(frame)
         art:Show()
     end
     Hide(container.BossPortraitFrameTexture)
+    -- Blizzard's CheckClassification also puts the retail combat flash atlas
+    -- back (with the atlas size) on every target change
+    local flash = container.Flash
+    if flash then
+        SetFile(flash, TF .. "UI-TargetingFrame-Flash", 0, 0.9453125, 0, 0.181640625)
+        flash:ClearAllPoints()
+        flash:SetSize(242, 93)
+        flash:SetPoint("TOPLEFT", frame, "TOPLEFT", -6, -3)
+    end
 end
 
 function M.RestyleTarget(frame)
@@ -233,14 +243,6 @@ function M.RestyleTarget(frame)
     M.inRestyle = true
 
     M.RestyleTargetArt(frame)
-
-    local flash = container.Flash
-    if flash then
-        SetFile(flash, TF .. "UI-TargetingFrame-Flash", 0, 0.9453125, 0, 0.181640625)
-        flash:ClearAllPoints()
-        flash:SetSize(242, 93)
-        flash:SetPoint("TOPLEFT", frame, "TOPLEFT", -6, -3)
-    end
 
     local portrait = container.Portrait
     if portrait then

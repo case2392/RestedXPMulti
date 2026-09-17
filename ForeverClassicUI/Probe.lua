@@ -438,3 +438,37 @@ function ns.DumpFrame(name)
     ns.lastDump = text
     return ns.ShowText(text)
 end
+
+--------------------------------------------------------------------------
+-- /cui report: everything at once - the probe, a dump of every frame the
+-- addon touches (and the target's nameplate if one is showing), and the
+-- last Lua errors the client raised, addon or not.
+--------------------------------------------------------------------------
+
+local REPORT_FRAMES = {
+    "PlayerFrame", "TargetFrame", "target", "PlayerCastingBarFrame",
+    "TargetFrameSpellBar", "ComboFrame", "MainActionBar", "MinimapCluster",
+    "ObjectiveTrackerFrame"
+}
+
+function ns.BuildReport()
+    local parts = {ns.BuildProbe()}
+    for _, name in ipairs(REPORT_FRAMES) do
+        local text, why = ns.BuildDump(name)
+        parts[#parts + 1] = text or ("-- " .. name .. ": " .. tostring(why))
+    end
+    local errs = {"-- Lua errors this session (last " .. #(ns.luaErrors or {}) .. ", newest last)"}
+    for _, e in ipairs(ns.luaErrors or {}) do
+        errs[#errs + 1] = ("[%s] x%d %s"):format(e.time, e.count, e.msg)
+        if e.stack and e.stack ~= "" then errs[#errs + 1] = e.stack end
+    end
+    if #errs == 1 then errs[#errs + 1] = "none" end
+    parts[#parts + 1] = table.concat(errs, "\n")
+    return table.concat(parts, "\n\n")
+end
+
+function ns.ShowReport()
+    local text = ns.BuildReport()
+    ns.lastReport = text
+    return ns.ShowText(text)
+end

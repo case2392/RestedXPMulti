@@ -70,7 +70,8 @@ takes the other parts down.
 | `/cui combo force` | Draw the classic combo points right now, replacing Blizzard's (testing) |
 | `/cui unitframes\|actionbars\|minimap on\|off\|force` | The other parts |
 | `/cui options` | Open the settings panel (Options > AddOns > Classic UI for Forever) |
-| `/cui probe` | Client report to copy and send for support |
+| `/cui report` | Everything for support in one copyable window: the probe, a dump of every frame the addon touches (plus your target's nameplate), and the last Lua errors the client raised |
+| `/cui probe` | The client report on its own |
 | `/cui dump <FrameName>` or `/cui dump target` | Copyable list of a frame's visible textures, text and child frames with size, anchor, art and colour (e.g. `/cui dump TargetFrame` with something targeted) |
 
 ## Testing on Classic Era today
@@ -104,8 +105,8 @@ frame errors on its next update. Textures, anchors, sizes and alpha are set
 with widget calls, and `hooksecurefunc` re-applies them after Blizzard's own
 code runs.
 
-For anything that still looks wrong, send `/cui probe`, a screenshot, and
-`/cui dump <FrameName>` for the frame in question.
+For anything that still looks wrong, target a mob, type `/cui report`, and
+send the text with a screenshot.
 
 ## Offline tests
 

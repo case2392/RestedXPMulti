@@ -309,6 +309,11 @@ local function NewWorld(opts)
         _G.RogueComboPointBarFrame.events = {UNIT_POWER_FREQUENT = true}
     end
     _G.ReloadUI = function() w.reloaded = true end
+    w.blizzErrors = {}
+    _G.geterrorhandler = function() return function(msg) w.blizzErrors[#w.blizzErrors + 1] = msg end end
+    _G.seterrorhandler = function(fn) w.errorHandler = fn end
+    _G.debugstack = function() return "stack line 1\nstack line 2" end
+    _G.date = function() return "12:00:00" end
     if opts.classicBars then
         -- classic client: the old frames exist by name
         _G.PlayerFrame = Frame("PlayerFrame"); _G.PlayerFrameTexture = Region("Texture")
@@ -696,6 +701,10 @@ do
     check(uf.mode == "restyled", "forever: unit frames re-skinned")
     local pc = PlayerFrame.PlayerFrameContainer
     check(pc.FrameTexture.texture == "Interface\\TargetingFrame\\UI-TargetingFrame" and pc.FrameTexture.width == 193 and pc.FrameTexture.height == 77, "forever: player frame uses the classic (mirrored) art")
+    check(pc.FrameFlash.texture == "Interface\\TargetingFrame\\UI-TargetingFrame-Flash" and pc.FrameFlash.texcoord[1] == 0.9453125 and pc.FrameFlash.texcoord[4] == 0.181640625 and pc.FrameFlash.width == 242, "forever: player combat flash cut from the right part of its image, mirrored")
+    TargetFrame.TargetFrameContainer.Flash:SetAtlas("UI-HUD-UnitFrame-Target-PortraitOn-InCombat"); TargetFrame:CheckClassification()
+    local tfl = TargetFrame.TargetFrameContainer.Flash
+    check(tfl.texture == "Interface\\TargetingFrame\\UI-TargetingFrame-Flash" and tfl.texcoord[2] == 0.9453125 and tfl.width == 242, "forever: target combat flash restored after Blizzard's classification update")
     local pm = PlayerFrame.PlayerFrameContent.PlayerFrameContentMain
     check(pm.HealthBarsContainer.width == 119 and pm.HealthBarsContainer.height == 12 and pm.HealthBarsContainer.HealthBar.barTexture == "Interface\\TargetingFrame\\UI-StatusBar", "forever: player health bar is 119x12 classic")
     check(pm.HealthBarsContainer.HealthBar.fill.maskRemoved == pm.HealthBarsContainer.HealthBar.HealthBarMask, "forever: retail health mask removed")
@@ -783,6 +792,17 @@ do
     w.plateByToken = {}
     w.slash("dump target")
     check(Printed("no nameplate showing for target"), "beta: dump target with no plate says so")
+    -- /cui report: probe + every frame + Lua errors in one window
+    w.errorHandler("Interface/AddOns/Blizzard_NamePlates/x.lua:1: attempt to compare a secret number value")
+    w.errorHandler("Interface/AddOns/Blizzard_NamePlates/x.lua:1: attempt to compare a secret number value")
+    w.errorHandler("something else broke")
+    check(#w.blizzErrors == 3 and #w.ns.luaErrors == 2 and w.ns.luaErrors[1].count == 2, "beta: Lua errors logged (repeats folded) and passed on to Blizzard's handler")
+    w.plateByToken = {target = plate}
+    w.slash("report")
+    local rep = w.ns.lastReport
+    check(rep and rep:find("probe", 1, true) and rep:find("dump of PlayerFrame", 1, true) and rep:find("dump of TargetFrame", 1, true) and rep:find("dump of NamePlate7 (target)", 1, true), "beta: report bundles the probe and the frame dumps")
+    check(rep:find("dump of MinimapCluster", 1, true) and rep:find("ObjectiveTrackerFrame: no frame called", 1, true), "beta: report lists missing frames instead of failing")
+    check(rep:find("x2 Interface/AddOns/Blizzard_NamePlates/x.lua:1", 1, true) and rep:find("stack line 1", 1, true) and rep:find("something else broke", 1, true), "beta: report includes the Lua error log with stacks")
     -- secret values: sizes and texts that cannot be read are marked, not fatal
     local secretRegion = TargetFrame.TargetFrameContent.TargetFrameContentMain.Name
     function secretRegion:GetSize() error("attempt to perform arithmetic on a secret value") end

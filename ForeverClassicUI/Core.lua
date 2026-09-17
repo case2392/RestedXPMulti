@@ -5,7 +5,7 @@
 
 local addonName, ns = ...
 
-ns.VERSION = "0.3.1"
+ns.VERSION = "0.3.2"
 ns.modules = {}
 ns.moduleOrder = {}
 ns.errors = {}
@@ -104,7 +104,8 @@ local function PrintHelp()
     ns.Print("  /cui combo force - draw the classic combo points now (testing)")
     ns.Print("  /cui unitframes|actionbars|minimap on|off|force - the other classic parts")
     ns.Print("  /cui options - open the settings panel (Options > AddOns > Classic UI for Forever)")
-    ns.Print("  /cui probe - client report to copy and send for support")
+    ns.Print("  /cui report - everything for support in one window: probe, every frame, Lua errors")
+    ns.Print("  /cui probe - client report only")
     ns.Print("  /cui dump <FrameName> - list a frame's visible parts (e.g. /cui dump TargetFrame)")
     ns.Print("  /cui dump target - the same for your target's nameplate")
 end
@@ -116,6 +117,8 @@ function ns.HandleSlash(input)
         PrintStatus()
     elseif cmd == "probe" then
         if ns.ShowProbe then ns.SafeCall("probe", ns.ShowProbe) end
+    elseif cmd == "report" then
+        if ns.ShowReport then ns.SafeCall("report", ns.ShowReport) end
     elseif cmd == "dump" then
         -- frame names are case-sensitive globals, keep the arg as typed
         if ns.DumpFrame then
@@ -147,6 +150,30 @@ function ns.HandleSlash(input)
     else
         PrintHelp()
     end
+end
+
+--------------------------------------------------------------------------
+-- Lua error log for /cui report (keeps the last 30, addon or Blizzard,
+-- shown or not; Blizzard's own handler still runs)
+--------------------------------------------------------------------------
+
+ns.luaErrors = {}
+if seterrorhandler and geterrorhandler then
+    local previous = geterrorhandler()
+    seterrorhandler(function(msg, ...)
+        local text = tostring(msg)
+        local log = ns.luaErrors
+        local last = log[#log]
+        if last and last.msg == text then
+            last.count = last.count + 1
+        else
+            if #log >= 30 then table.remove(log, 1) end
+            local stack = debugstack and debugstack(2, 6, 0) or ""
+            log[#log + 1] = {msg = text, count = 1, stack = stack,
+                             time = date and date("%H:%M:%S") or ""}
+        end
+        if previous then return previous(msg, ...) end
+    end)
 end
 
 --------------------------------------------------------------------------

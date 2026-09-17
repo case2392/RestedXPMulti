@@ -63,10 +63,10 @@ function ns.BuildOptionsPanel()
 
     local probe = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
     probe:SetPoint("TOPLEFT", status, "BOTTOMLEFT", 0, -16)
-    probe:SetSize(160, 24)
-    probe:SetText("Probe report")
+    probe:SetSize(200, 24)
+    probe:SetText("Support report (copy & send)")
     probe:SetScript("OnClick", function()
-        if ns.ShowProbe then ns.SafeCall("probe", ns.ShowProbe) end
+        if ns.ShowReport then ns.SafeCall("report", ns.ShowReport) end
     end)
 
     local reload = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
