@@ -11,6 +11,7 @@ local LABELS = {
     party = "Classic party frames (UI-PartyFrame art, 70x8 bars, small pet frames)",
     charsheet = "Classic character sheet (Era paper doll, reputation, skills, honor, currency and statistics, tabs along the bottom)",
     spellbook = "Classic spellbook (Era book, 12 spells a page, skill line tabs on the right)",
+    professions = "Classic professions window (Era book, the professions as rows down the page)",
     actionbars = "Classic bottom bar (stone bar, 36px buttons, micro buttons and bags on the bar, XP bar in the bar)",
     minimap = "Classic round minimap with the ring border",
     tracker = "Plain quest tracker (retail header boxes hidden)"

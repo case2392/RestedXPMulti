@@ -116,6 +116,16 @@ from Classic Era's own UI code.
   is resized and its shell faded, its page moved out of reach; on the
   talents page the retail size comes back until talents get their classic
   version.
+- **Professions window** — Forever's professions book (the professions
+  micro button) becomes the same Era 384x512 book as the spellbook, the
+  way the pre-retail spellbook's Professions page did it: Blizzard's five
+  rows (two primary, three secondary) stay live, scaled to the page and
+  laid down it, with the classic quickslot ring round each profession
+  spell button, Era's blue skill-bar fill in the rank bar, gold spell
+  names and brown rank text on the parchment; the retail shell, page art,
+  icon rings and name plates are faded. Era had no such window
+  (professions were the Skills tab), so this is the closest classic
+  layout. The window is load-on-demand: the part waits for it.
 - **Action bars** — Era's whole bottom bar. The addon draws the 1024x53
   `UI-MainMenuBar-Dwarf` stone bar with the gryphon end caps along the
   bottom of the screen and moves Blizzard's pieces onto it: the twelve

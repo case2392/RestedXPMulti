@@ -739,6 +739,41 @@ local function NewWorld(opts)
             _G.GetUIPanelAttribute = function(frame, name) if frame == psf and name == "width" then return 809 end end
             return psf
             end
+            -- professions book: retail's ProfessionsBookFrame (Blizzard_ProfessionsBook, load-on-demand)
+            function w.LoadProfessionsBook()
+            local pb = Frame("ProfessionsBookFrame"); pb:SetSize(550, 525); pb.level = 1
+            pb.NineSlice = Frame("NineSlice"); pb.Bg = Region("Texture"); pb.TopTileStreaks = Region("Texture"); pb.Inset = Frame("Inset")
+            pb.CloseButton = Frame("CloseButton"); pb.TitleContainer = Frame("TitleContainer"); pb.MainHelpButton = Frame("MainHelpButton")
+            pb.PortraitContainer = Frame("PortraitContainer"); pb.PortraitContainer.portrait = Region("Texture"); pb.PortraitContainer.CircleMask = Region("MaskTexture")
+            pb.PortraitContainer.portrait:SetPoint("TOPLEFT", pb.PortraitContainer, "TOPLEFT", -5, 7); pb.PortraitContainer.portrait:SetSize(62, 62)
+            pb.Page1 = Region("Texture", {file = "Interface\\Spellbook\\Professions-Book-Left"}); pb.Page2 = Region("Texture")
+            pb.ProfessionsContentFrame = Frame("ProfessionsContentFrame")
+            local function SpellButton(name)
+                local b = Frame(name); b:SetSize(40, 40); b.IconTexture = Region("Texture"); b.spellString = Region("FontString"); b.subSpellString = Region("FontString")
+                _G[name .. "NameFrame"] = Region("Texture", {file = "Interface\\Spellbook\\ProfessionsBook"})
+                _G[name] = b
+                return b
+            end
+            local function ProfRow(name, w, h)
+                local r = Frame(name); r:SetSize(w, h); r:SetPoint("TOPLEFT", pb.ProfessionsContentFrame, "TOPLEFT", 80, -67)
+                r.professionName = Region("FontString"); r.missingHeader = Region("FontString"); r.missingText = Region("FontString"); r.rank = Region("FontString")
+                r.icon = Region("Texture"); _G[name .. "IconBorder"] = Region("Texture", {file = "Interface\\Spellbook\\ProfessionsBook"})
+                r.SpellButton1 = SpellButton(name .. "SpellButton1"); r.SpellButton2 = SpellButton(name .. "SpellButton2")
+                r.statusBar = Frame(name .. "StatusBar"); r.statusBar.rankText = Region("FontString"); r.statusBar.capRight = Region("Texture")
+                for _, s in ipairs({"Left", "BGLeft", "BGRight", "BGMiddle"}) do _G[name .. "StatusBar" .. s] = Region("Texture") end
+                r.statusBar:SetStatusBarTexture("Interface\\Spellbook\\Professions-Progress-Fill")
+                _G[name] = r
+                return r
+            end
+            ProfRow("PrimaryProfession1", 437, 81); ProfRow("PrimaryProfession2", 437, 81)
+            ProfRow("SecondaryProfession1", 437, 46); ProfRow("SecondaryProfession2", 437, 46); ProfRow("SecondaryProfession3", 437, 46)
+            function pb:Update() PrimaryProfession1SpellButton1NameFrame:SetAlpha(1); PrimaryProfession1.statusBar:SetStatusBarTexture("Interface\\Spellbook\\Professions-Progress-Fill") end
+            function pb:Show() if not self.shown then self.shown = true; if self.scripts and self.scripts.OnShow then self.scripts.OnShow(self) end end end
+            function pb:Hide() if self.shown then self.shown = false; if self.scripts and self.scripts.OnHide then self.scripts.OnHide(self) end end end
+            pb:Hide()
+            _G.ProfessionsBookFrame = pb
+            return pb
+            end
             _G.Enum.SpellBookSpellBank = {Player = 0, Pet = 1}
             _G.Enum.SpellBookItemType = {None = 0, Spell = 1, FutureSpell = 2, PetAction = 3, Flyout = 4}
             _G.PAGE_NUMBER = "Page %d"; _G.SPELLBOOK = "Spellbook"; _G.PET = "Pet"
@@ -865,7 +900,7 @@ local function NewWorld(opts)
 
     -- load the addon
     local ns = {}
-    for _, file in ipairs({"Core.lua", "Nameplates.lua", "CastBar.lua", "Combo.lua", "UnitFrames.lua", "PartyFrames.lua", "CharacterSheet.lua", "CharacterLists.lua", "SpellBook.lua", "ActionBars.lua", "Minimap.lua", "Tracker.lua", "Options.lua", "Probe.lua"}) do
+    for _, file in ipairs({"Core.lua", "Nameplates.lua", "CastBar.lua", "Combo.lua", "UnitFrames.lua", "PartyFrames.lua", "CharacterSheet.lua", "CharacterLists.lua", "SpellBook.lua", "Professions.lua", "ActionBars.lua", "Minimap.lua", "Tracker.lua", "Options.lua", "Probe.lua"}) do
         local chunk, err = loadfile(root .. "/ForeverClassicUI/" .. file)
         assert(chunk, err)
         chunk("ForeverClassicUI", ns)
@@ -1753,6 +1788,31 @@ do
     w.slash("spellbook on")
     check(sb.mode == "restyled" and psf.width == 384 and book.shown == true, "on: classic book again")
     check(#w.ns.errors == 0 and #w.blizzErrors == 0, "book: no errors")
+
+    -- professions book: Era's book round Blizzard's five rows
+    local pr = w.ns.modules.professions
+    check(pr.mode == "waiting" and ProfessionsBookFrame == nil and pr.watcher ~= nil, "professions: waits for Blizzard_ProfessionsBook")
+    local pb = w.LoadProfessionsBook()
+    pr.watcher:Fire("ADDON_LOADED", "Blizzard_ProfessionsBook")
+    check(pr.mode == "restyled" and pr.book ~= nil and pr.book.parent == pb and pr.book.shown == false, "professions: re-skinned once the window loads, book built and kept hidden until it opens")
+    pb:Show()
+    check(pb.width == 384 and pb.height == 512 and pr.book.shown == true and pr.book.title.text == "Professions" and pr.book.art[1].texture == "Interface\\Spellbook\\UI-SpellbookPanel-TopLeft", "professions: Era's 384x512 book with the title once open")
+    check(pb.NineSlice.alpha == 0 and pb.Inset.alpha == 0 and pb.CloseButton.mouse == false and pb.TitleContainer.alpha == 0 and pb.Page1.alpha == 0 and pb.MainHelpButton.alpha == 0, "professions: retail shell, page art and help button faded")
+    local p1, s1 = PrimaryProfession1, SecondaryProfession1
+    check(math.abs(p1.scale - 340 / 437) < 0.001 and p1.anchors[1][2] == pb and math.abs(p1.anchors[1][4] - 22 / (340 / 437)) < 0.01 and math.abs(p1.anchors[1][5] + 70 / (340 / 437)) < 0.01, "professions: first row scaled to the page and anchored down it")
+    check(math.abs(PrimaryProfession2.anchors[1][5] + 143 / (340 / 437)) < 0.01 and math.abs(s1.anchors[1][5] + 226 / (340 / 437)) < 0.01 and math.abs(SecondaryProfession3.anchors[1][5] + 338 / (340 / 437)) < 0.01 and pr.rows == 5, "professions: five rows down the page")
+    check(PrimaryProfession1IconBorder.alpha == 0 and PrimaryProfession1SpellButton1NameFrame.alpha == 0 and pr.own[p1.SpellButton1].ring.texture == "Interface\\Buttons\\UI-Quickslot2" and pr.own[p1.SpellButton1].ring.width == 68, "professions: retail icon ring and name plates faded, classic ring on the spell buttons")
+    check(p1.statusBar.barTexture == "Interface\\PaperDollInfoFrame\\UI-Character-Skills-Bar" and p1.statusBar.barColor[3] == 0.75 and PrimaryProfession1StatusBarBGMiddle.alpha == 0 and pr.own[p1.statusBar].backing.shown ~= false, "professions: rank bar is Era's blue skill bar over a dark backing")
+    check(p1.SpellButton1.spellString.textColor[2] == 0.82 and p1.rank.textColor[1] == 0.25, "professions: spell names gold, rank text brown on the parchment")
+    pb:Update()
+    check(PrimaryProfession1SpellButton1NameFrame.alpha == 0 and p1.statusBar.barTexture == "Interface\\PaperDollInfoFrame\\UI-Character-Skills-Bar", "professions: re-skinned after Blizzard's update")
+    pb:SetSize(550, 525)
+    check(pb.width == 384, "professions: Blizzard's own resize undone")
+    w.slash("professions off")
+    check(pr.mode == "off" and pb.width == 550 and pb.NineSlice.alpha == 1 and pr.book.shown == false and p1.scale == 1 and p1.anchors[1][2] == pb.ProfessionsContentFrame and PrimaryProfession1SpellButton1NameFrame.alpha == 1 and pr.own[p1.SpellButton1].ring.shown == false, "professions off: Blizzard's window, rows and art back")
+    w.slash("professions on")
+    check(pr.mode == "restyled" and pb.width == 384 and pr.book.shown == true, "professions on: classic again")
+    check(#w.ns.errors == 0 and #w.blizzErrors == 0, "professions: no errors")
 end
 
 --------------------------------------------------------------------------
@@ -1781,12 +1841,12 @@ do
     check(w.ns.dbLoaded == true and w.ns.db.logins == 2, "reload: saved file found, login count raised")
     check(w.ns.db.unitframes == false and w.ns.modules.unitframes.mode == "off" and w.ns.modules.minimap.mode == "off", "reload: parts turned off stay off")
     check(w.ns.db.castbar == true and w.ns.modules.castbar.mode == "restyled", "reload: the part turned back on is on")
-    check(Printed("off (saved): nameplates, combo, unitframes, party, charsheet, spellbook, actionbars, minimap, tracker"), "reload: login line names the parts that are off")
+    check(Printed("off (saved): nameplates, combo, unitframes, party, charsheet, spellbook, professions, actionbars, minimap, tracker"), "reload: login line names the parts that are off")
     check(w.ns.optionsPanel.checks.unitframes.checked == false and w.ns.optionsPanel.checks.castbar.checked == true, "reload: options boxes match the saved settings")
     w.slash("probe")
     check(w.ns.lastProbe and w.ns.lastProbe:find("saved file found at login: yes  logins counted in it: 2", 1, true) and w.ns.lastProbe:find("settings came from: saved file", 1, true), "reload: probe reports the saved file and login count")
     -- the same on a client that never writes the SavedVariables file: the CVar copy carries the settings
-    check(cvarCopy == "nameplates=0,castbar=1,combo=0,unitframes=0,party=0,charsheet=0,spellbook=0,actionbars=0,minimap=0,tracker=0", "reload: every change is also written to the settings CVar")
+    check(cvarCopy == "nameplates=0,castbar=1,combo=0,unitframes=0,party=0,charsheet=0,spellbook=0,professions=0,actionbars=0,minimap=0,tracker=0", "reload: every change is also written to the settings CVar")
     w = NewWorld({style = "6", forever = true, cvars = {ForeverClassicUI_settings = cvarCopy}})
     check(w.ns.dbLoaded == false and w.ns.db.unitframes == false and w.ns.db.castbar == true and w.ns.modules.unitframes.mode == "off" and w.ns.modules.castbar.mode == "restyled", "no saved file: settings restored from the CVar copy")
     check(w.ns.dbSource:find("cvar fallback", 1, true) and w.ns.optionsPanel.checks.minimap.checked == false, "no saved file: probe names the fallback, boxes match")
