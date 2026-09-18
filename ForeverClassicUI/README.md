@@ -120,14 +120,15 @@ from Classic Era's own UI code.
   (`ProfessionsFrame`, the professions micro button) becomes the same Era
   384x512 book as the spellbook while its overview page is up, the way
   the pre-retail spellbook's Professions page did it: Blizzard's five
-  cards (two primary, three secondary) stay live and become 340x62 rows
+  cards (two primary, three secondary) stay live and become 320x68 rows
   down the page, the profession name top left, the two profession spell
   buttons under it with the classic quickslot ring round each icon and a
   brown rank line, and in place of Blizzard's animated rank bar a
   classic skill bar of the addon's (Era's blue skill-bar fill in the
   skills bevel, "rank/max" with any modifier) filled from
   `GetProfessionInfo`, the unlearn button past its end; an empty card's
-  "learn a profession" text wraps in the row. The side tabs become Era's
+  "learn a profession" text wraps in the row in the book's small font.
+  Everything stays clear of the right edge, where the tabs sit. The side tabs become Era's
   32px skill line tabs down the right edge of the book. The retail shell
   and card art are faded and restored, along with every anchor and
   colour, when the part is turned off. On the crafting page (a

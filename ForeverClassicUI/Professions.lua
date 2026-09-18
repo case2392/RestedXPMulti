@@ -19,9 +19,10 @@
 --     over the top edge;
 --   * Blizzard's five cards stay the live frames (their spell buttons
 --     cast and drag, the unlearn button works): they are resized to
---     340x62 rows and re-anchored down the page, their card art faded,
+--     320x68 rows and re-anchored down the page, their card art faded,
 --     the name and the two spell buttons re-anchored into the row with
---     the classic quickslot ring round each icon;
+--     the classic quickslot ring round each icon, an unlearned
+--     profession's paragraph wrapped in the row in the book's small font;
 --   * Blizzard's animated rank bar is faded and a classic skill bar of
 --     ours (Era's blue skill-bar fill in the skills bevel, "rank/max")
 --     drawn in its place, filled from GetProfessionInfo;
@@ -59,24 +60,26 @@ local FRAME_NAME = "ProfessionsFrame"
 local BLIZZARD_ADDON = "Blizzard_Professions"
 local FRAME_WIDTH, FRAME_HEIGHT = 384, 512
 local PANEL_WIDTH = 400
--- the rows: 340x62 down the page from x=22
-local ROW_W, ROW_H, ROW_X = 340, 62, 22
+-- the rows: 320x68 down the page from x=22 (the page's own width: the
+-- skill line tabs sit over the book's right edge from x=352)
+local ROW_W, ROW_H, ROW_X = 320, 68, 22
 local ROWS = {
-    {name = "PrimaryProfession1", y = -70, slot = 1},
-    {name = "PrimaryProfession2", y = -138, slot = 2},
+    {name = "PrimaryProfession1", y = -68, slot = 1},
+    {name = "PrimaryProfession2", y = -139, slot = 2},
     -- GetProfessions returns prof1, prof2, archaeology, fishing, cooking, first aid
-    {name = "SecondaryProfession1", y = -206, slot = 5},
-    {name = "SecondaryProfession2", y = -274, slot = 4},
-    {name = "SecondaryProfession3", y = -342, slot = 6}
+    {name = "SecondaryProfession1", y = -210, slot = 5},
+    {name = "SecondaryProfession2", y = -281, slot = 4},
+    {name = "SecondaryProfession3", y = -352, slot = 6}
 }
 -- inside a row: name top left, the two spell buttons under it, the rank
 -- bar top right with the unlearn button past its end
 local NAME_X, NAME_Y = 8, -4
+local TEXT_Y = -20
 local BUTTON_Y = -24
 local BUTTON_X = {8, 175}
 -- the bar is the reputation tab's 137px bar in the same 147px bevel box
 local BAR_W, BAR_H = 137, 13
-local BAR_X, BAR_Y = -30, -6
+local BAR_X, BAR_Y = -26, -6
 local BEVEL_W, BEVEL_IMAGE_W = 74, 281
 local ICON_SIZE = 40
 local RING_SIZE = 64 * ICON_SIZE / 37
@@ -137,7 +140,15 @@ local function Remember(region)
         local ok, r, g, b = pcall(region.GetTextColor, region)
         if ok and r then saved.color = {r, g, b} end
     end
+    if region.GetFontObject then
+        local ok, font = pcall(region.GetFontObject, region)
+        if ok then saved.font = font end
+    end
     if region.GetFrameLevel then saved.level = region:GetFrameLevel() end
+    if region.IsMouseEnabled then
+        local ok, on = pcall(region.IsMouseEnabled, region)
+        if ok then saved.mouse = on and true or false end
+    end
     own.saved = saved
 end
 
@@ -153,8 +164,18 @@ local function Restore(region)
     end
     if saved.width and region.SetSize then region:SetSize(saved.width, saved.height) end
     if saved.scale and region.SetScale then region:SetScale(saved.scale) end
+    -- the font first: a font object carries its own colour
+    if saved.font and region.SetFontObject then pcall(region.SetFontObject, region, saved.font) end
     if saved.color and region.SetTextColor then region:SetTextColor(saved.color[1], saved.color[2], saved.color[3]) end
     if saved.level and region.SetFrameLevel then region:SetFrameLevel(saved.level) end
+    if saved.mouse ~= nil and region.EnableMouse then region:EnableMouse(saved.mouse) end
+end
+
+-- a faded Blizzard frame should not keep catching the mouse over our page
+local function Silence(frame)
+    if not frame or not frame.EnableMouse then return end
+    Remember(frame)
+    frame:EnableMouse(false)
 end
 
 local function Anchor(region, point, rel, relPoint, x, y, w, h)
@@ -379,15 +400,23 @@ local function SkinRow(psf, spec, on)
         Fade(row.Background, true)
         Anchor(row.ProfessionName, "TOPLEFT", row, "TOPLEFT", NAME_X, NAME_Y)
         Anchor(row.missingHeader, "TOPLEFT", row, "TOPLEFT", NAME_X, NAME_Y)
-        Anchor(row.missingText, "TOPLEFT", row, "TOPLEFT", NAME_X, BUTTON_Y, ROW_W - 2 * NAME_X - 2, ROW_H + BUTTON_Y)
-        if row.missingText and row.missingText.SetJustifyH then row.missingText:SetJustifyH("LEFT") end
+        Anchor(row.missingText, "TOPLEFT", row, "TOPLEFT", NAME_X, TEXT_Y, ROW_W - 2 * NAME_X, ROW_H + TEXT_Y)
+        if row.missingText then
+            if row.missingText.SetJustifyH then row.missingText:SetJustifyH("LEFT") end
+            -- retail's paragraph is a size too big for a row: the book's small font
+            if row.missingText.SetFontObject and G("GameFontHighlightSmall") then
+                Remember(row.missingText)
+                pcall(row.missingText.SetFontObject, row.missingText, G("GameFontHighlightSmall"))
+            end
+        end
         Colour(row.missingText, PARCHMENT_TEXT)
         SkinSpellButton(row.SpellButton1, row, BUTTON_X[1])
         SkinSpellButton(row.SpellButton2, row, BUTTON_X[2])
         Fade(row.StatusBar, true)
+        Silence(row.StatusBar)
         if not own.bar then own.bar = SkillBar(row) end
         FillBar(own.bar, row, spec)
-        Anchor(row.UnlearnButton, "LEFT", own.bar, "RIGHT", 8, 0)
+        Anchor(row.UnlearnButton, "LEFT", own.bar, "RIGHT", 6, 0)
     else
         Restore(row)
         Fade(row.Background, false)
@@ -397,6 +426,7 @@ local function SkinRow(psf, spec, on)
         UnskinSpellButton(row.SpellButton1)
         UnskinSpellButton(row.SpellButton2)
         Fade(row.StatusBar, false)
+        Restore(row.StatusBar)
         if own.bar then own.bar:Hide() end
         Restore(row.UnlearnButton)
     end

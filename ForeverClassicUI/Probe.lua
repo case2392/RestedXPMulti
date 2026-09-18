@@ -58,6 +58,17 @@ local CLASSIC_TEXTURES = {
     "Interface\\PaperDollInfoFrame\\UI-Character-ScrollBar",
     "Interface\\ClassTrainerFrame\\UI-ClassTrainer-HorizontalBar",
     "Interface\\ClassTrainerFrame\\UI-ClassTrainer-ScrollBar",
+    -- Era's trade skill window (the crafting page), for the next phase
+    "Interface\\ClassTrainerFrame\\UI-ClassTrainer-TopLeft",
+    "Interface\\ClassTrainerFrame\\UI-ClassTrainer-TopRight",
+    "Interface\\TradeSkillFrame\\UI-TradeSkill-BotLeft",
+    "Interface\\ClassTrainerFrame\\UI-ClassTrainer-BotRight",
+    "Interface\\TradeSkillFrame\\UI-TradeSkill-SkillBorder",
+    "Interface\\ClassTrainerFrame\\UI-ClassTrainer-ExpandTab-Left",
+    "Interface\\ClassTrainerFrame\\UI-ClassTrainer-DetailHeaderLeft",
+    "Interface\\ClassTrainerFrame\\UI-ClassTrainer-DetailHeaderRight",
+    "Interface\\Buttons\\UI-Listbox-Highlight2",
+    "Interface\\Common\\Common-Input-Border",
     "Interface\\QuestFrame\\UI-QuestLogSortTab-Left",
     "Interface\\Buttons\\CancelButton-Up",
     "Interface\\Buttons\\UI-CheckBox-SwordCheck",
@@ -299,6 +310,44 @@ function ns.BuildProbe()
         local ok, fn = pcall(ProfessionMicroButton.GetScript, ProfessionMicroButton, "OnClick")
         line("ProfessionMicroButton OnClick: %s", ok and fn and "set" or "none")
     end
+    -- the crafting page (a profession's recipe list): what it is built on
+    local page = ProfessionsFrame and ProfessionsFrame.CraftingPage
+    if page then
+        line("crafting page: %s  RecipeList: %s  SchematicForm: %s  RankBar: %s",
+             page.IsShown and yn(page:IsShown()) or "?", yn(page.RecipeList),
+             yn(page.SchematicForm), yn(page.RankBar))
+    end
+    if C_TradeSkillUI then
+        local keys = {}
+        for k in pairs(C_TradeSkillUI) do keys[#keys + 1] = tostring(k) end
+        table.sort(keys)
+        line("C_TradeSkillUI: %s", table.concat(keys, ", "))
+        local okIDs, ids = pcall(function()
+            return C_TradeSkillUI.GetFilteredRecipeIDs and C_TradeSkillUI.GetFilteredRecipeIDs()
+        end)
+        local count = (okIDs and type(ids) == "table") and #ids or 0
+        line("recipes in the open list: %d", count)
+        if count > 0 then
+            local okInfo, fields = pcall(function()
+                local info = C_TradeSkillUI.GetRecipeInfo and C_TradeSkillUI.GetRecipeInfo(ids[1])
+                if type(info) ~= "table" then return nil end
+                local out = {}
+                for k, v in pairs(info) do out[#out + 1] = tostring(k) .. "=" .. tostring(v) end
+                table.sort(out)
+                return table.concat(out, " ")
+            end)
+            line("first recipe: %s", (okInfo and fields) or "could not be read")
+        end
+    else
+        line("C_TradeSkillUI: none")
+    end
+    local craftGlobals = {}
+    for _, n in ipairs({"GetNumTradeSkills", "GetTradeSkillInfo", "GetTradeSkillLine",
+                        "GetTradeSkillNumReagents", "GetTradeSkillReagentInfo", "DoTradeSkill",
+                        "TradeSkillFrame", "CraftFrame"}) do
+        if _G[n] ~= nil then craftGlobals[#craftGlobals + 1] = n end
+    end
+    line("classic trade skill globals: %s", #craftGlobals > 0 and table.concat(craftGlobals, ", ") or "none")
 
     line("")
     line("-- classic textures still in the client")
