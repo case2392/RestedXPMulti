@@ -109,7 +109,12 @@ from Classic Era's own UI code.
   the top edge, twelve spell buttons in Era's two columns (icon in the
   quickslot ring, gold name, brown rank line, black ring and dim name for
   passives), the skill line tabs down the right edge, "Page N" and the
-  two page arrows along the bottom, the Spellbook / Pet tabs. Spells come
+  two page arrows along the bottom, the Spellbook / Pet tabs. Those
+  bottom tabs are built from the character sheet's tab art, three-sliced
+  so each one fits its label: Forever's copy of the Era spellbook tab
+  file draws as a retail metal box with the label low and left in it.
+  The selected skill line tab gets Era's additive glow; drawn the normal
+  way that file is a glow on black and paints the icon out. Spells come
   from `C_SpellBook`; each button is a secure action button, so left
   click casts and dragging puts the spell on a bar (cast attributes are
   only written out of combat and caught up afterwards). Blizzard's window

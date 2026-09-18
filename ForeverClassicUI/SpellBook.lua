@@ -32,9 +32,12 @@ local ART = {
     slot = SB .. "UI-Spellbook-SpellBackground",
     icon = SB .. "Spellbook-Icon",
     skillTab = "Interface\\SpellBook\\SpellBook-SkillLineTab",
-    tabUnselected = "Interface\\SpellBook\\UI-SpellBook-Tab-Unselected",
-    tabSelected = "Interface\\SpellBook\\UI-SpellBook-Tab1-Selected",
-    tabHighlight = "Interface\\SpellBook\\UI-SpellbookPanel-Tab-Highlight",
+    -- Era's own spellbook tab files are not Era's on Forever (its copy of
+    -- UI-SpellBook-Tab-Unselected draws as a retail metal box with the
+    -- label low and left in it), so the bottom tabs are built from the
+    -- character sheet's tab art, which the client still renders right
+    tabArt = "Interface\\PaperDollInfoFrame\\UI-Character-InActiveTab",
+    tabGlow = "Interface\\PaperDollInfoFrame\\UI-Character-Tab-Highlight",
     quickslot = "Interface\\Buttons\\UI-Quickslot2",
     quickslotDown = "Interface\\Buttons\\UI-Quickslot-Depress",
     highlight = "Interface\\Buttons\\ButtonHilight-Square",
@@ -278,7 +281,16 @@ local function SkillTab(book, i)
     t.Icon = t:CreateTexture(nil, "ARTWORK")
     t.Icon:SetAllPoints(t)
     t:SetHighlightTexture(ART.highlight, "ADD")
-    if t.SetCheckedTexture then t:SetCheckedTexture(ART.checked) end
+    if t.SetCheckedTexture then
+        t:SetCheckedTexture(ART.checked)
+        -- Era: alphaMode="ADD". CheckButtonHilight is a glow on black with
+        -- no alpha, so in the default blend mode it covers the icon black.
+        local checked = t.GetCheckedTexture and t:GetCheckedTexture()
+        if checked then
+            if checked.SetBlendMode then checked:SetBlendMode("ADD") end
+            if checked.SetAllPoints then checked:SetAllPoints(t) end
+        end
+    end
     t:SetScript("OnClick", function(self)
         M.currentLine = self.lineIndex
         M.Update()
@@ -294,16 +306,46 @@ local function SkillTab(book, i)
     return t
 end
 
--- bottom tabs: Spellbook, and Pet when the player has one (Era: 128x64 art)
+-- bottom tabs: Spellbook, and Pet when the player has one. The tab art is
+-- the character sheet's, cut into three (10px ends of a 64px image) so the
+-- middle stretches to whatever the label needs.
+local TAB_HEIGHT, TAB_END, TAB_PAD, TAB_MIN = 32, 20, 44, 84
+
+local function TabPiece(tab, l, r)
+    local t = tab:CreateTexture(nil, "BACKGROUND")
+    t:SetTexture(ART.tabArt)
+    t:SetSize(TAB_END, TAB_HEIGHT)
+    t:SetTexCoord(l, r, 0, 1)
+    return t
+end
+
 local function BookTab(book, text)
     local t = CreateFrame("Button", nil, book)
-    t:SetSize(128, 64)
+    t:SetHeight(TAB_HEIGHT)
     t:SetFrameLevel(book:GetFrameLevel() + 2)
-    t:SetNormalTexture(ART.tabUnselected)
-    if HasFile(ART.tabHighlight) then t:SetHighlightTexture(ART.tabHighlight, "ADD") end
+    t.Left = TabPiece(t, 0, 0.15625)
+    t.Middle = TabPiece(t, 0.15625, 0.84375)
+    t.Right = TabPiece(t, 0.84375, 1)
+    t.Left:SetPoint("TOPLEFT", t, "TOPLEFT", 0, 0)
+    t.Right:SetPoint("TOPRIGHT", t, "TOPRIGHT", 0, 0)
+    t.Middle:ClearAllPoints()
+    t.Middle:SetPoint("TOPLEFT", t.Left, "TOPRIGHT", 0, 0)
+    t.Middle:SetPoint("BOTTOMRIGHT", t.Right, "BOTTOMLEFT", 0, 0)
     t.Text = t:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-    t.Text:SetPoint("CENTER", t, "CENTER", 0, 3)
+    t.Text:SetPoint("CENTER", t, "CENTER", 0, 2)
     t.Text:SetText(text)
+    local width = TAB_MIN
+    if t.Text.GetStringWidth then width = math.max(TAB_MIN, t.Text:GetStringWidth() + TAB_PAD) end
+    t:SetWidth(width)
+    if HasFile(ART.tabGlow) then
+        t:SetHighlightTexture(ART.tabGlow, "ADD")
+        local hl = t:GetHighlightTexture()
+        if hl then
+            hl:ClearAllPoints()
+            hl:SetPoint("TOPLEFT", t, "TOPLEFT", 3, 5)
+            hl:SetPoint("BOTTOMRIGHT", t, "BOTTOMRIGHT", -3, 0)
+        end
+    end
     return t
 end
 
@@ -375,10 +417,10 @@ local function BuildBook()
         book.skillTabs[i] = t
     end
     book.tabSpells = BookTab(book, Str("SPELLBOOK", "Spellbook"))
-    book.tabSpells:SetPoint("CENTER", book, "BOTTOMLEFT", 79, 61)
+    book.tabSpells:SetPoint("BOTTOMLEFT", book, "BOTTOMLEFT", 20, 45)
     book.tabSpells:SetScript("OnClick", function() M.bank = "player"; M.currentLine = nil; M.Update() end)
     book.tabPet = BookTab(book, Str("PET", "Pet"))
-    book.tabPet:SetPoint("LEFT", book.tabSpells, "RIGHT", -20, 0)
+    book.tabPet:SetPoint("LEFT", book.tabSpells, "RIGHT", 4, 0)
     book.tabPet:SetScript("OnClick", function() M.bank = "pet"; M.Update() end)
     book.tabPet:Hide()
     local close = CreateFrame("Button", nil, book)
@@ -398,8 +440,11 @@ end
 -- filling the page
 --------------------------------------------------------------------------
 
+-- Era lifted the selected tab onto its own art; that file is one of the
+-- ones Forever did not keep, so the selected tab is told apart the other
+-- Era way (white text, button disabled), as the character sheet does.
 local function SetTabSelected(tab, selected)
-    tab:SetNormalTexture(selected and ART.tabSelected or ART.tabUnselected)
+    tab.selected = selected
     if selected then
         if tab.Disable then tab:Disable() end
         tab.Text:SetTextColor(1, 1, 1)
@@ -693,7 +738,7 @@ function M:Enable()
         return
     end
     self.missingArt = {}
-    for _, key in ipairs({"topLeft", "topRight", "bottomLeft", "bottomRight", "slot", "skillTab", "tabUnselected", "tabSelected"}) do
+    for _, key in ipairs({"topLeft", "topRight", "bottomLeft", "bottomRight", "slot", "skillTab", "tabArt"}) do
         if not HasFile(ART[key]) then self.missingArt[#self.missingArt + 1] = ART[key]:match("[^\\]+$") end
     end
     local psf = G("PlayerSpellsFrame")

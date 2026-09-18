@@ -1263,8 +1263,8 @@ do
     check(pm.HealthBarsContainer.PlayerFrameHealthBarAnimatedLoss.alpha == 0 and pm.HealthBarsContainer.PlayerFrameTempMaxHealthLoss.alpha == 0, "forever: retail red health-loss trail faded out")
     -- level text: Blizzard's copy under the art goes transparent, ours on the skin mirrors it in gold
     local lvl = skin.levelText
-    check(PlayerLevelText.alpha == 0 and lvl.text == "2" and lvl.vertex[1] == 1 and lvl.vertex[2] == 0.82 and lvl.anchors[1][3] == "BOTTOMLEFT" and lvl.anchors[1][4] == 35.25, "forever: player level copied onto the skin in gold, in the frame corner")
-    check(lvl.width == 40 and lvl.justify == "CENTER" and #lvl.anchors == 1 and lvl.anchors[1][1] == "CENTER", "forever: level copy is a fixed centred box on the art's circle")
+    check(PlayerLevelText.alpha == 0 and lvl.text == "2" and lvl.vertex[1] == 1 and lvl.vertex[2] == 0.82 and lvl.anchors[1][3] == "BOTTOMLEFT" and lvl.anchors[1][4] == 36 and lvl.anchors[1][5] == 31, "forever: player level copied onto the skin in gold, on whole pixels in the frame corner")
+    check(lvl.width == 40 and lvl.height == 14 and lvl.justify == "CENTER" and lvl.justifyV == "MIDDLE" and #lvl.anchors == 1 and lvl.anchors[1][1] == "CENTER", "forever: level copy is a fixed centred box on the art's circle")
     PlayerFrame_UpdateLevel()
     check(lvl.text == "3" and lvl.vertex[2] == 0.82, "forever: level copy follows Blizzard's update and stays gold after its white repaint")
     PlayerLevelText:Hide()
@@ -1793,7 +1793,10 @@ do
     local t1, t2, t3 = book.skillTabs[1], book.skillTabs[2], book.skillTabs[3]
     check(t1.shown and t1.Icon.texture == 626005 and t1.checked == true and t2.shown and t2.checked == false and t3.shown == false, "book: skill line tabs down the right edge, General checked")
     check(t1.anchors[1][1] == "TOPLEFT" and t1.anchors[1][3] == "TOPRIGHT" and t1.anchors[1][4] == -32 and t1.anchors[1][5] == -65 and t2.anchors[1][5] == -17, "book: Era tab positions")
-    check(book.tabSpells.anchors[1][4] == 79 and book.tabSpells.anchors[1][5] == 61 and book.tabPet.shown == false and book.tabSpells.NormalTexture.texture == "Interface\\SpellBook\\UI-SpellBook-Tab1-Selected", "book: bottom Spellbook tab selected, no pet tab without a pet")
+    local bt = book.tabSpells
+    check(bt.anchors[1][1] == "BOTTOMLEFT" and bt.anchors[1][4] == 20 and bt.anchors[1][5] == 45 and bt.height == 32 and bt.width == math.max(84, bt.Text:GetStringWidth() + 44) and book.tabPet.shown == false, "book: bottom tab sized to its label at the foot of the book, no pet tab without a pet")
+    check(bt.Left.texture == "Interface\\PaperDollInfoFrame\\UI-Character-InActiveTab" and bt.Middle.anchors[2][1] == "BOTTOMRIGHT" and bt.Text.anchors[1][1] == "CENTER" and bt.Text.anchors[1][5] == 2 and bt.Text.textColor[1] == 1 and bt.Text.textColor[2] == 1 and bt.enabled == false, "book: tab art three-sliced from the character sheet's, label centred, selected tab white and disabled")
+    check(t1.CheckedTexture.blend == "ADD" and t1.CheckedTexture.texture == "Interface\\Buttons\\CheckButtonHilight", "book: checked skill tab glows instead of painting the icon black")
     b[1].scripts.OnEnter(b[1])
     check(GameTooltip.spellBookItem[1] == 1 and GameTooltip.spellBookItem[2] == 0, "book: tooltip from the spell book slot")
     b[1].scripts.OnDragStart(b[1])

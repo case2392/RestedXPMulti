@@ -154,8 +154,9 @@ local function Skin(frame, main)
         skin.glow:SetAlpha(0)
         skin.levelText = skin:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
         -- a fixed, centred box: an auto-sized string came out a couple of
-        -- pixels left of the art's circle on Forever
-        skin.levelText:SetSize(40, 10)
+        -- pixels left of the art's circle on Forever. The box is taller
+        -- than the line so MIDDLE centring has no rounding to do.
+        skin.levelText:SetSize(40, 14)
         if skin.levelText.SetJustifyH then skin.levelText:SetJustifyH("CENTER") end
         if skin.levelText.SetJustifyV then skin.levelText:SetJustifyV("MIDDLE") end
         own.skin = skin
@@ -297,7 +298,8 @@ function M.RestylePlayer()
     end
     Hide(main.LevelBackgroundCircle)
     skin.levelText:ClearAllPoints()
-    skin.levelText:SetPoint("CENTER", pf, "BOTTOMLEFT", 35.25, 30)
+    -- whole pixels: the quarter pixel put the digit left of the circle
+    skin.levelText:SetPoint("CENTER", pf, "BOTTOMLEFT", 36, 31)
     if PlayerLevelText then
         Mirror(PlayerLevelText, skin.levelText)
         Fade(PlayerLevelText)
@@ -451,7 +453,7 @@ function M.RestyleTarget(frame)
     end
     Hide(main.LevelBackgroundCircle)
     skin.levelText:ClearAllPoints()
-    skin.levelText:SetPoint("CENTER", frame, "BOTTOMRIGHT", -35.25, 30)
+    skin.levelText:SetPoint("CENTER", frame, "BOTTOMRIGHT", -36, 31)
     local level = main.LevelText
     if level then
         Mirror(level, skin.levelText)
