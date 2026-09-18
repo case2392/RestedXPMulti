@@ -49,6 +49,22 @@ from Classic Era's own UI code.
   anchor comes from a `/cui report all` taken on Classic Era. Blizzard's own
   redraws (vehicle art, power-type changes, target classification, level
   repaints) are re-skinned as they happen.
+- **Character sheet** — on the Character tab the window becomes Era's
+  384x512 sheet: the four-piece `UI-Character-CharacterTab` art, portrait
+  and name in the top corners, "Level 39 Human Priest" and guild lines
+  under the name, Blizzard's equipment slots moved into the two Era columns
+  with the weapon row along the bottom (and the classic ammo plate), the
+  model in the 233x224 window between them, the small attribute box
+  (Strength… Spirit, Armor, Melee Attack, Attack Power, Damage, Ranged
+  Attack…) filled from the unit stat API the way Era's PaperDollFrame.lua
+  did, with the same green/red buff colouring and tooltips, the resistance
+  column, and text tabs along the bottom edge (Character, Reputation,
+  Skills, Honor, plus Forever's Currency and Statistics, tightened to fit)
+  instead of the picture tabs down the side. Forever's shell (metal frame,
+  stats list, sidebar tabs, level banner, collapse button) is faded out
+  and unclickable, never destroyed: Blizzard keeps driving the slots and
+  model. On the other tabs Blizzard's layout is put back until those get
+  their classic versions.
 - **Action bar art** — the classic stone bar under the main action bar
   between the gryphons; the retail frame border and the divider strips
   between buttons are hidden.
@@ -79,7 +95,7 @@ takes the other parts down.
 | `/cui combo on\|off` | Classic combo points on the target frame (`/reload` after off) |
 | `/cui combo offset <x> <y>` | Nudge the dots if the target frame art differs (no numbers = reset) |
 | `/cui combo force` | Draw the classic combo points right now, replacing Blizzard's (testing) |
-| `/cui unitframes\|actionbars\|minimap\|tracker on\|off\|force` | The other parts |
+| `/cui unitframes\|charsheet\|actionbars\|minimap\|tracker on\|off\|force` | The other parts |
 | `/cui options` | Open the settings panel (Options > AddOns > Classic UI for Forever) |
 | `/cui report` | Everything for support in one copyable window: the probe, a dump of every frame the addon touches (plus your target's nameplate), and the last Lua errors the client raised |
 | `/cui report all` | The same including hidden pieces (marked). Run it on Classic Era with a mob targeted to capture the exact classic layout for comparison |

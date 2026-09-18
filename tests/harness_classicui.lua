@@ -56,6 +56,10 @@ local function Region(kind, init)
     function r:SetDrawLayer() end
     function r:SetText(t) self.text = t end
     function r:GetText() return self.text end
+    function r:SetTextColor(...) self.textColor = {...} end
+    function r:SetJustifyV(j) self.justifyV = j end
+    function r:SetWordWrap() end
+    function r:GetStringWidth() return self.text and (#tostring(self.text) * 6) or 0 end
     function r:RemoveMaskTexture(m) self.maskRemoved = m end
     function r:SetShown(v) self.shown = v and true or false end
     -- read-back API used by /cui dump
@@ -80,12 +84,28 @@ local function Frame(name)
     function f:RegisterEvent(e) self.events[e] = true end
     function f:UnregisterEvent(e) self.events[e] = nil end
     function f:SetScript(k, fn) self.scripts = self.scripts or {}; self.scripts[k] = fn end
+    function f:HookScript(k, fn)
+        self.scripts = self.scripts or {}
+        local prev = self.scripts[k]
+        self.scripts[k] = function(...) if prev then prev(...) end fn(...) end
+    end
+    function f:GetScript(k) return self.scripts and self.scripts[k] end
+    function f:SetNormalTexture(t) self.NormalTexture = self.NormalTexture or Region("Texture"); self.NormalTexture:SetTexture(t) end
+    function f:SetPushedTexture(t) self.PushedTexture = self.PushedTexture or Region("Texture"); self.PushedTexture:SetTexture(t) end
+    function f:SetHighlightTexture(t, blend) self.HighlightTexture = self.HighlightTexture or Region("Texture"); self.HighlightTexture:SetTexture(t); self.HighlightTexture.blend = blend end
+    function f:GetNormalTexture() return self.NormalTexture end
+    function f:GetHighlightTexture() return self.HighlightTexture end
+    function f:SetID(id) self.id = id end
+    function f:GetID() return self.id or 0 end
+    function f:GetParent() return self.parent end
+    function f:IsVisible() return self.shown end
+    function f:IsMouseEnabled() return self.mouse ~= false end
     function f:Fire(event, ...)
         if self.scripts and self.scripts.OnEvent then self.scripts.OnEvent(self, event, ...) end
     end
     function f:SetFrameStrata() end
     function f:SetMovable() end
-    function f:EnableMouse() end
+    function f:EnableMouse(on) self.mouse = on end
     function f:RegisterForDrag() end
     function f:SetBackdrop() end
     function f:CreateFontString() return Region("FontString") end
@@ -427,6 +447,123 @@ local function NewWorld(opts)
             p.UnitFrame.LevelFrame = Frame("LevelFrame")
             function p.UnitFrame:UpdateAnchors() self.anchorsUpdated = self.anchorsUpdated + 1 end
         end
+        -- character sheet: Forever's Camelot CharacterFrame (631x484 shell, side tabs, stats list)
+        do
+            local cf = Frame("CharacterFrame"); cf.level = 1; cf:SetSize(631, 484)
+            cf.NineSlice = Frame("NineSlice"); cf.NineSlice.level = 500
+            cf.PortraitContainer = Frame("PortraitContainer"); cf.PortraitContainer.portrait = Region("Texture"); cf.PortraitContainer.CircleMask = Region("MaskTexture")
+            cf.PortraitContainer.portrait:SetPoint("TOPLEFT", cf.PortraitContainer, "TOPLEFT", -5, 7); cf.PortraitContainer.portrait:SetSize(62, 62)
+            cf.PortraitContainer.CircleMask:SetPoint("TOPLEFT", cf.PortraitContainer.portrait, "TOPLEFT", 2, 0); cf.PortraitContainer.CircleMask:SetSize(58, 58)
+            cf.TitleContainer = Frame("TitleContainer"); cf.TitleContainer:SetPoint("TOPLEFT", cf, "TOPLEFT", 58, -1); cf.TitleContainer:SetSize(549, 20); cf.TitleContainer.TitleText = Region("FontString")
+            cf.CloseButton = Frame("CloseButton")
+            cf.LeftPaneHost = Frame("LeftPaneHost"); cf.LeftPaneHost:SetSize(398, 464)
+            cf.RightPaneHost = Frame("RightPaneHost"); cf.RightPaneHost:SetSize(233, 464)
+            cf.RightPaneToggleButton = Frame("RightPaneToggleButton")
+            cf.ModeTabs = Frame("ModeTabs"); cf.ModeTabs.Tabs = {}
+            for i = 1, 6 do local t = Frame("ModeTab" .. i); t.mouse = true; cf.ModeTabs.Tabs[i] = t; cf.ModeTabs["tab" .. i] = t end
+            cf.width = 631; cf.height = 484
+            w.panelWidth = nil
+            _G.SetUIPanelAttribute = function(frame, name, value) if frame == cf and name == "width" then w.panelWidth = value end end
+            function cf:IsRightPaneCollapsed() return false end
+            function cf:UpdateSize() self:SetSize(631, 484); w.blizzSizes = (w.blizzSizes or 0) + 1 end
+            function cf:UpdatePortrait() end
+            function cf:UpdateTitle() end
+            function cf:UpdateRightPaneHeader() end
+            function cf:SetSelectedModeTabByFrame(name) self.selectedFrame = name end
+            function cf:SetUIPanelAttribute() SetUIPanelAttribute(self, "width", self.width + 82) end
+            function cf:ShouldShowCurrencyTab() return w.currencyTab ~= false end
+            function cf:RefreshDisplay()
+                self:UpdateSize(); self:UpdatePortrait(); self:UpdateTitle(); self:UpdateRightPaneHeader(); self:SetSelectedModeTabByFrame(self.activeSubframe)
+            end
+            function cf:Expand()
+                self.Expanded = true
+                PaperDollSidebarTabs:Show(); PaperDollLevelInfo:Show(); CharacterStatsPaneScrollBox:Show()
+                self:RefreshDisplay()
+            end
+            function cf:Collapse() self.Expanded = false; self:RefreshDisplay() end
+            function cf:RefreshRightPane() if PaperDollFrame:IsShown() then self:Expand() end; self:SetUIPanelAttribute() end
+            local subframes = {"PaperDollFrame", "ReputationFrame", "SkillsFrame", "PVPRankFrame", "TokenFrame", "StatisticsFrame"}
+            function cf:ShowSubFrame(name)
+                self.activeSubframe = name
+                for _, n in ipairs(subframes) do if n ~= name then _G[n]:Hide() end end
+                for _, n in ipairs(subframes) do if n == name then _G[n]:Show() end end
+            end
+            _G.CharacterFrame = cf
+            for _, n in ipairs(subframes) do
+                local f = Frame(n); f.parent = cf; f:SetAllPoints(cf); f.level = 1; f.useParentLevel = true
+                f:Hide()
+                _G[n] = f
+            end
+            -- Show/Hide of the paper doll fire its scripts like the client does
+            local pd = _G.PaperDollFrame
+            function pd:Show() if not self.shown then self.shown = true; if self.scripts and self.scripts.OnShow then self.scripts.OnShow(self) end end end
+            function pd:Hide() if self.shown then self.shown = false; if self.scripts and self.scripts.OnHide then self.scripts.OnHide(self) end end end
+            pd:SetScript("OnShow", function(self) PaperDollFrame_SetSidebar(PaperDollSidebarTabs, 1); CharacterFrame:Expand() end)
+            pd:SetScript("OnHide", function(self) CharacterFrame:Collapse(); PaperDollSidebarTabs:Hide() end)
+            _G.CharacterStatsPaneScrollBox = Frame("CharacterStatsPaneScrollBox"); _G.CharacterStatsPaneScrollBox.ScrollBox = Frame("ScrollBox")
+            _G.PaperDollSidebarTabs = Frame("PaperDollSidebarTabs")
+            for i = 1, 3 do _G["PaperDollSidebarTab" .. i] = Frame("PaperDollSidebarTab" .. i) end
+            _G.PaperDollLevelInfo = Frame("PaperDollLevelInfo")
+            _G.PaperDollFrame_ShowSidebar = function(frame) w.sidebarShown = frame end
+            _G.PaperDollFrame_SetSidebar = function(tabs, index) CharacterStatsPaneScrollBox:Show(); PaperDollFrame_ShowSidebar(CharacterStatsPaneScrollBox) end
+            local model = Frame("CharacterModelScene"); model:SetPoint("TOPLEFT", cf.LeftPaneHost, "TOPLEFT", 0, 0); model:SetPoint("BOTTOMRIGHT", cf.LeftPaneHost, "BOTTOMRIGHT", 0, 0); model:SetSize(398, 464)
+            for _, k in ipairs({"BackgroundTopLeft", "BackgroundTopRight", "BackgroundBotLeft", "BackgroundBotRight", "BackgroundOverlay"}) do model[k] = Region("Texture") end
+            _G.CharacterModelScene = model
+            local function Slot(name, point, rel, relPoint, x, y)
+                local s = Frame(name); s:SetSize(37, 37); s:SetPoint(point, rel, relPoint, x, y); s.level = 101
+                s.BorderFrame = Frame("BorderFrame"); s.icon = Region("Texture")
+                _G[name] = s
+                return s
+            end
+            local left = {"CharacterHeadSlot", "CharacterNeckSlot", "CharacterShoulderSlot", "CharacterBackSlot", "CharacterChestSlot", "CharacterShirtSlot", "CharacterTabardSlot", "CharacterWristSlot"}
+            local right = {"CharacterHandsSlot", "CharacterWaistSlot", "CharacterLegsSlot", "CharacterFeetSlot", "CharacterFinger0Slot", "CharacterFinger1Slot", "CharacterTrinket0Slot", "CharacterTrinket1Slot"}
+            local prev
+            for _, n in ipairs(left) do prev = Slot(n, prev and "TOPLEFT" or "TOPLEFT", prev or cf.LeftPaneHost, prev and "BOTTOMLEFT" or "TOPLEFT", prev and 0 or 24, prev and -6 or -60) end
+            prev = nil
+            for _, n in ipairs(right) do prev = Slot(n, prev and "TOPLEFT" or "TOPRIGHT", prev or cf.LeftPaneHost, prev and "BOTTOMLEFT" or "TOPRIGHT", prev and 0 or -20, prev and -6 or -60) end
+            local main = Slot("CharacterMainHandSlot", "BOTTOM", cf.LeftPaneHost, "BOTTOM", -60, 30)
+            local off = Slot("CharacterSecondaryHandSlot", "TOPLEFT", main, "TOPRIGHT", 6, 0)
+            local ranged = Slot("CharacterRangedSlot", "TOPLEFT", off, "TOPRIGHT", 6, 0)
+            local ammo = Slot("CharacterAmmoSlot", "LEFT", ranged, "RIGHT", 19, 0); ammo:SetSize(27, 27)
+            ammo.gearSlotSmall = Region("Texture", {atlas = "UI-Character-Info-GearSlotSmall"})
+            ammo.arrowHolder = Frame("arrowHolder"); ammo.arrowHolder.arrow = Region("Texture", {atlas = "UI-Character-Info-GearSlot-Arrow"})
+            _G.ToggleCharacter = function(tab, onlyShow)
+                w.toggled = tab
+                if CharacterFrame:IsShown() then
+                    if not _G[tab]:IsShown() then CharacterFrame:ShowSubFrame(tab) end
+                else
+                    CharacterFrame:ShowSubFrame(tab)
+                    CharacterFrame:Show(); CharacterFrame:RefreshRightPane()
+                end
+                CharacterFrame:RefreshDisplay()
+            end
+            _G.HideUIPanel = function(f) f:Hide() end
+            cf:ShowSubFrame("PaperDollFrame")
+            cf:Hide()
+            -- unit stat API
+            _G.UnitLevel = function() return 39 end
+            _G.UnitRace = function() return "Human", "Human" end
+            _G.UnitClass = function() return "Priest", "PRIEST" end
+            _G.GetGuildInfo = function() return "Guild Name", "Member" end
+            _G.UnitStat = function(unit, i) return 20 + i, 25 + i, 5, 0 end
+            _G.UnitArmor = function() return 300, 350, 300, 50, 0 end
+            _G.UnitAttackBothHands = function() return 195, 0 end
+            _G.UnitAttackPower = function() return 100, 20, -5 end
+            _G.UnitDamage = function() return 40, 60, 0, 0, 0, 0, 1 end
+            _G.UnitAttackSpeed = function() return 2.5 end
+            _G.GetInventoryItemTexture = function(unit, slot) if slot == 18 then return w.rangedTexture end end
+            _G.UnitRangedAttack = function() return 150, 0 end
+            _G.UnitRangedAttackPower = function() return 60, 0, 0 end
+            _G.UnitRangedDamage = function() return 2.0, 30, 50, 0, 0, 1 end
+            _G.UnitResistance = function(unit, id) if id == 2 then return 10, 15, 5, 0 elseif id == 5 then return 0, -3, 0, -3 end return 0, 0, 0, 0 end
+            _G.PaperDollFrame_GetArmorReduction = function(armor, level) return 12.5 end
+            _G.GameTooltip = Frame("GameTooltip"); _G.GameTooltip.lines = {}
+            function _G.GameTooltip:SetOwner() self.lines = {} end
+            function _G.GameTooltip:SetText(t) self.lines[#self.lines + 1] = t end
+            function _G.GameTooltip:AddLine(t) self.lines[#self.lines + 1] = t end
+            function _G.GameTooltip:AddDoubleLine(a, b) self.lines[#self.lines + 1] = a .. " " .. tostring(b) end
+            _G.GetFileIDFromPath = function(p) if p:find("Nameplate") then return 130000 end if p:find("PaperDollInfoFrame") or p:find("MinimizeButton") then return 136500 end end
+        end
         _G.NamePlateSetupOptions.castBarToHealthBarSpacing = 4
         _G.NamePlateSetupOptions.healthBarBorderWidth = 102.4
         _G.NamePlateSetupOptions.healthBarBorderHeight = 12.8
@@ -459,7 +596,7 @@ local function NewWorld(opts)
 
     -- load the addon
     local ns = {}
-    for _, file in ipairs({"Core.lua", "Nameplates.lua", "CastBar.lua", "Combo.lua", "UnitFrames.lua", "ActionBars.lua", "Minimap.lua", "Tracker.lua", "Options.lua", "Probe.lua"}) do
+    for _, file in ipairs({"Core.lua", "Nameplates.lua", "CastBar.lua", "Combo.lua", "UnitFrames.lua", "CharacterSheet.lua", "ActionBars.lua", "Minimap.lua", "Tracker.lua", "Options.lua", "Probe.lua"}) do
         local chunk, err = loadfile(root .. "/ForeverClassicUI/" .. file)
         assert(chunk, err)
         chunk("ForeverClassicUI", ns)
@@ -984,6 +1121,88 @@ do
 end
 
 --------------------------------------------------------------------------
+-- 3d. Forever character sheet: Era layout on the Character tab, Blizzard's
+--     layout on the other tabs, everything undone by "off"
+--------------------------------------------------------------------------
+do
+    local w = NewWorld({style = "6", forever = true})
+    local cs = w.ns.modules.charsheet
+    local cf = CharacterFrame
+    check(cs.mode == "restyled", "sheet: re-skinned on Forever")
+    check(cf.width == 384 and cf.height == 512, "sheet: frame is Era's 384x512 while the paper doll shows")
+    check(w.panelWidth == 400, "sheet: UIParent told the panel is narrow")
+    check(cf.NineSlice.alpha == 0 and cf.LeftPaneHost.alpha == 0 and cf.RightPaneHost.alpha == 0, "sheet: retail shell faded")
+    check(cf.RightPaneToggleButton.alpha == 0 and cf.RightPaneToggleButton.mouse == false and cf.CloseButton.alpha == 0 and cf.CloseButton.mouse == false, "sheet: collapse and close buttons faded and unclickable")
+    check(cf.ModeTabs.alpha == 0 and cf.ModeTabs.Tabs[1].mouse == false and cf.ModeTabs.Tabs[6].mouse == false, "sheet: side tabs faded and unclickable")
+    local sheet = cs.sheet
+    check(sheet.shown == true and sheet.art[1].texture == "Interface\\PaperDollInfoFrame\\UI-Character-CharacterTab-L1" and sheet.art[4].anchors[1][4] == 256 and sheet.art[4].anchors[1][5] == -256, "sheet: four-piece Era art in place")
+    check(sheet.close.NormalTexture.texture == "Interface\\Buttons\\UI-Panel-MinimizeButton-Up" and sheet.close.anchors[1][2] == cf and sheet.close.anchors[1][4] == -44, "sheet: classic close button in the corner")
+    check(sheet.levelText.text == "Level 39 Human Priest" and sheet.guildText.text == "Member of Guild Name", "sheet: level and guild lines")
+    local p = cf.PortraitContainer.portrait
+    check(p.anchors[1][1] == "TOPLEFT" and p.anchors[1][2] == cf and p.anchors[1][4] == 7 and p.anchors[1][5] == -6 and p.width == 60, "sheet: portrait in Era's corner")
+    check(cf.TitleContainer.anchors[1][1] == "TOP" and cf.TitleContainer.anchors[1][4] == 7 and cf.TitleContainer.anchors[1][5] == -14 and cf.TitleContainer.width == 300, "sheet: name centred at the top")
+    local head, wrist, hands = CharacterHeadSlot.anchors[1], CharacterWristSlot.anchors[1], CharacterHandsSlot.anchors[1]
+    check(head[2] == PaperDollFrame and head[4] == 21 and head[5] == -74 and wrist[5] == -74 - 7 * 41 and hands[4] == 306 and hands[5] == -74, "sheet: slot columns at Era's positions")
+    local main, ammo = CharacterMainHandSlot.anchors[1], CharacterAmmoSlot.anchors[1]
+    check(main[1] == "TOPLEFT" and main[3] == "BOTTOMLEFT" and main[4] == 122 and main[5] == 127 and CharacterSecondaryHandSlot.anchors[1][2] == CharacterMainHandSlot and ammo[2] == CharacterRangedSlot and ammo[4] == 15, "sheet: weapon row along the bottom")
+    check(CharacterHeadSlot.BorderFrame.alpha == 0 and CharacterAmmoSlot.gearSlotSmall.alpha == 0 and CharacterAmmoSlot.arrowHolder.alpha == 0, "sheet: retail slot rings and ammo arrow faded")
+    check(sheet.ammoUnder ~= nil and sheet.ammoUnder.level == 100 and sheet.ammoOver.level == 102, "sheet: classic ammo plate under the slot, bracket over it")
+    local m = CharacterModelScene
+    check(m.anchors[1][2] == PaperDollFrame and m.anchors[1][4] == 65 and m.anchors[1][5] == -78 and m.width == 233 and m.height == 224 and m.BackgroundTopLeft.alpha == 0 and m.BackgroundOverlay.alpha == 0, "sheet: model in Era's window, race backdrop faded")
+    check(CharacterStatsPaneScrollBox.shown == false and CharacterStatsPaneScrollBox.alpha == 0 and PaperDollSidebarTabs.alpha == 0 and PaperDollLevelInfo.alpha == 0, "sheet: retail stats list, sidebar tabs and level banner gone")
+    local rows = sheet.rows
+    check(rows.STRENGTH.Value.text == "|cff20ff2026|r" and rows.STRENGTH.tooltip:find("26", 1, true) and rows.STRENGTH.tooltip:find("+5", 1, true), "sheet: buffed stat shown green with the formula in the tooltip")
+    check(rows.ARMOR.Value.text == "|cff20ff20350|r" and rows.ARMOR.tooltip2:find("12.50", 1, true), "sheet: armor with the reduction line")
+    check(rows.ATTACK.Value.text == 195 and rows.ATTACK_POWER.Value.text == "|cffff2020115|r", "sheet: weapon skill and attack power (debuffed: red)")
+    check(rows.DAMAGE.Value.text == "40 - 60" and rows.DAMAGE.dps == 20 and rows.DAMAGE.attackSpeed == 2.5, "sheet: melee damage and dps")
+    check(rows.RANGED_ATTACK.Value.text == "N/A" and rows.RANGED_DAMAGE.Value.text == "N/A", "sheet: no ranged weapon -> N/A")
+    w.rangedTexture = 12345
+    sheet.scripts.OnEvent(sheet, "PLAYER_EQUIPMENT_CHANGED")
+    check(rows.RANGED_ATTACK.Value.text == 150 and rows.RANGED_DAMAGE.Value.text == "30 - 50" and rows.RANGED_DAMAGE.dps == 20, "sheet: ranged lines fill in once a weapon is equipped")
+    local res = sheet.resistances
+    check(res[1].id == 6 and res[1].Value.text == 0 and res[2].Value.text == "|cff20ff2015|r" and res[5].Value.text == "|cffff2020-3|r", "sheet: resistance column, coloured like Era")
+    check(res[2].tooltip:find("Fire", 1, true) or res[2].tooltip:find("FIRE", 1, true), "sheet: resistance tooltip names the school")
+    rows.DAMAGE.scripts.OnEnter(rows.DAMAGE)
+    check(GameTooltip.lines[1] == "Main Hand" and GameTooltip.lines[3] == "Damage: 40 - 60", "sheet: damage tooltip like Era's")
+    -- bottom tabs
+    local tabs = cs.tabs
+    check(tabs.shown == true and #tabs.list == 6 and tabs.list[1].shown and tabs.list[5].shown, "sheet: six text tabs along the bottom (Forever has currency and statistics too)")
+    local t1, t2 = tabs.list[1], tabs.list[2]
+    check(t1.anchors[1][1] == "CENTER" and t1.anchors[1][2] == cf and t1.anchors[1][3] == "BOTTOMLEFT" and t1.anchors[1][4] == 60 and t1.anchors[1][5] == 62, "sheet: first tab at Era's spot")
+    check(t2.anchors[1][1] == "LEFT" and t2.anchors[1][2] == t1 and t2.anchors[1][4] == -16, "sheet: tabs overlap by 16 like Era")
+    check(t1.selected == true and t1.Left.texture == "Interface\\PaperDollInfoFrame\\UI-Character-ActiveTab" and t1.Text.textColor[1] == 1 and t1.Text.textColor[2] == 1, "sheet: character tab drawn active, white text")
+    check(t2.selected == false and t2.Left.texture == "Interface\\PaperDollInfoFrame\\UI-Character-InActiveTab" and t2.Text.textColor[2] == 0.82, "sheet: other tabs inactive, gold text")
+    check(tabs.padding == 22 and t1.width == 54 + 22, "sheet: six tabs would not fit at Era's padding, so it is tightened")
+    w.currencyTab = false
+    cs:Force()
+    check(tabs.list[5].shown == false and tabs.padding == 32, "sheet: currency tab only when Forever would show it, padding relaxed")
+    -- switch to reputation: Blizzard's layout comes back on that tab
+    t2.scripts.OnClick(t2)
+    check(w.toggled == "ReputationFrame" and ReputationFrame.shown == true and PaperDollFrame.shown == false, "sheet: tab click opens the reputation frame")
+    check(cf.width == 631 and cf.height == 484 and cf.NineSlice.alpha == 1 and cf.LeftPaneHost.alpha == 1 and cf.CloseButton.mouse == true, "sheet: Blizzard's shell back on the reputation tab")
+    check(sheet.shown == false and t2.selected == true and t1.selected == false, "sheet: our art hidden, reputation tab active")
+    check(p.anchors[1][2] == cf.PortraitContainer and p.anchors[1][4] == -5 and p.width == 62 and cf.TitleContainer.anchors[1][1] == "TOPLEFT" and cf.TitleContainer.width == 549, "sheet: portrait and title back where Blizzard had them")
+    check(cf.ModeTabs.alpha == 0 and tabs.shown == true and w.panelWidth == 713, "sheet: side tabs stay hidden, our tabs stay, panel width back to Blizzard's")
+    -- and back
+    t1.scripts.OnClick(t1)
+    check(PaperDollFrame.shown == true and cf.width == 384 and sheet.shown == true and t1.selected == true, "sheet: character tab restores the classic layout")
+    check(CharacterStatsPaneScrollBox.shown == false and w.sidebarShown == CharacterStatsPaneScrollBox and PaperDollSidebarTabs.alpha == 0 and PaperDollLevelInfo.alpha == 0, "sheet: Blizzard's Expand/SetSidebar showed its panes again, hooks hid them")
+    -- off: everything back
+    w.slash("charsheet off")
+    check(cs.mode == "off" and cf.width == 631 and cf.NineSlice.alpha == 1 and cf.ModeTabs.alpha == 1 and cf.ModeTabs.Tabs[1].mouse == true, "off: Blizzard's frame size, shell and side tabs back")
+    check(sheet.shown == false and tabs.shown == false, "off: our sheet and tabs hidden")
+    local h = CharacterHeadSlot.anchors[1]
+    check(h[2] == cf.LeftPaneHost and h[4] == 24 and h[5] == -60 and CharacterHeadSlot.BorderFrame.alpha == 1 and CharacterModelScene.anchors[1][2] == cf.LeftPaneHost and CharacterModelScene.width == 398, "off: slots and model back on Blizzard's anchors")
+    check(CharacterStatsPaneScrollBox.shown == true and CharacterStatsPaneScrollBox.alpha == 1 and PaperDollSidebarTabs.alpha == 1, "off: Blizzard's stats list back")
+    check(CharacterAmmoSlot.gearSlotSmall.alpha == 1 and CharacterAmmoSlot.arrowHolder.alpha == 1, "off: ammo slot art back")
+    w.slash("charsheet on")
+    check(cs.mode == "restyled" and cf.width == 384 and sheet.shown == true and CharacterHeadSlot.anchors[1][4] == 21, "on: classic layout again")
+    w.slash("probe")
+    check(w.ns.lastProbe:find("charsheet: setting=on mode=restyled", 1, true), "sheet: probe reports the part")
+    check(#w.ns.errors == 0 and #w.blizzErrors == 0, "sheet: no errors")
+end
+
+--------------------------------------------------------------------------
 -- 5. Client with no nameplate driver at all
 --------------------------------------------------------------------------
 do
@@ -1009,12 +1228,12 @@ do
     check(w.ns.dbLoaded == true and w.ns.db.logins == 2, "reload: saved file found, login count raised")
     check(w.ns.db.unitframes == false and w.ns.modules.unitframes.mode == "off" and w.ns.modules.minimap.mode == "off", "reload: parts turned off stay off")
     check(w.ns.db.castbar == true and w.ns.modules.castbar.mode == "restyled", "reload: the part turned back on is on")
-    check(Printed("off (saved): nameplates, combo, unitframes, actionbars, minimap, tracker"), "reload: login line names the parts that are off")
+    check(Printed("off (saved): nameplates, combo, unitframes, charsheet, actionbars, minimap, tracker"), "reload: login line names the parts that are off")
     check(w.ns.optionsPanel.checks.unitframes.checked == false and w.ns.optionsPanel.checks.castbar.checked == true, "reload: options boxes match the saved settings")
     w.slash("probe")
     check(w.ns.lastProbe and w.ns.lastProbe:find("saved file found at login: yes  logins counted in it: 2", 1, true) and w.ns.lastProbe:find("settings came from: saved file", 1, true), "reload: probe reports the saved file and login count")
     -- the same on a client that never writes the SavedVariables file: the CVar copy carries the settings
-    check(cvarCopy == "nameplates=0,castbar=1,combo=0,unitframes=0,actionbars=0,minimap=0,tracker=0", "reload: every change is also written to the settings CVar")
+    check(cvarCopy == "nameplates=0,castbar=1,combo=0,unitframes=0,charsheet=0,actionbars=0,minimap=0,tracker=0", "reload: every change is also written to the settings CVar")
     w = NewWorld({style = "6", forever = true, cvars = {ForeverClassicUI_settings = cvarCopy}})
     check(w.ns.dbLoaded == false and w.ns.db.unitframes == false and w.ns.db.castbar == true and w.ns.modules.unitframes.mode == "off" and w.ns.modules.castbar.mode == "restyled", "no saved file: settings restored from the CVar copy")
     check(w.ns.dbSource:find("cvar fallback", 1, true) and w.ns.optionsPanel.checks.minimap.checked == false, "no saved file: probe names the fallback, boxes match")

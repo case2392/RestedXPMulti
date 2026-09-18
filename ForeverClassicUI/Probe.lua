@@ -40,8 +40,20 @@ local CLASSIC_TEXTURES = {
     "Interface\\PaperDollInfoFrame\\UI-Character-StatBackground",
     "Interface\\PaperDollInfoFrame\\UI-Character-ResistanceIcons",
     "Interface\\PaperDollInfoFrame\\UI-Character-CharacterTab-L1",
+    "Interface\\PaperDollInfoFrame\\UI-Character-CharacterTab-R1",
+    "Interface\\PaperDollInfoFrame\\UI-Character-CharacterTab-BottomLeft",
+    "Interface\\PaperDollInfoFrame\\UI-Character-CharacterTab-BottomRight",
+    "Interface\\PaperDollInfoFrame\\UI-Character-AmmoSlot",
+    "Interface\\PaperDollInfoFrame\\UI-Character-Tab-Highlight",
     "Interface\\PaperDollInfoFrame\\UI-Character-ActiveTab",
     "Interface\\PaperDollInfoFrame\\UI-Character-InActiveTab",
+    "Interface\\PaperDollInfoFrame\\UI-Character-Skills-Bar",
+    "Interface\\PaperDollInfoFrame\\UI-Character-Skills-BarBorder",
+    "Interface\\PaperDollInfoFrame\\UI-ReputationWatchBar",
+    "Interface\\PaperDollInfoFrame\\UI-ReputationFrame-DetailFrame",
+    "Interface\\Buttons\\UI-PlusButton-Up",
+    "Interface\\Buttons\\UI-MinusButton-Up",
+    "Interface\\Buttons\\UI-Panel-MinimizeButton-Up",
     "Interface\\CharacterFrame\\Char-Paperdoll-Parts",
     "Interface\\Buttons\\UI-Quickslot2",
     "Interface\\Buttons\\UI-EmptySlot",
@@ -508,7 +520,7 @@ local REPORT_FRAMES = {
 local REPORT_FRAMES_CLASSIC = {"FocusFrame", "TargetFrameToT", "MainMenuBar", "MainMenuBarArtFrame", "QuestWatchFrame", "MinimapBorder", "MinimapZoneTextButton"}
 -- panels: dumped only while open, so a report taken with the character
 -- sheet (or spellbook, quest log, friends list) open captures its layout
-local REPORT_FRAMES_OPEN = {"CharacterFrame", "PlayerSpellsFrame", "SpellBookFrame", "PlayerTalentFrame", "QuestLogFrame", "FriendsFrame", "ContainerFrame1"}
+local REPORT_FRAMES_OPEN = {"CharacterFrame", "PlayerSpellsFrame", "SpellBookFrame", "PlayerTalentFrame", "QuestLogFrame", "FriendsFrame", "CommunitiesFrame", "ContainerFrame1"}
 
 function ns.BuildReport(includeHidden)
     local parts = {ns.BuildProbe()}
