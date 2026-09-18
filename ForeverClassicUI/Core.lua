@@ -5,7 +5,7 @@
 
 local addonName, ns = ...
 
-ns.VERSION = "0.4.0"
+ns.VERSION = "0.5.0"
 ns.modules = {}
 ns.moduleOrder = {}
 ns.errors = {}
@@ -16,6 +16,7 @@ local DEFAULTS = {
     combo = true,
     unitframes = true,
     charsheet = true,
+    spellbook = true,
     actionbars = true,
     minimap = true,
     tracker = true
@@ -173,7 +174,7 @@ local function PrintHelp()
     ns.Print("  /cui combo on|off - classic combo points on the target frame")
     ns.Print("  /cui combo offset <x> <y> - nudge the combo points (no numbers = reset)")
     ns.Print("  /cui combo force - draw the classic combo points now (testing)")
-    ns.Print("  /cui unitframes|charsheet|actionbars|minimap|tracker on|off|force - the other classic parts")
+    ns.Print("  /cui unitframes|charsheet|spellbook|actionbars|minimap|tracker on|off|force - the other classic parts")
     ns.Print("  /cui options - open the settings panel (Options > AddOns > Classic UI for Forever)")
     ns.Print("  /cui report - everything for support in one window: probe, every frame, Lua errors")
     ns.Print("  /cui report all - the same including hidden parts (use this on Classic Era for comparison)")

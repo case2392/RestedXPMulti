@@ -1,8 +1,8 @@
 # Classic UI for Forever
 
 Brings the classic look back on *World of Warcraft Forever*: nameplates,
-cast bars, combo points, player and target frames, the main action bar art
-and the minimap. Every part has its own switch under Options > AddOns >
+cast bars, combo points, player, target and pet frames, the character sheet,
+the spellbook, the main action bar art and the minimap. Every part has its own switch under Options > AddOns >
 Classic UI for Forever, with Select all / Deselect all buttons. On Classic Era it recognises the classic look is already
 there and does nothing, which makes it safe to test today.
 
@@ -76,6 +76,19 @@ from Classic Era's own UI code.
   badge and title, the 315x29 rank bar) around what Forever tracks: rank
   points, season total and cap, next reward, vendor. Currency and
   Statistics keep Blizzard's layout.
+- **Spellbook** — Forever's spell window (`PlayerSpellsFrame`) becomes Era's
+  384x512 book while its spellbook page is up: the four-piece
+  `UI-SpellbookPanel` art, the book icon in the corner, "Spellbook" over
+  the top edge, twelve spell buttons in Era's two columns (icon in the
+  quickslot ring, gold name, brown rank line, black ring and dim name for
+  passives), the skill line tabs down the right edge, "Page N" and the
+  two page arrows along the bottom, the Spellbook / Pet tabs. Spells come
+  from `C_SpellBook`; each button is a secure action button, so left
+  click casts and dragging puts the spell on a bar (cast attributes are
+  only written out of combat and caught up afterwards). Blizzard's window
+  is resized and its shell faded, its page moved out of reach; on the
+  talents page the retail size comes back until talents get their classic
+  version.
 - **Action bar art** — the classic stone bar under the main action bar
   between the gryphons; the retail frame border and the divider strips
   between buttons are hidden.
@@ -106,7 +119,7 @@ takes the other parts down.
 | `/cui combo on\|off` | Classic combo points on the target frame (`/reload` after off) |
 | `/cui combo offset <x> <y>` | Nudge the dots if the target frame art differs (no numbers = reset) |
 | `/cui combo force` | Draw the classic combo points right now, replacing Blizzard's (testing) |
-| `/cui unitframes\|charsheet\|actionbars\|minimap\|tracker on\|off\|force` | The other parts |
+| `/cui unitframes\|charsheet\|spellbook\|actionbars\|minimap\|tracker on\|off\|force` | The other parts |
 | `/cui options` | Open the settings panel (Options > AddOns > Classic UI for Forever) |
 | `/cui report` | Everything for support in one copyable window: the probe, a dump of every frame the addon touches (plus your target's nameplate), and the last Lua errors the client raised |
 | `/cui report all` | The same including hidden pieces (marked). Run it on Classic Era with a mob targeted to capture the exact classic layout for comparison |

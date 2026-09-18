@@ -148,6 +148,12 @@ local function Frame(name)
     function f:Disable() self.enabled = false end
     function f:SetText(t) self.text = t end
     function f:GetText() return self.text end
+    function f:SetAttribute(k, v) self.attributes = self.attributes or {}; self.attributes[k] = v end
+    function f:GetAttribute(k) return self.attributes and self.attributes[k] end
+    function f:SetEnabled(on) self.enabled = on and true or false end
+    function f:SetDisabledTexture(t) self.DisabledTexture = self.DisabledTexture or Region("Texture"); self.DisabledTexture:SetTexture(t) end
+    function f:SetCooldown(s, d) self.cooldown = {s, d} end
+    function f:RegisterForClicks(...) self.clicks = {...} end
     -- children/regions are whatever tables hang off the frame by key
     function f:GetRegions()
         local t = {}
@@ -577,6 +583,44 @@ local function NewWorld(opts)
                 GetRenownRewardsForLevel = function(id, level) if level == 4 then return {{icon = 135026, description = "Faction Tabard"}} end return {} end
             }
             _G.C_SeasonInfo = {GetTimeUntilCurrentPVPSeasonEnd = function() return 3 * 86400 end}
+            -- spellbook: Forever's PlayerSpellsFrame (retail) with its spellbook page and C_SpellBook
+            local psf = Frame("PlayerSpellsFrame"); psf:SetSize(809, 720); psf.level = 1
+            psf.NineSlice = Frame("NineSlice"); psf.Bg = Region("Texture"); psf.TopTileStreaks = Region("Texture")
+            psf.CloseButton = Frame("CloseButton"); psf.TabSystem = Frame("TabSystem")
+            psf.MaximizeMinimizeButton = Frame("MaximizeMinimizeButton"); psf.MaximizeMinimizeButton.MaximizeButton = Frame("MaximizeButton"); psf.MaximizeMinimizeButton.MinimizeButton = Frame("MinimizeButton")
+            psf.PortraitContainer = Frame("PortraitContainer"); psf.PortraitContainer.portrait = Region("Texture"); psf.PortraitContainer.CircleMask = Region("MaskTexture")
+            psf.PortraitContainer.portrait:SetPoint("TOPLEFT", psf.PortraitContainer, "TOPLEFT", -5, 7); psf.PortraitContainer.portrait:SetSize(62, 62)
+            psf.TitleContainer = Frame("TitleContainer")
+            psf.SpellBookFrame = Frame("SpellBookFrame"); psf.SpellBookFrame.parent = psf; psf.SpellBookFrame:SetPoint("BOTTOMLEFT", psf, "BOTTOMLEFT", 0, 4); psf.SpellBookFrame:SetSize(806, 702)
+            psf.TalentsFrame = Frame("TalentsFrame"); psf.TalentsFrame:Hide()
+            local page = psf.SpellBookFrame
+            function page:Show() if not self.shown then self.shown = true; if self.scripts and self.scripts.OnShow then self.scripts.OnShow(self) end end end
+            function page:Hide() if self.shown then self.shown = false; if self.scripts and self.scripts.OnHide then self.scripts.OnHide(self) end end end
+            function psf:Show() if not self.shown then self.shown = true; if self.scripts and self.scripts.OnShow then self.scripts.OnShow(self) end end end
+            function psf:Hide() if self.shown then self.shown = false; if self.scripts and self.scripts.OnHide then self.scripts.OnHide(self) end end end
+            psf:Hide()
+            _G.PlayerSpellsFrame = psf
+            _G.GetUIPanelAttribute = function(frame, name) if frame == psf and name == "width" then return 809 end end
+            _G.Enum.SpellBookSpellBank = {Player = 0, Pet = 1}
+            _G.Enum.SpellBookItemType = {None = 0, Spell = 1, FutureSpell = 2, PetAction = 3, Flyout = 4}
+            _G.PAGE_NUMBER = "Page %d"; _G.SPELLBOOK = "Spellbook"; _G.PET = "Pet"
+            -- two skill lines: General (3 spells, one passive, one future), Holy (14 spells over two pages)
+            w.spellItems = {
+                {actionID = 6603, spellID = 6603, itemType = 1, name = "Attack", iconID = 135641},
+                {actionID = 20600, spellID = 20600, itemType = 1, name = "Perception", subName = "Racial", iconID = 136090},
+                {actionID = 20599, spellID = 20599, itemType = 1, name = "Diplomacy", subName = "Racial Passive", iconID = 134328, isPassive = true},
+                {actionID = 1, spellID = 1, itemType = 2, name = "Future", iconID = 1}
+            }
+            for i = 1, 14 do w.spellItems[#w.spellItems + 1] = {actionID = 1000 + i, spellID = 1000 + i, itemType = 1, name = "Holy " .. i, subName = "Rank " .. i, iconID = 2000 + i} end
+            w.petSpells = 0; w.pickedUp = nil
+            _G.C_SpellBook = {
+                GetNumSpellBookSkillLines = function() return 2 end,
+                GetSpellBookSkillLineInfo = function(i) if i == 1 then return {name = "General", iconID = 626005, itemIndexOffset = 0, numSpellBookItems = 4} elseif i == 2 then return {name = "Holy", iconID = 135920, itemIndexOffset = 4, numSpellBookItems = 14} end end,
+                GetSpellBookItemInfo = function(slot, bank) local d = w.spellItems[slot]; if d and bank == 0 then local c = {}; for k, v in pairs(d) do c[k] = v end; return c end end,
+                HasPetSpells = function() if w.petSpells > 0 then return w.petSpells, "PET" end end,
+                PickupSpellBookItem = function(slot, bank) w.pickedUp = {slot, bank} end
+            }
+            _G.C_Spell = {GetSpellCooldown = function(id) if id == 6603 then return {startTime = 100, duration = 5} end return {startTime = 0, duration = 0} end}
             _G.StaticPopupDialogs = {UNLEARN_SKILL = {}}
             _G.StaticPopup_Show = function(which, a, b, data) w.popup = {which, a, data} end
             -- Show/Hide of the paper doll fire its scripts like the client does
@@ -647,6 +691,7 @@ local function NewWorld(opts)
             function _G.GameTooltip:SetText(t) self.lines[#self.lines + 1] = t end
             function _G.GameTooltip:AddLine(t) self.lines[#self.lines + 1] = t end
             function _G.GameTooltip:AddDoubleLine(a, b) self.lines[#self.lines + 1] = a .. " " .. tostring(b) end
+            function _G.GameTooltip:SetSpellBookItem(slot, bank) self.spellBookItem = {slot, bank} end
             _G.GetFileIDFromPath = function(p) if p:find("Nameplate") then return 130000 end if p:find("PaperDollInfoFrame") or p:find("MinimizeButton") then return 136500 end end
         end
         _G.NamePlateSetupOptions.castBarToHealthBarSpacing = 4
@@ -681,7 +726,7 @@ local function NewWorld(opts)
 
     -- load the addon
     local ns = {}
-    for _, file in ipairs({"Core.lua", "Nameplates.lua", "CastBar.lua", "Combo.lua", "UnitFrames.lua", "CharacterSheet.lua", "CharacterLists.lua", "ActionBars.lua", "Minimap.lua", "Tracker.lua", "Options.lua", "Probe.lua"}) do
+    for _, file in ipairs({"Core.lua", "Nameplates.lua", "CastBar.lua", "Combo.lua", "UnitFrames.lua", "CharacterSheet.lua", "CharacterLists.lua", "SpellBook.lua", "ActionBars.lua", "Minimap.lua", "Tracker.lua", "Options.lua", "Probe.lua"}) do
         local chunk, err = loadfile(root .. "/ForeverClassicUI/" .. file)
         assert(chunk, err)
         chunk("ForeverClassicUI", ns)
@@ -1360,6 +1405,72 @@ do
 end
 
 --------------------------------------------------------------------------
+-- 3e. Forever spellbook: Era's 384x512 book on Blizzard's PlayerSpellsFrame
+--------------------------------------------------------------------------
+do
+    local w = NewWorld({style = "6", forever = true})
+    local sb = w.ns.modules.spellbook
+    local psf = PlayerSpellsFrame
+    check(sb.mode == "restyled" and sb.book ~= nil and sb.book.parent == psf, "book: re-skinned on Forever, book built on Blizzard's window")
+    psf:Show()
+    check(psf.width == 384 and psf.height == 512, "book: window is Era's 384x512 once open")
+    check(psf.NineSlice.alpha == 0 and psf.Bg.alpha == 0 and psf.TopTileStreaks.alpha == 0 and psf.CloseButton.alpha == 0 and psf.CloseButton.mouse == false and psf.MaximizeMinimizeButton.alpha == 0, "book: retail shell faded, close and maximize unclickable")
+    local page = psf.SpellBookFrame
+    check(page.alpha == 0 and page.anchors[1][3] == "BOTTOMLEFT" and page.anchors[1][5] == -5000, "book: retail page transparent and moved out of reach")
+    local p = psf.PortraitContainer.portrait
+    check(p.anchors[1][2] == psf and p.anchors[1][4] == 10 and p.anchors[1][5] == -8 and p.width == 58 and psf.TitleContainer.alpha == 0, "book: book icon in Era's corner, retail title faded")
+    local book = sb.book
+    check(book.shown == true and book.art[1].texture == "Interface\\Spellbook\\UI-SpellbookPanel-TopLeft" and book.art[4].anchors[1][1] == "BOTTOMRIGHT" and book.title.text == "Spellbook", "book: four-piece Era art and the title")
+    local b = book.buttons
+    check(b[1].anchors[1][4] == 34 and b[1].anchors[1][5] == -85 and b[2].anchors[1][2] == b[1] and b[2].anchors[1][4] == 157 and b[3].anchors[1][2] == b[1] and b[3].anchors[1][5] == -14, "book: twelve buttons in Era's two columns")
+    check(b[1].item.name == "Attack" and b[1].Icon.texture == 135641 and b[1].SpellName.text == "Attack" and b[1].SpellSubName.text == "", "book: first spell on the first button")
+    check(b[3].item.name == "Perception" and b[3].SpellSubName.text == "Racial" and b[5].item.name == "Diplomacy", "book: left column reads down (Era's button order)")
+    check(b[5].item.passive and b[5].NormalTexture.vertex[1] == 0 and b[5].SpellName.textColor[1] == 0.77 and b[3].NormalTexture.vertex[1] == 1, "book: passive gets the black ring and dim gold name")
+    check(b[7].item == nil and b[7].Icon.shown == false and b[2].item == nil, "book: future spell left out, right column empty on a short page")
+    check(b[1].attributes.type == "spell" and b[1].attributes.spell == 6603 and b[5].attributes.type == nil, "book: secure cast attributes on castable spells only")
+    check(b[1].Cooldown.cooldown[1] == 100 and b[1].Cooldown.cooldown[2] == 5, "book: cooldown from C_Spell")
+    check(book.pageText.text == "Page 1" and book.prev.enabled == false and book.next.enabled == false, "book: one page for General")
+    local t1, t2, t3 = book.skillTabs[1], book.skillTabs[2], book.skillTabs[3]
+    check(t1.shown and t1.Icon.texture == 626005 and t1.checked == true and t2.shown and t2.checked == false and t3.shown == false, "book: skill line tabs down the right edge, General checked")
+    check(t1.anchors[1][1] == "TOPLEFT" and t1.anchors[1][3] == "TOPRIGHT" and t1.anchors[1][4] == -32 and t1.anchors[1][5] == -65 and t2.anchors[1][5] == -17, "book: Era tab positions")
+    check(book.tabSpells.anchors[1][4] == 79 and book.tabSpells.anchors[1][5] == 61 and book.tabPet.shown == false and book.tabSpells.NormalTexture.texture == "Interface\\SpellBook\\UI-SpellBook-Tab1-Selected", "book: bottom Spellbook tab selected, no pet tab without a pet")
+    b[1].scripts.OnEnter(b[1])
+    check(GameTooltip.spellBookItem[1] == 1 and GameTooltip.spellBookItem[2] == 0, "book: tooltip from the spell book slot")
+    b[1].scripts.OnDragStart(b[1])
+    check(w.pickedUp[1] == 1 and w.pickedUp[2] == 0, "book: drag picks the spell up")
+    -- second skill line: 14 spells, two pages
+    t2.scripts.OnClick(t2)
+    check(sb.currentLine == 2 and b[1].item.name == "Holy 1" and b[2].item.name == "Holy 7" and b[12].item.name == "Holy 12" and book.pageText.text == "Page 1" and book.next.enabled == true and book.prev.enabled == false, "book: Holy page 1, next page available")
+    book.next.scripts.OnClick(book.next)
+    check(sb.page == 2 and b[1].item.name == "Holy 13" and b[3].item.name == "Holy 14" and b[5].item == nil and book.pageText.text == "Page 2" and book.next.enabled == false, "book: page 2 holds the last two spells")
+    book.next.scripts.OnClick(book.next)
+    check(sb.page == 2, "book: no page past the last")
+    -- combat: attributes wait for the fight to end
+    w.inCombat = true
+    book.prev.scripts.OnClick(book.prev)
+    check(sb.page == 1 and b[1].item.name == "Holy 1" and b[1].attributes.spell == 1013 and sb.attributesDirty == true, "book: paging in combat shows the spells but keeps the old cast attributes")
+    w.inCombat = false
+    book.scripts.OnEvent(book, "PLAYER_REGEN_ENABLED")
+    check(b[1].attributes.spell == 1001 and sb.attributesDirty == nil, "book: attributes caught up after combat")
+    -- pet tab appears with a pet
+    w.petSpells = 2
+    book.scripts.OnEvent(book, "UNIT_PET")
+    check(book.tabPet.shown == true, "book: pet tab shows when the player has a pet")
+    -- talents page: Blizzard's size back
+    page:Hide()
+    check(psf.width == 809 and psf.height == 720 and book.shown == false and psf.NineSlice.alpha == 1 and page.alpha == 1 and page.anchors[1][5] == 4 and psf.TitleContainer.alpha == 1, "book: retail window back while the talents page is up")
+    page:Show()
+    check(psf.width == 384 and book.shown == true, "book: classic again on the spellbook page")
+    psf:SetSize(809, 720)
+    check(psf.width == 384, "book: Blizzard's own resize undone while the book is up")
+    w.slash("spellbook off")
+    check(sb.mode == "off" and psf.width == 809 and psf.NineSlice.alpha == 1 and book.shown == false and page.alpha == 1 and p.anchors[1][4] == -5, "off: everything back")
+    w.slash("spellbook on")
+    check(sb.mode == "restyled" and psf.width == 384 and book.shown == true, "on: classic book again")
+    check(#w.ns.errors == 0 and #w.blizzErrors == 0, "book: no errors")
+end
+
+--------------------------------------------------------------------------
 -- 5. Client with no nameplate driver at all
 --------------------------------------------------------------------------
 do
@@ -1385,12 +1496,12 @@ do
     check(w.ns.dbLoaded == true and w.ns.db.logins == 2, "reload: saved file found, login count raised")
     check(w.ns.db.unitframes == false and w.ns.modules.unitframes.mode == "off" and w.ns.modules.minimap.mode == "off", "reload: parts turned off stay off")
     check(w.ns.db.castbar == true and w.ns.modules.castbar.mode == "restyled", "reload: the part turned back on is on")
-    check(Printed("off (saved): nameplates, combo, unitframes, charsheet, actionbars, minimap, tracker"), "reload: login line names the parts that are off")
+    check(Printed("off (saved): nameplates, combo, unitframes, charsheet, spellbook, actionbars, minimap, tracker"), "reload: login line names the parts that are off")
     check(w.ns.optionsPanel.checks.unitframes.checked == false and w.ns.optionsPanel.checks.castbar.checked == true, "reload: options boxes match the saved settings")
     w.slash("probe")
     check(w.ns.lastProbe and w.ns.lastProbe:find("saved file found at login: yes  logins counted in it: 2", 1, true) and w.ns.lastProbe:find("settings came from: saved file", 1, true), "reload: probe reports the saved file and login count")
     -- the same on a client that never writes the SavedVariables file: the CVar copy carries the settings
-    check(cvarCopy == "nameplates=0,castbar=1,combo=0,unitframes=0,charsheet=0,actionbars=0,minimap=0,tracker=0", "reload: every change is also written to the settings CVar")
+    check(cvarCopy == "nameplates=0,castbar=1,combo=0,unitframes=0,charsheet=0,spellbook=0,actionbars=0,minimap=0,tracker=0", "reload: every change is also written to the settings CVar")
     w = NewWorld({style = "6", forever = true, cvars = {ForeverClassicUI_settings = cvarCopy}})
     check(w.ns.dbLoaded == false and w.ns.db.unitframes == false and w.ns.db.castbar == true and w.ns.modules.unitframes.mode == "off" and w.ns.modules.castbar.mode == "restyled", "no saved file: settings restored from the CVar copy")
     check(w.ns.dbSource:find("cvar fallback", 1, true) and w.ns.optionsPanel.checks.minimap.checked == false, "no saved file: probe names the fallback, boxes match")

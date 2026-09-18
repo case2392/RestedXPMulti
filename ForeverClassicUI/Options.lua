@@ -9,6 +9,7 @@ local LABELS = {
     combo = "Classic combo points on the target frame",
     unitframes = "Classic player, target and pet frames",
     charsheet = "Classic character sheet (Era paper doll, reputation and skills, tabs along the bottom)",
+    spellbook = "Classic spellbook (Era book, 12 spells a page, skill line tabs on the right)",
     actionbars = "Classic main action bar art (stone bar under the buttons, gryphons)",
     minimap = "Classic round minimap with the ring border",
     tracker = "Plain quest tracker (retail header boxes hidden)"
