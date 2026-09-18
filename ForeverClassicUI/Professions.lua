@@ -19,7 +19,8 @@
 --     over the top edge;
 --   * Blizzard's five cards stay the live frames (their spell buttons
 --     cast and drag, the unlearn button works): they are resized to
---     320x68 rows and re-anchored down the page, their card art faded,
+--     316x68 rows in Era's own page band (x=34 to x=350, the same
+--     margins the spellbook's columns keep) and laid down the page, their card art faded,
 --     the name and the two spell buttons re-anchored into the row with
 --     the classic quickslot ring round each icon, an unlearned
 --     profession's paragraph wrapped in the row in the book's small font;
@@ -60,9 +61,11 @@ local FRAME_NAME = "ProfessionsFrame"
 local BLIZZARD_ADDON = "Blizzard_Professions"
 local FRAME_WIDTH, FRAME_HEIGHT = 384, 512
 local PANEL_WIDTH = 400
--- the rows: 320x68 down the page from x=22 (the page's own width: the
--- skill line tabs sit over the book's right edge from x=352)
-local ROW_W, ROW_H, ROW_X = 320, 68, 22
+-- the rows fill Era's own page band: the spellbook's columns run from
+-- x=34 to x=350 in the same 384 book, so the rows do too and the page
+-- keeps an even margin either side. The skill line tabs sit over the
+-- book's right edge from x=352, past the band.
+local ROW_W, ROW_H, ROW_X = 316, 68, 34
 local ROWS = {
     {name = "PrimaryProfession1", y = -68, slot = 1},
     {name = "PrimaryProfession2", y = -139, slot = 2},
@@ -73,13 +76,15 @@ local ROWS = {
 }
 -- inside a row: name top left, the two spell buttons under it, the rank
 -- bar top right with the unlearn button past its end
-local NAME_X, NAME_Y = 8, -4
+-- the row is the page band, so its own edge is where the text starts
+local NAME_X, NAME_Y = 0, -4
 local TEXT_Y = -20
 local BUTTON_Y = -24
-local BUTTON_X = {8, 175}
--- the bar is the reputation tab's 137px bar in the same 147px bevel box
+local BUTTON_X = {0, 167}
+-- the bar is the reputation tab's 137px bar in the same 147px bevel box,
+-- with the unlearn button between its end and the edge of the band
 local BAR_W, BAR_H = 137, 13
-local BAR_X, BAR_Y = -26, -6
+local BAR_X, BAR_Y = -28, -6
 local BEVEL_W, BEVEL_IMAGE_W = 74, 281
 local ICON_SIZE = 40
 local RING_SIZE = 64 * ICON_SIZE / 37
@@ -400,7 +405,7 @@ local function SkinRow(psf, spec, on)
         Fade(row.Background, true)
         Anchor(row.ProfessionName, "TOPLEFT", row, "TOPLEFT", NAME_X, NAME_Y)
         Anchor(row.missingHeader, "TOPLEFT", row, "TOPLEFT", NAME_X, NAME_Y)
-        Anchor(row.missingText, "TOPLEFT", row, "TOPLEFT", NAME_X, TEXT_Y, ROW_W - 2 * NAME_X, ROW_H + TEXT_Y)
+        Anchor(row.missingText, "TOPLEFT", row, "TOPLEFT", NAME_X, TEXT_Y, ROW_W, ROW_H + TEXT_Y)
         if row.missingText then
             if row.missingText.SetJustifyH then row.missingText:SetJustifyH("LEFT") end
             -- retail's paragraph is a size too big for a row: the book's small font
