@@ -63,6 +63,8 @@ local CLASSIC_TEXTURES = {
     "Interface\\Buttons\\UI-CheckBox-SwordCheck",
     "Interface\\DialogFrame\\UI-DialogBox-Corner",
     "Interface\\TargetingFrame\\UI-PartyFrame",
+    "Interface\\PaperDollInfoFrame\\UI-Character-Honor-TopLeft",
+    "Interface\\PvPRankBadges\\PvPRank01",
     "Interface\\Buttons\\UI-PlusButton-Up",
     "Interface\\Buttons\\UI-MinusButton-Up",
     "Interface\\Buttons\\UI-Panel-MinimizeButton-Up",

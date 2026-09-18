@@ -793,3 +793,202 @@ function Skills:Update()
 end
 
 M.RegisterPanel(Skills)
+
+--------------------------------------------------------------------------
+-- Honor (Forever's PvP rank tab)
+--
+-- Era's Honor tab listed honorable kills and contribution per session /
+-- day / week; Forever keeps rank as a season-long "rank points" track
+-- (a renown-style faction) with rewards per rank. The Era layout is kept
+-- (Honor art panel, rank title with the rank badge, the 315x29 progress
+-- bar under it) and the sections show what Forever has: season, rank
+-- points, season cap, next reward, where to buy it.
+--------------------------------------------------------------------------
+
+local PVP_RANK_FACTION_ID = 2800
+local HONOR_ART = {
+    topLeft = PD .. "UI-Character-Honor-TopLeft",
+    topRight = PD .. "UI-Character-Honor-TopRight",
+    bottomLeft = PD .. "UI-Character-Honor-BottomLeft",
+    bottomRight = PD .. "UI-Character-Honor-BottomRight",
+    badge = "Interface\\PvPRankBadges\\PvPRank"
+}
+
+local Honor = {frameName = "PVPRankFrame", label = "honor"}
+
+local function HonorAPI()
+    return C_MajorFactions and C_MajorFactions.GetMajorFactionProgressionInfo and C_MajorFactions
+end
+
+local function RankTitle(rank)
+    if not rank or rank <= 0 then return Str("PVP_RANK_0_NAME", "Civilian") end
+    local faction01 = (UnitFactionGroup and UnitFactionGroup("player") == "Alliance") and 1 or 0
+    local first = Enum and Enum.PvPRanks and Enum.PvPRanks.Rank_1 or 5
+    local key = "PVP_RANK_" .. tostring(first + rank - 1) .. "_" .. tostring(faction01)
+    local text
+    if GetText and UnitSex then
+        local ok, v = pcall(GetText, key, UnitSex("player"))
+        if ok then text = v end
+    end
+    return text or Str(key, "Rank " .. rank)
+end
+
+local function Line(parent, font, width)
+    local fs = parent:CreateFontString(nil, "ARTWORK", font)
+    fs:SetJustifyH("LEFT")
+    if width then fs:SetWidth(width) end
+    return fs
+end
+
+function Honor:Build()
+    local frame = G("PVPRankFrame")
+    local panel = CreateFrame("Frame", "ForeverClassicUIHonorPanel", frame)
+    panel:SetAllPoints(frame)
+    panel:SetFrameLevel(frame:GetFrameLevel() + 2)
+    self.panel = panel
+    if HasFile(HONOR_ART.topLeft) then
+        local function Piece(path, w, h, x, y)
+            local t = panel:CreateTexture(nil, "BORDER")
+            t:SetTexture(path); t:SetSize(w, h); t:SetPoint("TOPLEFT", panel, "TOPLEFT", x, y)
+        end
+        Piece(HONOR_ART.topLeft, 256, 256, 22, -69)
+        Piece(HONOR_ART.topRight, 128, 256, 275, -69)
+        Piece(HONOR_ART.bottomLeft, 256, 128, 22, -325)
+        Piece(HONOR_ART.bottomRight, 128, 128, 275, -325)
+    end
+    panel.levelText = panel:CreateFontString(nil, "BORDER", "GameFontNormalSmall")
+    panel.levelText:SetPoint("TOP", panel, "TOP", 7, -37)
+    -- rank points bar behind the title (Era HonorFrameProgressBar 315x29 at 22,-77)
+    local bar = CreateFrame("StatusBar", nil, panel)
+    bar:SetSize(315, 29)
+    bar:SetPoint("TOPLEFT", panel, "TOPLEFT", 22, -77)
+    bar:SetFrameLevel(panel:GetFrameLevel())
+    bar:SetStatusBarTexture(ART.skillsBar)
+    bar:SetStatusBarColor(0.25, 0.25, 0.75)
+    bar:SetMinMaxValues(0, 1)
+    bar:SetValue(0)
+    bar:EnableMouse(true)
+    bar:SetScript("OnEnter", function(self) Tooltip(self, self.tooltip, true) end)
+    bar:SetScript("OnLeave", HideTooltip)
+    panel.bar = bar
+    panel.title = panel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    panel.title:SetPoint("TOP", panel, "TOP", 0, -87)
+    panel.rank = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    panel.rank:SetPoint("LEFT", panel.title, "RIGHT", 5, -1)
+    panel.icon = panel:CreateTexture(nil, "OVERLAY")
+    panel.icon:SetSize(24, 24)
+    panel.icon:SetPoint("RIGHT", panel.title, "LEFT", -5, 0)
+    -- the sections (Era: titles at 36,-112, rows indented 10)
+    panel.seasonTitle = Line(panel, "GameFontNormal"); panel.seasonTitle:SetPoint("TOPLEFT", panel, "TOPLEFT", 36, -112)
+    panel.points = Line(panel, "GameFontHighlightSmall", 300); panel.points:SetPoint("TOPLEFT", panel.seasonTitle, "BOTTOMLEFT", 10, -3)
+    panel.total = Line(panel, "GameFontHighlightSmall", 300); panel.total:SetPoint("TOPLEFT", panel.points, "BOTTOMLEFT", 0, -2)
+    panel.weekly = Line(panel, "GameFontNormalSmall", 300); panel.weekly:SetPoint("TOPLEFT", panel.total, "BOTTOMLEFT", 0, -2)
+    panel.rewardTitle = Line(panel, "GameFontNormal"); panel.rewardTitle:SetPoint("TOPLEFT", panel.weekly, "BOTTOMLEFT", -10, -14)
+    panel.rewardIcon = panel:CreateTexture(nil, "ARTWORK")
+    panel.rewardIcon:SetSize(32, 32)
+    panel.rewardIcon:SetPoint("TOPLEFT", panel.rewardTitle, "BOTTOMLEFT", 10, -4)
+    panel.reward = Line(panel, "GameFontHighlightSmall", 250); panel.reward:SetPoint("LEFT", panel.rewardIcon, "RIGHT", 6, 0)
+    panel.vendor = Line(panel, "GameFontNormalSmall", 300); panel.vendor:SetPoint("TOPLEFT", panel.rewardIcon, "BOTTOMLEFT", -10, -8)
+    panel.seasonInfo = Line(panel, "GameFontHighlightSmall", 300); panel.seasonInfo:SetPoint("TOPLEFT", panel.vendor, "BOTTOMLEFT", 0, -10)
+    panel.timer = Line(panel, "GameFontNormalSmall", 300); panel.timer:SetPoint("TOPLEFT", panel.seasonInfo, "BOTTOMLEFT", 0, -6)
+    panel:RegisterEvent("UPDATE_FACTION")
+    panel:RegisterEvent("MAJOR_FACTION_RENOWN_LEVEL_CHANGED")
+    panel:SetScript("OnEvent", Guard("honor event", function() if panel:IsShown() and self.classic then Honor:Update() end end))
+    panel:Hide()
+end
+
+function Honor:SetClassic(on)
+    local frame = G("PVPRankFrame")
+    if not frame or on == self.classic then return end
+    self.classic = on
+    for _, key in ipairs({"MainInfoFrame", "DetailFrame"}) do
+        local f = frame[key]
+        if f and f.SetShown then f:SetShown(not on) end
+    end
+    if frame.GetRegions then
+        for _, region in ipairs({frame:GetRegions()}) do
+            if region.SetAlpha then region:SetAlpha(on and 0 or 1) end
+        end
+    end
+    if on then self.panel:Show(); self:Update() else self.panel:Hide() end
+end
+
+function Honor:Update()
+    local panel = self.panel
+    if not panel or not panel:IsShown() then return end
+    local level = UnitLevel and UnitLevel("player") or 0
+    local race = UnitRace and UnitRace("player") or ""
+    local class = UnitClass and UnitClass("player") or ""
+    panel.levelText:SetText(("%s %d %s %s"):format(Str("LEVEL", "Level"), level, race, class))
+    local api = HonorAPI()
+    local info = api and api.GetMajorFactionProgressionInfo(PVP_RANK_FACTION_ID)
+    if not info then
+        panel.title:SetText(Str("PVP_RANK_DETAIL_UNAVAILABLE", "No rank information."))
+        panel.rank:SetText(""); panel.icon:Hide(); panel.bar:Hide()
+        for _, key in ipairs({"seasonTitle", "points", "total", "weekly", "rewardTitle", "reward", "vendor", "seasonInfo", "timer"}) do panel[key]:SetText("") end
+        panel.rewardIcon:Hide()
+        return
+    end
+    local rank = info.renownLevel or 0
+    local points, threshold = info.renownReputationEarned or 0, info.renownLevelThreshold or 0
+    panel.title:SetText(RankTitle(rank))
+    panel.rank:SetText(rank > 0 and ("(" .. Str("PVP_RANK_NUMBER", "Rank %d"):format(rank) .. ")") or "")
+    if rank > 0 and HasFile(("%s%02d"):format(HONOR_ART.badge, rank)) then
+        panel.icon:SetTexture(("%s%02d"):format(HONOR_ART.badge, rank))
+        panel.icon:Show()
+    else
+        panel.icon:Hide()
+    end
+    panel.bar:Show()
+    panel.bar:SetMinMaxValues(0, math.max(threshold, 1))
+    panel.bar:SetValue(threshold > 0 and points or 1)
+    panel.bar.tooltip = Str("PVP_RANK_CURRENT_PROGRESS", "Rank Points: %d / %d"):format(points, threshold)
+    local season = GetCurrentArenaSeason and GetCurrentArenaSeason() or 0
+    panel.seasonTitle:SetText(season > 0 and Str("EXPANSION_SEASON_NAME", "%sSeason %d"):format("", season) or Str("HONOR", "Honor"))
+    panel.points:SetText(panel.bar.tooltip)
+    local totalForRank = api.GetTotalReputationForRenownLevel and api.GetTotalReputationForRenownLevel(PVP_RANK_FACTION_ID, rank) or 0
+    local myTotal = (totalForRank or 0) + points
+    local weekCapRank = info.currentWeekProgressiveMaxLevel or 0
+    local capTotal = api.GetTotalReputationForRenownLevel and api.GetTotalReputationForRenownLevel(PVP_RANK_FACTION_ID, weekCapRank) or 0
+    if myTotal > 0 and (capTotal or 0) > 0 then
+        panel.total:SetText(Str("PVP_RANK_SEASON_PROGRESS", "Season total: %d / %d"):format(myTotal, capTotal))
+    elseif myTotal > 0 then
+        panel.total:SetText(Str("PVP_RANK_SEASON_PROGRESS_NO_MAX", "Season total: %d"):format(myTotal))
+    else
+        panel.total:SetText("")
+    end
+    local prevCapTotal = api.GetTotalReputationForRenownLevel and api.GetTotalReputationForRenownLevel(PVP_RANK_FACTION_ID, info.previousWeekProgressiveMaxLevel or 0) or 0
+    local increase = (capTotal or 0) - (prevCapTotal or 0)
+    panel.weekly:SetText(increase > 0 and Str("PVP_RANK_WEEKLY_CAP_INCREASE", "The cap rose by %d this week."):format(increase) or "")
+    -- next reward
+    local maxRank = info.maxLevel or rank
+    local nextRank, rewards
+    if api.GetRenownRewardsForLevel then
+        for test = rank + 1, maxRank do
+            local list = api.GetRenownRewardsForLevel(PVP_RANK_FACTION_ID, test)
+            if list and #list > 0 then nextRank, rewards = test, list; break end
+        end
+    end
+    if nextRank then
+        panel.rewardTitle:SetText(Str("PVP_RANK_NEXT_REWARD", "Next Rewards at Rank %d"):format(nextRank))
+        local first = rewards[1]
+        if first.icon then panel.rewardIcon:SetTexture(first.icon); panel.rewardIcon:Show() else panel.rewardIcon:Hide() end
+        panel.reward:SetText(first.description or first.name or "")
+        local horde = UnitFactionGroup and UnitFactionGroup("player") == "Horde"
+        panel.vendor:SetText(horde and Str("PVP_RANK_REWARDS_VENDOR_HORDE", "Rewards may be purchased in Orgrimmar.") or Str("PVP_RANK_REWARDS_VENDOR_ALLIANCE", "Rewards may be purchased in Stormwind."))
+    else
+        panel.rewardTitle:SetText(""); panel.reward:SetText(""); panel.vendor:SetText(""); panel.rewardIcon:Hide()
+    end
+    local seasonMaxTotal = api.GetTotalReputationForRenownLevel and api.GetTotalReputationForRenownLevel(PVP_RANK_FACTION_ID, maxRank) or 0
+    local ok, text = pcall(string.format, Str("PVP_RANK_SEASON_RANKUP_DESCRIPTION", "Each week the Rank Points cap is increased, up to a maximum of %d for Rank %d."), seasonMaxTotal, maxRank)
+    panel.seasonInfo:SetText(ok and text or "")
+    local left = C_SeasonInfo and C_SeasonInfo.GetTimeUntilCurrentPVPSeasonEnd and C_SeasonInfo.GetTimeUntilCurrentPVPSeasonEnd() or 0
+    if left and left > 0 then
+        local days = math.floor(left / 86400)
+        panel.timer:SetText(Str("SEASON_ENDS_IN_TIME", "Season ends in %s"):format(days > 0 and (days .. "d") or (math.floor(left / 3600) .. "h")))
+    else
+        panel.timer:SetText("")
+    end
+end
+
+M.RegisterPanel(Honor)

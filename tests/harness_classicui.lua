@@ -563,6 +563,20 @@ local function NewWorld(opts)
                 CollapseSkillHeader = function(i) w.skillCollapsed[#w.skillCollapsed + 1] = i; w.skills[i].isCollapsed = true end
             }
             _G.UnitDefenseSkill = function() return 187, 3 end
+            -- honor: Forever's rank-points track (a renown-style faction)
+            local pvp = _G.PVPRankFrame
+            pvp.MainInfoFrame = Frame("MainInfoFrame"); pvp.DetailFrame = Frame("DetailFrame"); pvp.SeasonTimerField = Region("FontString")
+            _G.UnitFactionGroup = function() return "Alliance" end
+            _G.GetCurrentArenaSeason = function() return 1 end
+            _G.Enum.PvPRanks = {Rank_1 = 5}
+            _G.PVP_RANK_0_NAME = "Civilian"; _G.PVP_RANK_6_1 = "Corporal"; _G.PVP_RANK_NUMBER = "Rank %d"
+            _G.PVP_RANK_CURRENT_PROGRESS = "Rank Points: %d / %d"; _G.PVP_RANK_NEXT_REWARD = "Next Rewards at Rank %d"
+            _G.C_MajorFactions = {
+                GetMajorFactionProgressionInfo = function(id) return {renownLevel = 2, renownReputationEarned = 300, renownLevelThreshold = 1500, maxLevel = 14, currentWeekProgressiveMaxLevel = 3, previousWeekProgressiveMaxLevel = 2} end,
+                GetTotalReputationForRenownLevel = function(id, level) return level * 1000 end,
+                GetRenownRewardsForLevel = function(id, level) if level == 4 then return {{icon = 135026, description = "Faction Tabard"}} end return {} end
+            }
+            _G.C_SeasonInfo = {GetTimeUntilCurrentPVPSeasonEnd = function() return 3 * 86400 end}
             _G.StaticPopupDialogs = {UNLEARN_SKILL = {}}
             _G.StaticPopup_Show = function(which, a, b, data) w.popup = {which, a, data} end
             -- Show/Hide of the paper doll fire its scripts like the client does
@@ -1313,6 +1327,17 @@ do
     check(w.popup and w.popup[1] == "UNLEARN_SKILL" and w.popup[3] == 185, "skills: unlearn goes through Blizzard's confirmation popup")
     sk.allButton.scripts.OnClick(sk.allButton)
     check(#w.skillCollapsed == 3 and w.skillCollapsed[1] == 6, "skills: All collapses every header")
+    -- honor tab
+    local t4 = tabs.list[4]
+    t4.scripts.OnClick(t4)
+    local hn = cs.panels[3]
+    check(hn.built == true and PVPRankFrame.shown == true and sk.list.shown == false and cf.width == 384 and sheet.art[1].texture == "Interface\\PaperDollInfoFrame\\UI-Character-General-TopLeft", "honor: panel up in the classic sheet with the General art")
+    check(PVPRankFrame.MainInfoFrame.shown == false and PVPRankFrame.DetailFrame.shown == false and PVPRankFrame.SeasonTimerField.alpha == 0, "honor: Blizzard's rank display and detail pane hidden")
+    local hp = hn.panel
+    check(hp.title.text == "Corporal" and hp.rank.text == "(Rank 2)" and hp.bar.minmax[2] == 1500 and hp.bar.value == 300 and hp.bar.anchors[1][4] == 22 and hp.bar.anchors[1][5] == -77, "honor: rank title and Era's 315x29 rank bar filled from the rank points")
+    check(hp.points.text == "Rank Points: 300 / 1500" and hp.total.text:find("2300", 1, true) and hp.total.text:find("3000", 1, true) and hp.weekly.text:find("1000", 1, true), "honor: season totals and the weekly cap rise")
+    check(hp.rewardTitle.text == "Next Rewards at Rank 4" and hp.reward.text == "Faction Tabard" and hp.rewardIcon.texture == 135026 and hp.vendor.text:find("Stormwind", 1, true), "honor: next reward with its icon and the vendor line")
+    check(hp.timer.text:find("3d", 1, true) and hp.levelText.text == "Level 39 Human Priest", "honor: season timer and the level line")
     -- and back
     t1.scripts.OnClick(t1)
     check(PaperDollFrame.shown == true and cf.width == 384 and sheet.shown == true and t1.selected == true, "sheet: character tab restores the classic layout")
@@ -1322,6 +1347,7 @@ do
     check(cs.mode == "off" and cf.width == 631 and cf.NineSlice.alpha == 1 and cf.ModeTabs.alpha == 1 and cf.ModeTabs.Tabs[1].mouse == true, "off: Blizzard's frame size, shell and side tabs back")
     check(sheet.shown == false and tabs.shown == false, "off: our sheet and tabs hidden")
     check(ReputationFrame.ScrollBox.shown == true and SkillsFrame.SkillDetailFrame.shown == true and rep.list.shown == false and sk.list.shown == false, "off: Blizzard's reputation and skills lists back")
+    check(PVPRankFrame.MainInfoFrame.shown == true and PVPRankFrame.SeasonTimerField.alpha == 1 and hn.panel.shown == false, "off: Blizzard's honor display back")
     local h = CharacterHeadSlot.anchors[1]
     check(h[2] == cf.LeftPaneHost and h[4] == 24 and h[5] == -60 and CharacterHeadSlot.BorderFrame.alpha == 1 and CharacterModelScene.anchors[1][2] == cf.LeftPaneHost and CharacterModelScene.width == 398, "off: slots and model back on Blizzard's anchors")
     check(CharacterStatsPaneScrollBox.shown == true and CharacterStatsPaneScrollBox.alpha == 1 and PaperDollSidebarTabs.alpha == 1, "off: Blizzard's stats list back")

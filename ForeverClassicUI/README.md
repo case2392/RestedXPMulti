@@ -72,8 +72,10 @@ from Classic Era's own UI code.
   description under the list. Both are Era's FauxScrollFrame lists
   (Forever still ships the template) fed from `C_Reputation` and
   `C_SkillInfo`; Blizzard's scroll boxes and side panes are hidden while
-  they are up. The Honor, Currency and Statistics tabs keep Blizzard's
-  layout for now.
+  they are up. The Honor tab keeps Era's layout (Honor art panel, rank
+  badge and title, the 315x29 rank bar) around what Forever tracks: rank
+  points, season total and cap, next reward, vendor. Currency and
+  Statistics keep Blizzard's layout.
 - **Action bar art** — the classic stone bar under the main action bar
   between the gryphons; the retail frame border and the divider strips
   between buttons are hidden.
