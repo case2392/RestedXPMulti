@@ -865,10 +865,16 @@ local function HonorRow(panel, relTo, first)
     return row
 end
 
--- fill a row: label (optionally after a 12px icon) and value; a nil label clears it
-local function SetHonorRow(row, label, value, icon)
+-- fill a row: label (optionally after a 12px icon) and value; a nil label
+-- clears it. Era coloured the values: green for what was earned
+-- (honorable kills), gold for the rest.
+local function SetHonorRow(row, label, value, icon, green)
     row.Label:SetText(label or "")
     row.Value:SetText(value or "")
+    if row.Value.SetFontObject then
+        local font = green and GameFontGreenSmall or GameFontNormalSmall
+        if font then row.Value:SetFontObject(font) end
+    end
     if icon then
         row.Icon:SetTexture(icon)
         row.Icon:Show()
@@ -1010,7 +1016,7 @@ function Honor:Update()
     -- 1: this season (Era: "This Session")
     local season = GetCurrentArenaSeason and GetCurrentArenaSeason() or 0
     s[1].Title:SetText(season > 0 and Str("EXPANSION_SEASON_NAME", "%sSeason %d"):format("", season) or Str("HONOR", "Honor"))
-    SetHonorRow(s[1].rows[1], Str("PVP_RANK_POINTS", "Rank Points"), ("%d / %d"):format(points, threshold))
+    SetHonorRow(s[1].rows[1], Str("PVP_RANK_POINTS", "Rank Points"), ("%d / %d"):format(points, threshold), nil, true)
     local myTotal = (Total(rank) or 0) + points
     local weekCapRank = info.currentWeekProgressiveMaxLevel or 0
     local capTotal = Total(weekCapRank) or 0
@@ -1026,7 +1032,7 @@ function Honor:Update()
     end
     local increase = capTotal - (Total(info.previousWeekProgressiveMaxLevel or 0) or 0)
     if increase > 0 then
-        SetHonorRow(s[2].rows[2], Str("PVP_RANK_CAP_INCREASE", "Cap Increase"), "+" .. increase)
+        SetHonorRow(s[2].rows[2], Str("PVP_RANK_CAP_INCREASE", "Cap Increase"), "+" .. increase, nil, true)
     end
     -- 3: next reward (Era: "Yesterday")
     local maxRank = info.maxLevel or rank

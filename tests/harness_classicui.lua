@@ -404,7 +404,7 @@ local function NewWorld(opts)
         pf.PlayerFrameContent = Frame("content"); pf.PlayerFrameContent.level = 11; pf.PlayerFrameContent.PlayerFrameContentMain = main
         pf.PlayerFrameContent.PlayerFrameContentContextual = Frame("ctx"); pf.PlayerFrameContent.PlayerFrameContentContextual.level = 12; pf.PlayerFrameContent.PlayerFrameContentContextual.AttackIcon = Region("Texture"); pf.PlayerFrameContent.PlayerFrameContentContextual.PlayerPortraitCornerIcon = Region("Texture")
         pf.PlayerFrameContent.PlayerFrameContentContextual.PlayerRestLoop = Frame("restloop")
-        _G.PlayerFrame = pf; _G.PlayerName = Region("FontString"); _G.PlayerLevelText = Region("FontString"); _G.GameNormalNumberFont = {}; _G.GameFontNormalSmall = {}
+        _G.PlayerFrame = pf; _G.PlayerName = Region("FontString"); _G.PlayerLevelText = Region("FontString"); _G.GameNormalNumberFont = {}; _G.GameFontNormalSmall = {}; _G.GameFontGreenSmall = {}
         _G.PlayerLevelText.vertex = {1, 1, 1, 1}; _G.PlayerLevelText.text = "2"
         _G.PlayerFrame_UpdateLevel = function() PlayerLevelText:SetVertexColor(1, 1, 1, 1); PlayerLevelText:SetText("3") end
         _G.IsResting = function() return w.resting end
@@ -1654,6 +1654,7 @@ do
     check(s1.Title.anchors[1][4] == 36 and s1.Title.anchors[1][5] == -112 and s2.Title.anchors[1][5] == -165 and s3.Title.anchors[1][5] == -220 and s4.Title.anchors[1][5] == -274 and s5.Title.anchors[1][5] == -350, "honor: five section titles on Era's HonorFrame grid")
     check(s1.rows[1].anchors[1][2] == s1.Title and s1.rows[1].anchors[1][4] == 10 and s1.rows[1].anchors[1][5] == -3 and s1.rows[2].anchors[1][2] == s1.rows[1] and s1.rows[1].width == 278 and s1.rows[1].height == 12 and #s5.rows == 3, "honor: 278x12 rows 10px in under each title, three in the last box")
     check(s1.Title.text == "Season 1" and s1.rows[1].Label.text == "Rank Points" and s1.rows[1].Value.text == "300 / 1500" and s1.rows[2].Label.text == "Season Total" and s1.rows[2].Value.text == "2300 / 3000", "honor: season box: rank points and season total as label/value rows")
+    check(s1.rows[1].Value.font == GameFontGreenSmall and s1.rows[2].Value.font == GameFontNormalSmall and s2.rows[2].Value.font == GameFontGreenSmall, "honor: earned values green like Era's honorable kills, the rest gold")
     check(s2.Title.text == "This Week" and s2.rows[1].Value.text == "3000 (Rank 3)" and s2.rows[2].Label.text == "Cap Increase" and s2.rows[2].Value.text == "+1000", "honor: this-week box: cap and its rise")
     check(s3.Title.text == "Next Rewards at Rank 4" and s3.rows[1].Label.text == "Faction Tabard" and s3.rows[1].Icon.texture == 135026 and s3.rows[1].Icon.shown == true and s3.rows[1].Label.anchors[1][4] == 16 and s3.rows[2].Label.text:find("Stormwind", 1, true) and s3.rows[2].Icon.shown == false, "honor: reward box: 12px icon before the reward, vendor line under it")
     check(s4.Title.text == "Season" and s4.rows[1].Value.text == "3d" and s4.rows[2].Value.text == "14000 (Rank 14)" and hp.levelText.text == "Level 39 Human Priest", "honor: season box: time left and the season maximum, level line")
