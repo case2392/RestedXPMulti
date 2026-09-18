@@ -33,6 +33,21 @@ local CLASSIC_TEXTURES = {
     "Interface\\TargetingFrame\\UI-Player-AttackStatus",
     "Interface\\CharacterFrame\\UI-Player-Status",
     "Interface\\CharacterFrame\\UI-StateIcon",
+    "Interface\\PaperDollInfoFrame\\UI-Character-General-TopLeft",
+    "Interface\\PaperDollInfoFrame\\UI-Character-General-TopRight",
+    "Interface\\PaperDollInfoFrame\\UI-Character-General-BottomLeft",
+    "Interface\\PaperDollInfoFrame\\UI-Character-General-BottomRight",
+    "Interface\\PaperDollInfoFrame\\UI-Character-StatBackground",
+    "Interface\\PaperDollInfoFrame\\UI-Character-ResistanceIcons",
+    "Interface\\PaperDollInfoFrame\\UI-Character-CharacterTab-L1",
+    "Interface\\PaperDollInfoFrame\\UI-Character-ActiveTab",
+    "Interface\\PaperDollInfoFrame\\UI-Character-InActiveTab",
+    "Interface\\CharacterFrame\\Char-Paperdoll-Parts",
+    "Interface\\Buttons\\UI-Quickslot2",
+    "Interface\\Buttons\\UI-EmptySlot",
+    "Interface\\Spellbook\\UI-SpellbookPanel-Left",
+    "Interface\\QuestFrame\\UI-QuestLog-Left",
+    "Interface\\FriendsFrame\\UI-FriendsFrame-Left",
     "Interface\\Minimap\\UI-Minimap-Border",
     "Interface\\MainMenuBar\\UI-MainMenuBar-Dwarf"
 }
@@ -491,12 +506,19 @@ local REPORT_FRAMES = {
 
 -- classic clients name their pieces differently; both sets are tried
 local REPORT_FRAMES_CLASSIC = {"FocusFrame", "TargetFrameToT", "MainMenuBar", "MainMenuBarArtFrame", "QuestWatchFrame", "MinimapBorder", "MinimapZoneTextButton"}
+-- panels: dumped only while open, so a report taken with the character
+-- sheet (or spellbook, quest log, friends list) open captures its layout
+local REPORT_FRAMES_OPEN = {"CharacterFrame", "PlayerSpellsFrame", "SpellBookFrame", "PlayerTalentFrame", "QuestLogFrame", "FriendsFrame", "ContainerFrame1"}
 
 function ns.BuildReport(includeHidden)
     local parts = {ns.BuildProbe()}
     local names = {}
     for _, n in ipairs(REPORT_FRAMES) do names[#names + 1] = n end
     for _, n in ipairs(REPORT_FRAMES_CLASSIC) do if _G[n] then names[#names + 1] = n end end
+    for _, n in ipairs(REPORT_FRAMES_OPEN) do
+        local f = _G[n]
+        if type(f) == "table" and f.IsShown and f:IsShown() then names[#names + 1] = n end
+    end
     for _, name in ipairs(names) do
         local text, why = ns.BuildDump(name, includeHidden)
         parts[#parts + 1] = text or ("-- " .. name .. ": " .. tostring(why))
