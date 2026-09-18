@@ -278,6 +278,27 @@ function ns.BuildProbe()
          yn(MainMenuBar and MainMenuBar.EndCaps))
     line("ObjectiveTrackerFrame: %s  QuestWatchFrame (classic): %s",
          yn(has("ObjectiveTrackerFrame")), yn(has("QuestWatchFrame")))
+    -- the professions window: which of the retail names Forever uses
+    local profNames = {}
+    for _, n in ipairs({"ProfessionsBookFrame", "ProfessionsBook", "ProfessionsFrame", "SpellBookProfessionFrame", "PrimaryProfession1", "SecondaryProfession1", "ToggleProfessionsBook", "Blizzard_ProfessionsBook"}) do
+        local v = _G[n]
+        local loaded = false
+        if n:find("^Blizzard_") then
+            local isLoaded = (C_AddOns and C_AddOns.IsAddOnLoaded) or IsAddOnLoaded
+            local ok, l = pcall(function() return isLoaded and isLoaded(n) end)
+            loaded = ok and l
+            v = nil
+        end
+        if v ~= nil or loaded then
+            local shown = type(v) == "table" and v.IsShown and v:IsShown()
+            profNames[#profNames + 1] = n .. (type(v) == "function" and " (function)" or (loaded and " (loaded)" or (shown and " (shown)" or "")))
+        end
+    end
+    line("professions window: %s", #profNames > 0 and table.concat(profNames, ", ") or "none of the retail names found")
+    if ProfessionMicroButton and ProfessionMicroButton.GetScript then
+        local ok, fn = pcall(ProfessionMicroButton.GetScript, ProfessionMicroButton, "OnClick")
+        line("ProfessionMicroButton OnClick: %s", ok and fn and "set" or "none")
+    end
 
     line("")
     line("-- classic textures still in the client")
@@ -572,7 +593,7 @@ local REPORT_FRAMES_CLASSIC = {"FocusFrame", "TargetFrameToT", "PartyFrame", "Pa
     "ForeverClassicUIMainMenuBar", "MicroMenuContainer", "MicroMenu", "BagsBar", "StatusTrackingBarManager", "MultiBarBottomLeft", "MultiBarBottomRight", "MultiBarRight", "MultiBarLeft"}
 -- panels: dumped only while open, so a report taken with the character
 -- sheet (or spellbook, quest log, friends list) open captures its layout
-local REPORT_FRAMES_OPEN = {"CharacterFrame", "PlayerSpellsFrame", "SpellBookFrame", "PlayerTalentFrame", "ProfessionsBookFrame", "QuestLogFrame", "FriendsFrame", "CommunitiesFrame", "ContainerFrame1"}
+local REPORT_FRAMES_OPEN = {"CharacterFrame", "PlayerSpellsFrame", "SpellBookFrame", "PlayerTalentFrame", "ProfessionsBookFrame", "ProfessionsBook", "ProfessionsFrame", "SpellBookProfessionFrame", "QuestLogFrame", "FriendsFrame", "CommunitiesFrame", "ContainerFrame1"}
 
 function ns.BuildReport(includeHidden)
     local parts = {ns.BuildProbe()}

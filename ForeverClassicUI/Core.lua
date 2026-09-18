@@ -5,7 +5,12 @@
 
 local addonName, ns = ...
 
-ns.VERSION = "0.6.0"
+-- the toc's version, so the probe header follows each release
+do
+    local meta = (C_AddOns and C_AddOns.GetAddOnMetadata) or GetAddOnMetadata
+    local ok, v = pcall(function() return meta and meta(addonName, "Version") end)
+    ns.VERSION = (ok and type(v) == "string" and v ~= "" and v) or "0.6.5"
+end
 ns.modules = {}
 ns.moduleOrder = {}
 ns.errors = {}
