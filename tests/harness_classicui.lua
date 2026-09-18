@@ -770,6 +770,7 @@ do
     -- level text: Blizzard's copy under the art goes transparent, ours on the skin mirrors it in gold
     local lvl = skin.levelText
     check(PlayerLevelText.alpha == 0 and lvl.text == "2" and lvl.vertex[1] == 1 and lvl.vertex[2] == 0.82 and lvl.anchors[1][3] == "BOTTOMLEFT" and lvl.anchors[1][4] == 35.25, "forever: player level copied onto the skin in gold, in the frame corner")
+    check(lvl.width == 40 and lvl.justify == "CENTER" and #lvl.anchors == 1 and lvl.anchors[1][1] == "CENTER", "forever: level copy is a fixed centred box on the art's circle")
     PlayerFrame_UpdateLevel()
     check(lvl.text == "3" and lvl.vertex[2] == 0.82, "forever: level copy follows Blizzard's update and stays gold after its white repaint")
     PlayerLevelText:Hide()

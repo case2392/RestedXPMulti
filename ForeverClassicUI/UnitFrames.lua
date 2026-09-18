@@ -153,7 +153,11 @@ local function Skin(frame, main)
         skin.glow = skin:CreateTexture(nil, "ARTWORK")
         skin.glow:SetAlpha(0)
         skin.levelText = skin:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        -- a fixed, centred box: an auto-sized string came out a couple of
+        -- pixels left of the art's circle on Forever
+        skin.levelText:SetSize(40, 10)
         if skin.levelText.SetJustifyH then skin.levelText:SetJustifyH("CENTER") end
+        if skin.levelText.SetJustifyV then skin.levelText:SetJustifyV("MIDDLE") end
         own.skin = skin
     end
     if skin.SetFrameLevel and main and main.GetFrameLevel then
