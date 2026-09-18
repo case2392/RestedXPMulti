@@ -405,6 +405,8 @@ local function SkinMicroButton(btn, name)
         for _, m in ipairs({"SetNormalAtlas", "SetPushedAtlas", "SetDisabledAtlas", "SetHighlightAtlas"}) do
             if type(btn[m]) == "function" then hooksecurefunc(btn, m, Again) end
         end
+        -- Blizzard's menu layout puts the retail 32x40 size back
+        if btn.HookScript then btn:HookScript("OnSizeChanged", Again) end
         for _, m in ipairs({"SetPushed", "SetNormal"}) do
             if type(btn[m]) == "function" then
                 hooksecurefunc(btn, m, function(b)
@@ -443,12 +445,15 @@ local function LayoutMicroMenu(art)
             Hide(store)
         end
     end
+    -- only the menu's own children count: Forever keeps a few more micro
+    -- buttons as globals parked elsewhere (shown, but not in the row)
     local skinned, shown = 0, 0
     for _, gname in ipairs(MICRO_ORDER) do
         local btn = G(gname)
         if btn and SkinMicroButton(btn, MICRO_ART[gname]) then
             skinned = skinned + 1
-            if not btn.IsShown or btn:IsShown() then
+            local inMenu = menu == nil or (btn.GetParent and btn:GetParent() == menu)
+            if inMenu and (not btn.IsShown or btn:IsShown()) then
                 if menu and btn.SetPoint then
                     Anchor(btn, "BOTTOMLEFT", menu, "BOTTOMLEFT", shown * MICRO_STRIDE, 0)
                 end
@@ -521,11 +526,12 @@ local function SkinBagButton(btn, size)
     M.inSkin = nil
     if not own.hooked and hooksecurefunc then
         own.hooked = true
+        local function Again(b) if M.mode == "restyled" and not M.inSkin then SkinBagButton(b) end end
         for _, m in ipairs({"SetNormalAtlas", "SetPushedAtlas"}) do
-            if type(btn[m]) == "function" then
-                hooksecurefunc(btn, m, function(b) if M.mode == "restyled" and not M.inSkin then SkinBagButton(b) end end)
-            end
+            if type(btn[m]) == "function" then hooksecurefunc(btn, m, Again) end
         end
+        -- Blizzard's bag layout puts the retail slot size back
+        if btn.HookScript then btn:HookScript("OnSizeChanged", Again) end
     end
 end
 
@@ -560,21 +566,32 @@ local function SkinKeyRing(btn)
     M.inSkin = nil
     if not own.hooked and hooksecurefunc then
         own.hooked = true
+        local function Again(b) if M.mode == "restyled" and not M.inSkin then SkinKeyRing(b) end end
         for _, m in ipairs({"SetNormalAtlas", "SetPushedAtlas"}) do
-            if type(btn[m]) == "function" then
-                hooksecurefunc(btn, m, function(b) if M.mode == "restyled" and not M.inSkin then SkinKeyRing(b) end end)
-            end
+            if type(btn[m]) == "function" then hooksecurefunc(btn, m, Again) end
         end
+        if btn.HookScript then btn:HookScript("OnSizeChanged", Again) end
     end
     return true
 end
 
 -- Forever draws divider strips between the bag slots (pooled frames with
 -- TopEdge / BottomEdge / Center) and the retail border round the bar
+-- a pooled divider frame: faded now, and again whenever Blizzard shows it
+local function FadeDivider(child, alpha)
+    if not child.SetAlpha then return end
+    child:SetAlpha(alpha)
+    local own = Own(child)
+    if not own.hooked and child.HookScript then
+        own.hooked = true
+        child:HookScript("OnShow", function(c) if M.mode == "restyled" then c:SetAlpha(0) end end)
+    end
+end
+
 local function BagDividers(bar, alpha)
     if not bar or not bar.GetChildren then return end
     for _, child in ipairs({bar:GetChildren()}) do
-        if child.TopEdge and child.BottomEdge and child.Center and child.SetAlpha then child:SetAlpha(alpha) end
+        if child.TopEdge and child.BottomEdge and child.Center then FadeDivider(child, alpha) end
     end
 end
 
@@ -687,7 +704,7 @@ end
 local function StatusDividers(container, alpha)
     if not container or not container.GetChildren then return end
     for _, child in ipairs({container:GetChildren()}) do
-        if child.BarDividerTexture and child.SetAlpha then child:SetAlpha(alpha) end
+        if child.BarDividerTexture then FadeDivider(child, alpha) end
     end
 end
 

@@ -491,9 +491,12 @@ local function NewWorld(opts)
             b:SetNormalAtlas("UI-HUD-MicroMenu-" .. name .. "-Up"); b:SetPushedAtlas("UI-HUD-MicroMenu-" .. name .. "-Down"); b:SetDisabledAtlas("UI-HUD-MicroMenu-" .. name .. "-Disabled"); b:SetHighlightAtlas("UI-HUD-MicroMenu-" .. name .. "-Mouseover")
             function b:SetPushed() self.Background:Hide(); self.PushedBackground:Show(); self.PushedBackground.alpha = 1 end
             function b:SetNormal() self.Background:Show(); self.PushedBackground:Hide() end
+            b.parent = MicroMenu
             _G[name] = b
             return b
         end
+        -- a micro button Forever keeps as a global outside the menu (shown, parked elsewhere)
+        Micro("AchievementMicroButton").parent = UIParent
         local cm = Micro("CharacterMicroButton"); cm.Portrait = Region("Texture"); cm.PortraitMask = Region("MaskTexture", {atlas = "UI-HUD-MicroMenu-Portrait-Mask"}); cm.Shadow = Region("Texture")
         -- Forever's eleven: Era's six plus professions, legacy, group finder, collections and a disabled Store
         Micro("ProfessionMicroButton"); Micro("SpellbookMicroButton"); Micro("TalentMicroButton"); Micro("LegacyMicroButton"); Micro("QuestLogMicroButton"); Micro("GuildMicroButton")
@@ -1296,7 +1299,10 @@ do
     check(pn.anchors[1][2] == art and pn.anchors[1][4] == 506 and pn.anchors[1][5] == 3 and pn.Text.anchors[1][4] == 15 and pn.UpButton.NormalTexture.texture == "Interface\\MainMenuBar\\UI-MainMenu-ScrollUpButton-Up" and pn.UpButton.anchors[1][5] == 10, "forever: page number and classic arrows right of the buttons")
     check(MicroMenuContainer.anchors[1][2] == art and MicroMenuContainer.anchors[1][4] == 552 and MicroMenuContainer.anchors[1][5] == 2 and MicroMenu.BorderArt.alpha == 0, "forever: micro menu on the bar at 552, retail border gone")
     check(CharacterMicroButton.width == 31 and CharacterMicroButton.NormalTexture.texture == "Interface\\Buttons\\UI-MicroButtonCharacter-Up" and CharacterMicroButton.NormalTexture.texcoord[3] == 0.359375 and CharacterMicroButton.Background.alpha == 0 and CharacterMicroButton.Portrait.width == 18, "forever: character micro button classic with the small portrait")
-    check(SpellbookMicroButton.NormalTexture.texture == "Interface\\Buttons\\UI-MicroButton-Spellbook-Up" and SpellbookMicroButton.HighlightTexture.texture == "Interface\\Buttons\\UI-MicroButton-Hilight" and ab.microSkinned == 11, "forever: every micro button classic")
+    check(SpellbookMicroButton.NormalTexture.texture == "Interface\\Buttons\\UI-MicroButton-Spellbook-Up" and SpellbookMicroButton.HighlightTexture.texture == "Interface\\Buttons\\UI-MicroButton-Hilight" and ab.microSkinned == 12, "forever: every micro button classic")
+    check(AchievementMicroButton.anchors == nil or #AchievementMicroButton.anchors == 0, "forever: a micro button parked outside the menu is not pulled into the row")
+    SpellbookMicroButton:SetSize(32, 40); SpellbookMicroButton.scripts.OnSizeChanged(SpellbookMicroButton)
+    check(SpellbookMicroButton.width == 31 and SpellbookMicroButton.height == 37, "forever: micro button re-skinned when Blizzard's layout resizes it")
     check(StoreMicroButton.shown == false and ab.microShown == 10 and ProfessionMicroButton.anchors[1][2] == MicroMenu and ProfessionMicroButton.anchors[1][4] == 26 and MainMenuMicroButton.anchors[1][4] == 9 * 26, "forever: disabled Store button hidden, the ten others 26 apart on the menu")
     check(MicroMenu.width == 265 and math.abs(MicroMenu.scale - 201 / 265) < 0.001 and math.abs(MicroMenuContainer.width - 201) < 0.01 and MicroMenu.anchors[1][2] == MicroMenuContainer, "forever: ten buttons scaled down to stop short of the keyring")
     UpdateMicroButtons()
@@ -1314,9 +1320,16 @@ do
     check(BagsBar.width == 261 and ab.bagsWidth == 261, "forever: bag cluster 261 wide (five bags, reagent bag, keyring)")
     BagsBar:Layout()
     check(CharacterBag0Slot.anchors[1][4] == -5 and CharacterBag0Slot.width == 37 and BagsBar.div1.alpha == 0, "forever: bag slots re-laid out after Blizzard's layout, dividers faded again")
+    CharacterBag1Slot:SetSize(45, 45); CharacterBag1Slot.scripts.OnSizeChanged(CharacterBag1Slot)
+    keyring:SetSize(33, 45); keyring.scripts.OnSizeChanged(keyring)
+    check(CharacterBag1Slot.width == 37 and CharacterBag1Slot.NormalTexture.texture == "Interface\\Buttons\\UI-Quickslot2" and keyring.width == 18, "forever: bag slot and keyring re-skinned when Blizzard resizes them")
+    BagsBar.div1.alpha = 1; BagsBar.div1.scripts.OnShow(BagsBar.div1)
+    check(BagsBar.div1.alpha == 0, "forever: a bag divider shown again by its pool is faded on show")
     local xpc = MainStatusTrackingBarContainer
     local xp = xpc.bars[1]
     check(xpc.anchors[1][1] == "TOP" and xpc.anchors[1][2] == art and xpc.width == 1024 and xpc.height == 13 and xpc.BarFrameTexture.alpha == 0 and xpc.div1.alpha == 0, "forever: experience bar 1024x13 in the top of the stone bar, retail frame and segment dividers gone")
+    xpc.div1.alpha = 1; xpc.div1.scripts.OnShow(xpc.div1)
+    check(xpc.div1.alpha == 0, "forever: an XP divider shown again by its pool is faded on show")
     check(xp.StatusBar.barTexture == "Interface\\TargetingFrame\\UI-StatusBar" and xp.StatusBar.anchors[1][1] == "ALL" and xp.ExhaustionTick.NormalTexture.texture == "Interface\\MainMenuBar\\UI-ExhaustionTickNormal" and xp.ExhaustionTick.width == 32, "forever: classic XP fill and rest tick")
     xp:UpdateStatusBarTextures(true)
     check(xp.StatusBar.barTexture == "Interface\\TargetingFrame\\UI-StatusBar" and xp.StatusBar.barColor[2] == 0.39, "forever: rested XP colour after Blizzard's fill swap")

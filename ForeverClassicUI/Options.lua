@@ -23,19 +23,27 @@ local function SetPart(key, on)
     ns.SetPart(key, on)
 end
 
+local LABEL_WIDTH = 560   -- the panel is ~640 wide on the AddOns page; long labels wrap
+
+-- returns the check button and the height its row needs
 local function MakeCheck(parent, y, key)
     local cb = CreateFrame("CheckButton", nil, parent, "UICheckButtonTemplate")
     cb:SetPoint("TOPLEFT", 16, y)
     cb:SetSize(26, 26)
     local label = parent:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
     label:SetPoint("LEFT", cb, "RIGHT", 4, 0)
+    label:SetWidth(LABEL_WIDTH)
+    label:SetJustifyH("LEFT")
+    if label.SetWordWrap then label:SetWordWrap(true) end
     label:SetText(LABELS[key] or key)
+    cb.label = label
     cb.key = key
     cb:SetScript("OnClick", function(self)
         SetPart(self.key, self:GetChecked() and true or false)
         if panel and panel.RefreshStatus then panel.RefreshStatus() end
     end)
-    return cb
+    local h = label.GetStringHeight and label:GetStringHeight() or 0
+    return cb, math.max(30, h + 12)
 end
 
 local function MakeAllButton(parent, anchor, text, on)
@@ -69,14 +77,16 @@ function ns.BuildOptionsPanel()
     panel.checks = {}
     local y = -96
     for _, key in ipairs(ns.moduleOrder) do
-        panel.checks[key] = MakeCheck(panel, y, key)
-        y = y - 30
+        local cb, rowHeight = MakeCheck(panel, y, key)
+        panel.checks[key] = cb
+        y = y - rowHeight
     end
 
     local status = panel:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
     status:SetPoint("TOPLEFT", 20, y - 8)
-    status:SetWidth(560)
+    status:SetWidth(LABEL_WIDTH + 30)
     status:SetJustifyH("LEFT")
+    if status.SetWordWrap then status:SetWordWrap(true) end
     panel.status = status
 
     local probe = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")

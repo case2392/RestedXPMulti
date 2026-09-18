@@ -705,7 +705,8 @@ function M:Enable()
     if not self.book then
         self.book = BuildBook()
         local ev = self.book
-        for _, e in ipairs(BOOK_EVENTS) do ev:RegisterEvent(e) end
+        -- Forever lacks some of Era's events (LEARNED_SPELL_IN_TAB): skip the unknown ones
+        for _, e in ipairs(BOOK_EVENTS) do pcall(ev.RegisterEvent, ev, e) end
         ev:RegisterEvent("SPELL_UPDATE_COOLDOWN")
         ev:RegisterEvent("PLAYER_REGEN_ENABLED")
         ev:SetScript("OnEvent", Guard("event", function(_, event)
