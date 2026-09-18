@@ -95,6 +95,8 @@ local CLASSIC_TEXTURES = {
     "Interface\\MainMenuBar\\UI-MainMenu-ScrollUpButton-Up",
     "Interface\\Buttons\\UI-Quickslot-Depress",
     "Interface\\Buttons\\ButtonHilight-Square",
+    "Interface\\Buttons\\UI-Button-KeyRing",
+    "Interface\\QuestFrame\\UI-QuestTitleHighlight",
     "Interface\\Buttons\\UI-MicroButtonCharacter-Up",
     "Interface\\Buttons\\UI-MicroButton-Spellbook-Up",
     "Interface\\Buttons\\UI-MicroButton-Talents-Up",

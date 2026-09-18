@@ -85,7 +85,17 @@ from Classic Era's own UI code.
   they are up. The Honor tab keeps Era's layout (Honor art panel, rank
   badge and title, the 315x29 rank bar) around what Forever tracks: rank
   points, season total and cap, next reward, vendor. Currency and
-  Statistics keep Blizzard's layout.
+  Statistics are Forever's own tabs (Era had neither); they get the same
+  Era list inside the General sheet: header rows with the +/- buttons,
+  entries in the small font with the amount and icon at the right (click
+  a currency to show it on the backpack, the check mark says it is), the
+  statistics as a tree of categories that expand in place with each
+  statistic's value at the right, the classic scroll bar beside the list.
+  Blizzard's scroll boxes and detail panes on those frames are hidden
+  while the list is up. The selected bottom tab is told apart by white
+  text with the button disabled, the way Era's PanelTemplates did; Era's
+  raised "active tab" art is not used because Forever's copy of that file
+  draws as a glow with no tab body.
 - **Spellbook** — Forever's spell window (`PlayerSpellsFrame`) becomes Era's
   384x512 book while its spellbook page is up: the four-piece
   `UI-SpellbookPanel` art, the book icon in the corner, "Spellbook" over
@@ -106,12 +116,18 @@ from Classic Era's own UI code.
   containers are scaled, so every piece of button art shrinks with them),
   the page number and the classic arrows right of them, the micro
   buttons (29x37 classic art, character portrait included) from x=552,
-  the bag slots (37px, quickslot ring) ending at the right edge, and the
-  experience bar in the top 13px of the bar with the 10px stone ledge
-  over it, purple/blue fill and the classic rest tick. Every action
+  the bag slots (37px, quickslot ring) ending at the right edge with
+  Era's 18x39 keyring and Forever's reagent bag (30px) left of them, and
+  the experience bar in the top 13px of the bar with the 10px stone ledge
+  over it, purple/blue fill, the classic rest tick and none of Forever's
+  segment dividers. Forever has more micro buttons than Era's nine
+  (professions, legacy, group finder, collections): they are laid out at
+  Era's 26px stride and the row is scaled down just enough to end before
+  the keyring; the disabled Store button is hidden so it takes no slot
+  (it comes back if the client ever enables it). Every action
   button on every bar gets the classic look: square icon, the
   `UI-Quickslot2` ring, classic pushed/highlight textures, no retail
-  slot art. The bottom-left and bottom-right bars sit either side of the
+  slot art or bag-bar border and dividers. The bottom-left and bottom-right bars sit either side of the
   screen centre above the bar, the right bars are vertical with the same
   spacing. Everything here is an Edit Mode system that Blizzard
   re-anchors on every layout apply, so each of its refreshes is hooked
@@ -171,11 +187,12 @@ takes the other parts down.
 
 Confirmed on 1.60.1 (build 69893, toc 16001). After installing, type
 `/console nameplateStyle 6` once for the classic nameplates. Cast bars, unit
-frames, character sheet, spellbook, action bars and minimap are re-skinned,
-combo points use Blizzard's classic frame. The party frames and the full
-bottom bar (0.6.0) are built from Era's layout files and Forever's frame
-dumps and still need a look on Forever: `/cui report all` while grouped,
-with a screenshot of the bottom of the screen, is what tunes them.
+frames, character sheet (all six tabs), spellbook, action bars and minimap
+are re-skinned, combo points use Blizzard's classic frame. The bottom bar
+was tuned from a 0.6.0 report (bag border, keyring and reagent bag, micro
+row, XP dividers); the party frames are built from Era's layout files and
+Forever's frame dumps and still need a look on Forever: `/cui report all`
+while grouped, with a screenshot, is what tunes them.
 
 Settings are kept in the usual SavedVariables file and, because the beta
 was seen never writing that file, also in a CVar of the addon's own

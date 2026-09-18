@@ -992,3 +992,316 @@ function Honor:Update()
 end
 
 M.RegisterPanel(Honor)
+
+--------------------------------------------------------------------------
+-- Currency and Statistics (Forever's extra tabs)
+--
+-- Era had neither. Both get the Era list treatment inside the same
+-- 384x512 "General" sheet: Era's header rows with the +/- buttons and the
+-- classic scroll bar, entries in the small highlight font, filled from
+-- Forever's C_CurrencyInfo and the achievement statistics API. Blizzard's
+-- retail pieces on those frames (scroll boxes, detail panes) are hidden
+-- while the classic list is up, their names unknown, so every child frame
+-- that is not ours is hidden and shown again when the part is turned off.
+--------------------------------------------------------------------------
+
+local LIST_ROWS, LIST_PITCH, LIST_TOP, LIST_LEFT, LIST_WIDTH = 19, 18, -79, 22, 296
+local LIST_HIGHLIGHT = "Interface\\QuestFrame\\UI-QuestTitleHighlight"
+local LIST_SCROLL_ART = HasFile(ART.scrollBar) and {file = ART.scrollBar, topHeight = 256, topCoord = {0, 0.484375, 0, 1}, bottomHeight = 108, bottomCoord = {0.515625, 1, 0, 0.421875}, bottomOffset = -4} or nil
+
+-- an entry row: name at the left, value at the right, the classic highlight
+local function ListRow(parent, y)
+    local row = CreateFrame("Button", nil, parent)
+    row:SetSize(LIST_WIDTH, LIST_PITCH)
+    row:SetPoint("TOPLEFT", parent, "TOPLEFT", LIST_LEFT, y)
+    if HasFile(LIST_HIGHLIGHT) then
+        row:SetHighlightTexture(LIST_HIGHLIGHT, "ADD")
+        local hl = row:GetHighlightTexture()
+        if hl then hl:ClearAllPoints(); hl:SetAllPoints(row) end
+    end
+    row.Name = row:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+    row.Name:SetJustifyH("LEFT")
+    row.Name:SetSize(190, LIST_PITCH)
+    row.Name:SetPoint("LEFT", row, "LEFT", 25, 0)
+    row.Icon = row:CreateTexture(nil, "ARTWORK")
+    row.Icon:SetSize(16, 16)
+    row.Icon:SetPoint("RIGHT", row, "RIGHT", -6, 0)
+    row.Icon:Hide()
+    row.Value = row:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+    row.Value:SetJustifyH("RIGHT")
+    row.Value:SetPoint("RIGHT", row, "RIGHT", -6, 0)
+    row.Check = row:CreateTexture(nil, "OVERLAY")
+    row.Check:SetTexture(ART.check)
+    row.Check:SetSize(16, 16)
+    row.Check:Hide()
+    local header = HeaderButton(parent, LIST_WIDTH - 11, "GameFontNormal", 25)
+    header:SetSize(LIST_WIDTH - 11, 14)
+    header:SetPoint("LEFT", parent, "TOPLEFT", LIST_LEFT, y - 7)
+    row.header = header
+    row:Hide()
+    header:Hide()
+    return row
+end
+
+-- the whole classic list: column labels, rows, the Era scroll bar
+local function BuildList(panel, frameName, globalName, leftLabel, rightLabel, onScroll)
+    local frame = G(frameName)
+    local list = CreateFrame("Frame", globalName, frame)
+    list:SetAllPoints(frame)
+    list:SetFrameLevel(frame:GetFrameLevel() + 2)
+    panel.list = list
+    list.LeftLabel = list:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+    list.LeftLabel:SetPoint("TOPLEFT", list, "TOPLEFT", 70, -57)
+    list.LeftLabel:SetText(leftLabel)
+    list.RightLabel = list:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+    list.RightLabel:SetPoint("TOPRIGHT", list, "TOPRIGHT", -72, -57)
+    list.RightLabel:SetText(rightLabel)
+    list.Empty = list:CreateFontString(nil, "ARTWORK", "GameFontDisable")
+    list.Empty:SetPoint("TOP", list, "TOP", -20, -140)
+    list.Empty:Hide()
+    panel.rows = {}
+    for i = 1, LIST_ROWS do
+        panel.rows[i] = ListRow(list, LIST_TOP - (i - 1) * LIST_PITCH)
+    end
+    panel.scroll = ListScroll(list, LIST_WIDTH, 354, LIST_PITCH, LIST_ROWS, LIST_SCROLL_ART, onScroll)
+    panel.scroll:SetPoint("TOPRIGHT", list, "TOPRIGHT", -66, -76)
+    list:Hide()
+    return list
+end
+
+-- Blizzard's children of the frame hidden while ours is up (all but ours)
+local function BlizzardChildren(panel, frameName, on)
+    local frame = G(frameName)
+    if not frame then return end
+    if on then
+        panel.hidden = {}
+        if frame.GetChildren then
+            for _, child in ipairs({frame:GetChildren()}) do
+                if child ~= panel.list and child.IsShown and child:IsShown() and child.Hide then
+                    child:Hide()
+                    panel.hidden[#panel.hidden + 1] = child
+                end
+            end
+        end
+        if frame.GetRegions then
+            for _, region in ipairs({frame:GetRegions()}) do
+                if region.SetAlpha then region:SetAlpha(0) end
+            end
+        end
+    else
+        for _, child in ipairs(panel.hidden or {}) do
+            if child.Show then child:Show() end
+        end
+        panel.hidden = nil
+        if frame.GetRegions then
+            for _, region in ipairs({frame:GetRegions()}) do
+                if region.SetAlpha then region:SetAlpha(1) end
+            end
+        end
+    end
+end
+
+local function RowHeader(row, text, collapsed, depth)
+    local header = row.header
+    header.Text:SetText(text or "")
+    header.collapsed = collapsed
+    PlusMinus(header, collapsed)
+    header:ClearAllPoints()
+    header:SetPoint("LEFT", row, "LEFT", (depth or 0) * 15, 0)
+    header:Show()
+    row:Hide()
+end
+
+local function RowEntry(row, name, value, depth)
+    row.Name:SetText(name or "")
+    row.Name:ClearAllPoints()
+    row.Name:SetPoint("LEFT", row, "LEFT", 25 + (depth or 0) * 15, 0)
+    row.Value:SetText(value or "")
+    row.Check:Hide()
+    row.Icon:Hide()
+    row.Value:ClearAllPoints()
+    row.Value:SetPoint("RIGHT", row, "RIGHT", -6, 0)
+    row:Show()
+    row.header:Hide()
+end
+
+-- Currency ---------------------------------------------------------------
+
+local Currency = {frameName = "TokenFrame", label = "currency"}
+
+local function CurrencyAPI()
+    return C_CurrencyInfo and C_CurrencyInfo.GetCurrencyListSize and C_CurrencyInfo.GetCurrencyListInfo and C_CurrencyInfo
+end
+
+function Currency:Build()
+    local list = BuildList(self, "TokenFrame", "ForeverClassicUICurrencyList", Str("CURRENCY", "Currency"), Str("AMOUNT", "Amount"), function() Currency:Update() end)
+    list.Empty:SetText(Str("CURRENCY_NONE", "You have no currency."))
+    for _, row in ipairs(self.rows) do
+        row:SetScript("OnClick", function(r) Currency:RowClicked(r) end)
+        row:SetScript("OnEnter", function(r)
+            if not GameTooltip or not r.index then return end
+            GameTooltip:SetOwner(r, "ANCHOR_RIGHT")
+            if GameTooltip.SetCurrencyToken then pcall(GameTooltip.SetCurrencyToken, GameTooltip, r.index) end
+            GameTooltip:Show()
+        end)
+        row:SetScript("OnLeave", HideTooltip)
+        row.header:SetScript("OnClick", function(h)
+            local api = CurrencyAPI()
+            if not api or not h.index or not api.ExpandCurrencyList then return end
+            api.ExpandCurrencyList(h.index, h.collapsed)
+            Currency:Update()
+        end)
+    end
+    list:RegisterEvent("CURRENCY_DISPLAY_UPDATE")
+    list:SetScript("OnEvent", Guard("currency event", function() if list:IsShown() and self.classic then Currency:Update() end end))
+end
+
+function Currency:SetClassic(on)
+    local frame = G("TokenFrame")
+    if not frame or on == self.classic then return end
+    self.classic = on
+    if on then
+        BlizzardChildren(self, "TokenFrame", true)
+        self.list:Show()
+        self:Update()
+    else
+        self.list:Hide()
+        BlizzardChildren(self, "TokenFrame", false)
+    end
+end
+
+-- click: show or hide the currency on the backpack (Era's "watch" check mark)
+function Currency:RowClicked(row)
+    local api = CurrencyAPI()
+    if not api or not row.index or not api.SetCurrencyBackpack then return end
+    api.SetCurrencyBackpack(row.index, not row.onBackpack)
+    self:Update()
+end
+
+function Currency:Update()
+    local api = CurrencyAPI()
+    if not api or not self.list or not self.list:IsShown() then return end
+    local size = api.GetCurrencyListSize() or 0
+    ScrollUpdate(self.scroll, size)
+    local offset = ScrollOffset(self.scroll)
+    self.list.Empty:SetShown(size == 0)
+    for i = 1, LIST_ROWS do
+        local row = self.rows[i]
+        local index = offset + i
+        local info = index <= size and api.GetCurrencyListInfo(index) or nil
+        row.index = index
+        if not info then
+            row:Hide()
+            row.header:Hide()
+        elseif info.isHeader then
+            RowHeader(row, info.name, not info.isHeaderExpanded, 0)
+            row.header.index = index
+        else
+            RowEntry(row, info.name, tostring(info.quantity or 0), 0)
+            row.onBackpack = info.isShowInBackpack == true
+            if info.iconFileID then
+                row.Icon:SetTexture(info.iconFileID)
+                row.Icon:Show()
+                row.Value:ClearAllPoints()
+                row.Value:SetPoint("RIGHT", row.Icon, "LEFT", -4, 0)
+            end
+            if row.onBackpack then
+                row.Check:ClearAllPoints()
+                row.Check:SetPoint("LEFT", row.Name, "LEFT", (row.Name.GetStringWidth and row.Name:GetStringWidth() or 0) + 2, 0)
+                row.Check:Show()
+            end
+            if info.isTypeUnused then row.Name:SetTextColor(0.5, 0.5, 0.5) else row.Name:SetTextColor(1, 1, 1) end
+        end
+    end
+end
+
+M.RegisterPanel(Currency)
+
+-- Statistics -------------------------------------------------------------
+
+local Stats = {frameName = "StatisticsFrame", label = "statistics", collapsed = {}}
+
+local function StatsAPI()
+    return type(GetStatisticsCategoryList) == "function" and type(GetCategoryInfo) == "function"
+        and type(GetCategoryNumAchievements) == "function" and type(GetAchievementInfo) == "function" and type(GetStatistic) == "function"
+end
+
+-- the tree as rows: a category header, then (when expanded) its
+-- statistics and its child categories; everything starts collapsed
+local function StatRows(panel)
+    local rows = {}
+    if not StatsAPI() then return rows end
+    local ids = GetStatisticsCategoryList() or {}
+    local byParent = {}
+    for _, id in ipairs(ids) do
+        local _, parent = GetCategoryInfo(id)
+        parent = parent or -1
+        byParent[parent] = byParent[parent] or {}
+        table.insert(byParent[parent], id)
+    end
+    local function Add(id, depth)
+        local title = GetCategoryInfo(id)
+        local collapsed = panel.collapsed[id] ~= false
+        rows[#rows + 1] = {header = true, id = id, name = title, depth = depth, collapsed = collapsed}
+        if collapsed then return end
+        for i = 1, GetCategoryNumAchievements(id) or 0 do
+            local aid, name = GetAchievementInfo(id, i)
+            if aid then rows[#rows + 1] = {id = aid, name = name, depth = depth} end
+        end
+        for _, child in ipairs(byParent[id] or {}) do Add(child, depth + 1) end
+    end
+    for _, id in ipairs(byParent[-1] or {}) do Add(id, 0) end
+    return rows
+end
+
+function Stats:Build()
+    local list = BuildList(self, "StatisticsFrame", "ForeverClassicUIStatisticsList", Str("STATISTICS", "Statistics"), Str("STAT_VALUE", "Value"), function() Stats:Update() end)
+    list.Empty:SetText(Str("STATISTICS_NONE", "No statistics."))
+    for _, row in ipairs(self.rows) do
+        row.header:SetScript("OnClick", function(h)
+            if h.categoryID == nil then return end
+            Stats.collapsed[h.categoryID] = not h.collapsed
+            Stats:Update()
+        end)
+    end
+    for _, e in ipairs({"ACHIEVEMENT_EARNED", "CRITERIA_UPDATE"}) do pcall(list.RegisterEvent, list, e) end
+    list:SetScript("OnEvent", Guard("statistics event", function() if list:IsShown() and self.classic then Stats:Update() end end))
+end
+
+function Stats:SetClassic(on)
+    local frame = G("StatisticsFrame")
+    if not frame or on == self.classic then return end
+    self.classic = on
+    if on then
+        BlizzardChildren(self, "StatisticsFrame", true)
+        self.list:Show()
+        self:Update()
+    else
+        self.list:Hide()
+        BlizzardChildren(self, "StatisticsFrame", false)
+    end
+end
+
+function Stats:Update()
+    if not self.list or not self.list:IsShown() then return end
+    local rows = StatRows(self)
+    ScrollUpdate(self.scroll, #rows)
+    local offset = ScrollOffset(self.scroll)
+    self.list.Empty:SetShown(#rows == 0)
+    for i = 1, LIST_ROWS do
+        local row = self.rows[i]
+        local item = rows[offset + i]
+        if not item then
+            row:Hide()
+            row.header:Hide()
+        elseif item.header then
+            RowHeader(row, item.name, item.collapsed, item.depth)
+            row.header.categoryID = item.id
+        else
+            local ok, value = pcall(GetStatistic, item.id)
+            RowEntry(row, item.name, ok and value or "--", item.depth)
+        end
+    end
+end
+
+M.RegisterPanel(Stats)

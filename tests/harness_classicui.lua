@@ -146,6 +146,7 @@ local function Frame(name)
     function f:GetCheckedTexture() return self.CheckedTexture end
     function f:Enable() self.enabled = true end
     function f:Disable() self.enabled = false end
+    function f:IsEnabled() return self.enabled ~= false end
     function f:SetText(t) self.text = t end
     function f:GetText() return self.text end
     function f:SetAttribute(k, v) self.attributes = self.attributes or {}; self.attributes[k] = v end
@@ -494,16 +495,23 @@ local function NewWorld(opts)
             return b
         end
         local cm = Micro("CharacterMicroButton"); cm.Portrait = Region("Texture"); cm.PortraitMask = Region("MaskTexture", {atlas = "UI-HUD-MicroMenu-Portrait-Mask"}); cm.Shadow = Region("Texture")
-        Micro("SpellbookMicroButton"); Micro("TalentMicroButton"); Micro("QuestLogMicroButton"); Micro("GuildMicroButton"); Micro("MainMenuMicroButton")
-        _G.BagsBar = Frame("BagsBar"); function BagsBar:ApplySystemAnchor() self:ClearAllPoints(); self:SetPoint("BOTTOMLEFT", MicroMenuContainer, "BOTTOMRIGHT", 7, -4) end
-        function BagsBar:Layout() MainMenuBarBackpackButton:ClearAllPoints(); MainMenuBarBackpackButton:SetPoint("RIGHT", self, "RIGHT"); CharacterBag0Slot:ClearAllPoints(); CharacterBag0Slot:SetPoint("RIGHT", MainMenuBarBackpackButton, "LEFT", -2, 0) end
-        for _, n in ipairs({"MainMenuBarBackpackButton", "CharacterBag0Slot", "CharacterBag1Slot", "CharacterBag2Slot", "CharacterBag3Slot"}) do
-            local b = Frame(n); b:SetSize(n == "MainMenuBarBackpackButton" and 50 or 30, n == "MainMenuBarBackpackButton" and 50 or 30); b.icon = Region("Texture"); b.IconBorder = Region("Texture"); b:SetNormalAtlas("bag-border"); _G[n] = b
+        -- Forever's eleven: Era's six plus professions, legacy, group finder, collections and a disabled Store
+        Micro("ProfessionMicroButton"); Micro("SpellbookMicroButton"); Micro("TalentMicroButton"); Micro("LegacyMicroButton"); Micro("QuestLogMicroButton"); Micro("GuildMicroButton")
+        Micro("LFDMicroButton"); Micro("CollectionsMicroButton"); Micro("StoreMicroButton"):Disable(); Micro("MainMenuMicroButton")
+        _G.UpdateMicroButtons = function() StoreMicroButton:Show(); StoreMicroButton.alpha = 0.5 end
+        _G.BagsBar = Frame("BagsBar"); BagsBar.BorderArt = Region("Texture", {atlas = "UI-HUD-ActionBar-Frame"})
+        function BagsBar:ApplySystemAnchor() self:ClearAllPoints(); self:SetPoint("BOTTOMLEFT", MicroMenuContainer, "BOTTOMRIGHT", 7, -4) end
+        function BagsBar:Layout() MainMenuBarBackpackButton:ClearAllPoints(); MainMenuBarBackpackButton:SetPoint("RIGHT", self, "RIGHT"); CharacterBag0Slot:ClearAllPoints(); CharacterBag0Slot:SetPoint("RIGHT", MainMenuBarBackpackButton, "LEFT", -2, 0); self.div1:Show(); self.div1.alpha = 1 end
+        for _, n in ipairs({"MainMenuBarBackpackButton", "CharacterBag0Slot", "CharacterBag1Slot", "CharacterBag2Slot", "CharacterBag3Slot", "CharacterReagentBag0Slot", "KeyRingButton"}) do
+            local b = Frame(n); b:SetSize(n == "MainMenuBarBackpackButton" and 50 or 30, n == "MainMenuBarBackpackButton" and 50 or 30); b.icon = Region("Texture"); b.IconBorder = Region("Texture"); b.SquareMask = Region("MaskTexture", {atlas = "UI-HUD-ActionBar-IconFrame-Mask"}); b:SetNormalAtlas("bag-border"); _G[n] = b
         end
-        -- experience bar: retail framed strip, atlas fill
+        -- the divider strips between the slots (pooled frames)
+        BagsBar.div1 = Frame("div"); BagsBar.div1.TopEdge = Region("Texture"); BagsBar.div1.BottomEdge = Region("Texture"); BagsBar.div1.Center = Region("Texture")
+        -- experience bar: retail framed strip, atlas fill, segment dividers
         _G.StatusTrackingBarManager = Frame("StatusTrackingBarManager"); function StatusTrackingBarManager:UpdateBarVisuals() end
         local function StatusContainer(name)
             local c = Frame(name); c:SetSize(571, 17); c.BarFrameTexture = Region("Texture", {atlas = "UI-HUD-ExperienceBar-Frame"})
+            c.div1 = Frame("div"); c.div1.BarDividerTexture = Region("Texture", {atlas = "UI-HUD-ExperienceBar-Divider"})
             local xp = Frame(name .. "Exp"); xp.isExpBar = true; xp.StatusBar = Frame("sb"); xp.StatusBar.Background = Region("Texture", {atlas = "UI-HUD-ExperienceBar-Background"})
             xp.ExhaustionTick = Frame("tick"); xp.ExhaustionTick:SetNormalAtlas("UI-HUD-ExperienceBar-Frame-Pip")
             function xp:UpdateStatusBarTextures(isRested) self.StatusBar:SetStatusBarTexture(isRested and "UI-HUD-ExperienceBar-Fill-Rested" or "UI-HUD-ExperienceBar-Fill-Experience") end
@@ -614,6 +622,29 @@ local function NewWorld(opts)
             local rep, sk = _G.ReputationFrame, _G.SkillsFrame
             rep.ScrollBox = Frame("ScrollBox"); rep.ScrollBar = Frame("ScrollBar"); rep.ReputationDetailFrame = Frame("ReputationDetailFrame"); rep.filterDropdown = Frame("filterDropdown")
             sk.ScrollBox = Frame("ScrollBox"); sk.ScrollBar = Frame("ScrollBar"); sk.SkillDetailFrame = Frame("SkillDetailFrame")
+            -- Forever's currency and statistics tabs: retail scroll boxes and a background of their own
+            local tok, st = _G.TokenFrame, _G.StatisticsFrame
+            tok.ScrollBox = Frame("ScrollBox"); tok.ScrollBox:Show(); tok.ScrollBar = Frame("ScrollBar"); tok.ScrollBar:Show(); tok.Background = Region("Texture")
+            st.ScrollBox = Frame("ScrollBox"); st.ScrollBox:Show(); st.DetailFrame = Frame("DetailFrame"); st.DetailFrame:Show()
+            w.currencies = {
+                {name = "Miscellaneous", isHeader = true, isHeaderExpanded = true},
+                {name = "Honor Points", quantity = 120, iconFileID = 1455894, isShowInBackpack = true},
+                {name = "Player vs. Player", isHeader = true, isHeaderExpanded = false}
+            }
+            w.currencyExpanded, w.currencyBackpack = {}, {}
+            _G.C_CurrencyInfo = {
+                GetCurrencyListSize = function() return #w.currencies end,
+                GetCurrencyListInfo = function(i) local d = w.currencies[i]; if d then local c = {}; for k, v in pairs(d) do c[k] = v end; return c end end,
+                ExpandCurrencyList = function(i, expand) w.currencyExpanded[#w.currencyExpanded + 1] = {i, expand}; w.currencies[i].isHeaderExpanded = expand end,
+                SetCurrencyBackpack = function(i, on) w.currencyBackpack[#w.currencyBackpack + 1] = {i, on}; w.currencies[i].isShowInBackpack = on end
+            }
+            w.statCategories = {[1] = {"Player vs Player", -1}, [2] = {"Dungeons & Raids", -1}, [3] = {"Classic", 2}}
+            w.statAchievements = {[1] = {{101, "Honorable kills"}, {102, "Deaths"}}, [2] = {}, [3] = {{103, "Deadmines runs"}}}
+            _G.GetStatisticsCategoryList = function() return {1, 2, 3} end
+            _G.GetCategoryInfo = function(id) local c = w.statCategories[id]; return c[1], c[2], 0 end
+            _G.GetCategoryNumAchievements = function(id) return #(w.statAchievements[id] or {}) end
+            _G.GetAchievementInfo = function(id, i) local a = w.statAchievements[id][i]; return a[1], a[2] end
+            _G.GetStatistic = function(aid) return ({[101] = "12", [102] = "3", [103] = "--"})[aid] end
             -- Era's faux scroll helpers, still shipped by Forever
             _G.FauxScrollFrame_Update = function(frame, numItems, numToDisplay) frame.fauxItems = numItems; return numItems > numToDisplay end
             _G.FauxScrollFrame_GetOffset = function(frame) return frame.fauxOffset or 0 end
@@ -1251,18 +1282,27 @@ do
     check(pn.anchors[1][2] == art and pn.anchors[1][4] == 506 and pn.anchors[1][5] == 3 and pn.Text.anchors[1][4] == 15 and pn.UpButton.NormalTexture.texture == "Interface\\MainMenuBar\\UI-MainMenu-ScrollUpButton-Up" and pn.UpButton.anchors[1][5] == 10, "forever: page number and classic arrows right of the buttons")
     check(MicroMenuContainer.anchors[1][2] == art and MicroMenuContainer.anchors[1][4] == 552 and MicroMenuContainer.anchors[1][5] == 2 and MicroMenu.BorderArt.alpha == 0, "forever: micro menu on the bar at 552, retail border gone")
     check(CharacterMicroButton.width == 31 and CharacterMicroButton.NormalTexture.texture == "Interface\\Buttons\\UI-MicroButtonCharacter-Up" and CharacterMicroButton.NormalTexture.texcoord[3] == 0.359375 and CharacterMicroButton.Background.alpha == 0 and CharacterMicroButton.Portrait.width == 18, "forever: character micro button classic with the small portrait")
-    check(SpellbookMicroButton.NormalTexture.texture == "Interface\\Buttons\\UI-MicroButton-Spellbook-Up" and SpellbookMicroButton.HighlightTexture.texture == "Interface\\Buttons\\UI-MicroButton-Hilight" and ab.microSkinned == 6, "forever: every micro button classic")
+    check(SpellbookMicroButton.NormalTexture.texture == "Interface\\Buttons\\UI-MicroButton-Spellbook-Up" and SpellbookMicroButton.HighlightTexture.texture == "Interface\\Buttons\\UI-MicroButton-Hilight" and ab.microSkinned == 11, "forever: every micro button classic")
+    check(StoreMicroButton.shown == false and ab.microShown == 10 and ProfessionMicroButton.anchors[1][2] == MicroMenu and ProfessionMicroButton.anchors[1][4] == 26 and MainMenuMicroButton.anchors[1][4] == 9 * 26, "forever: disabled Store button hidden, the ten others 26 apart on the menu")
+    check(MicroMenu.width == 265 and math.abs(MicroMenu.scale - 201 / 265) < 0.001 and math.abs(MicroMenuContainer.width - 201) < 0.01 and MicroMenu.anchors[1][2] == MicroMenuContainer, "forever: ten buttons scaled down to stop short of the keyring")
+    UpdateMicroButtons()
+    check(StoreMicroButton.shown == false and ab.microShown == 10, "forever: Store hidden again after Blizzard's micro button refresh")
     MainMenuMicroButton:SetNormalAtlas("UI-HUD-MicroMenu-MainMenu-Up")
     check(MainMenuMicroButton.NormalTexture.texture == "Interface\\Buttons\\UI-MicroButton-MainMenu-Up", "forever: micro button re-skinned after Blizzard's atlas swap")
     CharacterMicroButton:SetPushed()
     check(CharacterMicroButton.PushedBackground.alpha == 0, "forever: pushed micro background stays hidden")
     check(BagsBar.anchors[1][1] == "BOTTOMRIGHT" and BagsBar.anchors[1][2] == art and BagsBar.anchors[1][4] == -6 and BagsBar.anchors[1][5] == 2, "forever: bag bar at the bar's right end")
     check(MainMenuBarBackpackButton.width == 37 and MainMenuBarBackpackButton.NormalTexture.texture == "Interface\\Buttons\\UI-Quickslot2" and MainMenuBarBackpackButton.NormalTexture.width == 64 and CharacterBag0Slot.anchors[1][2] == MainMenuBarBackpackButton and CharacterBag0Slot.anchors[1][4] == -5, "forever: 37px bag slots 5 apart with the quickslot ring")
+    check(MainMenuBarBackpackButton.icon.maskRemoved == MainMenuBarBackpackButton.SquareMask and BagsBar.BorderArt.alpha == 0 and BagsBar.div1.alpha == 0, "forever: retail icon mask, bag border and slot dividers gone")
+    local reagent, keyring = CharacterReagentBag0Slot, KeyRingButton
+    check(reagent.width == 30 and reagent.anchors[1][2] == CharacterBag3Slot and reagent.anchors[1][4] == -4 and reagent.NormalTexture.texture == "Interface\\Buttons\\UI-Quickslot2" and reagent.NormalTexture.width == 52, "forever: reagent bag 30px beside the bags with a smaller ring")
+    check(keyring.width == 18 and keyring.height == 39 and keyring.NormalTexture.texture == "Interface\\Buttons\\UI-Button-KeyRing" and keyring.NormalTexture.texcoord[2] == 0.5625 and keyring.NormalTexture.texcoord[4] == 0.609375 and keyring.anchors[1][2] == reagent and keyring.icon.alpha == 0, "forever: Era's 18x39 keyring left of the reagent bag, retail slot art faded")
+    check(BagsBar.width == 261 and ab.bagsWidth == 261, "forever: bag cluster 261 wide (five bags, reagent bag, keyring)")
     BagsBar:Layout()
-    check(CharacterBag0Slot.anchors[1][4] == -5 and CharacterBag0Slot.width == 37, "forever: bag slots re-laid out after Blizzard's layout")
+    check(CharacterBag0Slot.anchors[1][4] == -5 and CharacterBag0Slot.width == 37 and BagsBar.div1.alpha == 0, "forever: bag slots re-laid out after Blizzard's layout, dividers faded again")
     local xpc = MainStatusTrackingBarContainer
     local xp = xpc.bars[1]
-    check(xpc.anchors[1][1] == "TOP" and xpc.anchors[1][2] == art and xpc.width == 1024 and xpc.height == 13 and xpc.BarFrameTexture.alpha == 0, "forever: experience bar 1024x13 in the top of the stone bar, retail frame gone")
+    check(xpc.anchors[1][1] == "TOP" and xpc.anchors[1][2] == art and xpc.width == 1024 and xpc.height == 13 and xpc.BarFrameTexture.alpha == 0 and xpc.div1.alpha == 0, "forever: experience bar 1024x13 in the top of the stone bar, retail frame and segment dividers gone")
     check(xp.StatusBar.barTexture == "Interface\\TargetingFrame\\UI-StatusBar" and xp.StatusBar.anchors[1][1] == "ALL" and xp.ExhaustionTick.NormalTexture.texture == "Interface\\MainMenuBar\\UI-ExhaustionTickNormal" and xp.ExhaustionTick.width == 32, "forever: classic XP fill and rest tick")
     xp:UpdateStatusBarTextures(true)
     check(xp.StatusBar.barTexture == "Interface\\TargetingFrame\\UI-StatusBar" and xp.StatusBar.barColor[2] == 0.39, "forever: rested XP colour after Blizzard's fill swap")
@@ -1477,20 +1517,44 @@ do
     local t1, t2 = tabs.list[1], tabs.list[2]
     check(t1.anchors[1][1] == "CENTER" and t1.anchors[1][2] == cf and t1.anchors[1][3] == "BOTTOMLEFT" and t1.anchors[1][4] == 60 and t1.anchors[1][5] == 62, "sheet: first tab at Era's spot")
     check(t2.anchors[1][1] == "LEFT" and t2.anchors[1][2] == t1 and t2.anchors[1][4] == -16, "sheet: tabs overlap by 16 like Era")
-    check(t1.selected == true and t1.Left.texture == "Interface\\PaperDollInfoFrame\\UI-Character-ActiveTab" and t1.Text.textColor[1] == 1 and t1.Text.textColor[2] == 1, "sheet: character tab drawn active, white text")
-    check(t2.selected == false and t2.Left.texture == "Interface\\PaperDollInfoFrame\\UI-Character-InActiveTab" and t2.Text.textColor[2] == 0.82, "sheet: other tabs inactive, gold text")
+    check(t1.selected == true and t1.Left.texture == "Interface\\PaperDollInfoFrame\\UI-Character-InActiveTab" and t1.Left.anchors[1][5] == 0 and t1.Text.anchors[1][5] == 2 and t1.Text.textColor[1] == 1 and t1.Text.textColor[2] == 1 and t1.enabled == false, "sheet: selected tab keeps the tab art in place, white text, button disabled")
+    check(t2.selected == false and t2.Left.texture == "Interface\\PaperDollInfoFrame\\UI-Character-InActiveTab" and t2.Text.textColor[2] == 0.82 and t2.enabled ~= false, "sheet: other tabs gold text, clickable")
     check(tabs.padding == 22 and t1.width == 54 + 22, "sheet: six tabs would not fit at Era's padding, so it is tightened")
     w.currencyTab = false
     cs:Force()
     check(tabs.list[5].shown == false and tabs.padding == 32, "sheet: currency tab only when Forever would show it, padding relaxed")
-    -- switch to currency: Blizzard's layout comes back on that tab
+    -- currency tab: Era-style list inside the classic sheet
+    w.currencyTab = true
+    cs:Force()
     local t5 = tabs.list[5]
     t5.scripts.OnClick(t5)
-    check(w.toggled == "TokenFrame" and TokenFrame.shown == true and PaperDollFrame.shown == false, "sheet: tab click opens the currency frame")
-    check(cf.width == 631 and cf.height == 484 and cf.NineSlice.alpha == 1 and cf.LeftPaneHost.alpha == 1 and cf.CloseButton.mouse == true, "sheet: Blizzard's shell back on the currency tab")
-    check(sheet.shown == false and t5.selected == true and t1.selected == false, "sheet: our art hidden, currency tab active")
-    check(p.anchors[1][2] == cf.PortraitContainer and p.anchors[1][4] == -5 and p.width == 62 and cf.TitleContainer.anchors[1][1] == "TOPLEFT" and cf.TitleContainer.width == 549, "sheet: portrait and title back where Blizzard had them")
-    check(cf.ModeTabs.alpha == 0 and tabs.shown == true and w.panelWidth == 713, "sheet: side tabs stay hidden, our tabs stay, panel width back to Blizzard's")
+    local cur = cs.panels[4]
+    check(w.toggled == "TokenFrame" and TokenFrame.shown == true and PaperDollFrame.shown == false and cur.frameName == "TokenFrame" and cur.built == true, "currency: tab click opens the currency frame, panel built")
+    check(cf.width == 384 and sheet.shown == true and sheet.doll.shown == false and sheet.art[1].texture == "Interface\\PaperDollInfoFrame\\UI-Character-General-TopLeft" and t5.selected == true and t1.selected == false, "currency: classic sheet with the General art, currency tab active")
+    check(TokenFrame.ScrollBox.shown == false and TokenFrame.ScrollBar.shown == false and TokenFrame.Background.alpha == 0 and cur.list.shown == true and cur.list.parent == TokenFrame and cur.list.LeftLabel.text == "Currency", "currency: Blizzard's list and art hidden, ours up with the column labels")
+    local c1, c2, c3, c4 = cur.rows[1], cur.rows[2], cur.rows[3], cur.rows[4]
+    check(c1.shown == false and c1.header.shown == true and c1.header.Text.text == "Miscellaneous" and c1.header.NormalTexture.texture == "Interface\\Buttons\\UI-MinusButton-Up", "currency: expanded header with the minus button")
+    check(c2.shown == true and c2.Name.text == "Honor Points" and c2.Value.text == "120" and c2.Icon.texture == 1455894 and c2.Icon.shown == true and c2.Check.shown == true, "currency: entry with its amount, icon and the backpack check mark")
+    check(c3.header.shown == true and c3.header.NormalTexture.texture == "Interface\\Buttons\\UI-PlusButton-Up" and c4.shown == false and c4.header.shown == false and cur.list.Empty.shown == false, "currency: collapsed header, nothing after it")
+    check(c1.anchors[1][4] == 22 and c1.anchors[1][5] == -79 and c2.anchors[1][5] == -97 and cur.scroll.anchors[1][4] == -66 and cur.scroll.anchors[1][5] == -76, "currency: Era row positions and the classic scroll bar")
+    c3.header.scripts.OnClick(c3.header)
+    check(w.currencyExpanded[1][1] == 3 and w.currencyExpanded[1][2] == true and c3.header.collapsed == false, "currency: header click expands through C_CurrencyInfo")
+    c2.scripts.OnClick(c2)
+    check(w.currencyBackpack[1][1] == 2 and w.currencyBackpack[1][2] == false and c2.Check.shown == false, "currency: click stops showing the currency on the backpack, check mark goes")
+    -- statistics tab
+    local t6 = tabs.list[6]
+    t6.scripts.OnClick(t6)
+    local st = cs.panels[5]
+    check(st.built == true and StatisticsFrame.shown == true and cur.list.shown == false and TokenFrame.ScrollBox.shown == true and cf.width == 384, "statistics: panel up, currency list gone and Blizzard's currency pieces back, classic size kept")
+    check(StatisticsFrame.ScrollBox.shown == false and StatisticsFrame.DetailFrame.shown == false and st.list.shown == true and st.list.LeftLabel.text == "Statistics", "statistics: Blizzard's list and detail pane hidden, ours up")
+    local s1, s2, s3 = st.rows[1], st.rows[2], st.rows[3]
+    check(s1.header.shown == true and s1.header.Text.text == "Player vs Player" and s1.header.collapsed == true and s2.header.Text.text == "Dungeons & Raids" and s3.shown == false and s3.header.shown == false, "statistics: top categories collapsed, nothing else listed")
+    s1.header.scripts.OnClick(s1.header)
+    check(s1.header.collapsed == false and s2.shown == true and s2.Name.text == "Honorable kills" and s2.Value.text == "12" and s3.Name.text == "Deaths" and st.rows[4].header.Text.text == "Dungeons & Raids", "statistics: expanding a category lists its statistics with their values")
+    st.rows[4].header.scripts.OnClick(st.rows[4].header)
+    check(st.rows[5].header.shown == true and st.rows[5].header.Text.text == "Classic" and st.rows[5].header.anchors[1][4] == 15 and st.rows[6].shown == false, "statistics: child category indented under its parent, collapsed")
+    st.rows[5].header.scripts.OnClick(st.rows[5].header)
+    check(st.rows[6].shown == true and st.rows[6].Name.text == "Deadmines runs" and st.rows[6].Value.text == "--" and st.rows[6].Name.anchors[1][4] == 40, "statistics: the child category's statistics, indented")
     -- reputation tab: classic list inside the classic sheet
     t2.scripts.OnClick(t2)
     local rep = cs.panels[1]
@@ -1569,6 +1633,7 @@ do
     check(cs.mode == "off" and cf.width == 631 and cf.NineSlice.alpha == 1 and cf.ModeTabs.alpha == 1 and cf.ModeTabs.Tabs[1].mouse == true, "off: Blizzard's frame size, shell and side tabs back")
     check(sheet.shown == false and tabs.shown == false, "off: our sheet and tabs hidden")
     check(ReputationFrame.ScrollBox.shown == true and SkillsFrame.SkillDetailFrame.shown == true and rep.list.shown == false and sk.list.shown == false, "off: Blizzard's reputation and skills lists back")
+    check(StatisticsFrame.ScrollBox.shown == true and StatisticsFrame.DetailFrame.shown == true and st.list.shown == false and cur.list.shown == false and TokenFrame.Background.alpha == 1, "off: Blizzard's currency and statistics pieces back")
     check(PVPRankFrame.MainInfoFrame.shown == true and PVPRankFrame.SeasonTimerField.alpha == 1 and hn.panel.shown == false, "off: Blizzard's honor display back")
     local h = CharacterHeadSlot.anchors[1]
     check(h[2] == cf.LeftPaneHost and h[4] == 24 and h[5] == -60 and CharacterHeadSlot.BorderFrame.alpha == 1 and CharacterModelScene.anchors[1][2] == cf.LeftPaneHost and CharacterModelScene.width == 398, "off: slots and model back on Blizzard's anchors")

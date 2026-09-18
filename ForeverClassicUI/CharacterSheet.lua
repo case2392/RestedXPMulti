@@ -774,20 +774,26 @@ local function BuildTab(parent, info)
     return tab
 end
 
+-- Era drew the selected tab with UI-Character-ActiveTab lifted 4px into the
+-- frame's bottom edge. Forever's copy of that file is not Era's (it renders
+-- as a glow band with no tab body), so every tab keeps the InActiveTab art
+-- in place and the selected one is told apart the other Era way: white
+-- text and the button disabled, like PanelTemplates_SelectTab.
 local function SetTabSelected(tab, selected)
-    local file = selected and ART.activeTab or ART.inactiveTab
-    local lift = selected and 4 or 0
+    local file = ART.inactiveTab
     tab.Left:SetTexture(file)
     tab.Middle:SetTexture(file)
     tab.Right:SetTexture(file)
     tab.Left:ClearAllPoints()
-    tab.Left:SetPoint("TOPLEFT", tab, "TOPLEFT", 0, lift)
+    tab.Left:SetPoint("TOPLEFT", tab, "TOPLEFT", 0, 0)
     tab.Text:ClearAllPoints()
-    tab.Text:SetPoint("CENTER", tab, "CENTER", 0, selected and 4 or 2)
+    tab.Text:SetPoint("CENTER", tab, "CENTER", 0, 2)
     if selected then
         tab.Text:SetTextColor(1, 1, 1)
+        if tab.Disable then tab:Disable() end
     else
         tab.Text:SetTextColor(1, 0.82, 0)
+        if tab.Enable then tab:Enable() end
     end
     tab.selected = selected
 end
@@ -1140,7 +1146,7 @@ function M:Enable()
         return
     end
     self.missingArt = {}
-    for _, key in ipairs({"topLeft", "topRight", "bottomLeft", "bottomRight", "statBackground", "resistanceIcons", "activeTab", "inactiveTab"}) do
+    for _, key in ipairs({"topLeft", "topRight", "bottomLeft", "bottomRight", "statBackground", "resistanceIcons", "inactiveTab"}) do
         if not HasFile(ART[key]) then self.missingArt[#self.missingArt + 1] = ART[key]:match("[^\\]+$") end
     end
     if not self.sheet then

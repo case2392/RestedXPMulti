@@ -57,6 +57,14 @@ local MICRO_W, MICRO_H = 29, 37
 local MICRO_STRIDE = 26
 local BAGS_X, BAGS_Y = -6, 2     -- backpack from the art's bottom right
 local BAG_SIZE, BAG_PAD = 37, 5
+-- Forever's extra bag pieces. Era had the 18x39 keyring left of the bags;
+-- the reagent bag is Forever's and goes beside it, smaller than a bag so
+-- the row still fits between the micro buttons and the bags.
+local REAGENT_SIZE, SMALL_PAD = 30, 4
+local KEYRING_W, KEYRING_H = 18, 39
+local KEYRING_TEX = BUTTONS .. "UI-Button-KeyRing"
+local KEYRING_COORDS = {0, 0.5625, 0, 0.609375}
+local REAGENT_BUTTON, KEYRING_BUTTON = "CharacterReagentBag0Slot", "KeyRingButton"
 local XP_H, XP_TOP_H = 13, 8
 local BOTTOM_BAR_X, BOTTOM_BAR_Y = 6, 52
 -- the four stone strips: rows of the 256x256 image (Era's MainMenuBarTexture0..3)
@@ -408,41 +416,87 @@ local function SkinMicroButton(btn, name)
     return true
 end
 
+-- Forever's Store button is disabled on this client (no shop): it is
+-- hidden so it does not take a slot. It comes back the moment it is enabled.
+local function StoreWanted()
+    local store = G("StoreMicroButton")
+    if not store then return true end
+    if store.IsEnabled and not store:IsEnabled() then return false end
+    return true
+end
+
+-- Era: 552 + 26 per button. Forever has more buttons than Era's nine (and
+-- the keyring and reagent bag to the right), so the row is laid out at Era's
+-- stride and then scaled down just enough to end before the bag cluster.
 local function LayoutMicroMenu(art)
     local container = G("MicroMenuContainer")
-    if container and container.SetPoint then
-        container:ClearAllPoints()
-        container:SetPoint("BOTTOMLEFT", art, "BOTTOMLEFT", MICRO_X, MICRO_Y)
-    end
     local menu = G("MicroMenu")
     if menu then
         Hide(menu.BorderArt)
         Hide(menu.BackgroundArt)
     end
-    local skinned = 0
+    local store = G("StoreMicroButton")
+    if store then
+        if StoreWanted() then
+            if store.SetAlpha then store:SetAlpha(1) end
+        else
+            Hide(store)
+        end
+    end
+    local skinned, shown = 0, 0
     for _, gname in ipairs(MICRO_ORDER) do
         local btn = G(gname)
-        if btn and SkinMicroButton(btn, MICRO_ART[gname]) then skinned = skinned + 1 end
+        if btn and SkinMicroButton(btn, MICRO_ART[gname]) then
+            skinned = skinned + 1
+            if not btn.IsShown or btn:IsShown() then
+                if menu and btn.SetPoint then
+                    Anchor(btn, "BOTTOMLEFT", menu, "BOTTOMLEFT", shown * MICRO_STRIDE, 0)
+                end
+                shown = shown + 1
+            end
+        end
     end
     M.microSkinned = skinned
+    M.microShown = shown
+    local natural = math.max(shown - 1, 0) * MICRO_STRIDE + MICRO_W + 2
+    local room = BAR_W + BAGS_X - (M.bagsWidth or 0) - SMALL_PAD - MICRO_X
+    local scale = 1
+    if natural > room and room > 0 then scale = room / natural end
+    M.microScale = scale
+    if menu and menu.SetSize then
+        menu:SetSize(natural, MICRO_H)
+        if menu.SetScale then menu:SetScale(scale) end
+        if container then
+            menu:ClearAllPoints()
+            menu:SetPoint("BOTTOMLEFT", container, "BOTTOMLEFT", 0, 0)
+        end
+    end
+    if container and container.SetPoint then
+        container:SetSize(natural * scale, MICRO_H * scale)
+        container:ClearAllPoints()
+        container:SetPoint("BOTTOMLEFT", art, "BOTTOMLEFT", MICRO_X, MICRO_Y)
+    end
 end
 
 --------------------------------------------------------------------------
 -- bag slots
 --------------------------------------------------------------------------
 
-local function SkinBagButton(btn)
+local function SkinBagButton(btn, size)
     if not btn or not btn.SetNormalTexture then return end
     local own = Own(btn)
+    size = size or own.size or BAG_SIZE
+    own.size = size
     M.inSkin = true
-    btn:SetSize(BAG_SIZE, BAG_SIZE)
+    btn:SetSize(size, size)
     -- Era's ItemButtonTemplate: the 64x64 quickslot ring centred a pixel low
     btn:SetNormalTexture(QUICKSLOT)
     local nt = btn.GetNormalTexture and btn:GetNormalTexture()
     if nt then
+        local ring = math.floor(64 * size / BAG_SIZE + 0.5)
         nt:SetTexCoord(0, 1, 0, 1)
         nt:ClearAllPoints()
-        nt:SetSize(64, 64)
+        nt:SetSize(ring, ring)
         nt:SetPoint("CENTER", btn, "CENTER", 0, -1)
         nt:SetAlpha(1)
     end
@@ -454,8 +508,10 @@ local function SkinBagButton(btn)
     if ht then ht:SetTexCoord(0, 1, 0, 1); ht:ClearAllPoints(); ht:SetAllPoints(btn) end
     local icon = btn.icon or (btn.GetName and G(btn:GetName() .. "IconTexture"))
     if icon then
-        if btn.IconMask and icon.RemoveMaskTexture then pcall(icon.RemoveMaskTexture, icon, btn.IconMask) end
-        if btn.CircleMask and icon.RemoveMaskTexture then pcall(icon.RemoveMaskTexture, icon, btn.CircleMask) end
+        -- Forever masks the icon to the retail slot shape (SquareMask / IconMask)
+        for _, key in ipairs({"IconMask", "CircleMask", "SquareMask"}) do
+            if btn[key] and icon.RemoveMaskTexture then pcall(icon.RemoveMaskTexture, icon, btn[key]) end
+        end
         icon:ClearAllPoints()
         icon:SetAllPoints(btn)
     end
@@ -473,28 +529,97 @@ local function SkinBagButton(btn)
     end
 end
 
+-- Era's keyring: the narrow 18x39 button (UI-Button-KeyRing, the upper
+-- left of a 32x64 image), no icon. Forever's is a 33x45 retail slot.
+local function SkinKeyRing(btn)
+    if not btn or not btn.SetNormalTexture then return false end
+    if not HasFile(KEYRING_TEX) then
+        SkinBagButton(btn, REAGENT_SIZE)
+        return true
+    end
+    local own = Own(btn)
+    M.inSkin = true
+    btn:SetSize(KEYRING_W, KEYRING_H)
+    btn:SetNormalTexture(KEYRING_TEX)
+    btn:SetPushedTexture(KEYRING_TEX .. "-Down")
+    btn:SetHighlightTexture(KEYRING_TEX .. "-Highlight", "ADD")
+    for _, get in ipairs({"GetNormalTexture", "GetPushedTexture", "GetHighlightTexture"}) do
+        local t = btn[get] and btn[get](btn)
+        if t then
+            t:SetTexCoord(unpack(KEYRING_COORDS))
+            t:ClearAllPoints()
+            t:SetAllPoints(btn)
+        end
+    end
+    -- the retail slot art sits on the icon; the classic button has none
+    local icon = btn.icon or (btn.GetName and G(btn:GetName() .. "IconTexture"))
+    Fade(icon)
+    Fade(btn.IconBorder)
+    Hide(btn.SlotBackground)
+    Hide(btn.SlotArt)
+    M.inSkin = nil
+    if not own.hooked and hooksecurefunc then
+        own.hooked = true
+        for _, m in ipairs({"SetNormalAtlas", "SetPushedAtlas"}) do
+            if type(btn[m]) == "function" then
+                hooksecurefunc(btn, m, function(b) if M.mode == "restyled" and not M.inSkin then SkinKeyRing(b) end end)
+            end
+        end
+    end
+    return true
+end
+
+-- Forever draws divider strips between the bag slots (pooled frames with
+-- TopEdge / BottomEdge / Center) and the retail border round the bar
+local function BagDividers(bar, alpha)
+    if not bar or not bar.GetChildren then return end
+    for _, child in ipairs({bar:GetChildren()}) do
+        if child.TopEdge and child.BottomEdge and child.Center and child.SetAlpha then child:SetAlpha(alpha) end
+    end
+end
+
 local function LayoutBags(art)
     local bar = G("BagsBar")
     if not bar or not bar.SetPoint then return end
     bar:ClearAllPoints()
     bar:SetPoint("BOTTOMRIGHT", art, "BOTTOMRIGHT", BAGS_X, BAGS_Y)
-    local prev
+    Hide(bar.BorderArt)
+    BagDividers(bar, 0)
+    local prev, width = nil, 0
     for _, gname in ipairs(BAG_BUTTONS) do
         local btn = G(gname)
         if btn then
-            SkinBagButton(btn)
+            SkinBagButton(btn, BAG_SIZE)
+            btn:ClearAllPoints()
             if prev then
-                btn:ClearAllPoints()
                 btn:SetPoint("RIGHT", prev, "LEFT", -BAG_PAD, 0)
+                width = width + BAG_PAD + BAG_SIZE
             else
-                btn:ClearAllPoints()
                 btn:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", 0, 0)
+                width = BAG_SIZE
             end
             prev = btn
         end
     end
+    local reagent = G(REAGENT_BUTTON)
+    if reagent and reagent.SetPoint and prev then
+        SkinBagButton(reagent, REAGENT_SIZE)
+        reagent:ClearAllPoints()
+        reagent:SetPoint("RIGHT", prev, "LEFT", -SMALL_PAD, 0)
+        width = width + SMALL_PAD + REAGENT_SIZE
+        prev = reagent
+    end
+    local keyring = G(KEYRING_BUTTON)
+    if keyring and keyring.SetPoint and prev and SkinKeyRing(keyring) then
+        keyring:ClearAllPoints()
+        keyring:SetPoint("RIGHT", prev, "LEFT", -SMALL_PAD, 0)
+        local w = keyring.GetWidth and keyring:GetWidth() or KEYRING_W
+        width = width + SMALL_PAD + w
+        prev = keyring
+    end
     Hide(G("BagBarExpandToggle"))
-    bar:SetSize(#BAG_BUTTONS * BAG_SIZE + (#BAG_BUTTONS - 1) * BAG_PAD, BAG_SIZE)
+    M.bagsWidth = width
+    bar:SetSize(width, BAG_SIZE)
 end
 
 --------------------------------------------------------------------------
@@ -557,12 +682,22 @@ local function Ledge(container)
     own.ledge = f
 end
 
+-- Forever's twenty segment dividers along the bar (pooled frames holding a
+-- BarDividerTexture); Era's bar had none
+local function StatusDividers(container, alpha)
+    if not container or not container.GetChildren then return end
+    for _, child in ipairs({container:GetChildren()}) do
+        if child.BarDividerTexture and child.SetAlpha then child:SetAlpha(alpha) end
+    end
+end
+
 local function LayoutStatusBars(art)
     local main = G("MainStatusTrackingBarContainer")
     local second = G("SecondaryStatusTrackingBarContainer")
     for _, container in ipairs({main, second}) do
         if container and container.SetPoint then
             Hide(container.BarFrameTexture)
+            StatusDividers(container, 0)
             if container == main then
                 container:SetSize(BAR_W, XP_H)
                 container:ClearAllPoints()
@@ -633,8 +768,8 @@ function M.Layout()
     end
     M.HideDividers()
     LayoutPageNumber(art)
+    LayoutBags(art)        -- first: the micro menu is scaled to the room left of the bags
     LayoutMicroMenu(art)
-    LayoutBags(art)
     LayoutStatusBars(art)
     if InCombat() then
         M.pending = true
@@ -647,20 +782,25 @@ function M.Layout()
 end
 
 -- Forever draws retail divider strips between the buttons over the bar art
--- (pooled frames laid out by MainActionBarMixin:UpdateDividers). Fade them
--- out after every refresh; Blizzard shows them, alpha 0 keeps them unseen.
+-- (pooled frames laid out by MainActionBarMixin:UpdateDividers), between
+-- the bag slots and along the experience bar. Fade them out after every
+-- refresh; Blizzard shows them, alpha 0 keeps them unseen.
 function M.HideDividers(alpha)
-    local bar = G("MainActionBar")
-    if not bar then return end
     alpha = alpha or 0
-    for _, key in ipairs({"HorizontalDividersPool", "VerticalDividersPool"}) do
-        local pool = bar[key]
-        if pool and pool.EnumerateActive then
-            for divider in pool:EnumerateActive() do
-                if divider.SetAlpha then divider:SetAlpha(alpha) end
+    local bar = G("MainActionBar")
+    if bar then
+        for _, key in ipairs({"HorizontalDividersPool", "VerticalDividersPool"}) do
+            local pool = bar[key]
+            if pool and pool.EnumerateActive then
+                for divider in pool:EnumerateActive() do
+                    if divider.SetAlpha then divider:SetAlpha(alpha) end
+                end
             end
         end
     end
+    BagDividers(G("BagsBar"), alpha)
+    StatusDividers(G("MainStatusTrackingBarContainer"), alpha)
+    StatusDividers(G("SecondaryStatusTrackingBarContainer"), alpha)
 end
 
 --------------------------------------------------------------------------
@@ -695,14 +835,20 @@ local function InstallHooks()
     end
     HookMethod(main, "UpdateEndCaps")
     HookMethod(G("MicroMenuContainer"), "ApplySystemAnchor")
+    HookMethod(G("MicroMenuContainer"), "UpdateSystemSetting")
+    HookMethod(G("MicroMenuContainer"), "Layout")
     HookMethod(G("MicroMenu"), "Layout")
+    -- Blizzard shows the Store button again from here
+    if type(UpdateMicroButtons) == "function" then hooksecurefunc("UpdateMicroButtons", Again) end
     HookMethod(G("BagsBar"), "ApplySystemAnchor")
     HookMethod(G("BagsBar"), "Layout")
     for _, name in ipairs({"MainStatusTrackingBarContainer", "SecondaryStatusTrackingBarContainer"}) do
         HookMethod(G(name), "ApplySystemAnchor")
         HookMethod(G(name), "UpdateSystemSetting")
+        HookMethod(G(name), "Layout")
     end
     HookMethod(G("StatusTrackingBarManager"), "UpdateBarVisuals")
+    HookMethod(G("StatusTrackingBarManager"), "UpdateBarsShown")
 end
 
 local function InstallCombatWaiter()
@@ -758,6 +904,10 @@ function M:Status()
     if M.mode == "native" then return "(client already draws the classic bar)" end
     if M.mode == "restyled" then
         local s = "(Era bottom bar: stone art, 36px buttons, page arrows, micro buttons and bags on the bar, XP bar in the bar"
+        if M.microShown then
+            s = s .. ("; %d micro buttons"):format(M.microShown)
+            if M.microScale and M.microScale < 1 then s = s .. (" at %d%% to clear the bags"):format(M.microScale * 100 + 0.5) end
+        end
         if M.pending then s = s .. "; bar anchors wait for combat to end" end
         return s .. ")"
     end
