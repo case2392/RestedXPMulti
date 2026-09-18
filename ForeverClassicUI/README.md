@@ -82,9 +82,16 @@ from Classic Era's own UI code.
   description under the list. Both are Era's FauxScrollFrame lists
   (Forever still ships the template) fed from `C_Reputation` and
   `C_SkillInfo`; Blizzard's scroll boxes and side panes are hidden while
-  they are up. The Honor tab keeps Era's layout (Honor art panel, rank
-  badge and title, the 315x29 rank bar) around what Forever tracks: rank
-  points, season total and cap, next reward, vendor. Currency and
+  they are up. (Forever's copy of `UI-Character-ReputationBar` is retail's,
+  with a smaller box drawn elsewhere, so the reputation bars are boxed by
+  the two ends of the skills bevel instead and the at-war swords come from
+  the sword check mark.) The Honor tab keeps Era's layout (Honor art
+  panel, rank badge and title, the 315x29 rank bar) and fills Era's five
+  boxes (HonorFrame.xml's grid: titles at -112/-165/-220/-274/-350 with
+  278x12 label/value rows) with what Forever tracks: rank points and
+  season total, this week's cap and its rise, the next reward with its
+  icon and vendor, the season's end and maximum, and the cap paragraph in
+  the three-row box. Currency and
   Statistics are Forever's own tabs (Era had neither); they get the same
   Era list inside the General sheet: header rows with the +/- buttons,
   entries in the small font with the amount and icon at the right (click

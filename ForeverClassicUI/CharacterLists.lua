@@ -160,8 +160,26 @@ end
 --------------------------------------------------------------------------
 
 local REP_ROWS, REP_ROW_HEIGHT, REP_PITCH = 15, 26, 23
+local REP_BAR_W, BEVEL_W, BEVEL_IMAGE_W = 137, 74, 281   -- the skills bevel is drawn 281x32 round a 271 bar
 
 local Rep = {frameName = "ReputationFrame", label = "reputation"}
+
+-- the two ends of the 281x32 skills bevel, 5px past either end of the bar:
+-- a 147x32 box round the 137px reputation bar
+local function RepBevel(bar, layer, file, blend)
+    local l = bar:CreateTexture(nil, layer)
+    l:SetTexture(file)
+    l:SetSize(BEVEL_W, 32)
+    l:SetTexCoord(0, BEVEL_W / BEVEL_IMAGE_W, 0, 1)
+    l:SetPoint("LEFT", bar, "LEFT", -5, 0)
+    local r = bar:CreateTexture(nil, layer)
+    r:SetTexture(file)
+    r:SetSize(BEVEL_W, 32)
+    r:SetTexCoord(1 - BEVEL_W / BEVEL_IMAGE_W, 1, 0, 1)
+    r:SetPoint("RIGHT", bar, "RIGHT", 5, 0)
+    if blend then l:SetBlendMode(blend); r:SetBlendMode(blend) end
+    return l, r
+end
 
 local function RepAPI()
     return C_Reputation and C_Reputation.GetNumFactions and C_Reputation.GetFactionDataByIndex and C_Reputation
@@ -184,35 +202,19 @@ local function RepBar(panel, i)
     bar:SetStatusBarTexture(ART.skillsBar)
     if bar.SetHitRectInsets then bar:SetHitRectInsets(-126, 3, -2, -2) end
     bar:EnableMouse(true)
-    bar.Left = bar:CreateTexture(nil, "ARTWORK")
-    bar.Left:SetTexture(ART.repBar)
-    bar.Left:SetSize(256, 22)
-    bar.Left:SetPoint("TOPLEFT", bar, "TOPLEFT", -126, 4)
-    bar.Left:SetTexCoord(0, 1, 0, 0.34375)
-    bar.Right = bar:CreateTexture(nil, "ARTWORK")
-    bar.Right:SetTexture(ART.repBar)
-    bar.Right:SetSize(16, 24)
-    bar.Right:SetPoint("TOPLEFT", bar.Left, "TOPRIGHT", 0, 0)
-    bar.Right:SetTexCoord(0, 0.0625, 0.34375, 0.71875)
+    -- the bevel round the bar: Era used UI-Character-ReputationBar, but
+    -- Forever's copy of that file is retail's (a smaller box drawn further
+    -- right), so the box is the two ends of the skills bevel (the same art
+    -- the skills tab draws, which Forever renders right), 5px past the bar
+    bar.Left, bar.Right = RepBevel(bar, "ARTWORK", ART.skillsBorder)
     bar.Name = bar:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
     bar.Name:SetSize(110, 10)
     bar.Name:SetJustifyH("LEFT")
     bar.Name:SetPoint("LEFT", bar, "LEFT", -119, 0)
     bar.Standing = bar:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
     bar.Standing:SetPoint("CENTER", bar, "CENTER", 0, 0)
-    bar.Highlight1 = bar:CreateTexture(nil, "OVERLAY")
-    bar.Highlight1:SetTexture(ART.repHighlight)
-    bar.Highlight1:SetBlendMode("ADD")
-    bar.Highlight1:SetSize(256, 28)
-    bar.Highlight1:SetPoint("TOPLEFT", bar.Left, "TOPLEFT", -2, 3)
-    bar.Highlight1:SetTexCoord(0, 1, 0, 0.4375)
+    bar.Highlight1, bar.Highlight2 = RepBevel(bar, "OVERLAY", ART.skillsBorderHighlight, "ADD")
     bar.Highlight1:Hide()
-    bar.Highlight2 = bar:CreateTexture(nil, "OVERLAY")
-    bar.Highlight2:SetTexture(ART.repHighlight)
-    bar.Highlight2:SetBlendMode("ADD")
-    bar.Highlight2:SetSize(17, 28)
-    bar.Highlight2:SetPoint("LEFT", bar.Highlight1, "RIGHT", 0, 0)
-    bar.Highlight2:SetTexCoord(0, 0.06640625, 0.4375, 0.875)
     bar.Highlight2:Hide()
     bar.Check = bar:CreateTexture(nil, "OVERLAY")
     bar.Check:SetTexture(ART.check)
@@ -222,10 +224,11 @@ local function RepBar(panel, i)
     bar.AtWar:SetSize(24, 22)
     bar.AtWar:SetPoint("LEFT", bar.Right, "RIGHT", -2, 0)
     bar.AtWar:EnableMouse(true)
+    -- crossed swords (the sword check mark's art; Era cut them from the
+    -- reputation bar file, which is not Era's on Forever)
     local sword = bar.AtWar:CreateTexture(nil, "BACKGROUND")
-    sword:SetTexture(ART.repBar)
+    sword:SetTexture(ART.swordCheck)
     sword:SetAllPoints(bar.AtWar)
-    sword:SetTexCoord(0.0625, 0.15625, 0.34375, 0.71875)
     bar.AtWar:SetScript("OnEnter", function(self) Tooltip(self, Str("REPUTATION_STATUS_AT_WAR", "At War"), true) end)
     bar.AtWar:SetScript("OnLeave", HideTooltip)
     bar.AtWar:Hide()
@@ -833,11 +836,51 @@ local function RankTitle(rank)
     return text or Str(key, "Rank " .. rank)
 end
 
-local function Line(parent, font, width)
-    local fs = parent:CreateFontString(nil, "ARTWORK", font)
-    fs:SetJustifyH("LEFT")
-    if width then fs:SetWidth(width) end
-    return fs
+-- Era's HonorFrame.xml grid: five titled sections (GameFontNormal at
+-- 36,-112 then 41/43/42/64 below the previous title's bottom edge, i.e.
+-- -112, -165, -220, -274, -350 for 12px titles), each holding 278x12
+-- rows 10px in: label in the small highlight font at the left, value at
+-- the right edge (x=278). The last section (Era's "Lifetime") holds three
+-- rows. The art draws a box round each section.
+local HONOR_SECTION_Y = {-112, -165, -220, -274, -350}
+local HONOR_ROWS = {2, 2, 2, 2, 3}
+local HONOR_ROW_W, HONOR_ROW_H = 278, 12
+
+local function HonorRow(panel, relTo, first)
+    local row = CreateFrame("Frame", nil, panel)
+    row:SetSize(HONOR_ROW_W, HONOR_ROW_H)
+    row:SetPoint("TOPLEFT", relTo, "BOTTOMLEFT", first and 10 or 0, first and -3 or -2)
+    row.Label = row:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+    row.Label:SetPoint("TOPLEFT", row, "TOPLEFT", 0, 0)
+    row.Label:SetJustifyH("LEFT")
+    row.Label:SetWidth(HONOR_ROW_W)
+    if row.Label.SetWordWrap then row.Label:SetWordWrap(false) end
+    row.Value = row:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+    row.Value:SetPoint("RIGHT", row, "LEFT", HONOR_ROW_W, 1)
+    row.Value:SetJustifyH("RIGHT")
+    row.Icon = row:CreateTexture(nil, "ARTWORK")
+    row.Icon:SetSize(12, 12)
+    row.Icon:SetPoint("LEFT", row, "LEFT", 0, 0)
+    row.Icon:Hide()
+    return row
+end
+
+-- fill a row: label (optionally after a 12px icon) and value; a nil label clears it
+local function SetHonorRow(row, label, value, icon)
+    row.Label:SetText(label or "")
+    row.Value:SetText(value or "")
+    if icon then
+        row.Icon:SetTexture(icon)
+        row.Icon:Show()
+        row.Label:ClearAllPoints()
+        row.Label:SetPoint("TOPLEFT", row, "TOPLEFT", 16, 0)
+        row.Label:SetWidth(HONOR_ROW_W - 16)
+    else
+        row.Icon:Hide()
+        row.Label:ClearAllPoints()
+        row.Label:SetPoint("TOPLEFT", row, "TOPLEFT", 0, 0)
+        row.Label:SetWidth(HONOR_ROW_W)
+    end
 end
 
 function Honor:Build()
@@ -878,19 +921,29 @@ function Honor:Build()
     panel.icon = panel:CreateTexture(nil, "OVERLAY")
     panel.icon:SetSize(24, 24)
     panel.icon:SetPoint("RIGHT", panel.title, "LEFT", -5, 0)
-    -- the sections (Era: titles at 36,-112, rows indented 10)
-    panel.seasonTitle = Line(panel, "GameFontNormal"); panel.seasonTitle:SetPoint("TOPLEFT", panel, "TOPLEFT", 36, -112)
-    panel.points = Line(panel, "GameFontHighlightSmall", 300); panel.points:SetPoint("TOPLEFT", panel.seasonTitle, "BOTTOMLEFT", 10, -3)
-    panel.total = Line(panel, "GameFontHighlightSmall", 300); panel.total:SetPoint("TOPLEFT", panel.points, "BOTTOMLEFT", 0, -2)
-    panel.weekly = Line(panel, "GameFontNormalSmall", 300); panel.weekly:SetPoint("TOPLEFT", panel.total, "BOTTOMLEFT", 0, -2)
-    panel.rewardTitle = Line(panel, "GameFontNormal"); panel.rewardTitle:SetPoint("TOPLEFT", panel.weekly, "BOTTOMLEFT", -10, -14)
-    panel.rewardIcon = panel:CreateTexture(nil, "ARTWORK")
-    panel.rewardIcon:SetSize(32, 32)
-    panel.rewardIcon:SetPoint("TOPLEFT", panel.rewardTitle, "BOTTOMLEFT", 10, -4)
-    panel.reward = Line(panel, "GameFontHighlightSmall", 250); panel.reward:SetPoint("LEFT", panel.rewardIcon, "RIGHT", 6, 0)
-    panel.vendor = Line(panel, "GameFontNormalSmall", 300); panel.vendor:SetPoint("TOPLEFT", panel.rewardIcon, "BOTTOMLEFT", -10, -8)
-    panel.seasonInfo = Line(panel, "GameFontHighlightSmall", 300); panel.seasonInfo:SetPoint("TOPLEFT", panel.vendor, "BOTTOMLEFT", 0, -10)
-    panel.timer = Line(panel, "GameFontNormalSmall", 300); panel.timer:SetPoint("TOPLEFT", panel.seasonInfo, "BOTTOMLEFT", 0, -6)
+    -- the five sections of Era's art, each a title with its rows inside the box
+    panel.sections = {}
+    for i, y in ipairs(HONOR_SECTION_Y) do
+        local section = {rows = {}}
+        section.Title = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+        section.Title:SetPoint("TOPLEFT", panel, "TOPLEFT", 36, y)
+        section.Title:SetJustifyH("LEFT")
+        local prev = section.Title
+        for r = 1, HONOR_ROWS[i] do
+            local row = HonorRow(panel, prev, r == 1)
+            section.rows[r] = row
+            prev = row
+        end
+        panel.sections[i] = section
+    end
+    -- the last section carries one wrapped paragraph over its three rows
+    local last = panel.sections[#panel.sections]
+    last.Text = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+    last.Text:SetPoint("TOPLEFT", last.rows[1], "TOPLEFT", 0, 0)
+    last.Text:SetSize(HONOR_ROW_W, HONOR_ROW_H * 3 + 4)
+    last.Text:SetJustifyH("LEFT")
+    last.Text:SetJustifyV("TOP")
+    if last.Text.SetWordWrap then last.Text:SetWordWrap(true) end
     panel:RegisterEvent("UPDATE_FACTION")
     panel:RegisterEvent("MAJOR_FACTION_RENOWN_LEVEL_CHANGED")
     panel:SetScript("OnEvent", Guard("honor event", function() if panel:IsShown() and self.classic then Honor:Update() end end))
@@ -920,15 +973,23 @@ function Honor:Update()
     local race = UnitRace and UnitRace("player") or ""
     local class = UnitClass and UnitClass("player") or ""
     panel.levelText:SetText(("%s %d %s %s"):format(Str("LEVEL", "Level"), level, race, class))
+    local s = panel.sections
+    local function Clear()
+        for _, section in ipairs(s) do
+            section.Title:SetText("")
+            for _, row in ipairs(section.rows) do SetHonorRow(row) end
+        end
+        s[#s].Text:SetText("")
+    end
     local api = HonorAPI()
     local info = api and api.GetMajorFactionProgressionInfo(PVP_RANK_FACTION_ID)
     if not info then
         panel.title:SetText(Str("PVP_RANK_DETAIL_UNAVAILABLE", "No rank information."))
         panel.rank:SetText(""); panel.icon:Hide(); panel.bar:Hide()
-        for _, key in ipairs({"seasonTitle", "points", "total", "weekly", "rewardTitle", "reward", "vendor", "seasonInfo", "timer"}) do panel[key]:SetText("") end
-        panel.rewardIcon:Hide()
+        Clear()
         return
     end
+    Clear()
     local rank = info.renownLevel or 0
     local points, threshold = info.renownReputationEarned or 0, info.renownLevelThreshold or 0
     panel.title:SetText(RankTitle(rank))
@@ -943,24 +1004,31 @@ function Honor:Update()
     panel.bar:SetMinMaxValues(0, math.max(threshold, 1))
     panel.bar:SetValue(threshold > 0 and points or 1)
     panel.bar.tooltip = Str("PVP_RANK_CURRENT_PROGRESS", "Rank Points: %d / %d"):format(points, threshold)
-    local season = GetCurrentArenaSeason and GetCurrentArenaSeason() or 0
-    panel.seasonTitle:SetText(season > 0 and Str("EXPANSION_SEASON_NAME", "%sSeason %d"):format("", season) or Str("HONOR", "Honor"))
-    panel.points:SetText(panel.bar.tooltip)
-    local totalForRank = api.GetTotalReputationForRenownLevel and api.GetTotalReputationForRenownLevel(PVP_RANK_FACTION_ID, rank) or 0
-    local myTotal = (totalForRank or 0) + points
-    local weekCapRank = info.currentWeekProgressiveMaxLevel or 0
-    local capTotal = api.GetTotalReputationForRenownLevel and api.GetTotalReputationForRenownLevel(PVP_RANK_FACTION_ID, weekCapRank) or 0
-    if myTotal > 0 and (capTotal or 0) > 0 then
-        panel.total:SetText(Str("PVP_RANK_SEASON_PROGRESS", "Season total: %d / %d"):format(myTotal, capTotal))
-    elseif myTotal > 0 then
-        panel.total:SetText(Str("PVP_RANK_SEASON_PROGRESS_NO_MAX", "Season total: %d"):format(myTotal))
-    else
-        panel.total:SetText("")
+    local Total = function(level)
+        return api.GetTotalReputationForRenownLevel and api.GetTotalReputationForRenownLevel(PVP_RANK_FACTION_ID, level) or 0
     end
-    local prevCapTotal = api.GetTotalReputationForRenownLevel and api.GetTotalReputationForRenownLevel(PVP_RANK_FACTION_ID, info.previousWeekProgressiveMaxLevel or 0) or 0
-    local increase = (capTotal or 0) - (prevCapTotal or 0)
-    panel.weekly:SetText(increase > 0 and Str("PVP_RANK_WEEKLY_CAP_INCREASE", "The cap rose by %d this week."):format(increase) or "")
-    -- next reward
+    -- 1: this season (Era: "This Session")
+    local season = GetCurrentArenaSeason and GetCurrentArenaSeason() or 0
+    s[1].Title:SetText(season > 0 and Str("EXPANSION_SEASON_NAME", "%sSeason %d"):format("", season) or Str("HONOR", "Honor"))
+    SetHonorRow(s[1].rows[1], Str("PVP_RANK_POINTS", "Rank Points"), ("%d / %d"):format(points, threshold))
+    local myTotal = (Total(rank) or 0) + points
+    local weekCapRank = info.currentWeekProgressiveMaxLevel or 0
+    local capTotal = Total(weekCapRank) or 0
+    if myTotal > 0 and capTotal > 0 then
+        SetHonorRow(s[1].rows[2], Str("PVP_RANK_SEASON_TOTAL", "Season Total"), ("%d / %d"):format(myTotal, capTotal))
+    elseif myTotal > 0 then
+        SetHonorRow(s[1].rows[2], Str("PVP_RANK_SEASON_TOTAL", "Season Total"), tostring(myTotal))
+    end
+    -- 2: this week's cap (Era: "This Week")
+    s[2].Title:SetText(Str("HONOR_THISWEEK", "This Week"))
+    if capTotal > 0 then
+        SetHonorRow(s[2].rows[1], Str("PVP_RANK_POINTS_CAP", "Rank Points Cap"), ("%d (%s)"):format(capTotal, Str("PVP_RANK_NUMBER", "Rank %d"):format(weekCapRank)))
+    end
+    local increase = capTotal - (Total(info.previousWeekProgressiveMaxLevel or 0) or 0)
+    if increase > 0 then
+        SetHonorRow(s[2].rows[2], Str("PVP_RANK_CAP_INCREASE", "Cap Increase"), "+" .. increase)
+    end
+    -- 3: next reward (Era: "Yesterday")
     local maxRank = info.maxLevel or rank
     local nextRank, rewards
     if api.GetRenownRewardsForLevel then
@@ -970,25 +1038,29 @@ function Honor:Update()
         end
     end
     if nextRank then
-        panel.rewardTitle:SetText(Str("PVP_RANK_NEXT_REWARD", "Next Rewards at Rank %d"):format(nextRank))
+        s[3].Title:SetText(Str("PVP_RANK_NEXT_REWARD", "Next Rewards at Rank %d"):format(nextRank))
         local first = rewards[1]
-        if first.icon then panel.rewardIcon:SetTexture(first.icon); panel.rewardIcon:Show() else panel.rewardIcon:Hide() end
-        panel.reward:SetText(first.description or first.name or "")
+        SetHonorRow(s[3].rows[1], first.description or first.name or "", nil, first.icon)
         local horde = UnitFactionGroup and UnitFactionGroup("player") == "Horde"
-        panel.vendor:SetText(horde and Str("PVP_RANK_REWARDS_VENDOR_HORDE", "Rewards may be purchased in Orgrimmar.") or Str("PVP_RANK_REWARDS_VENDOR_ALLIANCE", "Rewards may be purchased in Stormwind."))
+        SetHonorRow(s[3].rows[2], horde and Str("PVP_RANK_REWARDS_VENDOR_HORDE", "Rewards may be purchased in Orgrimmar.") or Str("PVP_RANK_REWARDS_VENDOR_ALLIANCE", "Rewards may be purchased in Stormwind."))
     else
-        panel.rewardTitle:SetText(""); panel.reward:SetText(""); panel.vendor:SetText(""); panel.rewardIcon:Hide()
+        s[3].Title:SetText(Str("PVP_RANK_REWARDS", "Rewards"))
     end
-    local seasonMaxTotal = api.GetTotalReputationForRenownLevel and api.GetTotalReputationForRenownLevel(PVP_RANK_FACTION_ID, maxRank) or 0
-    local ok, text = pcall(string.format, Str("PVP_RANK_SEASON_RANKUP_DESCRIPTION", "Each week the Rank Points cap is increased, up to a maximum of %d for Rank %d."), seasonMaxTotal, maxRank)
-    panel.seasonInfo:SetText(ok and text or "")
+    -- 4: the season (Era: "Last Week")
+    s[4].Title:SetText(Str("SEASON", "Season"))
     local left = C_SeasonInfo and C_SeasonInfo.GetTimeUntilCurrentPVPSeasonEnd and C_SeasonInfo.GetTimeUntilCurrentPVPSeasonEnd() or 0
     if left and left > 0 then
         local days = math.floor(left / 86400)
-        panel.timer:SetText(Str("SEASON_ENDS_IN_TIME", "Season ends in %s"):format(days > 0 and (days .. "d") or (math.floor(left / 3600) .. "h")))
-    else
-        panel.timer:SetText("")
+        SetHonorRow(s[4].rows[1], Str("PVP_SEASON_ENDS", "Ends In"), days > 0 and (days .. "d") or (math.floor(left / 3600) .. "h"))
     end
+    local seasonMaxTotal = Total(maxRank) or 0
+    if seasonMaxTotal > 0 then
+        SetHonorRow(s[4].rows[2], Str("PVP_RANK_SEASON_MAX", "Maximum Rank Points"), ("%d (%s)"):format(seasonMaxTotal, Str("PVP_RANK_NUMBER", "Rank %d"):format(maxRank)))
+    end
+    -- 5: how the cap works (Era: "Lifetime", the three-row box)
+    s[5].Title:SetText(Str("PVP_RANK_POINTS", "Rank Points"))
+    local ok, text = pcall(string.format, Str("PVP_RANK_SEASON_RANKUP_DESCRIPTION", "Each week the Rank Points cap is increased, up to a maximum of %d for Rank %d."), seasonMaxTotal, maxRank)
+    s[5].Text:SetText(ok and text or "")
 end
 
 M.RegisterPanel(Honor)

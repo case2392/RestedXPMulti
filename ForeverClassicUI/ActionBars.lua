@@ -65,6 +65,7 @@ local KEYRING_W, KEYRING_H = 18, 39
 local KEYRING_TEX = BUTTONS .. "UI-Button-KeyRing"
 local KEYRING_COORDS = {0, 0.5625, 0, 0.609375}
 local REAGENT_BUTTON, KEYRING_BUTTON = "CharacterReagentBag0Slot", "KeyRingButton"
+local MICRO_MIN_STRIDE = 20      -- the 29px art has ~3px of clear margin a side; closer than this they pile up
 local XP_H, XP_TOP_H = 13, 8
 local BOTTOM_BAR_X, BOTTOM_BAR_Y = 6, 52
 -- the four stone strips: rows of the 256x256 image (Era's MainMenuBarTexture0..3)
@@ -428,8 +429,10 @@ local function StoreWanted()
 end
 
 -- Era: 552 + 26 per button. Forever has more buttons than Era's nine (and
--- the keyring and reagent bag to the right), so the row is laid out at Era's
--- stride and then scaled down just enough to end before the bag cluster.
+-- the keyring and reagent bag to the right), so the row always spans the
+-- room between the page arrows and the bag cluster: at Era's stride when
+-- that fits, else packed closer (down to MICRO_MIN_STRIDE), and only then
+-- scaled down.
 local function LayoutMicroMenu(art)
     local container = G("MicroMenuContainer")
     local menu = G("MicroMenu")
@@ -447,27 +450,31 @@ local function LayoutMicroMenu(art)
     end
     -- only the menu's own children count: Forever keeps a few more micro
     -- buttons as globals parked elsewhere (shown, but not in the row)
-    local skinned, shown = 0, 0
+    local skinned, row = 0, {}
     for _, gname in ipairs(MICRO_ORDER) do
         local btn = G(gname)
         if btn and SkinMicroButton(btn, MICRO_ART[gname]) then
             skinned = skinned + 1
             local inMenu = menu == nil or (btn.GetParent and btn:GetParent() == menu)
-            if inMenu and (not btn.IsShown or btn:IsShown()) then
-                if menu and btn.SetPoint then
-                    Anchor(btn, "BOTTOMLEFT", menu, "BOTTOMLEFT", shown * MICRO_STRIDE, 0)
-                end
-                shown = shown + 1
-            end
+            if inMenu and (not btn.IsShown or btn:IsShown()) then row[#row + 1] = btn end
         end
     end
+    local shown = #row
     M.microSkinned = skinned
     M.microShown = shown
-    local natural = math.max(shown - 1, 0) * MICRO_STRIDE + MICRO_W + 2
     local room = BAR_W + BAGS_X - (M.bagsWidth or 0) - SMALL_PAD - MICRO_X
-    local scale = 1
-    if natural > room and room > 0 then scale = room / natural end
-    M.microScale = scale
+    local stride = MICRO_STRIDE
+    local function Width(s) return math.max(shown - 1, 0) * s + MICRO_W + 2 end
+    local natural, scale = Width(stride), 1
+    if natural > room and room > 0 then
+        if shown > 1 then stride = math.max(MICRO_MIN_STRIDE, (room - MICRO_W - 2) / (shown - 1)) end
+        natural = Width(stride)
+        if natural > room then scale = room / natural end
+    end
+    M.microStride, M.microScale = stride, scale
+    for i, btn in ipairs(row) do
+        if menu and btn.SetPoint then Anchor(btn, "BOTTOMLEFT", menu, "BOTTOMLEFT", (i - 1) * stride, 0) end
+    end
     if menu and menu.SetSize then
         menu:SetSize(natural, MICRO_H)
         if menu.SetScale then menu:SetScale(scale) end
@@ -923,7 +930,9 @@ function M:Status()
         local s = "(Era bottom bar: stone art, 36px buttons, page arrows, micro buttons and bags on the bar, XP bar in the bar"
         if M.microShown then
             s = s .. ("; %d micro buttons"):format(M.microShown)
-            if M.microScale and M.microScale < 1 then s = s .. (" at %d%% to clear the bags"):format(M.microScale * 100 + 0.5) end
+            if M.microStride and M.microStride < MICRO_STRIDE then s = s .. (" %dpx apart"):format(M.microStride + 0.5) end
+            if M.microScale and M.microScale < 1 then s = s .. (" at %d%%"):format(M.microScale * 100 + 0.5) end
+            if (M.microStride and M.microStride < MICRO_STRIDE) or (M.microScale and M.microScale < 1) then s = s .. " to fill the room before the bags" end
         end
         if M.pending then s = s .. "; bar anchors wait for combat to end" end
         return s .. ")"
