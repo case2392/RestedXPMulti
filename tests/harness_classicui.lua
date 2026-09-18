@@ -152,6 +152,14 @@ local function Frame(name)
     function f:GetAttribute(k) return self.attributes and self.attributes[k] end
     function f:SetEnabled(on) self.enabled = on and true or false end
     function f:SetDisabledTexture(t) self.DisabledTexture = self.DisabledTexture or Region("Texture"); self.DisabledTexture:SetTexture(t) end
+    function f:GetPushedTexture() return self.PushedTexture end
+    function f:GetDisabledTexture() return self.DisabledTexture end
+    function f:SetNormalAtlas(a) self.NormalTexture = self.NormalTexture or Region("Texture"); self.NormalTexture:SetAtlas(a) end
+    function f:SetPushedAtlas(a) self.PushedTexture = self.PushedTexture or Region("Texture"); self.PushedTexture:SetAtlas(a) end
+    function f:SetDisabledAtlas(a) self.DisabledTexture = self.DisabledTexture or Region("Texture"); self.DisabledTexture:SetAtlas(a) end
+    function f:SetHighlightAtlas(a, blend) self.HighlightTexture = self.HighlightTexture or Region("Texture"); self.HighlightTexture:SetAtlas(a); self.HighlightTexture.blend = blend end
+    function f:SetScale(s) self.scale = s end
+    function f:GetScale() return self.scale or 1 end
     function f:SetCooldown(s, d) self.cooldown = {s, d} end
     function f:RegisterForClicks(...) self.clicks = {...} end
     -- children/regions are whatever tables hang off the frame by key
@@ -294,7 +302,7 @@ local function NewWorld(opts)
     _G.WOW_PROJECT_CLASSIC = 2
     _G.WOW_PROJECT_MAINLINE = 1
     _G.C_AddOns = {IsAddOnLoaded = function(n) return n == "Blizzard_NamePlates" end}
-    _G.GetFileIDFromPath = function(p) if p:find("Nameplate") then return 130000 end end
+    _G.GetFileIDFromPath = function(p) if p:find("Nameplate") then return 130000 end if p:find("MainMenuBar") or p:find("Interface\\Buttons\\UI%-") then return 136407 end end
 
     -- Blizzard nameplate globals (same shape on every client)
     _G.NamePlateConstants = {
@@ -370,6 +378,7 @@ local function NewWorld(opts)
         _G.QuestWatchFrame = Frame("QuestWatchFrame")
         _G.PlayerFrame = Frame("PlayerFrame"); _G.PlayerFrameTexture = Region("Texture")
         _G.MainMenuBarArtFrame = Frame("MainMenuBarArtFrame")
+        _G.PartyMemberFrame1 = Frame("PartyMemberFrame1")
         _G.Minimap = Frame("Minimap"); _G.MinimapCluster = Frame("MinimapCluster"); _G.MinimapBorder = Region("Texture")
         _G.MinimapCompassTexture = Region("Texture", {file = "Interface\\Minimap\\CompassRing"})
     end
@@ -429,17 +438,106 @@ local function NewWorld(opts)
         _G.UnitClassification = function(u) return w.classification or "normal" end
         _G.UnitFrameManaBar_UpdateType = function(bar) bar:SetStatusBarTexture("UI-HUD-UnitFrame-Player-PortraitOn-Bar-Mana"); bar:SetStatusBarColor(1, 1, 1) end
         _G.PlayerFrame_ToPlayerArt = function() pf.PlayerFrameContainer.FrameTexture:SetAtlas("UI-HUD-UnitFrame-Player-PortraitOn") end
-        -- action bar
-        local bar = Frame("MainActionBar"); bar.BorderArt = Region("Texture", {atlas = "UI-HUD-ActionBar-Frame"})
-        bar.EndCaps = {LeftEndCap = Frame("cap"), RightEndCap = Frame("cap")}
-        for _, c in pairs(bar.EndCaps) do function c:SetVisibilitySetting(v) self.visibilitySetting = v end end
-        _G.MainActionBar = bar
-        bar.width = 562
+        -- action bars: Forever's retail layout (45px buttons 47 apart in scaled containers, atlas art)
+        local function ActionBar(name, buttonPrefix, horizontal)
+            local bar = Frame(name)
+            bar.actionButtons = {}
+            for i = 1, 12 do
+                local c = Frame(name .. "ButtonContainer" .. i); c.parent = bar; c:SetSize(45, 45)
+                local b = Frame(buttonPrefix .. i); b.parent = c; b.container = c; b:SetSize(45, 45)
+                b.icon = Region("Texture"); b.IconMask = Region("MaskTexture", {atlas = "UI-HUD-ActionBar-IconFrame-Mask"})
+                b.SlotArt = Region("Texture", {atlas = "ui-hud-actionbar-iconframe-slot"}); b.SlotBackground = Region("Texture", {atlas = "UI-HUD-ActionBar-IconFrame-Background"})
+                b:SetNormalAtlas("UI-HUD-ActionBar-IconFrame"); b:SetPushedAtlas("UI-HUD-ActionBar-IconFrame-Down"); b:SetHighlightAtlas("UI-HUD-ActionBar-IconFrame-Mouseover")
+                function b:UpdateButtonArt() self.SlotArt:Show(); self.SlotArt.alpha = 1; self:SetNormalAtlas("UI-HUD-ActionBar-IconFrame"); self.NormalTexture:SetSize(46, 45); self:SetPushedAtlas("UI-HUD-ActionBar-IconFrame-Down") end
+                _G[buttonPrefix .. i] = b; _G[c.name] = c
+                bar.actionButtons[i] = b
+            end
+            function bar:UpdateGridLayout()
+                for i, b in ipairs(self.actionButtons) do
+                    b.container:SetScale(1); b.container:ClearAllPoints()
+                    if horizontal then b.container:SetPoint("BOTTOMLEFT", self, "BOTTOMLEFT", (i - 1) * 47, 0) else b.container:SetPoint("TOPLEFT", self, "TOPLEFT", 0, -(i - 1) * 47) end
+                end
+                if horizontal then self:SetSize(562, 45) else self:SetSize(45, 562) end
+            end
+            function bar:UpdateSystemSettingIconSize() for _, b in ipairs(self.actionButtons) do b.container:SetScale(1) end end
+            function bar:ApplySystemAnchor() self:ClearAllPoints(); self:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 0, 0) end
+            function bar:IsInDefaultPosition() return self.moved ~= true end
+            bar:UpdateGridLayout()
+            _G[name] = bar
+            return bar
+        end
+        local bar = ActionBar("MainActionBar", "ActionButton", true)
+        bar.BorderArt = Region("Texture", {atlas = "UI-HUD-ActionBar-Frame"})
+        bar.EndCaps = Frame("EndCaps"); bar.EndCaps.LeftEndCap = Frame("cap"); bar.EndCaps.RightEndCap = Frame("cap")
+        for _, c in pairs({bar.EndCaps.LeftEndCap, bar.EndCaps.RightEndCap}) do function c:SetVisibilitySetting(v) self.visibilitySetting = v end end
+        local pn = Frame("ActionBarPageNumber"); pn.Text = Region("FontString"); pn.UpButton = Frame("UpButton"); pn.DownButton = Frame("DownButton")
+        pn.UpButton:SetNormalAtlas("ui-hud-actionbar-pageuparrow-up"); pn.DownButton:SetNormalAtlas("ui-hud-actionbar-pagedownarrow-up")
+        bar.ActionBarPageNumber = pn
         local function Pool() local p = {active = {}}; function p:EnumerateActive() local i = 0; return function() i = i + 1; return self.active[i] end end; return p end
         bar.HorizontalDividersPool = Pool(); bar.VerticalDividersPool = Pool()
         function bar:UpdateDividers() self.HorizontalDividersPool.active = {Frame("div1"), Frame("div2")}; for _, d in ipairs(self.HorizontalDividersPool.active) do d:Show(); d.alpha = 1 end end
         bar:UpdateDividers()
-        _G.EditModeManagerFrame = {ExitEditMode = function() end}
+        ActionBar("MultiBarBottomLeft", "MultiBarBottomLeftButton", true)
+        ActionBar("MultiBarBottomRight", "MultiBarBottomRightButton", true)
+        ActionBar("MultiBarRight", "MultiBarRightButton", false)
+        _G.EditModeManagerFrame = {ExitEditMode = function() end, UpdateBottomActionBarPositions = function() MainActionBar:ClearAllPoints(); MainActionBar:SetPoint("BOTTOMRIGHT", MicroMenuContainer, "BOTTOMLEFT", -4.5, -4); MultiBarBottomLeft:ClearAllPoints(); MultiBarBottomLeft:SetPoint("BOTTOMLEFT", MainActionBar, "BOTTOMLEFT", 22, 49) end}
+        _G.C_Texture = {GetAtlasInfo = function() return nil end}
+        -- micro menu and bags, retail style (atlas art, grid layout)
+        _G.MicroMenuContainer = Frame("MicroMenuContainer"); function MicroMenuContainer:ApplySystemAnchor() self:ClearAllPoints(); self:SetPoint("BOTTOM", UIParent, "BOTTOM", 116.5, 6) end
+        _G.MicroMenu = Frame("MicroMenu"); MicroMenu.BorderArt = Region("Texture", {atlas = "UI-HUD-ActionBar-Frame"}); MicroMenu.BackgroundArt = Region("Texture"); function MicroMenu:Layout() end
+        local function Micro(name)
+            local b = Frame(name); b:SetSize(32, 40); b.Background = Region("Texture", {atlas = "UI-HUD-MicroMenu-ButtonBG-Up"}); b.PushedBackground = Region("Texture", {atlas = "UI-HUD-MicroMenu-ButtonBG-Down"})
+            b:SetNormalAtlas("UI-HUD-MicroMenu-" .. name .. "-Up"); b:SetPushedAtlas("UI-HUD-MicroMenu-" .. name .. "-Down"); b:SetDisabledAtlas("UI-HUD-MicroMenu-" .. name .. "-Disabled"); b:SetHighlightAtlas("UI-HUD-MicroMenu-" .. name .. "-Mouseover")
+            function b:SetPushed() self.Background:Hide(); self.PushedBackground:Show(); self.PushedBackground.alpha = 1 end
+            function b:SetNormal() self.Background:Show(); self.PushedBackground:Hide() end
+            _G[name] = b
+            return b
+        end
+        local cm = Micro("CharacterMicroButton"); cm.Portrait = Region("Texture"); cm.PortraitMask = Region("MaskTexture", {atlas = "UI-HUD-MicroMenu-Portrait-Mask"}); cm.Shadow = Region("Texture")
+        Micro("SpellbookMicroButton"); Micro("TalentMicroButton"); Micro("QuestLogMicroButton"); Micro("GuildMicroButton"); Micro("MainMenuMicroButton")
+        _G.BagsBar = Frame("BagsBar"); function BagsBar:ApplySystemAnchor() self:ClearAllPoints(); self:SetPoint("BOTTOMLEFT", MicroMenuContainer, "BOTTOMRIGHT", 7, -4) end
+        function BagsBar:Layout() MainMenuBarBackpackButton:ClearAllPoints(); MainMenuBarBackpackButton:SetPoint("RIGHT", self, "RIGHT"); CharacterBag0Slot:ClearAllPoints(); CharacterBag0Slot:SetPoint("RIGHT", MainMenuBarBackpackButton, "LEFT", -2, 0) end
+        for _, n in ipairs({"MainMenuBarBackpackButton", "CharacterBag0Slot", "CharacterBag1Slot", "CharacterBag2Slot", "CharacterBag3Slot"}) do
+            local b = Frame(n); b:SetSize(n == "MainMenuBarBackpackButton" and 50 or 30, n == "MainMenuBarBackpackButton" and 50 or 30); b.icon = Region("Texture"); b.IconBorder = Region("Texture"); b:SetNormalAtlas("bag-border"); _G[n] = b
+        end
+        -- experience bar: retail framed strip, atlas fill
+        _G.StatusTrackingBarManager = Frame("StatusTrackingBarManager"); function StatusTrackingBarManager:UpdateBarVisuals() end
+        local function StatusContainer(name)
+            local c = Frame(name); c:SetSize(571, 17); c.BarFrameTexture = Region("Texture", {atlas = "UI-HUD-ExperienceBar-Frame"})
+            local xp = Frame(name .. "Exp"); xp.isExpBar = true; xp.StatusBar = Frame("sb"); xp.StatusBar.Background = Region("Texture", {atlas = "UI-HUD-ExperienceBar-Background"})
+            xp.ExhaustionTick = Frame("tick"); xp.ExhaustionTick:SetNormalAtlas("UI-HUD-ExperienceBar-Frame-Pip")
+            function xp:UpdateStatusBarTextures(isRested) self.StatusBar:SetStatusBarTexture(isRested and "UI-HUD-ExperienceBar-Fill-Rested" or "UI-HUD-ExperienceBar-Fill-Experience") end
+            c.bars = {[1] = xp}
+            function c:ApplySystemAnchor() self:ClearAllPoints(); self:SetPoint("BOTTOM", UIParent, "BOTTOM", 0, 60); self:SetSize(571, 17) end
+            function c:UpdateSystemSetting() end
+            _G[name] = c
+            return c
+        end
+        StatusContainer("MainStatusTrackingBarContainer")
+        local second = StatusContainer("SecondaryStatusTrackingBarContainer"); second.shown = false
+        -- party frames: retail layout (atlas art, masked bars), Blizzard's art refresh
+        local pfr = Frame("PartyFrame"); _G.PartyFrame = pfr
+        for i = 1, 2 do
+            local m = Frame("MemberFrame" .. i); m.parent = pfr; m:SetSize(120, 53); m:SetPoint("TOPLEFT", pfr, "TOPLEFT", 0, -(i - 1) * 63)
+            m.Texture = Region("Texture", {atlas = "UI-HUD-UnitFrame-Party-PortraitOn"}); m.VehicleTexture = Region("Texture"); m.Flash = Region("Texture", {atlas = "ui-hud-unitframe-party-portraiton-incombat"})
+            m.Portrait = Region("Texture"); m.PortraitMask = Region("MaskTexture", {atlas = "CircleMask"}); m.Name = Region("FontString")
+            m.PartyMemberOverlay = Frame("PartyMemberOverlay"); m.PartyMemberOverlay.parent = m
+            for _, k in ipairs({"Status", "LeaderIcon", "GuideIcon", "PVPIcon", "Disconnect", "RoleIcon"}) do m.PartyMemberOverlay[k] = Region("Texture") end
+            m.HealthBarContainer = Frame("HealthBarContainer"); m.HealthBarContainer.HealthBar = Frame("HealthBar"); m.HealthBarContainer.HealthBarMask = Region("MaskTexture", {atlas = "UI-HUD-UnitFrame-Party-PortraitOn-Bar-Health-Mask"})
+            m.ManaBar = Frame("ManaBar"); m.ManaBar.ManaBarMask = Region("MaskTexture")
+            m.PetFrame = Frame("PetFrame"); m.PetFrame:SetSize(64, 23); m.PetFrame.Texture = Region("Texture", {atlas = "ui-hud-unitframe-party-portraiton"}); m.PetFrame.Texture.scale = 0.5
+            function m.PetFrame.Texture:SetScale(s) self.scale = s end
+            m.PetFrame.Portrait = Region("Texture"); m.PetFrame.PortraitMask = Region("MaskTexture"); m.PetFrame.Name = Region("FontString"); m.PetFrame.HealthBar = Frame("PetHealthBar")
+            m.NotPresentIcon = Region("Texture")
+            function m:UpdateArt()
+                self.Texture:Show(); self.Texture.alpha = 1; self.Texture:SetAtlas("UI-HUD-UnitFrame-Party-PortraitOn")
+                self.HealthBarContainer:ClearAllPoints(); self.HealthBarContainer:SetPoint("TOPLEFT", self, "TOPLEFT", 45, -19); self.HealthBarContainer:SetWidth(70)
+                self.HealthBarContainer.HealthBarMask:SetAtlas("UI-HUD-UnitFrame-Party-PortraitOn-Bar-Health-Mask")
+                self.ManaBar:ClearAllPoints(); self.ManaBar:SetPoint("TOPLEFT", self, "TOPLEFT", 41, -30); self.ManaBar:SetWidth(74)
+            end
+            m:UpdateArt()
+            pfr["MemberFrame" .. i] = m
+        end
         -- objective tracker (retail)
         local tracker = Frame("ObjectiveTrackerFrame")
         tracker.Header = Frame("Header"); tracker.Header.Background = Region("Texture", {atlas = "ui-questtracker-primary-objective-header"})
@@ -697,7 +795,7 @@ local function NewWorld(opts)
             function _G.GameTooltip:AddLine(t) self.lines[#self.lines + 1] = t end
             function _G.GameTooltip:AddDoubleLine(a, b) self.lines[#self.lines + 1] = a .. " " .. tostring(b) end
             function _G.GameTooltip:SetSpellBookItem(slot, bank) self.spellBookItem = {slot, bank} end
-            _G.GetFileIDFromPath = function(p) if p:find("Nameplate") then return 130000 end if p:find("PaperDollInfoFrame") or p:find("MinimizeButton") then return 136500 end end
+            _G.GetFileIDFromPath = function(p) if p:find("Nameplate") then return 130000 end if p:find("PaperDollInfoFrame") or p:find("MinimizeButton") then return 136500 end if p:find("MainMenuBar") or p:find("Interface\\Buttons\\UI%-") then return 136407 end end
         end
         _G.NamePlateSetupOptions.castBarToHealthBarSpacing = 4
         _G.NamePlateSetupOptions.healthBarBorderWidth = 102.4
@@ -731,7 +829,7 @@ local function NewWorld(opts)
 
     -- load the addon
     local ns = {}
-    for _, file in ipairs({"Core.lua", "Nameplates.lua", "CastBar.lua", "Combo.lua", "UnitFrames.lua", "CharacterSheet.lua", "CharacterLists.lua", "SpellBook.lua", "ActionBars.lua", "Minimap.lua", "Tracker.lua", "Options.lua", "Probe.lua"}) do
+    for _, file in ipairs({"Core.lua", "Nameplates.lua", "CastBar.lua", "Combo.lua", "UnitFrames.lua", "PartyFrames.lua", "CharacterSheet.lua", "CharacterLists.lua", "SpellBook.lua", "ActionBars.lua", "Minimap.lua", "Tracker.lua", "Options.lua", "Probe.lua"}) do
         local chunk, err = loadfile(root .. "/ForeverClassicUI/" .. file)
         assert(chunk, err)
         chunk("ForeverClassicUI", ns)
@@ -762,7 +860,7 @@ do
     check(w.ns.modules.castbar.mode == "native", "era: cast bar recognised as classic already")
     check(PlayerCastingBarFrame.lookCalls == 0, "era: cast bar not touched")
     check(w.ns.modules.combo.mode == "native", "era: combo points left to Blizzard")
-    check(w.ns.modules.unitframes.mode == "native" and w.ns.modules.actionbars.mode == "native" and w.ns.modules.minimap.mode == "native", "era: frames, bars and minimap left to Blizzard")
+    check(w.ns.modules.unitframes.mode == "native" and w.ns.modules.party.mode == "native" and w.ns.modules.actionbars.mode == "native" and w.ns.modules.minimap.mode == "native", "era: frames, party, bars and minimap left to Blizzard")
     check(w.ns.modules.combo.frame == nil and ComboFrame.parent == nil, "era: no combo frame built, Blizzard's untouched")
     check(#w.ns.errors == 0, "era: no errors")
 end
@@ -1113,15 +1211,76 @@ do
     PlayerFrame_ToPlayerArt()
     check(pc.FrameTexture.alpha == 0 and skin.art.texture == "Interface\\TargetingFrame\\UI-TargetingFrame" and pm.StatusTexture.texture == nil and pm.StatusTexture.atlas == nil, "forever: player art and glow restored after Blizzard's art swap")
 
-    -- action bar + minimap
-    check(w.ns.modules.actionbars.mode == "restyled" and MainActionBar.BorderArt.shown == false and w.ns.modules.actionbars.art ~= nil, "forever: retail bar border hidden, classic bar art added")
-    check(MainActionBar.EndCaps.LeftEndCap.visibilitySetting == true, "forever: gryphons forced on")
+    -- party frames
+    local pm = w.ns.modules.party
+    local m1 = PartyFrame.MemberFrame1
+    local pown = pm.own[m1]
+    check(pm.mode == "restyled" and pown and pown.art and pown.art.texture == "Interface\\TargetingFrame\\UI-PartyFrame" and pown.art.width == 128 and pown.art.height == 64 and pown.art.anchors[1][5] == -2, "forever: classic party art on the overlay, 128x64 at 0,-2")
+    check(m1.Texture.alpha == 0 and m1.PartyMemberOverlay.RoleIcon.alpha == 0 and m1.Flash.texture == "Interface\\TargetingFrame\\UI-PartyFrame-Flash", "forever: retail party atlas and role icon faded, classic flash")
+    local hc1 = m1.HealthBarContainer
+    check(hc1.width == 70 and hc1.height == 8 and hc1.anchors[1][4] == 47 and hc1.anchors[1][5] == -12 and hc1.HealthBar.barTexture == "Interface\\TargetingFrame\\UI-StatusBar" and hc1.HealthBarMask.texture == "Interface\\Buttons\\WHITE8x8", "forever: party health bar 70x8 at 47,-12, classic fill, mask neutralised")
+    check(m1.ManaBar.width == 70 and m1.ManaBar.anchors[1][5] == -21 and m1.Name.anchors[1][1] == "BOTTOMLEFT" and m1.Name.anchors[1][4] == 50 and m1.Name.anchors[1][5] == 43 and m1.Portrait.width == 37 and m1.width == 128, "forever: party mana bar, name and portrait at Era's spots, frame 128 wide")
+    local pet1 = m1.PetFrame
+    check(pet1.Texture.texture == "Interface\\TargetingFrame\\UI-PartyFrame" and pet1.Texture.scale == 1 and pet1.Texture.width == 64 and pet1.HealthBar.width == 35 and pet1.HealthBar.height == 4 and pet1.HealthBar.anchors[1][4] == 23 and pet1.height == 26, "forever: party pet frame classic art, 35x4 bar, 64x26")
+    m1:UpdateArt()
+    check(m1.Texture.alpha == 0 and hc1.anchors[1][4] == 47 and hc1.anchors[1][5] == -12 and hc1.HealthBarMask.texture == "Interface\\Buttons\\WHITE8x8", "forever: party frame re-skinned after Blizzard's art refresh")
+    w.inCombat = true
+    m1:UpdateArt()
+    check(m1.Texture.alpha == 0 and hc1.anchors[1][4] == 45 and pm.pending == true, "forever: in combat only party textures change, anchors wait")
+    w.inCombat = false
+    pm.waiter:Fire("PLAYER_REGEN_ENABLED")
+    check(hc1.anchors[1][4] == 47 and pm.pending == nil, "forever: party anchors applied once combat ends")
+
+    -- action bars: Era's bottom bar
+    local ab = w.ns.modules.actionbars
+    local art = ab.art
+    check(ab.mode == "restyled" and art ~= nil and art.width == 1024 and art.height == 53 and art.anchors[1][1] == "BOTTOM", "forever: 1024x53 stone bar at the bottom of the screen")
+    check(art.strips[1].texcoord[3] == 0.83203125 and art.strips[1].anchors[1][4] == -384 and art.strips[4].texcoord[3] == 0.08203125 and art.strips[4].anchors[1][4] == 384, "forever: the four Dwarf strips in Era's order")
+    check(art.leftCap and art.leftCap.texture == "Interface\\MainMenuBar\\UI-MainMenuBar-EndCap-Dwarf" and art.rightCap.anchors[1][4] == 544 and art.rightCap.texcoord[1] == 1 and MainActionBar.EndCaps.alpha == 0, "forever: classic gryphons on the art, Forever's faded")
+    check(MainActionBar.BorderArt.shown == false, "forever: retail bar border hidden")
+    check(MainActionBar.anchors[1][1] == "BOTTOMLEFT" and MainActionBar.anchors[1][2] == art and MainActionBar.anchors[1][4] == 8 and MainActionBar.anchors[1][5] == 4 and MainActionBar.width == 498 and MainActionBar.height == 36, "forever: main bar 498x36 at 8,4 on the art")
+    local c2 = ActionButton2.container
+    check(math.abs(c2.scale - 0.8) < 0.001 and c2.anchors[1][1] == "BOTTOMLEFT" and math.abs(c2.anchors[1][4] - 42 / 0.8) < 0.001, "forever: button containers scaled to 36px, 42 apart")
+    check(ActionButton1.NormalTexture.texture == "Interface\\Buttons\\UI-Quickslot2" and ActionButton1.NormalTexture.alpha == 0.5 and ActionButton1.NormalTexture.width == 50 and ActionButton1.SlotArt.alpha == 0 and ActionButton1.icon.maskRemoved == ActionButton1.IconMask, "forever: classic quickslot ring, retail slot art and icon mask gone")
+    check(ActionButton1.PushedTexture.texture == "Interface\\Buttons\\UI-Quickslot-Depress" and ActionButton1.HighlightTexture.texture == "Interface\\Buttons\\ButtonHilight-Square" and ActionButton1.CheckedTexture.texture == "Interface\\Buttons\\CheckButtonHilight", "forever: classic pushed, highlight and checked textures")
+    ActionButton1:UpdateButtonArt()
+    check(ActionButton1.NormalTexture.texture == "Interface\\Buttons\\UI-Quickslot2" and ActionButton1.SlotArt.alpha == 0, "forever: button re-skinned after Blizzard's art refresh")
+    MainActionBar:UpdateGridLayout()
+    check(math.abs(c2.scale - 0.8) < 0.001 and math.abs(c2.anchors[1][4] - 42 / 0.8) < 0.001 and MainActionBar.width == 498, "forever: containers re-laid out after Blizzard's grid layout")
+    local pn = MainActionBar.ActionBarPageNumber
+    check(pn.anchors[1][2] == art and pn.anchors[1][4] == 506 and pn.anchors[1][5] == 3 and pn.Text.anchors[1][4] == 15 and pn.UpButton.NormalTexture.texture == "Interface\\MainMenuBar\\UI-MainMenu-ScrollUpButton-Up" and pn.UpButton.anchors[1][5] == 10, "forever: page number and classic arrows right of the buttons")
+    check(MicroMenuContainer.anchors[1][2] == art and MicroMenuContainer.anchors[1][4] == 552 and MicroMenuContainer.anchors[1][5] == 2 and MicroMenu.BorderArt.alpha == 0, "forever: micro menu on the bar at 552, retail border gone")
+    check(CharacterMicroButton.width == 31 and CharacterMicroButton.NormalTexture.texture == "Interface\\Buttons\\UI-MicroButtonCharacter-Up" and CharacterMicroButton.NormalTexture.texcoord[3] == 0.359375 and CharacterMicroButton.Background.alpha == 0 and CharacterMicroButton.Portrait.width == 18, "forever: character micro button classic with the small portrait")
+    check(SpellbookMicroButton.NormalTexture.texture == "Interface\\Buttons\\UI-MicroButton-Spellbook-Up" and SpellbookMicroButton.HighlightTexture.texture == "Interface\\Buttons\\UI-MicroButton-Hilight" and ab.microSkinned == 6, "forever: every micro button classic")
+    MainMenuMicroButton:SetNormalAtlas("UI-HUD-MicroMenu-MainMenu-Up")
+    check(MainMenuMicroButton.NormalTexture.texture == "Interface\\Buttons\\UI-MicroButton-MainMenu-Up", "forever: micro button re-skinned after Blizzard's atlas swap")
+    CharacterMicroButton:SetPushed()
+    check(CharacterMicroButton.PushedBackground.alpha == 0, "forever: pushed micro background stays hidden")
+    check(BagsBar.anchors[1][1] == "BOTTOMRIGHT" and BagsBar.anchors[1][2] == art and BagsBar.anchors[1][4] == -6 and BagsBar.anchors[1][5] == 2, "forever: bag bar at the bar's right end")
+    check(MainMenuBarBackpackButton.width == 37 and MainMenuBarBackpackButton.NormalTexture.texture == "Interface\\Buttons\\UI-Quickslot2" and MainMenuBarBackpackButton.NormalTexture.width == 64 and CharacterBag0Slot.anchors[1][2] == MainMenuBarBackpackButton and CharacterBag0Slot.anchors[1][4] == -5, "forever: 37px bag slots 5 apart with the quickslot ring")
+    BagsBar:Layout()
+    check(CharacterBag0Slot.anchors[1][4] == -5 and CharacterBag0Slot.width == 37, "forever: bag slots re-laid out after Blizzard's layout")
+    local xpc = MainStatusTrackingBarContainer
+    local xp = xpc.bars[1]
+    check(xpc.anchors[1][1] == "TOP" and xpc.anchors[1][2] == art and xpc.width == 1024 and xpc.height == 13 and xpc.BarFrameTexture.alpha == 0, "forever: experience bar 1024x13 in the top of the stone bar, retail frame gone")
+    check(xp.StatusBar.barTexture == "Interface\\TargetingFrame\\UI-StatusBar" and xp.StatusBar.anchors[1][1] == "ALL" and xp.ExhaustionTick.NormalTexture.texture == "Interface\\MainMenuBar\\UI-ExhaustionTickNormal" and xp.ExhaustionTick.width == 32, "forever: classic XP fill and rest tick")
+    xp:UpdateStatusBarTextures(true)
+    check(xp.StatusBar.barTexture == "Interface\\TargetingFrame\\UI-StatusBar" and xp.StatusBar.barColor[2] == 0.39, "forever: rested XP colour after Blizzard's fill swap")
+    local ledge = ab.own[xpc].ledge
+    check(ledge and ledge.tiles[1].texcoord[3] == 0.79296875 and ledge.tiles[4].anchors[1][4] == 768 and ledge.parent == xpc, "forever: stone ledge over the XP bar, on the container")
+    check(MultiBarBottomLeft.anchors[1][1] == "BOTTOMRIGHT" and MultiBarBottomLeft.anchors[1][4] == -6 and MultiBarBottomLeft.anchors[1][5] == 52 and MultiBarBottomRight.anchors[1][4] == 6, "forever: bottom bars either side of the screen centre")
+    check(MultiBarRight.width == 36 and MultiBarRight.height == 498 and math.abs(MultiBarRightButton2.container.anchors[1][5] + 42 / 0.8) < 0.001, "forever: right bar vertical, 42 apart")
+    -- Blizzard's layout apply in combat: containers and art at once, bar anchors wait
+    w.inCombat = true
+    EditModeManagerFrame:UpdateBottomActionBarPositions()
+    check(MainActionBar.anchors[1][2] == MicroMenuContainer and ab.pending == true and math.abs(c2.scale - 0.8) < 0.001, "forever: in combat Blizzard's bar anchor stands, layout pending")
+    w.inCombat = false
+    ab.waiter:Fire("PLAYER_REGEN_ENABLED")
+    check(MainActionBar.anchors[1][2] == art and ab.pending == nil and MultiBarBottomLeft.anchors[1][1] == "BOTTOMRIGHT", "forever: bar anchors back on the art once combat ends")
     local divs = MainActionBar.HorizontalDividersPool.active
     check(divs[1].alpha == 0 and divs[2].alpha == 0, "forever: retail button dividers faded out")
     MainActionBar:UpdateDividers()
     check(MainActionBar.HorizontalDividersPool.active[1].alpha == 0, "forever: dividers faded again after Blizzard's refresh")
-    w.ns.modules.actionbars.art.width = 578; w.ns.modules.actionbars.art.Resize()
-    check(math.abs(w.ns.modules.actionbars.art.tiles[1].height - 289 * 43 / 256) < 0.01, "forever: bar strips keep the image's 256x43 shape at the bar's width")
     local tr = w.ns.modules.tracker
     check(tr.mode == "restyled" and ObjectiveTrackerFrame.Header.Background.alpha == 0 and ObjectiveTrackerFrame.modules[1].Header.Background.alpha == 0, "forever: tracker header boxes faded out")
     ObjectiveTrackerFrame:Update()
@@ -1129,8 +1288,6 @@ do
     w.slash("tracker off")
     check(tr.mode == "off" and ObjectiveTrackerFrame.Header.Background.alpha == 1, "forever: tracker off restores the boxes")
     w.slash("tracker on")
-    local tiles = w.ns.modules.actionbars.art.tiles
-    check(tiles[1].texcoord[3] == 0.83203125 and tiles[1].texcoord[4] == 1.0 and tiles[2].texcoord[3] == 0.58203125 and tiles[2].texcoord[4] == 0.75, "forever: bar tiles use Era's two button-slot strips of the 256x256 image")
     check(w.ns.modules.minimap.mode == "restyled" and Minimap.width == 140 and MinimapCompassTexture.texture == "Interface\\Minimap\\UI-Minimap-Border", "forever: minimap 140px with the classic ring")
     check(w.ns.modules.minimap.header ~= nil and MinimapCluster.DielFrame.shown == false, "forever: classic header strip added, day/night dial hidden")
 
@@ -1522,12 +1679,12 @@ do
     check(w.ns.dbLoaded == true and w.ns.db.logins == 2, "reload: saved file found, login count raised")
     check(w.ns.db.unitframes == false and w.ns.modules.unitframes.mode == "off" and w.ns.modules.minimap.mode == "off", "reload: parts turned off stay off")
     check(w.ns.db.castbar == true and w.ns.modules.castbar.mode == "restyled", "reload: the part turned back on is on")
-    check(Printed("off (saved): nameplates, combo, unitframes, charsheet, spellbook, actionbars, minimap, tracker"), "reload: login line names the parts that are off")
+    check(Printed("off (saved): nameplates, combo, unitframes, party, charsheet, spellbook, actionbars, minimap, tracker"), "reload: login line names the parts that are off")
     check(w.ns.optionsPanel.checks.unitframes.checked == false and w.ns.optionsPanel.checks.castbar.checked == true, "reload: options boxes match the saved settings")
     w.slash("probe")
     check(w.ns.lastProbe and w.ns.lastProbe:find("saved file found at login: yes  logins counted in it: 2", 1, true) and w.ns.lastProbe:find("settings came from: saved file", 1, true), "reload: probe reports the saved file and login count")
     -- the same on a client that never writes the SavedVariables file: the CVar copy carries the settings
-    check(cvarCopy == "nameplates=0,castbar=1,combo=0,unitframes=0,charsheet=0,spellbook=0,actionbars=0,minimap=0,tracker=0", "reload: every change is also written to the settings CVar")
+    check(cvarCopy == "nameplates=0,castbar=1,combo=0,unitframes=0,party=0,charsheet=0,spellbook=0,actionbars=0,minimap=0,tracker=0", "reload: every change is also written to the settings CVar")
     w = NewWorld({style = "6", forever = true, cvars = {ForeverClassicUI_settings = cvarCopy}})
     check(w.ns.dbLoaded == false and w.ns.db.unitframes == false and w.ns.db.castbar == true and w.ns.modules.unitframes.mode == "off" and w.ns.modules.castbar.mode == "restyled", "no saved file: settings restored from the CVar copy")
     check(w.ns.dbSource:find("cvar fallback", 1, true) and w.ns.optionsPanel.checks.minimap.checked == false, "no saved file: probe names the fallback, boxes match")

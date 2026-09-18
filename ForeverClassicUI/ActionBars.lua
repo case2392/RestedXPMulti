@@ -1,17 +1,144 @@
--- Forever Classic UI - main action bar art
+-- Forever Classic UI - the classic bottom bar
 --
--- Forever keeps the gryphon end caps (its Camelot flavor restores them) but
--- frames the main bar with the retail "UI-HUD-ActionBar-Frame" border and
--- nothing under the buttons. Classic had the dwarf-stone bar art running
--- under the buttons between the gryphons. This hides the retail border and
--- lays the classic bar texture under the main action bar; end caps are
--- forced visible.
+-- Classic Era draws one 1024x53 "MainMenuBar" along the bottom of the
+-- screen: four 256x43 strips of dwarf stone (UI-MainMenuBar-Dwarf) with
+-- gryphon end caps, twelve 36x36 action buttons 42px apart in the stone
+-- slots from x=8, the page number and its two arrows right of them, the
+-- micro buttons (29x37, 3px overlap) from x=552, the bag slots (37x37,
+-- 5px apart) ending 6px from the right edge, and the experience bar in the
+-- top 13px of the bar with a 10px stone ledge over it. The extra bars sit
+-- above it: bottom-left and bottom-right bars either side of the screen
+-- centre, the right bars vertical against the right edge.
+--
+-- Forever (Camelot flavor) keeps the gryphons but everything else is the
+-- retail layout: 45px buttons 47px apart in a "UI-HUD-ActionBar-Frame"
+-- border, the micro menu and bag bar floating right of the bar, the
+-- experience bar as its own framed strip above. Every one of those pieces
+-- is an Edit Mode system that Blizzard re-anchors and re-sizes whenever a
+-- layout is applied, so this module owns one frame (the stone bar art)
+-- and re-applies the classic sizes and anchors after each of Blizzard's
+-- refreshes (hooksecurefunc on the layout methods). The button containers
+-- are scaled 36/45 instead of resizing the (protected) buttons, so every
+-- piece of button art shrinks with them. Action bars are protected frames:
+-- their anchors and sizes are only touched out of combat; a change that
+-- lands in combat is applied when combat ends.
+--
+-- Rule (shared with the rest of the addon): no Lua field writes into
+-- Blizzard's frames, no calls into Blizzard's layout functions; widget
+-- calls and hooksecurefunc only. Classic clients draw all of this already
+-- and are left alone.
 
 local addonName, ns = ...
 
 local M = {mode = "off"}
 
-local BAR_ART = "Interface\\MainMenuBar\\UI-MainMenuBar-Dwarf"
+local MMB = "Interface\\MainMenuBar\\"
+local BUTTONS = "Interface\\Buttons\\"
+local BAR_ART = MMB .. "UI-MainMenuBar-Dwarf"
+local END_CAP = MMB .. "UI-MainMenuBar-EndCap-Dwarf"
+local QUICKSLOT = BUTTONS .. "UI-Quickslot2"
+local QUICKSLOT_DOWN = BUTTONS .. "UI-Quickslot-Depress"
+local HILIGHT_SQUARE = BUTTONS .. "ButtonHilight-Square"
+local CHECK_HILIGHT = BUTTONS .. "CheckButtonHilight"
+local MICRO_HILIGHT = BUTTONS .. "UI-MicroButton-Hilight"
+local EXHAUSTION_TICK = MMB .. "UI-ExhaustionTickNormal"
+local EXHAUSTION_TICK_HL = MMB .. "UI-ExhaustionTickHighlight"
+local STATUS_BAR = "Interface\\TargetingFrame\\UI-StatusBar"
+
+-- Era's classic geometry (MainMenuBar.xml, MainActionBar.xml, the Classic
+-- Edit Mode preset, MainMenuBarMicroButtons.xml, MainMenuBarBagButtons.xml)
+local BAR_W, BAR_H = 1024, 53
+local BUTTON, STRIDE = 36, 42
+local BUTTON_SCALE = 36 / 45     -- Forever's buttons are 45px
+local MAIN_BAR_X, MAIN_BAR_Y = 8, 4
+local PAGE_X, PAGE_Y = 506, 3    -- ActionBarPageNumber (42x36) from the art's bottom left
+local MICRO_X, MICRO_Y = 552, 2  -- first micro button from the art's bottom left
+local MICRO_W, MICRO_H = 29, 37
+local MICRO_STRIDE = 26
+local BAGS_X, BAGS_Y = -6, 2     -- backpack from the art's bottom right
+local BAG_SIZE, BAG_PAD = 37, 5
+local XP_H, XP_TOP_H = 13, 8
+local BOTTOM_BAR_X, BOTTOM_BAR_Y = 6, 52
+-- the four stone strips: rows of the 256x256 image (Era's MainMenuBarTexture0..3)
+local STRIPS = {
+    {x = -384, top = 0.83203125, bottom = 1.0},
+    {x = -128, top = 0.58203125, bottom = 0.75},
+    {x = 128, top = 0.33203125, bottom = 0.5},
+    {x = 384, top = 0.08203125, bottom = 0.25}
+}
+-- the 10px ledge over the experience bar (Era's MainMenuBarFrameTexture1..4)
+local LEDGES = {
+    {0.79296875, 0.83203125}, {0.54296875, 0.58203125},
+    {0.29296875, 0.33203125}, {0.04296875, 0.08203125}
+}
+-- Forever's micro buttons and the classic art for each. Forever has a few
+-- Classic never had (professions, housing, the legacy tree): those borrow
+-- the nearest classic icon so the row stays uniform.
+local MICRO_ART = {
+    CharacterMicroButton = "Character",   -- special: UI-MicroButtonCharacter-* + portrait
+    SpellbookMicroButton = "Spellbook",
+    PlayerSpellsMicroButton = "Spellbook",
+    TalentMicroButton = "Talents",
+    ProfessionMicroButton = "Abilities",
+    QuestLogMicroButton = "Quest",
+    SocialsMicroButton = "Socials",
+    GuildMicroButton = "Socials",
+    LFDMicroButton = "LFG",
+    CollectionsMicroButton = "Mounts",
+    EJMicroButton = "EJ",
+    AchievementMicroButton = "Achievement",
+    LegacyMicroButton = "Achievement",
+    HousingMicroButton = "World",
+    WorldMapMicroButton = "World",
+    HelpMicroButton = "Help",
+    StoreMicroButton = "BStore",
+    MainMenuMicroButton = "MainMenu"
+}
+local MICRO_ORDER = {
+    "CharacterMicroButton", "ProfessionMicroButton", "SpellbookMicroButton", "PlayerSpellsMicroButton",
+    "TalentMicroButton", "LegacyMicroButton", "QuestLogMicroButton", "SocialsMicroButton",
+    "HousingMicroButton", "GuildMicroButton", "LFDMicroButton", "CollectionsMicroButton",
+    "AchievementMicroButton", "EJMicroButton", "WorldMapMicroButton", "HelpMicroButton",
+    "StoreMicroButton", "MainMenuMicroButton"
+}
+local MICRO_COORDS = {0, 1, 0.359375, 1}   -- the 32x64 images hold the button in the lower part
+local BAG_BUTTONS = {"MainMenuBarBackpackButton", "CharacterBag0Slot", "CharacterBag1Slot", "CharacterBag2Slot", "CharacterBag3Slot"}
+-- bars and how they lay out (Era: 12 buttons, 42 apart)
+local BARS = {
+    {name = "MainActionBar", horizontal = true},
+    {name = "MultiBarBottomLeft", horizontal = true},
+    {name = "MultiBarBottomRight", horizontal = true},
+    {name = "MultiBarRight", horizontal = false},
+    {name = "MultiBarLeft", horizontal = false},
+    {name = "MultiBar5", horizontal = true},
+    {name = "MultiBar6", horizontal = true},
+    {name = "MultiBar7", horizontal = true}
+}
+
+-- our own pieces hung on Blizzard frames, keyed by that frame
+M.own = setmetatable({}, {__mode = "k"})
+local function Own(frame)
+    local t = M.own[frame]
+    if not t then
+        t = {}
+        M.own[frame] = t
+    end
+    return t
+end
+
+local function G(name) return _G[name] end
+
+local function InCombat()
+    return InCombatLockdown and InCombatLockdown()
+end
+
+local function HasFile(path)
+    return GetFileIDFromPath and GetFileIDFromPath(path) ~= nil
+end
+
+local function HasAtlas(name)
+    return C_Texture and C_Texture.GetAtlasInfo and C_Texture.GetAtlasInfo(name) ~= nil
+end
 
 local function Hide(region)
     if region then
@@ -20,63 +147,502 @@ local function Hide(region)
     end
 end
 
-function M.Apply()
-    local bar = MainActionBar or MainMenuBar
-    if not bar or not bar.CreateTexture then return false end
-    if bar.BorderArt then Hide(bar.BorderArt) end
+local function Fade(frame)
+    if frame and frame.SetAlpha then frame:SetAlpha(0) end
+end
 
-    if not M.art then
-        local art = CreateFrame("Frame", "ForeverClassicUIBarArt", bar)
-        art:SetFrameLevel(math.max((bar:GetFrameLevel() or 1) - 1, 0))
-        art:SetPoint("TOPLEFT", bar, "TOPLEFT", -8, 8)
-        art:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", 8, -8)
-        -- UI-MainMenuBar-Dwarf is 256x256 holding four 256x43 strips. Era's
-        -- MainMenuBar.xml puts strips 0 and 1 (the two with six button
-        -- slots each) under the twelve action buttons; the other two carry
-        -- the page arrows and the bag slots.
-        local STRIPS = {{0.83203125, 1.0}, {0.58203125, 0.75}, {0.33203125, 0.5}}
-        art.tiles = {}
-        for i = 1, 3 do
-            local t = art:CreateTexture(nil, "BACKGROUND")
-            t:SetTexture(BAR_ART)
-            t:SetTexCoord(0, 1, STRIPS[i][1], STRIPS[i][2])
-            t:SetHeight(43)
-            art.tiles[i] = t
-        end
-        art.tiles[1]:SetPoint("BOTTOMLEFT", art, "BOTTOMLEFT", 0, 0)
-        art.tiles[1]:SetPoint("BOTTOMRIGHT", art, "BOTTOM", 0, 0)
-        art.tiles[2]:SetPoint("BOTTOMLEFT", art, "BOTTOM", 0, 0)
-        art.tiles[2]:SetPoint("BOTTOMRIGHT", art, "BOTTOMRIGHT", 0, 0)
-        art.tiles[3]:Hide()
-        -- each strip is 256x43 in the image; keep that shape whatever
-        -- width Forever's bar (and its bigger buttons) stretch it to
-        local function Resize()
-            local w = art:GetWidth()
-            if not w or w <= 0 then return end
-            local h = (w / 2) * 43 / 256
-            for i = 1, 2 do art.tiles[i]:SetHeight(h) end
-        end
-        art:SetScript("OnSizeChanged", Resize)
-        art.Resize = Resize
-        M.art = art
+-- a frame's anchor, with the offsets given in the *parent's* units: a
+-- scaled frame reads SetPoint offsets in its own scale
+local function Anchor(frame, point, rel, relPoint, x, y)
+    if not frame or not rel then return end
+    local scale = (frame.GetScale and frame:GetScale()) or 1
+    if not scale or scale <= 0 then scale = 1 end
+    frame:ClearAllPoints()
+    frame:SetPoint(point, rel, relPoint, (x or 0) / scale, (y or 0) / scale)
+end
+
+--------------------------------------------------------------------------
+-- the stone bar
+--------------------------------------------------------------------------
+
+local function BuildArt()
+    if M.art or not CreateFrame then return M.art end
+    local art = CreateFrame("Frame", "ForeverClassicUIMainMenuBar", UIParent)
+    art:SetSize(BAR_W, BAR_H)
+    art:SetPoint("BOTTOM", UIParent, "BOTTOM", 0, 0)
+    if art.SetFrameStrata then art:SetFrameStrata("MEDIUM") end
+    if art.SetFrameLevel then art:SetFrameLevel(1) end
+    art.strips = {}
+    for i, s in ipairs(STRIPS) do
+        local t = art:CreateTexture(nil, "BACKGROUND")
+        t:SetTexture(BAR_ART)
+        t:SetTexCoord(0, 1, s.top, s.bottom)
+        t:SetSize(256, 43)
+        t:SetPoint("BOTTOM", art, "BOTTOM", s.x, 0)
+        art.strips[i] = t
     end
-    M.art:Show()
-    if M.art.Resize then M.art.Resize() end
-    M.HideDividers()
+    if HasFile(END_CAP) then
+        art.leftCap = art:CreateTexture(nil, "OVERLAY", nil, 5)
+        art.leftCap:SetTexture(END_CAP)
+        art.leftCap:SetSize(128, 128)
+        art.leftCap:SetPoint("BOTTOM", art, "BOTTOM", -544, 0)
+        art.rightCap = art:CreateTexture(nil, "OVERLAY", nil, 5)
+        art.rightCap:SetTexture(END_CAP)
+        art.rightCap:SetTexCoord(1, 0, 0, 1)
+        art.rightCap:SetSize(128, 128)
+        art.rightCap:SetPoint("BOTTOM", art, "BOTTOM", 544, 0)
+    end
+    M.art = art
+    return art
+end
 
-    local caps = bar.EndCaps
-    if caps then
-        for _, key in ipairs({"LeftEndCap", "RightEndCap"}) do
-            local cap = caps[key]
-            if cap then
-                if cap.SetVisibilitySetting then
-                    pcall(cap.SetVisibilitySetting, cap, true)
-                elseif cap.Show then
-                    cap:Show()
+--------------------------------------------------------------------------
+-- action buttons
+--------------------------------------------------------------------------
+
+-- classic button art: square icon, the UI-Quickslot2 ring at half alpha
+-- (Era's NormalTexture), the classic pushed / highlight / checked textures.
+-- Sizes are in the button's own 45-unit space (the container is scaled to
+-- 36px), so Era's 40px ring is 50 units here.
+local function SkinButton(btn)
+    if not btn or not btn.SetNormalTexture then return end
+    local own = Own(btn)
+    Hide(btn.SlotArt)
+    Hide(btn.SlotBackground)
+    if btn.icon and btn.IconMask and btn.icon.RemoveMaskTexture then
+        pcall(btn.icon.RemoveMaskTexture, btn.icon, btn.IconMask)
+    end
+    M.inSkin = true
+    btn:SetNormalTexture(QUICKSLOT)
+    local nt = btn.GetNormalTexture and btn:GetNormalTexture()
+    if nt then
+        nt:SetTexCoord(0.1875, 0.796875, 0.1875, 0.796875)
+        nt:ClearAllPoints()
+        nt:SetSize(50, 50)
+        nt:SetPoint("CENTER", btn, "CENTER", 0, 0)
+        if nt.SetDrawLayer then nt:SetDrawLayer("OVERLAY") end
+        nt:SetAlpha(0.5)
+    end
+    btn:SetPushedTexture(QUICKSLOT_DOWN)
+    local pt = btn.GetPushedTexture and btn:GetPushedTexture()
+    if pt then
+        pt:SetTexCoord(0, 1, 0, 1)
+        pt:ClearAllPoints()
+        pt:SetAllPoints(btn)
+    end
+    btn:SetHighlightTexture(HILIGHT_SQUARE, "ADD")
+    local ht = btn.GetHighlightTexture and btn:GetHighlightTexture()
+    if ht then
+        ht:SetTexCoord(0, 1, 0, 1)
+        ht:ClearAllPoints()
+        ht:SetAllPoints(btn)
+    end
+    if btn.SetCheckedTexture then
+        btn:SetCheckedTexture(CHECK_HILIGHT)
+        local ct = btn.GetCheckedTexture and btn:GetCheckedTexture()
+        if ct then
+            if ct.SetBlendMode then ct:SetBlendMode("ADD") end
+            ct:ClearAllPoints()
+            ct:SetAllPoints(btn)
+        end
+    end
+    M.inSkin = nil
+    if not own.hooked and hooksecurefunc then
+        own.hooked = true
+        -- Blizzard puts its atlases back on every art refresh
+        if type(btn.UpdateButtonArt) == "function" then
+            hooksecurefunc(btn, "UpdateButtonArt", function(b)
+                if M.mode == "restyled" and not M.inSkin then SkinButton(b) end
+            end)
+        end
+    end
+end
+
+-- 36px buttons 42px apart: the containers (plain frames Blizzard lays
+-- out) are scaled and re-anchored; hidden ones are skipped so the shown
+-- buttons stay packed the way Era packs them
+local function LayoutBar(bar, horizontal)
+    if not bar or type(bar.actionButtons) ~= "table" then return 0 end
+    local shown = 0
+    for _, btn in ipairs(bar.actionButtons) do
+        SkinButton(btn)
+        local c = btn.container
+        if c and c.SetPoint then
+            if c.SetScale then c:SetScale(BUTTON_SCALE) end
+            if not c.IsShown or c:IsShown() then
+                if horizontal then
+                    Anchor(c, "BOTTOMLEFT", bar, "BOTTOMLEFT", shown * STRIDE, 0)
+                else
+                    Anchor(c, "TOPLEFT", bar, "TOPLEFT", 0, -shown * STRIDE)
+                end
+                shown = shown + 1
+            end
+        end
+    end
+    return shown
+end
+
+local function BarSize(count, horizontal)
+    local long = math.max(count * STRIDE - (STRIDE - BUTTON), BUTTON)
+    if horizontal then return long, BUTTON end
+    return BUTTON, long
+end
+
+--------------------------------------------------------------------------
+-- page number and arrows
+--------------------------------------------------------------------------
+
+local function SkinPageButton(btn, dir)
+    if not btn then return end
+    local atlas = "hud-MainMenuBar-arrow" .. dir:lower()
+    if btn.SetNormalAtlas and HasAtlas(atlas .. "-up") then
+        btn:SetSize(19, 17)
+        btn:SetNormalAtlas(atlas .. "-up")
+        btn:SetPushedAtlas(atlas .. "-down")
+        btn:SetDisabledAtlas(atlas .. "-disabled")
+        btn:SetHighlightAtlas(atlas .. "-highlight", "ADD")
+        return
+    end
+    local file = MMB .. "UI-MainMenu-Scroll" .. dir .. "Button-"
+    if HasFile(file .. "Up") then
+        btn:SetSize(32, 32)
+        btn:SetNormalTexture(file .. "Up")
+        btn:SetPushedTexture(file .. "Down")
+        if btn.SetDisabledTexture then btn:SetDisabledTexture(file .. "Disabled") end
+        btn:SetHighlightTexture(file .. "Highlight", "ADD")
+        for _, get in ipairs({"GetNormalTexture", "GetPushedTexture", "GetDisabledTexture", "GetHighlightTexture"}) do
+            local t = btn[get] and btn[get](btn)
+            if t then t:ClearAllPoints(); t:SetAllPoints(btn) end
+        end
+    end
+end
+
+local function LayoutPageNumber(art)
+    local bar = G("MainActionBar")
+    local pn = bar and bar.ActionBarPageNumber
+    if not pn then return end
+    pn:SetSize(42, 36)
+    pn:ClearAllPoints()
+    pn:SetPoint("BOTTOMLEFT", art, "BOTTOMLEFT", PAGE_X, PAGE_Y)
+    if pn.Text then
+        pn.Text:ClearAllPoints()
+        pn.Text:SetPoint("CENTER", pn, "CENTER", 15, 0)
+        if GameFontNormalSmall and pn.Text.SetFontObject then pn.Text:SetFontObject(GameFontNormalSmall) end
+    end
+    if pn.UpButton then
+        SkinPageButton(pn.UpButton, "Up")
+        pn.UpButton:ClearAllPoints()
+        pn.UpButton:SetPoint("CENTER", pn, "CENTER", -6, 10)
+    end
+    if pn.DownButton then
+        SkinPageButton(pn.DownButton, "Down")
+        pn.DownButton:ClearAllPoints()
+        pn.DownButton:SetPoint("CENTER", pn, "CENTER", -6, -10)
+    end
+end
+
+--------------------------------------------------------------------------
+-- micro buttons
+--------------------------------------------------------------------------
+
+local function MicroFiles(name)
+    if name == "Character" then
+        return BUTTONS .. "UI-MicroButtonCharacter-Up", BUTTONS .. "UI-MicroButtonCharacter-Down", nil
+    end
+    local prefix = BUTTONS .. "UI-MicroButton-" .. name
+    return prefix .. "-Up", prefix .. "-Down", prefix .. "-Disabled"
+end
+
+local function PlacePortrait(btn)
+    local p = btn.Portrait
+    if not p then return end
+    if btn.PortraitMask and p.RemoveMaskTexture then pcall(p.RemoveMaskTexture, p, btn.PortraitMask) end
+    p:ClearAllPoints()
+    p:SetSize(18, 25)
+    p:SetPoint("CENTER", btn, "CENTER", 0, -1)
+end
+
+local function SkinMicroButton(btn, name)
+    if not btn or not btn.SetNormalTexture then return false end
+    local up, down, disabled = MicroFiles(name)
+    if not HasFile(up) then return false end
+    local own = Own(btn)
+    M.inSkin = true
+    -- 31 wide: the menu lays its children out with a -5 overlap, so 31
+    -- gives Era's 26px stride; the 29px art is centred in it
+    btn:SetSize(MICRO_W + 2, MICRO_H)
+    btn:SetNormalTexture(up)
+    btn:SetPushedTexture(down)
+    if disabled and btn.SetDisabledTexture then btn:SetDisabledTexture(disabled) end
+    btn:SetHighlightTexture(MICRO_HILIGHT, "ADD")
+    for _, get in ipairs({"GetNormalTexture", "GetPushedTexture", "GetDisabledTexture", "GetHighlightTexture"}) do
+        local t = btn[get] and btn[get](btn)
+        if t then
+            t:SetTexCoord(unpack(MICRO_COORDS))
+            t:ClearAllPoints()
+            t:SetSize(MICRO_W, MICRO_H)
+            t:SetPoint("CENTER", btn, "CENTER", 0, 0)
+        end
+    end
+    Hide(btn.Background)
+    Hide(btn.PushedBackground)
+    Fade(btn.Shadow)
+    Fade(btn.PushedShadow)
+    Fade(btn.FlashContent)
+    PlacePortrait(btn)
+    M.inSkin = nil
+    if not own.hooked and hooksecurefunc then
+        own.hooked = true
+        local function Again(b) if M.mode == "restyled" and not M.inSkin then SkinMicroButton(b, name) end end
+        for _, m in ipairs({"SetNormalAtlas", "SetPushedAtlas", "SetDisabledAtlas", "SetHighlightAtlas"}) do
+            if type(btn[m]) == "function" then hooksecurefunc(btn, m, Again) end
+        end
+        for _, m in ipairs({"SetPushed", "SetNormal"}) do
+            if type(btn[m]) == "function" then
+                hooksecurefunc(btn, m, function(b)
+                    if M.mode == "restyled" and not M.inSkin then Hide(b.Background); Hide(b.PushedBackground); PlacePortrait(b) end
+                end)
+            end
+        end
+    end
+    return true
+end
+
+local function LayoutMicroMenu(art)
+    local container = G("MicroMenuContainer")
+    if container and container.SetPoint then
+        container:ClearAllPoints()
+        container:SetPoint("BOTTOMLEFT", art, "BOTTOMLEFT", MICRO_X, MICRO_Y)
+    end
+    local menu = G("MicroMenu")
+    if menu then
+        Hide(menu.BorderArt)
+        Hide(menu.BackgroundArt)
+    end
+    local skinned = 0
+    for _, gname in ipairs(MICRO_ORDER) do
+        local btn = G(gname)
+        if btn and SkinMicroButton(btn, MICRO_ART[gname]) then skinned = skinned + 1 end
+    end
+    M.microSkinned = skinned
+end
+
+--------------------------------------------------------------------------
+-- bag slots
+--------------------------------------------------------------------------
+
+local function SkinBagButton(btn)
+    if not btn or not btn.SetNormalTexture then return end
+    local own = Own(btn)
+    M.inSkin = true
+    btn:SetSize(BAG_SIZE, BAG_SIZE)
+    -- Era's ItemButtonTemplate: the 64x64 quickslot ring centred a pixel low
+    btn:SetNormalTexture(QUICKSLOT)
+    local nt = btn.GetNormalTexture and btn:GetNormalTexture()
+    if nt then
+        nt:SetTexCoord(0, 1, 0, 1)
+        nt:ClearAllPoints()
+        nt:SetSize(64, 64)
+        nt:SetPoint("CENTER", btn, "CENTER", 0, -1)
+        nt:SetAlpha(1)
+    end
+    btn:SetPushedTexture(QUICKSLOT_DOWN)
+    local pt = btn.GetPushedTexture and btn:GetPushedTexture()
+    if pt then pt:SetTexCoord(0, 1, 0, 1); pt:ClearAllPoints(); pt:SetAllPoints(btn) end
+    btn:SetHighlightTexture(HILIGHT_SQUARE, "ADD")
+    local ht = btn.GetHighlightTexture and btn:GetHighlightTexture()
+    if ht then ht:SetTexCoord(0, 1, 0, 1); ht:ClearAllPoints(); ht:SetAllPoints(btn) end
+    local icon = btn.icon or (btn.GetName and G(btn:GetName() .. "IconTexture"))
+    if icon then
+        if btn.IconMask and icon.RemoveMaskTexture then pcall(icon.RemoveMaskTexture, icon, btn.IconMask) end
+        if btn.CircleMask and icon.RemoveMaskTexture then pcall(icon.RemoveMaskTexture, icon, btn.CircleMask) end
+        icon:ClearAllPoints()
+        icon:SetAllPoints(btn)
+    end
+    Hide(btn.SlotBackground)
+    Hide(btn.SlotArt)
+    Fade(btn.IconBorder)
+    M.inSkin = nil
+    if not own.hooked and hooksecurefunc then
+        own.hooked = true
+        for _, m in ipairs({"SetNormalAtlas", "SetPushedAtlas"}) do
+            if type(btn[m]) == "function" then
+                hooksecurefunc(btn, m, function(b) if M.mode == "restyled" and not M.inSkin then SkinBagButton(b) end end)
+            end
+        end
+    end
+end
+
+local function LayoutBags(art)
+    local bar = G("BagsBar")
+    if not bar or not bar.SetPoint then return end
+    bar:ClearAllPoints()
+    bar:SetPoint("BOTTOMRIGHT", art, "BOTTOMRIGHT", BAGS_X, BAGS_Y)
+    local prev
+    for _, gname in ipairs(BAG_BUTTONS) do
+        local btn = G(gname)
+        if btn then
+            SkinBagButton(btn)
+            if prev then
+                btn:ClearAllPoints()
+                btn:SetPoint("RIGHT", prev, "LEFT", -BAG_PAD, 0)
+            else
+                btn:ClearAllPoints()
+                btn:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", 0, 0)
+            end
+            prev = btn
+        end
+    end
+    Hide(G("BagBarExpandToggle"))
+    bar:SetSize(#BAG_BUTTONS * BAG_SIZE + (#BAG_BUTTONS - 1) * BAG_PAD, BAG_SIZE)
+end
+
+--------------------------------------------------------------------------
+-- experience / reputation bar in the top of the stone bar
+--------------------------------------------------------------------------
+
+local function SkinStatusBar(bar)
+    if not bar then return end
+    local sb = bar.StatusBar
+    if sb then
+        sb:ClearAllPoints()
+        sb:SetAllPoints(bar)
+        if sb.SetStatusBarTexture then sb:SetStatusBarTexture(STATUS_BAR) end
+        if sb.Background and sb.Background.SetColorTexture then sb.Background:SetColorTexture(0, 0, 0, 0.5) end
+    end
+    local tick = bar.ExhaustionTick
+    if tick and tick.SetNormalTexture and HasFile(EXHAUSTION_TICK) then
+        tick:SetSize(32, 32)
+        tick:SetNormalTexture(EXHAUSTION_TICK)
+        tick:SetHighlightTexture(EXHAUSTION_TICK_HL, "ADD")
+        for _, get in ipairs({"GetNormalTexture", "GetHighlightTexture"}) do
+            local t = tick[get] and tick[get](tick)
+            if t then t:ClearAllPoints(); t:SetAllPoints(tick) end
+        end
+    end
+    local own = Own(bar)
+    if not own.hooked and hooksecurefunc then
+        own.hooked = true
+        -- Forever swaps in a coloured atlas fill for rested / normal XP
+        if type(bar.UpdateStatusBarTextures) == "function" then
+            hooksecurefunc(bar, "UpdateStatusBarTextures", function(b, isRested)
+                if M.mode ~= "restyled" or not b.StatusBar then return end
+                if b.StatusBar.SetStatusBarTexture then b.StatusBar:SetStatusBarTexture(STATUS_BAR) end
+                if b.isExpBar and b.StatusBar.SetStatusBarColor then
+                    if isRested then b.StatusBar:SetStatusBarColor(0, 0.39, 0.88, 1)
+                    else b.StatusBar:SetStatusBarColor(0.58, 0, 0.55, 1) end
+                end
+            end)
+        end
+    end
+end
+
+-- the stone ledge over the bar, on a child of the container so it comes
+-- and goes (and fades) with it
+local function Ledge(container)
+    local own = Own(container)
+    if own.ledge or not CreateFrame then return end
+    local f = CreateFrame("Frame", nil, container)
+    f:SetAllPoints(container)
+    if f.SetFrameLevel and container.GetFrameLevel then f:SetFrameLevel(container:GetFrameLevel() + 2) end
+    f.tiles = {}
+    for i, c in ipairs(LEDGES) do
+        local t = f:CreateTexture(nil, "OVERLAY")
+        t:SetTexture(BAR_ART)
+        t:SetTexCoord(0, 1, c[1], c[2])
+        t:SetSize(256, 10)
+        t:SetPoint("TOPLEFT", f, "TOPLEFT", (i - 1) * 256, 0)
+        f.tiles[i] = t
+    end
+    own.ledge = f
+end
+
+local function LayoutStatusBars(art)
+    local main = G("MainStatusTrackingBarContainer")
+    local second = G("SecondaryStatusTrackingBarContainer")
+    for _, container in ipairs({main, second}) do
+        if container and container.SetPoint then
+            Hide(container.BarFrameTexture)
+            if container == main then
+                container:SetSize(BAR_W, XP_H)
+                container:ClearAllPoints()
+                container:SetPoint("TOP", art, "TOP", 0, 0)
+                Ledge(container)
+            else
+                container:SetSize(BAR_W, XP_TOP_H)
+                container:ClearAllPoints()
+                container:SetPoint("BOTTOM", art, "TOP", 0, -3)
+            end
+            if type(container.bars) == "table" then
+                for _, bar in pairs(container.bars) do
+                    if bar.SetAllPoints then bar:ClearAllPoints(); bar:SetAllPoints(container) end
+                    SkinStatusBar(bar)
                 end
             end
         end
     end
+end
+
+--------------------------------------------------------------------------
+-- the whole layout
+--------------------------------------------------------------------------
+
+local function ProtectedLayout(art)
+    -- action bars are protected: anchors and sizes only out of combat
+    local main = G("MainActionBar")
+    if main then
+        main:ClearAllPoints()
+        main:SetPoint("BOTTOMLEFT", art, "BOTTOMLEFT", MAIN_BAR_X, MAIN_BAR_Y)
+    end
+    for _, spec in ipairs(BARS) do
+        local bar = G(spec.name)
+        if bar and bar.SetSize then
+            local count = M.counts[spec.name] or 12
+            bar:SetSize(BarSize(count, spec.horizontal))
+        end
+    end
+    -- Era: the bottom bars either side of the screen centre, above the bar
+    local lift = BOTTOM_BAR_Y
+    local second = G("SecondaryStatusTrackingBarContainer")
+    if second and second.IsShown and second:IsShown() then lift = lift + 9 end
+    local bl, br = G("MultiBarBottomLeft"), G("MultiBarBottomRight")
+    if bl and (not bl.IsInDefaultPosition or bl:IsInDefaultPosition()) then
+        bl:ClearAllPoints()
+        bl:SetPoint("BOTTOMRIGHT", UIParent, "BOTTOM", -BOTTOM_BAR_X, lift)
+    end
+    if br and (not br.IsInDefaultPosition or br:IsInDefaultPosition()) then
+        br:ClearAllPoints()
+        br:SetPoint("BOTTOMLEFT", UIParent, "BOTTOM", BOTTOM_BAR_X, lift)
+    end
+end
+
+function M.Layout()
+    local art = BuildArt()
+    if not art then return false end
+    M.inLayout = true
+    art:Show()
+    local main = G("MainActionBar")
+    if main then
+        Hide(main.BorderArt)
+        if art.leftCap then Fade(main.EndCaps) end
+    end
+    M.counts = {}
+    for _, spec in ipairs(BARS) do
+        local bar = G(spec.name)
+        if bar then M.counts[spec.name] = LayoutBar(bar, spec.horizontal) end
+    end
+    M.HideDividers()
+    LayoutPageNumber(art)
+    LayoutMicroMenu(art)
+    LayoutBags(art)
+    LayoutStatusBars(art)
+    if InCombat() then
+        M.pending = true
+    else
+        M.pending = nil
+        ProtectedLayout(art)
+    end
+    M.inLayout = nil
     return true
 end
 
@@ -84,7 +650,7 @@ end
 -- (pooled frames laid out by MainActionBarMixin:UpdateDividers). Fade them
 -- out after every refresh; Blizzard shows them, alpha 0 keeps them unseen.
 function M.HideDividers(alpha)
-    local bar = MainActionBar
+    local bar = G("MainActionBar")
     if not bar then return end
     alpha = alpha or 0
     for _, key in ipairs({"HorizontalDividersPool", "VerticalDividersPool"}) do
@@ -97,6 +663,61 @@ function M.HideDividers(alpha)
     end
 end
 
+--------------------------------------------------------------------------
+-- keep it classic when Blizzard re-lays out
+--------------------------------------------------------------------------
+
+local function Again()
+    if M.mode == "restyled" and not M.inLayout then M.Layout() end
+end
+
+local function HookMethod(frame, method)
+    if frame and type(frame[method]) == "function" then hooksecurefunc(frame, method, Again) end
+end
+
+local function InstallHooks()
+    if M.hooked or not hooksecurefunc then return end
+    M.hooked = true
+    local em = G("EditModeManagerFrame")
+    HookMethod(em, "ExitEditMode")
+    HookMethod(em, "UpdateBottomActionBarPositions")
+    HookMethod(em, "UpdateRightActionBarPositions")
+    for _, spec in ipairs(BARS) do
+        local bar = G(spec.name)
+        HookMethod(bar, "UpdateGridLayout")
+        HookMethod(bar, "UpdateSystemSettingIconSize")
+        HookMethod(bar, "UpdateSystemSettingIconPadding")
+        HookMethod(bar, "ApplySystemAnchor")
+    end
+    local main = G("MainActionBar")
+    if main and type(main.UpdateDividers) == "function" then
+        hooksecurefunc(main, "UpdateDividers", function() if M.mode == "restyled" then M.HideDividers() end end)
+    end
+    HookMethod(main, "UpdateEndCaps")
+    HookMethod(G("MicroMenuContainer"), "ApplySystemAnchor")
+    HookMethod(G("MicroMenu"), "Layout")
+    HookMethod(G("BagsBar"), "ApplySystemAnchor")
+    HookMethod(G("BagsBar"), "Layout")
+    for _, name in ipairs({"MainStatusTrackingBarContainer", "SecondaryStatusTrackingBarContainer"}) do
+        HookMethod(G(name), "ApplySystemAnchor")
+        HookMethod(G(name), "UpdateSystemSetting")
+    end
+    HookMethod(G("StatusTrackingBarManager"), "UpdateBarVisuals")
+end
+
+local function InstallCombatWaiter()
+    if M.waiter or not CreateFrame then return end
+    M.waiter = CreateFrame("Frame")
+    M.waiter:RegisterEvent("PLAYER_REGEN_ENABLED")
+    M.waiter:SetScript("OnEvent", function()
+        if M.mode == "restyled" and M.pending then M.Layout() end
+    end)
+end
+
+--------------------------------------------------------------------------
+-- module interface
+--------------------------------------------------------------------------
+
 local function IsNative()
     return MainMenuBarArtFrame ~= nil and MainActionBar == nil
 end
@@ -106,45 +727,40 @@ function M:Enable()
         M.mode = "native"
         return
     end
-    if not (MainActionBar or MainMenuBar) then
+    local main = G("MainActionBar")
+    if not main or type(main.actionButtons) ~= "table" then
         M.mode = "unavailable"
         return
     end
-    if M.Apply() then
+    InstallCombatWaiter()
+    if M.Layout() then
         M.mode = "restyled"
-        if hooksecurefunc and not M.hooked then
-            M.hooked = true
-            if EditModeManagerFrame and EditModeManagerFrame.ExitEditMode then
-                hooksecurefunc(EditModeManagerFrame, "ExitEditMode", function()
-                    if M.mode == "restyled" then M.Apply() end
-                end)
-            end
-            if MainActionBar and MainActionBar.UpdateDividers then
-                hooksecurefunc(MainActionBar, "UpdateDividers", function()
-                    if M.mode == "restyled" then M.HideDividers() end
-                end)
-            end
-        end
+        InstallHooks()
     else
         M.mode = "unavailable"
     end
 end
 
 function M:Force()
+    M.mode = "off"
     M:Enable()
-    ns.Print("action bars: classic bar art %s.", M.mode)
+    ns.Print("action bars: classic bottom bar %s.", M.mode)
 end
 
 function M:Disable()
     if M.art then M.art:Hide() end
     M.HideDividers(1)
     M.mode = "off"
-    ns.Print("action bars: type /reload to restore Blizzard's bar art.")
+    ns.Print("action bars: type /reload to restore Blizzard's bars.")
 end
 
 function M:Status()
     if M.mode == "native" then return "(client already draws the classic bar)" end
-    if M.mode == "restyled" then return "(classic bar art under the main bar, gryphons on, retail dividers hidden)" end
+    if M.mode == "restyled" then
+        local s = "(Era bottom bar: stone art, 36px buttons, page arrows, micro buttons and bags on the bar, XP bar in the bar"
+        if M.pending then s = s .. "; bar anchors wait for combat to end" end
+        return s .. ")"
+    end
     if M.mode == "unavailable" then return "(unavailable on this client)" end
     return ""
 end

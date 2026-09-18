@@ -1,8 +1,8 @@
 # Classic UI for Forever
 
 Brings the classic look back on *World of Warcraft Forever*: nameplates,
-cast bars, combo points, player, target and pet frames, the character sheet,
-the spellbook, the main action bar art and the minimap. Every part has its own switch under Options > AddOns >
+cast bars, combo points, player, target, pet and party frames, the character sheet,
+the spellbook, the whole classic bottom bar and the minimap. Every part has its own switch under Options > AddOns >
 Classic UI for Forever, with Select all / Deselect all buttons. On Classic Era it recognises the classic look is already
 there and does nothing, which makes it safe to test today.
 
@@ -49,6 +49,16 @@ from Classic Era's own UI code.
   anchor comes from a `/cui report all` taken on Classic Era. Blizzard's own
   redraws (vehicle art, power-type changes, target classification, level
   repaints) are re-skinned as they happen.
+- **Party frames** — each of the four member frames gets Era's
+  `UI-PartyFrame` art (128x64 over a 128x53 frame, drawn on Blizzard's
+  overlay so it sits above the bars and under the leader crown and pvp
+  icon), the 37x37 round portrait, the name in the small gold font over
+  a green 70x8 health bar and a 70x8 mana bar with the classic fill, the
+  black box behind them, and the small pet frame under each member (64x26,
+  its own 18px portrait and 35x4 health bar). Forever's atlas art, bar
+  masks and role icon are faded out. Blizzard's roster refresh puts the
+  retail art back on every update; it is re-skinned each time, with
+  anchors waiting for combat to end.
 - **Character sheet** — on the Character tab the window becomes Era's
   384x512 sheet: the four-piece `UI-Character-CharacterTab` art, portrait
   and name in the top corners, "Level 39 Human Priest" and guild lines
@@ -89,9 +99,24 @@ from Classic Era's own UI code.
   is resized and its shell faded, its page moved out of reach; on the
   talents page the retail size comes back until talents get their classic
   version.
-- **Action bar art** — the classic stone bar under the main action bar
-  between the gryphons; the retail frame border and the divider strips
-  between buttons are hidden.
+- **Action bars** — Era's whole bottom bar. The addon draws the 1024x53
+  `UI-MainMenuBar-Dwarf` stone bar with the gryphon end caps along the
+  bottom of the screen and moves Blizzard's pieces onto it: the twelve
+  main buttons as 36px buttons 42px apart in the stone slots (the button
+  containers are scaled, so every piece of button art shrinks with them),
+  the page number and the classic arrows right of them, the micro
+  buttons (29x37 classic art, character portrait included) from x=552,
+  the bag slots (37px, quickslot ring) ending at the right edge, and the
+  experience bar in the top 13px of the bar with the 10px stone ledge
+  over it, purple/blue fill and the classic rest tick. Every action
+  button on every bar gets the classic look: square icon, the
+  `UI-Quickslot2` ring, classic pushed/highlight textures, no retail
+  slot art. The bottom-left and bottom-right bars sit either side of the
+  screen centre above the bar, the right bars are vertical with the same
+  spacing. Everything here is an Edit Mode system that Blizzard
+  re-anchors on every layout apply, so each of its refreshes is hooked
+  and the classic layout put back; bar anchors are protected and wait
+  for combat to end.
 - **Minimap** — the 140px round map with the classic ring border and the
   zone-name strip; the day/night dial is hidden.
 - **Quest tracker** — the retail header boxes ("All Objectives", "Quests")
@@ -119,7 +144,7 @@ takes the other parts down.
 | `/cui combo on\|off` | Classic combo points on the target frame (`/reload` after off) |
 | `/cui combo offset <x> <y>` | Nudge the dots if the target frame art differs (no numbers = reset) |
 | `/cui combo force` | Draw the classic combo points right now, replacing Blizzard's (testing) |
-| `/cui unitframes\|charsheet\|spellbook\|actionbars\|minimap\|tracker on\|off\|force` | The other parts |
+| `/cui unitframes\|party\|charsheet\|spellbook\|actionbars\|minimap\|tracker on\|off\|force` | The other parts |
 | `/cui options` | Open the settings panel (Options > AddOns > Classic UI for Forever) |
 | `/cui report` | Everything for support in one copyable window: the probe, a dump of every frame the addon touches (plus your target's nameplate), and the last Lua errors the client raised |
 | `/cui report all` | The same including hidden pieces (marked). Run it on Classic Era with a mob targeted to capture the exact classic layout for comparison |
@@ -146,8 +171,11 @@ takes the other parts down.
 
 Confirmed on 1.60.1 (build 69893, toc 16001). After installing, type
 `/console nameplateStyle 6` once for the classic nameplates. Cast bars, unit
-frames, action bar and minimap are re-skinned, combo points use Blizzard's
-classic frame.
+frames, character sheet, spellbook, action bars and minimap are re-skinned,
+combo points use Blizzard's classic frame. The party frames and the full
+bottom bar (0.6.0) are built from Era's layout files and Forever's frame
+dumps and still need a look on Forever: `/cui report all` while grouped,
+with a screenshot of the bottom of the screen, is what tunes them.
 
 Settings are kept in the usual SavedVariables file and, because the beta
 was seen never writing that file, also in a CVar of the addon's own

@@ -88,7 +88,29 @@ local CLASSIC_TEXTURES = {
     "Interface\\QuestFrame\\UI-QuestLog-Left",
     "Interface\\FriendsFrame\\UI-FriendsFrame-Left",
     "Interface\\Minimap\\UI-Minimap-Border",
-    "Interface\\MainMenuBar\\UI-MainMenuBar-Dwarf"
+    "Interface\\MainMenuBar\\UI-MainMenuBar-Dwarf",
+    "Interface\\MainMenuBar\\UI-MainMenuBar-EndCap-Dwarf",
+    "Interface\\MainMenuBar\\UI-MainMenuBar-MaxLevel",
+    "Interface\\MainMenuBar\\UI-ExhaustionTickNormal",
+    "Interface\\MainMenuBar\\UI-MainMenu-ScrollUpButton-Up",
+    "Interface\\Buttons\\UI-Quickslot-Depress",
+    "Interface\\Buttons\\ButtonHilight-Square",
+    "Interface\\Buttons\\UI-MicroButtonCharacter-Up",
+    "Interface\\Buttons\\UI-MicroButton-Spellbook-Up",
+    "Interface\\Buttons\\UI-MicroButton-Talents-Up",
+    "Interface\\Buttons\\UI-MicroButton-Quest-Up",
+    "Interface\\Buttons\\UI-MicroButton-Socials-Up",
+    "Interface\\Buttons\\UI-MicroButton-LFG-Up",
+    "Interface\\Buttons\\UI-MicroButton-Mounts-Up",
+    "Interface\\Buttons\\UI-MicroButton-EJ-Up",
+    "Interface\\Buttons\\UI-MicroButton-Abilities-Up",
+    "Interface\\Buttons\\UI-MicroButton-Achievement-Up",
+    "Interface\\Buttons\\UI-MicroButton-World-Up",
+    "Interface\\Buttons\\UI-MicroButton-Help-Up",
+    "Interface\\Buttons\\UI-MicroButton-BStore-Up",
+    "Interface\\Buttons\\UI-MicroButton-MainMenu-Up",
+    "Interface\\Buttons\\UI-MicroButton-Hilight",
+    "Interface\\Buttons\\UI-Debuff-Overlays"
 }
 
 local BLIZZ_ADDONS = {
@@ -544,7 +566,8 @@ local REPORT_FRAMES = {
 }
 
 -- classic clients name their pieces differently; both sets are tried
-local REPORT_FRAMES_CLASSIC = {"FocusFrame", "TargetFrameToT", "PartyFrame", "PartyMemberFrame1", "MainMenuBar", "MainMenuBarArtFrame", "QuestWatchFrame", "MinimapBorder", "MinimapZoneTextButton"}
+local REPORT_FRAMES_CLASSIC = {"FocusFrame", "TargetFrameToT", "PartyFrame", "PartyMemberFrame1", "MainMenuBar", "MainMenuBarArtFrame", "QuestWatchFrame", "MinimapBorder", "MinimapZoneTextButton",
+    "ForeverClassicUIMainMenuBar", "MicroMenuContainer", "MicroMenu", "BagsBar", "StatusTrackingBarManager", "MultiBarBottomLeft", "MultiBarBottomRight", "MultiBarRight", "MultiBarLeft"}
 -- panels: dumped only while open, so a report taken with the character
 -- sheet (or spellbook, quest log, friends list) open captures its layout
 local REPORT_FRAMES_OPEN = {"CharacterFrame", "PlayerSpellsFrame", "SpellBookFrame", "PlayerTalentFrame", "QuestLogFrame", "FriendsFrame", "CommunitiesFrame", "ContainerFrame1"}

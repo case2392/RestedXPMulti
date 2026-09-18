@@ -8,9 +8,10 @@ local LABELS = {
     castbar = "Classic cast bars (player and target)",
     combo = "Classic combo points on the target frame",
     unitframes = "Classic player, target and pet frames",
+    party = "Classic party frames (UI-PartyFrame art, 70x8 bars, small pet frames)",
     charsheet = "Classic character sheet (Era paper doll, reputation and skills, tabs along the bottom)",
     spellbook = "Classic spellbook (Era book, 12 spells a page, skill line tabs on the right)",
-    actionbars = "Classic main action bar art (stone bar under the buttons, gryphons)",
+    actionbars = "Classic bottom bar (stone bar, 36px buttons, micro buttons and bags on the bar, XP bar in the bar)",
     minimap = "Classic round minimap with the ring border",
     tracker = "Plain quest tracker (retail header boxes hidden)"
 }
