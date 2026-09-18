@@ -847,7 +847,8 @@ local function NewWorld(opts)
             bar.barType = 1
             bar.StandardGlow = Frame("glow"); bar.StandardGlow:SetPoint("CENTER", bar, "CENTER", 0, 0)
             function bar:UpdateBarFillTexture(isFull)
-                local info = CastingBarTypeInfo[self.barType]
+                -- Blizzard's secure code may index with a secret bar type; the addon's may not
+                local info = type(self.barType) == "table" and CastingBarTypeInfo[1] or CastingBarTypeInfo[self.barType]
                 self:SetStatusBarTexture(isFull and info.full or info.filling)
                 self:SetStatusBarColor(1, 1, 1)
             end
@@ -1143,6 +1144,19 @@ do
     check(pcb.Spark.texture == "Interface\\CastingBar\\UI-CastingBar-Spark" and pcb.Spark.width == 32, "forever: spark atlas replaced by the classic spark")
     TargetFrameSpellBar.Flash:SetAtlas("ui-castingbar-full-glow-standard")
     check(TargetFrameSpellBar.Flash.texture == "Interface\\CastingBar\\UI-CastingBar-Flash-Small", "forever: target bar keeps the small classic flash")
+    -- enemy casts: Forever makes barType a secret value, which errors as a table key from addon code
+    local tsb = TargetFrameSpellBar
+    local realInfo = CastingBarTypeInfo
+    _G.CastingBarTypeInfo = setmetatable({}, {__index = function(_, k)
+        if type(k) == "table" then error("attempted to index a table that cannot be indexed with secret keys") end
+        return realInfo[k]
+    end})
+    tsb.barType = {__secret = true}
+    local okFill = pcall(tsb.UpdateBarFillTexture, tsb, false)
+    check(okFill and tsb.barColor[1] == 1 and tsb.barColor[2] == 0.7 and tsb.fill.texture == "Interface\\TargetingFrame\\UI-StatusBar", "forever: secret bar type on an enemy cast: classic yellow fill, no error")
+    okFill = pcall(tsb.UpdateBarFillTexture, tsb, true)
+    check(okFill and tsb.barColor[1] == 0 and tsb.barColor[2] == 1, "forever: full fill still green when only the bar type is secret")
+    tsb.barType = 1; _G.CastingBarTypeInfo = realInfo
 
     -- unit frames
     local uf = w.ns.modules.unitframes

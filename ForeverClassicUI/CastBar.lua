@@ -61,17 +61,26 @@ end
 
 -- classic fill: UI-StatusBar coloured by bar type (yellow while casting,
 -- green when full/channeling), the same colours Blizzard's classic path uses
+-- Forever hands enemy cast bars secret values: bar.barType (and the isFull
+-- flag) cannot be used as a table key or in a condition from addon code
+-- (error "cannot be indexed with secret keys"), so the colour lookup runs
+-- under pcall and the classic colours stand in when it fails.
+local function FillColor(bar, isFull)
+    local ok, r, g, b = pcall(function()
+        local info = CastingBarTypeInfo[bar.barType]
+        local color = isFull and info.classicFullColor or info.classicFillColor
+        return color:GetRGB()
+    end)
+    if ok and r then return r, g, b end
+    local okFull, full = pcall(function() return isFull and true or false end)
+    local c = (okFull and full) and CLASSIC_GREEN or CLASSIC_YELLOW
+    return c[1], c[2], c[3]
+end
+
 local function ApplyFill(bar, isFull)
     if not bar.SetStatusBarTexture then return end
-    local info = CastingBarTypeInfo and bar.barType and CastingBarTypeInfo[bar.barType]
-    local color = isFull and (info and info.classicFullColor) or (info and info.classicFillColor)
     bar:SetStatusBarTexture(FILL)
-    if color and color.GetRGB then
-        bar:SetStatusBarColor(color:GetRGB())
-    else
-        local c = isFull and CLASSIC_GREEN or CLASSIC_YELLOW
-        bar:SetStatusBarColor(c[1], c[2], c[3])
-    end
+    bar:SetStatusBarColor(FillColor(bar, isFull))
     local fill = bar.GetStatusBarTexture and bar:GetStatusBarTexture()
     if fill and bar.BorderMask and fill.RemoveMaskTexture then
         pcall(fill.RemoveMaskTexture, fill, bar.BorderMask)
