@@ -808,6 +808,41 @@ M.RegisterPanel(Skills)
 -- points, season cap, next reward, where to buy it.
 --------------------------------------------------------------------------
 
+-- Blizzard's children of a tab's frame hidden while ours is up: every child
+-- frame but ours (their keys differ per tab and per build, so all of them),
+-- and the frame's own textures faded; shown again when the part goes off
+local function BlizzardChildren(panel, frameName, on)
+    local frame = G(frameName)
+    if not frame then return end
+    local ours = panel.list or panel.panel
+    if on then
+        panel.hidden = {}
+        if frame.GetChildren then
+            for _, child in ipairs({frame:GetChildren()}) do
+                if child ~= ours and child.IsShown and child:IsShown() and child.Hide then
+                    child:Hide()
+                    panel.hidden[#panel.hidden + 1] = child
+                end
+            end
+        end
+        if frame.GetRegions then
+            for _, region in ipairs({frame:GetRegions()}) do
+                if region.SetAlpha then region:SetAlpha(0) end
+            end
+        end
+    else
+        for _, child in ipairs(panel.hidden or {}) do
+            if child.Show then child:Show() end
+        end
+        panel.hidden = nil
+        if frame.GetRegions then
+            for _, region in ipairs({frame:GetRegions()}) do
+                if region.SetAlpha then region:SetAlpha(1) end
+            end
+        end
+    end
+end
+
 local PVP_RANK_FACTION_ID = 2800
 local HONOR_ART = {
     topLeft = PD .. "UI-Character-Honor-TopLeft",
@@ -960,16 +995,16 @@ function Honor:SetClassic(on)
     local frame = G("PVPRankFrame")
     if not frame or on == self.classic then return end
     self.classic = on
-    for _, key in ipairs({"MainInfoFrame", "DetailFrame"}) do
-        local f = frame[key]
-        if f and f.SetShown then f:SetShown(not on) end
+    -- Forever's rank display, detail pane and the reward text floating to
+    -- the right of the sheet: every child of the frame but ours
+    if on then
+        BlizzardChildren(self, "PVPRankFrame", true)
+        self.panel:Show()
+        self:Update()
+    else
+        self.panel:Hide()
+        BlizzardChildren(self, "PVPRankFrame", false)
     end
-    if frame.GetRegions then
-        for _, region in ipairs({frame:GetRegions()}) do
-            if region.SetAlpha then region:SetAlpha(on and 0 or 1) end
-        end
-    end
-    if on then self.panel:Show(); self:Update() else self.panel:Hide() end
 end
 
 function Honor:Update()
@@ -1145,38 +1180,6 @@ local function BuildList(panel, frameName, globalName, leftLabel, rightLabel, on
     panel.scroll:SetPoint("TOPRIGHT", list, "TOPRIGHT", -66, -76)
     list:Hide()
     return list
-end
-
--- Blizzard's children of the frame hidden while ours is up (all but ours)
-local function BlizzardChildren(panel, frameName, on)
-    local frame = G(frameName)
-    if not frame then return end
-    if on then
-        panel.hidden = {}
-        if frame.GetChildren then
-            for _, child in ipairs({frame:GetChildren()}) do
-                if child ~= panel.list and child.IsShown and child:IsShown() and child.Hide then
-                    child:Hide()
-                    panel.hidden[#panel.hidden + 1] = child
-                end
-            end
-        end
-        if frame.GetRegions then
-            for _, region in ipairs({frame:GetRegions()}) do
-                if region.SetAlpha then region:SetAlpha(0) end
-            end
-        end
-    else
-        for _, child in ipairs(panel.hidden or {}) do
-            if child.Show then child:Show() end
-        end
-        panel.hidden = nil
-        if frame.GetRegions then
-            for _, region in ipairs({frame:GetRegions()}) do
-                if region.SetAlpha then region:SetAlpha(1) end
-            end
-        end
-    end
 end
 
 local function RowHeader(row, text, collapsed, depth)

@@ -572,7 +572,7 @@ local REPORT_FRAMES_CLASSIC = {"FocusFrame", "TargetFrameToT", "PartyFrame", "Pa
     "ForeverClassicUIMainMenuBar", "MicroMenuContainer", "MicroMenu", "BagsBar", "StatusTrackingBarManager", "MultiBarBottomLeft", "MultiBarBottomRight", "MultiBarRight", "MultiBarLeft"}
 -- panels: dumped only while open, so a report taken with the character
 -- sheet (or spellbook, quest log, friends list) open captures its layout
-local REPORT_FRAMES_OPEN = {"CharacterFrame", "PlayerSpellsFrame", "SpellBookFrame", "PlayerTalentFrame", "QuestLogFrame", "FriendsFrame", "CommunitiesFrame", "ContainerFrame1"}
+local REPORT_FRAMES_OPEN = {"CharacterFrame", "PlayerSpellsFrame", "SpellBookFrame", "PlayerTalentFrame", "ProfessionsBookFrame", "QuestLogFrame", "FriendsFrame", "CommunitiesFrame", "ContainerFrame1"}
 
 function ns.BuildReport(includeHidden)
     local parts = {ns.BuildProbe()}

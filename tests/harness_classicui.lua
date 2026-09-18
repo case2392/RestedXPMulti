@@ -704,6 +704,7 @@ local function NewWorld(opts)
             -- honor: Forever's rank-points track (a renown-style faction)
             local pvp = _G.PVPRankFrame
             pvp.MainInfoFrame = Frame("MainInfoFrame"); pvp.DetailFrame = Frame("DetailFrame"); pvp.SeasonTimerField = Region("FontString")
+            pvp.RewardsPane = Frame("RewardsPane") -- Forever's reward text that floats right of the sheet (a key the addon does not know)
             _G.UnitFactionGroup = function() return "Alliance" end
             _G.GetCurrentArenaSeason = function() return 1 end
             _G.Enum.PvPRanks = {Rank_1 = 5}
@@ -1648,6 +1649,7 @@ do
     local hn = cs.panels[3]
     check(hn.built == true and PVPRankFrame.shown == true and sk.list.shown == false and cf.width == 384 and sheet.art[1].texture == "Interface\\PaperDollInfoFrame\\UI-Character-General-TopLeft", "honor: panel up in the classic sheet with the General art")
     check(PVPRankFrame.MainInfoFrame.shown == false and PVPRankFrame.DetailFrame.shown == false and PVPRankFrame.SeasonTimerField.alpha == 0, "honor: Blizzard's rank display and detail pane hidden")
+    check(PVPRankFrame.RewardsPane.shown == false and hn.panel.shown == true, "honor: every other child of Blizzard's frame hidden too, ours left up")
     local hp = hn.panel
     check(hp.title.text == "Corporal" and hp.rank.text == "(Rank 2)" and hp.bar.minmax[2] == 1500 and hp.bar.value == 300 and hp.bar.anchors[1][4] == 22 and hp.bar.anchors[1][5] == -77, "honor: rank title and Era's 315x29 rank bar filled from the rank points")
     local s1, s2, s3, s4, s5 = hp.sections[1], hp.sections[2], hp.sections[3], hp.sections[4], hp.sections[5]
@@ -1669,7 +1671,7 @@ do
     check(sheet.shown == false and tabs.shown == false, "off: our sheet and tabs hidden")
     check(ReputationFrame.ScrollBox.shown == true and SkillsFrame.SkillDetailFrame.shown == true and rep.list.shown == false and sk.list.shown == false, "off: Blizzard's reputation and skills lists back")
     check(StatisticsFrame.ScrollBox.shown == true and StatisticsFrame.DetailFrame.shown == true and st.list.shown == false and cur.list.shown == false and TokenFrame.Background.alpha == 1, "off: Blizzard's currency and statistics pieces back")
-    check(PVPRankFrame.MainInfoFrame.shown == true and PVPRankFrame.SeasonTimerField.alpha == 1 and hn.panel.shown == false, "off: Blizzard's honor display back")
+    check(PVPRankFrame.MainInfoFrame.shown == true and PVPRankFrame.RewardsPane.shown == true and PVPRankFrame.SeasonTimerField.alpha == 1 and hn.panel.shown == false, "off: Blizzard's honor display back")
     local h = CharacterHeadSlot.anchors[1]
     check(h[2] == cf.LeftPaneHost and h[4] == 24 and h[5] == -60 and CharacterHeadSlot.BorderFrame.alpha == 1 and CharacterModelScene.anchors[1][2] == cf.LeftPaneHost and CharacterModelScene.width == 398, "off: slots and model back on Blizzard's anchors")
     check(CharacterStatsPaneScrollBox.shown == true and CharacterStatsPaneScrollBox.alpha == 1 and PaperDollSidebarTabs.alpha == 1, "off: Blizzard's stats list back")
