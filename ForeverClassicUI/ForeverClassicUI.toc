@@ -13,6 +13,7 @@ CastBar.lua
 Combo.lua
 UnitFrames.lua
 CharacterSheet.lua
+CharacterLists.lua
 ActionBars.lua
 Minimap.lua
 Tracker.lua

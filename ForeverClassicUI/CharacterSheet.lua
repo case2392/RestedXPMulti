@@ -37,6 +37,10 @@ local ART = {
     topRight = PD .. "UI-Character-CharacterTab-R1",
     bottomLeft = PD .. "UI-Character-CharacterTab-BottomLeft",
     bottomRight = PD .. "UI-Character-CharacterTab-BottomRight",
+    generalTopLeft = PD .. "UI-Character-General-TopLeft",
+    generalTopRight = PD .. "UI-Character-General-TopRight",
+    generalBottomLeft = PD .. "UI-Character-General-BottomLeft",
+    generalBottomRight = PD .. "UI-Character-General-BottomRight",
     statBackground = PD .. "UI-Character-StatBackground",
     resistanceIcons = PD .. "UI-Character-ResistanceIcons",
     activeTab = PD .. "UI-Character-ActiveTab",
@@ -48,6 +52,17 @@ local ART = {
     closeHighlight = "Interface\\Buttons\\UI-Panel-MinimizeButton-Highlight"
 }
 M.ART = ART
+
+-- the four-piece 384x512 art sets: the paper doll's own, and the "General"
+-- one every other Era tab used (drawn 2px right, 1px down of the frame)
+M.DOLL_ART = {ART.topLeft, ART.topRight, ART.bottomLeft, ART.bottomRight, x = 0, y = 0}
+M.GENERAL_ART = {ART.generalTopLeft, ART.generalTopRight, ART.generalBottomLeft, ART.generalBottomRight, x = 2, y = -1}
+
+-- other tabs (reputation, skills...) register themselves here, see CharacterLists.lua
+M.panels = {}
+function M.RegisterPanel(panel)
+    M.panels[#M.panels + 1] = panel
+end
 
 local FRAME_WIDTH, FRAME_HEIGHT = 384, 512
 local PANEL_WIDTH = 400 -- what UIParent reserves for the panel (Era: frame + tab strip margin)
@@ -313,7 +328,7 @@ end
 
 local function BuildAttributes(sheet)
     -- Era CharacterAttributesFrame: 230x78 at 67,-291
-    local box = CreateFrame("Frame", nil, sheet)
+    local box = CreateFrame("Frame", nil, sheet.doll)
     box:SetSize(230, 78)
     box:SetPoint("TOPLEFT", sheet, "TOPLEFT", 67, -291)
     box:SetFrameLevel(sheet:GetFrameLevel() + 1)
@@ -358,7 +373,7 @@ end
 
 local function BuildResistances(sheet)
     -- Era CharacterResistanceFrame: 32x160, its TOPRIGHT at 297,-77 of the frame's TOPLEFT
-    local column = CreateFrame("Frame", nil, sheet)
+    local column = CreateFrame("Frame", nil, sheet.doll)
     column:SetSize(32, 160)
     column:SetPoint("TOPRIGHT", sheet, "TOPLEFT", 297, -77)
     column:SetFrameLevel(sheet:GetFrameLevel() + 1)
@@ -393,7 +408,7 @@ end
 local function BuildAmmoArt(sheet)
     local ammo = G("CharacterAmmoSlot")
     if not ammo or not HasFile(ART.ammoSlot) then return end
-    local under = CreateFrame("Frame", nil, sheet)
+    local under = CreateFrame("Frame", nil, sheet.doll)
     under:SetSize(41, 41)
     under:SetPoint("CENTER", ammo, "CENTER", 0, 0)
     under:SetFrameLevel(100) -- just under the slot buttons (101)
@@ -401,7 +416,7 @@ local function BuildAmmoArt(sheet)
     plate:SetTexture(ART.ammoSlot)
     plate:SetTexCoord(0, 0.640625, 0, 0.640625)
     plate:SetAllPoints(under)
-    local over = CreateFrame("Frame", nil, sheet)
+    local over = CreateFrame("Frame", nil, sheet.doll)
     over:SetSize(23, 41)
     over:SetPoint("CENTER", ammo, "CENTER", -22, 0)
     over:SetFrameLevel(102)
@@ -412,29 +427,41 @@ local function BuildAmmoArt(sheet)
     sheet.ammoUnder, sheet.ammoOver = under, over
 end
 
+-- point the four art pieces at a set (paper doll or General) and place them
+function M.SetArt(set, sheet)
+    sheet = sheet or M.sheet
+    if not sheet or sheet.artSet == set then return end
+    local x, y = set.x or 0, set.y or 0
+    local places = {{x, y}, {x + 256, y}, {x, y - 256}, {x + 256, y - 256}}
+    for i, tex in ipairs(sheet.art) do
+        tex:SetTexture(set[i])
+        tex:ClearAllPoints()
+        tex:SetPoint("TOPLEFT", sheet, "TOPLEFT", places[i][1], places[i][2])
+    end
+    sheet.artSet = set
+end
+
 local function BuildSheet()
     local cf = G("CharacterFrame")
     local sheet = CreateFrame("Frame", "ForeverClassicUICharacterSheet", cf)
     sheet:SetAllPoints(cf)
     sheet:SetFrameLevel(cf:GetFrameLevel() + 1)
-    local function Piece(path, w, h, x, y)
+    local function Piece(w, h)
         local t = sheet:CreateTexture(nil, "BORDER")
-        t:SetTexture(path)
         t:SetSize(w, h)
-        t:SetPoint("TOPLEFT", sheet, "TOPLEFT", x, y)
         return t
     end
-    sheet.art = {
-        Piece(ART.topLeft, 256, 256, 0, 0),
-        Piece(ART.topRight, 128, 256, 256, 0),
-        Piece(ART.bottomLeft, 256, 256, 0, -256),
-        Piece(ART.bottomRight, 128, 256, 256, -256)
-    }
+    sheet.art = {Piece(256, 256), Piece(128, 256), Piece(256, 256), Piece(128, 256)}
+    M.SetArt(M.DOLL_ART, sheet)
+    -- the paper doll's own pieces live on a sub-frame shown on the Character tab only
+    sheet.doll = CreateFrame("Frame", nil, sheet)
+    sheet.doll:SetAllPoints(sheet)
+    sheet.doll:SetFrameLevel(sheet:GetFrameLevel())
     -- "Level 39 Human Priest" under the name, guild line under that (Era: GameFontNormalSmall)
-    sheet.levelText = sheet:CreateFontString(nil, "BORDER", "GameFontNormalSmall")
+    sheet.levelText = sheet.doll:CreateFontString(nil, "BORDER", "GameFontNormalSmall")
     sheet.levelText:SetPoint("TOP", sheet, "TOP", 7, -37)
     sheet.levelText:SetJustifyH("CENTER")
-    sheet.guildText = sheet:CreateFontString(nil, "BORDER", "GameFontNormalSmall")
+    sheet.guildText = sheet.doll:CreateFontString(nil, "BORDER", "GameFontNormalSmall")
     sheet.guildText:SetPoint("TOP", sheet.levelText, "BOTTOM", 0, -1)
     sheet.guildText:SetJustifyH("CENTER")
     BuildAttributes(sheet)
@@ -657,7 +684,7 @@ end
 
 function M.UpdateSheet()
     local sheet = M.sheet
-    if not sheet or not sheet:IsShown() then return end
+    if not sheet or not sheet:IsShown() or not sheet.doll:IsShown() then return end
     UpdateHeader(sheet)
     UpdatePrimaryStats(sheet)
     UpdateArmor(sheet)
@@ -936,12 +963,26 @@ local function PaperDoll(classic)
     end
 end
 
--- the whole thing: classic look on the Character tab, Blizzard's on the others
+local function FrameShown(name)
+    local f = G(name)
+    return f ~= nil and f.IsShown ~= nil and f:IsShown() == true
+end
+
+-- which classic tab is up: "doll", a registered panel, or nil (a tab we leave to Blizzard)
+local function ActivePanel()
+    if PaperDollShown() then return "doll" end
+    for _, panel in ipairs(M.panels) do
+        if panel.built and FrameShown(panel.frameName) then return panel end
+    end
+end
+
+-- the whole thing: classic look on the tabs we cover, Blizzard's on the others
 function M.Apply()
     if M.mode ~= "restyled" then return end
     local cf = G("CharacterFrame")
     if not cf then return end
-    local classic = PaperDollShown()
+    local active = ActivePanel()
+    local classic = active ~= nil
     if classic ~= M.applied then
         BlizzardShell(cf, classic)
         Header(cf, classic)
@@ -951,13 +992,23 @@ function M.Apply()
     if classic then
         cf:SetSize(FRAME_WIDTH, FRAME_HEIGHT)
         if SetUIPanelAttribute then pcall(SetUIPanelAttribute, cf, "width", PANEL_WIDTH) end
-        PaperDollExtras(true)
         M.sheet:Show()
-        M.UpdateSheet()
+        if active == "doll" then
+            PaperDollExtras(true)
+            M.SetArt(M.DOLL_ART)
+            M.sheet.doll:Show()
+            M.UpdateSheet()
+        else
+            M.SetArt(active.art or M.GENERAL_ART)
+            M.sheet.doll:Hide()
+        end
     else
         PaperDollExtras(false)
         M.sheet:Hide()
         if SetUIPanelAttribute and cf.GetWidth then pcall(SetUIPanelAttribute, cf, "width", cf:GetWidth() + 82) end
+    end
+    for _, panel in ipairs(M.panels) do
+        if panel.built then panel:SetClassic(panel == active) end
     end
     SideTabs(cf, true)
     M.tabs:Show()
@@ -973,6 +1024,9 @@ local function Undo()
     PaperDoll(false)
     PaperDollExtras(false)
     SideTabs(cf, false)
+    for _, panel in ipairs(M.panels) do
+        if panel.built then panel:SetClassic(false) end
+    end
     M.applied = false
     if M.sheet then M.sheet:Hide() end
     if M.tabs then M.tabs:Hide() end
@@ -1012,6 +1066,13 @@ local function Hook()
         pd:HookScript("OnShow", Guard("OnShow", M.Apply))
         pd:HookScript("OnHide", Guard("OnHide", M.Apply))
     end
+    for _, panel in ipairs(M.panels) do
+        local f = G(panel.frameName)
+        if f and f.HookScript then
+            f:HookScript("OnShow", Guard(panel.frameName .. " OnShow", function() M.Apply(); if panel.built then panel:Update() end end))
+            f:HookScript("OnHide", Guard(panel.frameName .. " OnHide", M.Apply))
+        end
+    end
     M.hooked = true
 end
 
@@ -1048,6 +1109,11 @@ function M:Enable()
         for _, e in ipairs(SHEET_EVENTS_GLOBAL) do ev:RegisterEvent(e) end
         ev:SetScript("OnEvent", Guard("event", function() M.UpdateSheet() end))
     end
+    for _, panel in ipairs(self.panels) do
+        if not panel.built and G(panel.frameName) then
+            if ns.SafeCall("charsheet " .. panel.frameName, panel.Build, panel) then panel.built = true end
+        end
+    end
     self.mode = "restyled"
     self.applied = nil
     Hook()
@@ -1069,7 +1135,11 @@ end
 
 function M:Status()
     if self.mode == "restyled" then
-        local s = "classic 384x512 sheet, Era slot layout, bottom tabs"
+        local tabs = {"character"}
+        for _, panel in ipairs(self.panels) do
+            if panel.built then tabs[#tabs + 1] = panel.label end
+        end
+        local s = "classic 384x512 sheet (" .. table.concat(tabs, ", ") .. " tabs), Era slot layout, bottom tabs"
         if self.missingArt and #self.missingArt > 0 then
             s = s .. " (art missing: " .. table.concat(self.missingArt, ", ") .. ")"
         end
@@ -1081,3 +1151,4 @@ function M:Status()
 end
 
 ns.RegisterModule("charsheet", M)
+ns.charsheet = M

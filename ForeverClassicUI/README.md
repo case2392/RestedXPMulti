@@ -63,8 +63,17 @@ from Classic Era's own UI code.
   instead of the picture tabs down the side. Forever's shell (metal frame,
   stats list, sidebar tabs, level banner, collapse button) is faded out
   and unclickable, never destroyed: Blizzard keeps driving the slots and
-  model. On the other tabs Blizzard's layout is put back until those get
-  their classic versions.
+  model. The Reputation and Skills tabs are Era's too: the "General" art,
+  the column of 137px reputation bars with their bevel art, +/- headers,
+  the at-war swords and the watched-faction check mark, the 212x203
+  detail popup off the right edge with the At War / Inactive / Show as
+  Experience Bar boxes; twelve 271px skill bars with the bevel border,
+  the "All" expand tab, the detail bar with the unlearn button and the
+  description under the list. Both are Era's FauxScrollFrame lists
+  (Forever still ships the template) fed from `C_Reputation` and
+  `C_SkillInfo`; Blizzard's scroll boxes and side panes are hidden while
+  they are up. The Honor, Currency and Statistics tabs keep Blizzard's
+  layout for now.
 - **Action bar art** — the classic stone bar under the main action bar
   between the gryphons; the retail frame border and the divider strips
   between buttons are hidden.

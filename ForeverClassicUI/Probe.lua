@@ -49,8 +49,20 @@ local CLASSIC_TEXTURES = {
     "Interface\\PaperDollInfoFrame\\UI-Character-InActiveTab",
     "Interface\\PaperDollInfoFrame\\UI-Character-Skills-Bar",
     "Interface\\PaperDollInfoFrame\\UI-Character-Skills-BarBorder",
-    "Interface\\PaperDollInfoFrame\\UI-ReputationWatchBar",
-    "Interface\\PaperDollInfoFrame\\UI-ReputationFrame-DetailFrame",
+    "Interface\\PaperDollInfoFrame\\UI-Character-Skills-BarBorderHighlight",
+    "Interface\\PaperDollInfoFrame\\SkillFrame-BotLeft",
+    "Interface\\PaperDollInfoFrame\\SkillFrame-BotRight",
+    "Interface\\PaperDollInfoFrame\\UI-Character-ReputationBar",
+    "Interface\\PaperDollInfoFrame\\UI-Character-ReputationBar-Highlight",
+    "Interface\\PaperDollInfoFrame\\UI-Character-Reputation-DetailBackground",
+    "Interface\\PaperDollInfoFrame\\UI-Character-ScrollBar",
+    "Interface\\ClassTrainerFrame\\UI-ClassTrainer-HorizontalBar",
+    "Interface\\ClassTrainerFrame\\UI-ClassTrainer-ScrollBar",
+    "Interface\\QuestFrame\\UI-QuestLogSortTab-Left",
+    "Interface\\Buttons\\CancelButton-Up",
+    "Interface\\Buttons\\UI-CheckBox-SwordCheck",
+    "Interface\\DialogFrame\\UI-DialogBox-Corner",
+    "Interface\\TargetingFrame\\UI-PartyFrame",
     "Interface\\Buttons\\UI-PlusButton-Up",
     "Interface\\Buttons\\UI-MinusButton-Up",
     "Interface\\Buttons\\UI-Panel-MinimizeButton-Up",
@@ -517,7 +529,7 @@ local REPORT_FRAMES = {
 }
 
 -- classic clients name their pieces differently; both sets are tried
-local REPORT_FRAMES_CLASSIC = {"FocusFrame", "TargetFrameToT", "MainMenuBar", "MainMenuBarArtFrame", "QuestWatchFrame", "MinimapBorder", "MinimapZoneTextButton"}
+local REPORT_FRAMES_CLASSIC = {"FocusFrame", "TargetFrameToT", "PartyFrame", "PartyMemberFrame1", "MainMenuBar", "MainMenuBarArtFrame", "QuestWatchFrame", "MinimapBorder", "MinimapZoneTextButton"}
 -- panels: dumped only while open, so a report taken with the character
 -- sheet (or spellbook, quest log, friends list) open captures its layout
 local REPORT_FRAMES_OPEN = {"CharacterFrame", "PlayerSpellsFrame", "SpellBookFrame", "PlayerTalentFrame", "QuestLogFrame", "FriendsFrame", "CommunitiesFrame", "ContainerFrame1"}

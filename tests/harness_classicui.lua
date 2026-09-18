@@ -136,6 +136,18 @@ local function Frame(name)
     function f:SetWidth(w) self.width = w end
     function f:GetMinMaxValues() return self.minmax and unpack(self.minmax) or 0, 0 end
     function f:GetValue() return self.value or 0 end
+    function f:SetMinMaxValues(a, b) self.minmax = {a, b} end
+    function f:SetValue(v) self.value = v end
+    function f:SetValueStep() end
+    function f:SetHitRectInsets(...) self.hitRect = {...} end
+    function f:LockHighlight() self.highlightLocked = true end
+    function f:UnlockHighlight() self.highlightLocked = false end
+    function f:SetCheckedTexture(t) self.CheckedTexture = self.CheckedTexture or Region("Texture"); self.CheckedTexture:SetTexture(t) end
+    function f:GetCheckedTexture() return self.CheckedTexture end
+    function f:Enable() self.enabled = true end
+    function f:Disable() self.enabled = false end
+    function f:SetText(t) self.text = t end
+    function f:GetText() return self.text end
     -- children/regions are whatever tables hang off the frame by key
     function f:GetRegions()
         local t = {}
@@ -494,6 +506,65 @@ local function NewWorld(opts)
                 f:Hide()
                 _G[n] = f
             end
+            -- Forever's retail list pieces on the reputation and skills tabs
+            local rep, sk = _G.ReputationFrame, _G.SkillsFrame
+            rep.ScrollBox = Frame("ScrollBox"); rep.ScrollBar = Frame("ScrollBar"); rep.ReputationDetailFrame = Frame("ReputationDetailFrame"); rep.filterDropdown = Frame("filterDropdown")
+            sk.ScrollBox = Frame("ScrollBox"); sk.ScrollBar = Frame("ScrollBar"); sk.SkillDetailFrame = Frame("SkillDetailFrame")
+            -- Era's faux scroll helpers, still shipped by Forever
+            _G.FauxScrollFrame_Update = function(frame, numItems, numToDisplay) frame.fauxItems = numItems; return numItems > numToDisplay end
+            _G.FauxScrollFrame_GetOffset = function(frame) return frame.fauxOffset or 0 end
+            _G.FauxScrollFrame_OnVerticalScroll = function(frame, offset, itemHeight, fn) frame.fauxOffset = math.floor(offset / itemHeight + 0.5); fn() end
+            _G.UnitSex = function() return 2 end
+            _G.GetText = function(key) return _G[key] end
+            _G.FACTION_STANDING_LABEL4 = "Neutral"; _G.FACTION_STANDING_LABEL5 = "Friendly"; _G.FACTION_STANDING_LABEL6 = "Honored"; _G.FACTION_STANDING_LABEL8 = "Exalted"
+            _G.FACTION_BAR_COLORS = {[4] = {r = 0.9, g = 0.7, b = 0}, [5] = {r = 0, g = 0.6, b = 0.1}, [6] = {r = 0, g = 0.6, b = 0.1}, [8] = {r = 0, g = 0.6, b = 0.1}}
+            _G.MAX_REPUTATION_REACTION = 8
+            _G.SOUNDKIT = {IG_MAINMENU_OPTION_CHECKBOX_ON = 1, IG_MAINMENU_OPTION_CHECKBOX_OFF = 2}
+            _G.PlaySound = function() end
+            _G.BACKDROP_DIALOG_32_32 = {}
+            -- factions: a header with three children, one at war and watched, plus a collapsed header
+            w.factions = {
+                {factionID = 1, name = "Alliance", isHeader = true, isCollapsed = false, reaction = 4, currentReactionThreshold = 0, nextReactionThreshold = 1, currentStanding = 0},
+                {factionID = 72, name = "Stormwind", reaction = 6, currentReactionThreshold = 9000, nextReactionThreshold = 21000, currentStanding = 15000, isWatched = true, canToggleAtWar = false},
+                {factionID = 47, name = "Ironforge", reaction = 8, currentReactionThreshold = 42000, nextReactionThreshold = 43000, currentStanding = 42999},
+                {factionID = 21, name = "Booty Bay", reaction = 4, currentReactionThreshold = 0, nextReactionThreshold = 3000, currentStanding = 1949, atWarWith = true, canToggleAtWar = true, description = "Pirates.", canSetInactive = true},
+                {factionID = 2, name = "Other", isHeader = true, isCollapsed = true, reaction = 4, currentReactionThreshold = 0, nextReactionThreshold = 1, currentStanding = 0}
+            }
+            w.selectedFaction, w.expanded, w.collapsed, w.atWarToggled, w.watched, w.factionActive = 0, {}, {}, {}, nil, {}
+            _G.C_Reputation = {
+                GetNumFactions = function() return #w.factions end,
+                GetFactionDataByIndex = function(i) local d = w.factions[i]; if d then local c = {}; for k, v in pairs(d) do c[k] = v end; return c end end,
+                GetSelectedFaction = function() return w.selectedFaction end,
+                SetSelectedFaction = function(i) w.selectedFaction = i end,
+                ExpandFactionHeader = function(i) w.expanded[#w.expanded + 1] = i; w.factions[i].isCollapsed = false end,
+                CollapseFactionHeader = function(i) w.collapsed[#w.collapsed + 1] = i; w.factions[i].isCollapsed = true end,
+                ToggleFactionAtWar = function(i) w.atWarToggled[#w.atWarToggled + 1] = i; w.factions[i].atWarWith = not w.factions[i].atWarWith end,
+                SetWatchedFactionByIndex = function(i) w.watched = i end,
+                IsFactionActive = function(i) return w.factionActive[i] ~= false end,
+                SetFactionActive = function(i, on) w.factionActive[i] = on end
+            }
+            -- skills: class skills header (hidden by Forever too), weapon skills with a collapsed header
+            w.skills = {
+                {skillID = 7, name = "Class Skills", isHeader = true, isCollapsed = false, parentSkillLineID = 0, rank = 0, maxRank = 0, modifier = 0},
+                {skillID = 613, name = "Discipline", parentSkillLineID = 0, skillLineCategoryID = 7, rank = 195, maxRank = 195, modifier = 0},
+                {skillID = 9, name = "Weapon Skills", isHeader = true, isCollapsed = false, parentSkillLineID = 0, rank = 0, maxRank = 0, modifier = 0},
+                {skillID = 173, name = "Daggers", parentSkillLineID = 0, skillLineCategoryID = 9, rank = 1, maxRank = 195, modifier = 0, description = "Daggers.", tempPoints = 0},
+                {skillID = 95, name = "Defense", parentSkillLineID = 0, skillLineCategoryID = 9, rank = 187, maxRank = 195, modifier = 0, tempPoints = 0},
+                {skillID = 8, name = "Secondary Skills", isHeader = true, isCollapsed = true, parentSkillLineID = 0, rank = 0, maxRank = 0, modifier = 0},
+                {skillID = 185, name = "Cooking", parentSkillLineID = 0, skillLineCategoryID = 8, rank = 65, maxRank = 150, modifier = 5, isAbandonable = true, description = "Cooking.", costType = 2, tempPoints = 0}
+            }
+            w.selectedSkill, w.skillExpanded, w.skillCollapsed = 0, {}, {}
+            _G.C_SkillInfo = {
+                GetNumSkillLines = function() return #w.skills end,
+                GetSkillLineInfo = function(i) local d = w.skills[i]; if d then local c = {}; for k, v in pairs(d) do c[k] = v end; return c end end,
+                GetSelectedSkill = function() return w.selectedSkill end,
+                SetSelectedSkill = function(i) w.selectedSkill = i end,
+                ExpandSkillHeader = function(i) w.skillExpanded[#w.skillExpanded + 1] = i; w.skills[i].isCollapsed = false end,
+                CollapseSkillHeader = function(i) w.skillCollapsed[#w.skillCollapsed + 1] = i; w.skills[i].isCollapsed = true end
+            }
+            _G.UnitDefenseSkill = function() return 187, 3 end
+            _G.StaticPopupDialogs = {UNLEARN_SKILL = {}}
+            _G.StaticPopup_Show = function(which, a, b, data) w.popup = {which, a, data} end
             -- Show/Hide of the paper doll fire its scripts like the client does
             local pd = _G.PaperDollFrame
             function pd:Show() if not self.shown then self.shown = true; if self.scripts and self.scripts.OnShow then self.scripts.OnShow(self) end end end
@@ -596,7 +667,7 @@ local function NewWorld(opts)
 
     -- load the addon
     local ns = {}
-    for _, file in ipairs({"Core.lua", "Nameplates.lua", "CastBar.lua", "Combo.lua", "UnitFrames.lua", "CharacterSheet.lua", "ActionBars.lua", "Minimap.lua", "Tracker.lua", "Options.lua", "Probe.lua"}) do
+    for _, file in ipairs({"Core.lua", "Nameplates.lua", "CastBar.lua", "Combo.lua", "UnitFrames.lua", "CharacterSheet.lua", "CharacterLists.lua", "ActionBars.lua", "Minimap.lua", "Tracker.lua", "Options.lua", "Probe.lua"}) do
         local chunk, err = loadfile(root .. "/ForeverClassicUI/" .. file)
         assert(chunk, err)
         chunk("ForeverClassicUI", ns)
@@ -1176,13 +1247,72 @@ do
     w.currencyTab = false
     cs:Force()
     check(tabs.list[5].shown == false and tabs.padding == 32, "sheet: currency tab only when Forever would show it, padding relaxed")
-    -- switch to reputation: Blizzard's layout comes back on that tab
-    t2.scripts.OnClick(t2)
-    check(w.toggled == "ReputationFrame" and ReputationFrame.shown == true and PaperDollFrame.shown == false, "sheet: tab click opens the reputation frame")
-    check(cf.width == 631 and cf.height == 484 and cf.NineSlice.alpha == 1 and cf.LeftPaneHost.alpha == 1 and cf.CloseButton.mouse == true, "sheet: Blizzard's shell back on the reputation tab")
-    check(sheet.shown == false and t2.selected == true and t1.selected == false, "sheet: our art hidden, reputation tab active")
+    -- switch to currency: Blizzard's layout comes back on that tab
+    local t5 = tabs.list[5]
+    t5.scripts.OnClick(t5)
+    check(w.toggled == "TokenFrame" and TokenFrame.shown == true and PaperDollFrame.shown == false, "sheet: tab click opens the currency frame")
+    check(cf.width == 631 and cf.height == 484 and cf.NineSlice.alpha == 1 and cf.LeftPaneHost.alpha == 1 and cf.CloseButton.mouse == true, "sheet: Blizzard's shell back on the currency tab")
+    check(sheet.shown == false and t5.selected == true and t1.selected == false, "sheet: our art hidden, currency tab active")
     check(p.anchors[1][2] == cf.PortraitContainer and p.anchors[1][4] == -5 and p.width == 62 and cf.TitleContainer.anchors[1][1] == "TOPLEFT" and cf.TitleContainer.width == 549, "sheet: portrait and title back where Blizzard had them")
     check(cf.ModeTabs.alpha == 0 and tabs.shown == true and w.panelWidth == 713, "sheet: side tabs stay hidden, our tabs stay, panel width back to Blizzard's")
+    -- reputation tab: classic list inside the classic sheet
+    t2.scripts.OnClick(t2)
+    local rep = cs.panels[1]
+    check(rep.frameName == "ReputationFrame" and rep.built == true and ReputationFrame.shown == true, "reputation: panel built and its Blizzard frame is the one shown")
+    check(cf.width == 384 and sheet.shown == true and sheet.doll.shown == false and sheet.art[1].texture == "Interface\\PaperDollInfoFrame\\UI-Character-General-TopLeft" and sheet.art[1].anchors[1][4] == 2 and sheet.art[1].anchors[1][5] == -1, "reputation: classic sheet with the General art, paper doll pieces hidden")
+    check(ReputationFrame.ScrollBox.shown == false and ReputationFrame.ScrollBar.shown == false and ReputationFrame.ReputationDetailFrame.shown == false and ReputationFrame.filterDropdown.shown == false, "reputation: Blizzard's scroll box and detail pane hidden")
+    check(rep.list.shown == true and rep.list.parent == ReputationFrame and rep.list.FactionLabel.anchors[1][4] == 70 and rep.list.StandingLabel.anchors[1][4] == 215, "reputation: our list on the frame with Era's column labels")
+    local b1, b2, b3, b4, b5 = rep.bars[1], rep.bars[2], rep.bars[3], rep.bars[4], rep.bars[5]
+    check(b1.shown == false and b1.header.shown == true and b1.header.Text.text == "Alliance" and b1.header.NormalTexture.texture == "Interface\\Buttons\\UI-MinusButton-Up", "reputation: header row with the minus button")
+    check(b1.anchors[1][4] == 150 and b1.anchors[1][5] == -86 and b2.anchors[1][5] == -86 - 23 and b1.header.anchors[1][2] == b1 and b1.header.anchors[1][4] == -125, "reputation: Era row positions")
+    check(b2.shown == true and b2.Name.text == "Stormwind" and b2.Standing.text == "Honored" and b2.minmax[2] == 12000 and b2.value == 6000 and b2.barColor[2] == 0.6, "reputation: bar filled and coloured by standing")
+    check(b2.Check.shown == true and b2.Name.width == 100 and b3.Check.shown == false, "reputation: watched faction gets the check mark")
+    check(b3.minmax[2] == 1 and b3.value == 1 and b3.Standing.text == "Exalted", "reputation: exalted shows a full bar")
+    check(b4.AtWar.shown == true and b2.AtWar.shown == false, "reputation: at-war swords on the faction at war")
+    check(b5.header.shown == true and b5.header.NormalTexture.texture == "Interface\\Buttons\\UI-PlusButton-Up" and b5.header.collapsed == true, "reputation: collapsed header shows the plus button")
+    check(b1.Left.texture == "Interface\\PaperDollInfoFrame\\UI-Character-ReputationBar" and b1.Left.width == 256 and b1.Left.anchors[1][4] == -126 and b1.barTexture == "Interface\\PaperDollInfoFrame\\UI-Character-Skills-Bar", "reputation: Era bar art")
+    b2.scripts.OnEnter(b2)
+    check(b2.Standing.text == "|cffffffff 6000 / 12000|r" and b2.Highlight1.shown == true, "reputation: hover shows the numbers and the highlight")
+    b2.scripts.OnLeave(b2)
+    check(b2.Standing.text == "Honored" and b2.Highlight1.shown == false, "reputation: leave puts the standing back")
+    b5.header.scripts.OnClick(b5.header)
+    check(w.expanded[1] == 5 and b5.header.collapsed == false, "reputation: header click expands through C_Reputation")
+    b4.scripts.OnMouseUp(b4)
+    check(w.selectedFaction == 4 and rep.detail.shown == true and rep.detail.Name.text == "Booty Bay" and rep.detail.Description.text == "Pirates." and b4.Highlight1.shown == true, "reputation: click selects the faction and opens the Era detail popup")
+    check(rep.detail.AtWar.checked == true and rep.detail.AtWar.enabled == true and rep.detail.Inactive.checked == false and rep.detail.Watch.checked == false, "reputation: detail checkboxes reflect the faction")
+    check(rep.detail.anchors[1][2] == ReputationFrame and rep.detail.anchors[1][3] == "TOPRIGHT" and rep.detail.anchors[1][4] == -33 and rep.detail.width == 212, "reputation: popup hangs off the frame's right edge like Era")
+    rep.detail.AtWar.checked = false; rep.detail.AtWar.scripts.OnClick(rep.detail.AtWar)
+    check(w.atWarToggled[1] == 4 and b4.AtWar.shown == false, "reputation: at-war box toggles through the API and the swords go")
+    rep.detail.Watch.checked = true; rep.detail.Watch.scripts.OnClick(rep.detail.Watch)
+    check(w.watched == 4, "reputation: show-as-experience box sets the watched faction")
+    rep.detail.Inactive.checked = true; rep.detail.Inactive.scripts.OnClick(rep.detail.Inactive)
+    check(w.factionActive[4] == false and rep.detail.Inactive.checked == true, "reputation: inactive box moves the faction")
+    b4.scripts.OnMouseUp(b4)
+    check(rep.detail.shown == false and w.selectedFaction == 0 and b4.Highlight1.shown == false, "reputation: second click closes the popup and clears the selection")
+    -- skills tab
+    local t3 = tabs.list[3]
+    t3.scripts.OnClick(t3)
+    local sk = cs.panels[2]
+    check(sk.built == true and SkillsFrame.shown == true and rep.list.shown == false and cf.width == 384, "skills: panel up, reputation list gone, classic size kept")
+    check(sheet.art[3].texture == "Interface\\PaperDollInfoFrame\\SkillFrame-BotLeft" and SkillsFrame.ScrollBox.shown == false and SkillsFrame.SkillDetailFrame.shown == false, "skills: skill-frame bottom art, Blizzard's list hidden")
+    local r1, r2, r3, r4 = sk.rows[1], sk.rows[2], sk.rows[3], sk.rows[4]
+    check(r1.shown == false and r1.header.shown == true and r1.header.Text.text == "Weapon Skills" and r1.header.index == 3, "skills: class skills hidden like Forever, weapon header first")
+    check(r2.shown == true and r2.Name.text == "Daggers" and r2.Rank.text == "1/195" and r2.minmax[2] == 195 and r2.value == 1 and r2.barColor[3] == 1, "skills: skill bar with rank text, blue")
+    check(r3.Name.text == "Defense" and r3.Rank.text == "187 (|cff20ff20+3|r)/195", "skills: defense modifier from UnitDefenseSkill")
+    check(r4.shown == false and r4.header.shown == true and r4.header.NormalTexture.texture == "Interface\\Buttons\\UI-PlusButton-Up", "skills: collapsed secondary header")
+    check(r1.anchors[1][4] == 38 and r1.anchors[1][5] == -79 and r2.anchors[1][5] == -97 and r1.header.anchors[1][4] == 22 and r1.header.anchors[1][5] == -86, "skills: Era row positions")
+    check(r2.Border.NormalTexture.texture == "Interface\\PaperDollInfoFrame\\UI-Character-Skills-BarBorder" and r2.Border.width == 281, "skills: bevel border around each bar")
+    check(sk.allButton.collapsed == true and sk.detail.bar.shown == false, "skills: All button shows plus while a header is collapsed, no detail yet")
+    sk.allButton.scripts.OnClick(sk.allButton)
+    check(w.skillExpanded[1] == 6 and w.skillExpanded[2] == 3 and w.skillExpanded[3] == 1 and sk.allButton.collapsed == false, "skills: All expands every header, last first")
+    check(sk.rows[5].Name.text == "Cooking" and sk.rows[5].barColor[1] == 0.75 and sk.rows[5].barColor[2] == 0.75, "skills: expanded header's skill listed, secondary colour")
+    sk.rows[5].Border.scripts.OnClick(sk.rows[5].Border)
+    check(w.selectedSkill == 7 and sk.rows[5].Border.highlightLocked == true and sk.detail.bar.shown == true and sk.detail.bar.Name.text == "Cooking" and sk.detail.Description.text == "Cooking.", "skills: click selects and fills the detail bar")
+    check(sk.detail.bar.Unlearn.shown == true, "skills: abandonable skill shows the unlearn button")
+    sk.detail.bar.Unlearn.scripts.OnClick(sk.detail.bar.Unlearn)
+    check(w.popup and w.popup[1] == "UNLEARN_SKILL" and w.popup[3] == 185, "skills: unlearn goes through Blizzard's confirmation popup")
+    sk.allButton.scripts.OnClick(sk.allButton)
+    check(#w.skillCollapsed == 3 and w.skillCollapsed[1] == 6, "skills: All collapses every header")
     -- and back
     t1.scripts.OnClick(t1)
     check(PaperDollFrame.shown == true and cf.width == 384 and sheet.shown == true and t1.selected == true, "sheet: character tab restores the classic layout")
@@ -1191,6 +1321,7 @@ do
     w.slash("charsheet off")
     check(cs.mode == "off" and cf.width == 631 and cf.NineSlice.alpha == 1 and cf.ModeTabs.alpha == 1 and cf.ModeTabs.Tabs[1].mouse == true, "off: Blizzard's frame size, shell and side tabs back")
     check(sheet.shown == false and tabs.shown == false, "off: our sheet and tabs hidden")
+    check(ReputationFrame.ScrollBox.shown == true and SkillsFrame.SkillDetailFrame.shown == true and rep.list.shown == false and sk.list.shown == false, "off: Blizzard's reputation and skills lists back")
     local h = CharacterHeadSlot.anchors[1]
     check(h[2] == cf.LeftPaneHost and h[4] == 24 and h[5] == -60 and CharacterHeadSlot.BorderFrame.alpha == 1 and CharacterModelScene.anchors[1][2] == cf.LeftPaneHost and CharacterModelScene.width == 398, "off: slots and model back on Blizzard's anchors")
     check(CharacterStatsPaneScrollBox.shown == true and CharacterStatsPaneScrollBox.alpha == 1 and PaperDollSidebarTabs.alpha == 1, "off: Blizzard's stats list back")
