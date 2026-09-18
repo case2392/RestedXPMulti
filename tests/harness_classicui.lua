@@ -739,39 +739,77 @@ local function NewWorld(opts)
             _G.GetUIPanelAttribute = function(frame, name) if frame == psf and name == "width" then return 809 end end
             return psf
             end
-            -- professions book: retail's ProfessionsBookFrame (Blizzard_ProfessionsBook, load-on-demand)
+            -- professions window: Forever's ProfessionsFrame (overview page with five cards, crafting page, side tabs)
             function w.LoadProfessionsBook()
-            local pb = Frame("ProfessionsBookFrame"); pb:SetSize(550, 525); pb.level = 1
-            pb.NineSlice = Frame("NineSlice"); pb.Bg = Region("Texture"); pb.TopTileStreaks = Region("Texture"); pb.Inset = Frame("Inset")
-            pb.CloseButton = Frame("CloseButton"); pb.TitleContainer = Frame("TitleContainer"); pb.MainHelpButton = Frame("MainHelpButton")
+            local pb = Frame("ProfessionsFrame"); pb:SetSize(673, 594); pb.level = 1
+            pb.NineSlice = Frame("NineSlice"); pb.Bg = Region("Texture", {atlas = "Profession-Background-Overview"})
+            pb.CloseButton = Frame("CloseButton"); pb.TitleContainer = Frame("TitleContainer"); pb.TitleContainer.TitleText = Region("FontString")
             pb.PortraitContainer = Frame("PortraitContainer"); pb.PortraitContainer.portrait = Region("Texture"); pb.PortraitContainer.CircleMask = Region("MaskTexture")
             pb.PortraitContainer.portrait:SetPoint("TOPLEFT", pb.PortraitContainer, "TOPLEFT", -5, 7); pb.PortraitContainer.portrait:SetSize(62, 62)
-            pb.Page1 = Region("Texture", {file = "Interface\\Spellbook\\Professions-Book-Left"}); pb.Page2 = Region("Texture")
-            pb.ProfessionsContentFrame = Frame("ProfessionsContentFrame")
-            local function SpellButton(name)
-                local b = Frame(name); b:SetSize(40, 40); b.IconTexture = Region("Texture"); b.spellString = Region("FontString"); b.subSpellString = Region("FontString")
-                _G[name .. "NameFrame"] = Region("Texture", {file = "Interface\\Spellbook\\ProfessionsBook"})
-                _G[name] = b
+            pb.BookPage = Frame("BookPage"); pb.BookPage:SetSize(673, 594); pb.BookPage.level = 100; pb.BookPage.parent = pb
+            pb.CraftingPage = Frame("CraftingPage"); pb.CraftingPage.parent = pb; pb.CraftingPage.shown = false
+            pb.BookPage.ProfessionsContentFrame = Frame("ProfessionsContentFrame"); pb.BookPage.ProfessionsContentFrame.level = 101
+            local content = pb.BookPage.ProfessionsContentFrame
+            local function SpellButton(row, key, x, y, name, sub)
+                local b = Frame(nil); b:SetSize(40, 40); b:SetPoint("BOTTOMLEFT", row, "BOTTOMLEFT", x, y); b.parent = row
+                b.IconTexture = Region("Texture"); b.IconTextureOverlay = Region("Texture", {atlas = "Profession-square-frame"}); b.IconTextureOverlay:SetSize(48, 48)
+                b.spellString = Region("FontString"); b.spellString:SetText(name); b.spellString.textColor = {1, 0.82, 0}
+                function b.spellString:GetTextColor() return unpack(self.textColor) end
+                b.subSpellString = Region("FontString"); b.subSpellString:SetText(sub); b.subSpellString.textColor = {0.82, 0.70, 0.54}
+                function b.subSpellString:GetTextColor() return unpack(self.textColor) end
+                row[key] = b
                 return b
             end
-            local function ProfRow(name, w, h)
-                local r = Frame(name); r:SetSize(w, h); r:SetPoint("TOPLEFT", pb.ProfessionsContentFrame, "TOPLEFT", 80, -67)
-                r.professionName = Region("FontString"); r.missingHeader = Region("FontString"); r.missingText = Region("FontString"); r.rank = Region("FontString")
-                r.icon = Region("Texture"); _G[name .. "IconBorder"] = Region("Texture", {file = "Interface\\Spellbook\\ProfessionsBook"})
-                r.SpellButton1 = SpellButton(name .. "SpellButton1"); r.SpellButton2 = SpellButton(name .. "SpellButton2")
-                r.statusBar = Frame(name .. "StatusBar"); r.statusBar.rankText = Region("FontString"); r.statusBar.capRight = Region("Texture")
-                for _, s in ipairs({"Left", "BGLeft", "BGRight", "BGMiddle"}) do _G[name .. "StatusBar" .. s] = Region("Texture") end
-                r.statusBar:SetStatusBarTexture("Interface\\Spellbook\\Professions-Progress-Fill")
-                _G[name] = r
+            local function Card(key, w, h, profession)
+                local r = Frame(nil); r:SetSize(w, h); r:SetPoint("TOPLEFT", content, "TOPLEFT", 5, -41); r.parent = content; r.level = 102
+                r.Background = Region("Texture", {atlas = "Profession-overview-Card-" .. (profession or "generic")})
+                r.ProfessionName = Region("FontString"); r.ProfessionName:SetPoint("TOPLEFT", r, "TOPLEFT", 20, -24); r.ProfessionName:SetText(profession)
+                r.ProfessionName.textColor = {1, 0.82, 0}; function r.ProfessionName:GetTextColor() return unpack(self.textColor) end
+                r.missingHeader = Region("FontString"); r.missingText = Region("FontString"); r.missingText:SetSize(485, 22); r.missingText.textColor = {1, 1, 1}
+                function r.missingText:GetTextColor() return unpack(self.textColor) end
+                SpellButton(r, "SpellButton1", 15, 60, profession and "Tanning" or "", ""); SpellButton(r, "SpellButton2", 15, 10, profession or "", "Apprentice")
+                r.StatusBar = Frame(nil); r.StatusBar:SetSize(441, 18); r.StatusBar.parent = r; r.StatusBar.Fill = Region("Texture", {atlas = "Skillbar_Fill_Flipbook_Skinning"})
+                r.StatusBar.Rank = Frame(nil); r.StatusBar.Rank.Text = Region("FontString"); r.StatusBar.Rank.Text:SetText(profession and (profession .. " 1/75") or "")
+                r.UnlearnButton = Frame(nil); r.UnlearnButton:SetSize(20, 20); r.UnlearnButton:SetPoint("LEFT", r.StatusBar, "RIGHT", 1, -4); r.UnlearnButton.parent = r
+                if not profession then r.StatusBar.shown = false; r.SpellButton1.shown = false; r.SpellButton2.shown = false; r.UnlearnButton.shown = false; r.ProfessionName.shown = false
+                else r.missingHeader.shown = false; r.missingText.shown = false end
+                content[key] = r
                 return r
             end
-            ProfRow("PrimaryProfession1", 437, 81); ProfRow("PrimaryProfession2", 437, 81)
-            ProfRow("SecondaryProfession1", 437, 46); ProfRow("SecondaryProfession2", 437, 46); ProfRow("SecondaryProfession3", 437, 46)
-            function pb:Update() PrimaryProfession1SpellButton1NameFrame:SetAlpha(1); PrimaryProfession1.statusBar:SetStatusBarTexture("Interface\\Spellbook\\Professions-Progress-Fill") end
+            Card("PrimaryProfession1", 664, 142, "Skinning"); Card("PrimaryProfession2", 664, 142)
+            Card("SecondaryProfession1", 225, 275, "Cooking"); Card("SecondaryProfession2", 225, 275); Card("SecondaryProfession3", 225, 275)
+            content.PrimaryProfession2.missingHeader:SetText("Second Profession"); content.PrimaryProfession2.missingText:SetText("You can learn a second primary profession.")
+            local function SideTab(key, i)
+                local t = Frame(key); t:SetSize(55, 55); t.parent = pb; t.level = 3
+                t:SetPoint("TOPLEFT", pb, "TOPRIGHT", 0, -60 - (i - 1) * 55)
+                t.Background = Region("Texture", {atlas = "common-sidetab"}); t.Icon = Region("Texture"); t.Icon:SetSize(50, 50); t.Icon:SetPoint("CENTER", t, "CENTER", 0, 0)
+                t.Mask = Region("MaskTexture"); t.SelectedTexture = Region("Texture"); t.SelectedTexture.shown = i == 1; t.TabGlow = Region("Texture"); t.HighlightTexture = Region("Texture")
+                function t.Icon:AddMaskTexture(m) self.maskAdded = m end
+                pb[key] = t
+                return t
+            end
+            SideTab("ProfessionsOverviewTab", 1); SideTab("Professions1Tab", 2)
+            pb.updates = 0
+            function pb:Update()
+                -- Blizzard's refresh: card art and layout back
+                self.updates = self.updates + 1
+                local p1 = content.PrimaryProfession1
+                p1:ClearAllPoints(); p1:SetPoint("TOPLEFT", content, "TOPLEFT", 5, -41); p1:SetSize(664, 142)
+                p1.SpellButton1.IconTextureOverlay:SetAlpha(1); p1.StatusBar:SetAlpha(1); p1.Background:SetAlpha(1)
+            end
             function pb:Show() if not self.shown then self.shown = true; if self.scripts and self.scripts.OnShow then self.scripts.OnShow(self) end end end
             function pb:Hide() if self.shown then self.shown = false; if self.scripts and self.scripts.OnHide then self.scripts.OnHide(self) end end end
+            local page = pb.BookPage
+            function page:Show() if not self.shown then self.shown = true; if self.scripts and self.scripts.OnShow then self.scripts.OnShow(self) end end end
+            function page:Hide() if self.shown then self.shown = false; if self.scripts and self.scripts.OnHide then self.scripts.OnHide(self) end end end
             pb:Hide()
-            _G.ProfessionsBookFrame = pb
+            _G.ProfessionsFrame = pb
+            -- Skinning (prof1) and Cooking (slot 5); the other slots empty
+            _G.GetProfessions = function() return 11, nil, nil, nil, 15 end
+            _G.GetProfessionInfo = function(id)
+                if id == 11 then return "Skinning", 134366, 1, 75, 2, 0, 393, 0 end
+                if id == 15 then return "Cooking", 133971, 42, 75, 2, 0, 185, 5 end
+            end
             return pb
             end
             _G.Enum.SpellBookSpellBank = {Player = 0, Pet = 1}
@@ -1789,27 +1827,44 @@ do
     check(sb.mode == "restyled" and psf.width == 384 and book.shown == true, "on: classic book again")
     check(#w.ns.errors == 0 and #w.blizzErrors == 0, "book: no errors")
 
-    -- professions book: Era's book round Blizzard's five rows
+    -- professions window: Era's book round Blizzard's five cards
     local pr = w.ns.modules.professions
-    check(pr.mode == "waiting" and ProfessionsBookFrame == nil and pr.watcher ~= nil, "professions: waits for Blizzard_ProfessionsBook")
+    check(pr.mode == "waiting" and ProfessionsFrame == nil and pr.watcher ~= nil, "professions: waits for Blizzard's ProfessionsFrame")
     local pb = w.LoadProfessionsBook()
-    pr.watcher:Fire("ADDON_LOADED", "Blizzard_ProfessionsBook")
-    check(pr.mode == "restyled" and pr.book ~= nil and pr.book.parent == pb and pr.book.shown == false, "professions: re-skinned once the window loads, book built and kept hidden until it opens")
+    pr.watcher:Fire("ADDON_LOADED", "Blizzard_Professions")
+    check(pr.mode == "restyled" and pr.book ~= nil and pr.book.parent == pb and pr.book.shown == false, "professions: re-skinned once the window exists, book built and kept hidden until it opens")
     pb:Show()
     check(pb.width == 384 and pb.height == 512 and pr.book.shown == true and pr.book.title.text == "Professions" and pr.book.art[1].texture == "Interface\\Spellbook\\UI-SpellbookPanel-TopLeft", "professions: Era's 384x512 book with the title once open")
-    check(pb.NineSlice.alpha == 0 and pb.Inset.alpha == 0 and pb.CloseButton.mouse == false and pb.TitleContainer.alpha == 0 and pb.Page1.alpha == 0 and pb.MainHelpButton.alpha == 0, "professions: retail shell, page art and help button faded")
-    local p1, s1 = PrimaryProfession1, SecondaryProfession1
-    check(math.abs(p1.scale - 340 / 437) < 0.001 and p1.anchors[1][2] == pb and math.abs(p1.anchors[1][4] - 22 / (340 / 437)) < 0.01 and math.abs(p1.anchors[1][5] + 70 / (340 / 437)) < 0.01, "professions: first row scaled to the page and anchored down it")
-    check(math.abs(PrimaryProfession2.anchors[1][5] + 143 / (340 / 437)) < 0.01 and math.abs(s1.anchors[1][5] + 226 / (340 / 437)) < 0.01 and math.abs(SecondaryProfession3.anchors[1][5] + 338 / (340 / 437)) < 0.01 and pr.rows == 5, "professions: five rows down the page")
-    check(PrimaryProfession1IconBorder.alpha == 0 and PrimaryProfession1SpellButton1NameFrame.alpha == 0 and pr.own[p1.SpellButton1].ring.texture == "Interface\\Buttons\\UI-Quickslot2" and pr.own[p1.SpellButton1].ring.width == 68, "professions: retail icon ring and name plates faded, classic ring on the spell buttons")
-    check(p1.statusBar.barTexture == "Interface\\PaperDollInfoFrame\\UI-Character-Skills-Bar" and p1.statusBar.barColor[3] == 0.75 and PrimaryProfession1StatusBarBGMiddle.alpha == 0 and pr.own[p1.statusBar].backing.shown ~= false, "professions: rank bar is Era's blue skill bar over a dark backing")
-    check(p1.SpellButton1.spellString.textColor[2] == 0.82 and p1.rank.textColor[1] == 0.25, "professions: spell names gold, rank text brown on the parchment")
+    check(pb.NineSlice.alpha == 0 and pb.Bg.alpha == 0 and pb.CloseButton.mouse == false and pb.TitleContainer.alpha == 0 and pb.PortraitContainer.portrait.width == 58, "professions: retail shell faded, the book icon in the corner")
+    local content = pb.BookPage.ProfessionsContentFrame
+    local p1, p2, s1, s3 = content.PrimaryProfession1, content.PrimaryProfession2, content.SecondaryProfession1, content.SecondaryProfession3
+    check(p1.anchors[1][2] == pb and p1.anchors[1][4] == 22 and p1.anchors[1][5] == -70 and p1.width == 340 and p1.height == 62, "professions: first card is a 340x62 row at the top of the page")
+    check(p2.anchors[1][5] == -138 and s1.anchors[1][5] == -206 and s3.anchors[1][5] == -342 and s3.width == 340 and pr.rows == 5, "professions: five rows down the page")
+    check(p1.Background.alpha == 0 and p1.ProfessionName.anchors[1][4] == 8 and p1.ProfessionName.anchors[1][5] == -4, "professions: card art faded, the name top left of the row")
+    local b1, b2 = p1.SpellButton1, p1.SpellButton2
+    check(b1.anchors[1][2] == p1 and b1.anchors[1][4] == 8 and b1.anchors[1][5] == -24 and b2.anchors[1][4] == 175 and b1.IconTextureOverlay.alpha == 0, "professions: the two spell buttons under the name, retail square frame faded")
+    check(pr.own[b1].ring.texture == "Interface\\Buttons\\UI-Quickslot2" and math.abs(pr.own[b1].ring.width - 64 * 40 / 37) < 0.01 and b1.subSpellString.textColor[1] == 0.5, "professions: classic quickslot ring round each icon, rank line brown")
+    local bar = pr.own[p1].bar
+    check(p1.StatusBar.alpha == 0 and bar ~= nil and bar.shown == true and bar.barTexture == "Interface\\PaperDollInfoFrame\\UI-Character-Skills-Bar" and bar.barColor[3] == 0.75 and bar.width == 137, "professions: Blizzard's rank bar faded, Era's blue skill bar in its place")
+    check(bar.minmax[2] == 75 and bar.value == 1 and bar.Rank.text == "1/75" and bar.Left.texture == "Interface\\PaperDollInfoFrame\\UI-Character-Skills-BarBorder", "professions: skill bar filled from GetProfessionInfo in the skills bevel")
+    check(pr.own[s1].bar.Rank.text == "42 (+5)/75" and pr.own[p2].bar.shown == false, "professions: skill modifier shown, no bar on an empty card")
+    check(p1.UnlearnButton.anchors[1][2] == bar and p1.UnlearnButton.anchors[1][3] == "RIGHT", "professions: unlearn button past the end of our bar")
+    check(p2.missingText.anchors[1][4] == 8 and p2.missingText.anchors[1][5] == -24 and p2.missingText.width == 322 and p2.missingText.textColor[1] == 0.25 and p2.missingHeader.anchors[1][5] == -4, "professions: empty card's text wrapped in the row in parchment brown")
+    local t1, t2 = pb.ProfessionsOverviewTab, pb.Professions1Tab
+    check(t1.width == 32 and t1.anchors[1][2] == pb and t1.anchors[1][3] == "TOPRIGHT" and t1.anchors[1][4] == -32 and t1.anchors[1][5] == -65 and t2.anchors[1][5] == -114 and pr.tabs == 2, "professions: side tabs are Era's 32px skill line tabs down the right edge")
+    check(t1.Background.alpha == 0 and t1.SelectedTexture.alpha == 0 and pr.own[t1].bg.texture == "Interface\\SpellBook\\SpellBook-SkillLineTab" and pr.own[t1].checked.shown == true and pr.own[t2].checked.shown == false and t1.Icon.maskRemoved == t1.Mask and t1.Icon.width == 32, "professions: retail tab art faded, classic tab art and checked glow, icon square")
     pb:Update()
-    check(PrimaryProfession1SpellButton1NameFrame.alpha == 0 and p1.statusBar.barTexture == "Interface\\PaperDollInfoFrame\\UI-Character-Skills-Bar", "professions: re-skinned after Blizzard's update")
-    pb:SetSize(550, 525)
+    check(pb.updates == 1 and p1.width == 340 and p1.anchors[1][2] == pb and b1.IconTextureOverlay.alpha == 0 and p1.StatusBar.alpha == 0, "professions: re-skinned after Blizzard's update")
+    pb:SetSize(673, 594)
     check(pb.width == 384, "professions: Blizzard's own resize undone")
+    pb.BookPage:Hide()
+    check(pb.width == 673 and pr.book.shown == false and pr.applied == false and p1.width == 664 and p1.anchors[1][2] == content and t1.width == 55 and pb.NineSlice.alpha == 1 and pr.own[p1].bar.shown == false, "professions: crafting page up: retail window and cards back")
+    check(pr:Status():find("crafting page up") ~= nil, "professions: status says the crafting page is up")
+    pb.BookPage:Show()
+    check(pb.width == 384 and pr.book.shown == true and p1.width == 340 and pr.applied == true, "professions: classic again on the overview page")
     w.slash("professions off")
-    check(pr.mode == "off" and pb.width == 550 and pb.NineSlice.alpha == 1 and pr.book.shown == false and p1.scale == 1 and p1.anchors[1][2] == pb.ProfessionsContentFrame and PrimaryProfession1SpellButton1NameFrame.alpha == 1 and pr.own[p1.SpellButton1].ring.shown == false, "professions off: Blizzard's window, rows and art back")
+    check(pr.mode == "off" and pb.width == 673 and pb.NineSlice.alpha == 1 and pr.book.shown == false and p1.width == 664 and p1.anchors[1][2] == content and b1.IconTextureOverlay.alpha == 1 and pr.own[b1].ring.shown == false and b1.subSpellString.textColor[1] == 0.82, "professions off: Blizzard's window, cards and art back")
+    check(p2.missingText.textColor[1] == 1 and p2.missingText.width == 485 and t1.Icon.maskAdded == t1.Mask and t1.Background.alpha == 1 and pr.own[t1].bg.shown == false and p1.StatusBar.alpha == 1, "professions off: text colours, tab masks and rank bars back")
     w.slash("professions on")
     check(pr.mode == "restyled" and pb.width == 384 and pr.book.shown == true, "professions on: classic again")
     check(#w.ns.errors == 0 and #w.blizzErrors == 0, "professions: no errors")

@@ -280,7 +280,7 @@ function ns.BuildProbe()
          yn(has("ObjectiveTrackerFrame")), yn(has("QuestWatchFrame")))
     -- the professions window: which of the retail names Forever uses
     local profNames = {}
-    for _, n in ipairs({"ProfessionsBookFrame", "ProfessionsBook", "ProfessionsFrame", "SpellBookProfessionFrame", "PrimaryProfession1", "SecondaryProfession1", "ToggleProfessionsBook", "Blizzard_ProfessionsBook"}) do
+    for _, n in ipairs({"ProfessionsBookFrame", "ProfessionsBook", "ProfessionsFrame", "SpellBookProfessionFrame", "PrimaryProfession1", "SecondaryProfession1", "ToggleProfessionsBook", "Blizzard_ProfessionsBook", "Blizzard_Professions"}) do
         local v = _G[n]
         local loaded = false
         if n:find("^Blizzard_") then
