@@ -659,13 +659,37 @@ local function IsForeverBook()
     return psf ~= nil and psf.SpellBookFrame ~= nil and API() ~= nil
 end
 
+-- Forever's spell window lives in Blizzard_PlayerSpells, which is loaded on
+-- demand the first time the book is opened, so at login there is nothing to
+-- hook yet. Watch ADDON_LOADED and finish enabling once the frame exists.
+local function WatchForBook()
+    if M.watcher or not CreateFrame then return end
+    local watcher = CreateFrame("Frame")
+    watcher:RegisterEvent("ADDON_LOADED")
+    watcher:SetScript("OnEvent", function(_, _, name)
+        if M.mode ~= "waiting" then return end
+        if name == "Blizzard_PlayerSpells" or IsForeverBook() then
+            if ns.SafeCall("spellbook", M.Enable, M) and M.mode == "restyled" then
+                watcher:UnregisterEvent("ADDON_LOADED")
+            end
+        end
+    end)
+    M.watcher = watcher
+end
+
 function M:Enable()
     if G("SpellBookFrame") and not G("PlayerSpellsFrame") then
         self.mode = "native" -- classic client: its own book
         return
     end
     if not IsForeverBook() then
-        self.mode = "off"
+        if API() ~= nil and not G("PlayerSpellsFrame") then
+            self.mode = "waiting"
+            WatchForBook()
+            if self.watcher then self.watcher:RegisterEvent("ADDON_LOADED") end
+        else
+            self.mode = "off"
+        end
         return
     end
     self.missingArt = {}
@@ -724,6 +748,8 @@ function M:Status()
         return s
     elseif self.mode == "native" then
         return "classic client, Blizzard's book left alone"
+    elseif self.mode == "waiting" then
+        return "waiting for Blizzard's spell window to load (it loads the first time the book is opened)"
     end
     return "off"
 end

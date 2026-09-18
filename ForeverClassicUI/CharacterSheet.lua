@@ -545,12 +545,49 @@ local function UpdateArmor(sheet)
     end
 end
 
+-- Forever has no UnitAttackBothHands; the weapon skill is read off the
+-- skills list instead: item weapon subclass -> Era skill line id.
+local WEAPON_SKILL_BY_SUBCLASS = {
+    [0] = 44, [1] = 172, [2] = 45, [3] = 46, [4] = 54, [5] = 160, [6] = 229, [7] = 43,
+    [8] = 55, [10] = 136, [11] = 473, [12] = 473, [13] = 162, [15] = 173, [16] = 176,
+    [18] = 226, [19] = 228
+}
+local UNARMED_SKILL = 162
+
+local function WeaponSkillFromSkills()
+    local api = C_SkillInfo
+    if not (api and api.GetNumSkillLines and api.GetSkillLineInfo) then return end
+    local skillID = UNARMED_SKILL
+    local itemID = GetInventoryItemID and GetInventoryItemID("player", 16)
+    if itemID then
+        local classID, subclassID
+        if C_Item and C_Item.GetItemInfoInstant then
+            local _, _, _, _, _, c, s = C_Item.GetItemInfoInstant(itemID)
+            classID, subclassID = c, s
+        elseif GetItemInfoInstant then
+            local _, _, _, _, _, c, s = GetItemInfoInstant(itemID)
+            classID, subclassID = c, s
+        end
+        if classID == 2 and WEAPON_SKILL_BY_SUBCLASS[subclassID] then
+            skillID = WEAPON_SKILL_BY_SUBCLASS[subclassID]
+        end
+    end
+    for i = 1, api.GetNumSkillLines() do
+        local info = api.GetSkillLineInfo(i)
+        if info and not info.isHeader and info.skillID == skillID then
+            return info.rank or 0, (info.modifier or 0) + (info.tempPoints or 0), info.name
+        end
+    end
+end
+
 local function UpdateMelee(sheet)
     local rows = sheet.rows
     -- weapon skill line (Era "Melee Attack 195")
-    if UnitAttackBothHands then
-        local base, mod = UnitAttackBothHands("player")
-        base, mod = base or 0, mod or 0
+    local base, mod
+    if UnitAttackBothHands then base, mod = UnitAttackBothHands("player") end
+    if base == nil then base, mod = WeaponSkillFromSkills() end
+    if base ~= nil then
+        mod = mod or 0
         if mod == 0 then
             rows.ATTACK.Value:SetText(base)
         else
@@ -560,6 +597,7 @@ local function UpdateMelee(sheet)
         rows.ATTACK.tooltip2 = Str("ATTACK_TOOLTIP_SUBTEXT", "Your skill with the equipped weapon.")
     else
         rows.ATTACK.Value:SetText("-")
+        rows.ATTACK.tooltip = nil
     end
     if UnitAttackPower then
         local base, posBuff, negBuff = UnitAttackPower("player")
@@ -769,9 +807,11 @@ end
 
 -- lay the tabs out along the bottom edge: Era spacing when it fits, tighter
 -- side padding when Forever's extra tabs (currency, statistics) would not
-function M.LayoutTabs()
+function M.LayoutTabs(classic)
     local tabs = M.tabs
     if not tabs then return end
+    if classic == nil then classic = tabs.classic ~= false end
+    tabs.classic = classic
     local shown, textTotal = {}, 0
     for _, tab in ipairs(tabs.list) do
         if TabWanted(tab.info) then
@@ -786,9 +826,13 @@ function M.LayoutTabs()
     if n == 0 then return end
     local padding = TAB_PADDING
     local total = textTotal + n * padding - (n - 1) * 16
-    if total > TAB_ROW_WIDTH then
+    if classic and total > TAB_ROW_WIDTH then
         padding = math.max(TAB_MIN_PADDING, math.floor((TAB_ROW_WIDTH - textTotal + (n - 1) * 16) / n))
     end
+    -- Era: the row sits on the sheet art's bottom margin. On a tab that keeps
+    -- Blizzard's wide window (Currency, Statistics) the row hangs under the
+    -- window's bottom edge instead, the way retail's own bottom tabs do.
+    local tabY = classic and 62 or -14
     local prev
     for _, tab in ipairs(shown) do
         local textWidth = tab.Text.GetStringWidth and tab.Text:GetStringWidth() or 40
@@ -799,7 +843,7 @@ function M.LayoutTabs()
         if prev then
             tab:SetPoint("LEFT", prev, "RIGHT", -16, 0)
         else
-            tab:SetPoint("CENTER", G("CharacterFrame"), "BOTTOMLEFT", 60, 62)
+            tab:SetPoint("CENTER", G("CharacterFrame"), "BOTTOMLEFT", 60, tabY)
         end
         prev = tab
     end
@@ -1012,7 +1056,7 @@ function M.Apply()
     end
     SideTabs(cf, true)
     M.tabs:Show()
-    M.LayoutTabs()
+    M.LayoutTabs(classic)
     M.UpdateTabs()
 end
 

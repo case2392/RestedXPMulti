@@ -583,7 +583,10 @@ local function NewWorld(opts)
                 GetRenownRewardsForLevel = function(id, level) if level == 4 then return {{icon = 135026, description = "Faction Tabard"}} end return {} end
             }
             _G.C_SeasonInfo = {GetTimeUntilCurrentPVPSeasonEnd = function() return 3 * 86400 end}
-            -- spellbook: Forever's PlayerSpellsFrame (retail) with its spellbook page and C_SpellBook
+            -- spellbook: Forever's PlayerSpellsFrame (retail) with its spellbook page and C_SpellBook.
+            -- The frame lives in Blizzard_PlayerSpells, loaded on demand when the book is first
+            -- opened, so it does not exist at login: w.LoadPlayerSpells() stands in for that load.
+            function w.LoadPlayerSpells()
             local psf = Frame("PlayerSpellsFrame"); psf:SetSize(809, 720); psf.level = 1
             psf.NineSlice = Frame("NineSlice"); psf.Bg = Region("Texture"); psf.TopTileStreaks = Region("Texture")
             psf.CloseButton = Frame("CloseButton"); psf.TabSystem = Frame("TabSystem")
@@ -601,6 +604,8 @@ local function NewWorld(opts)
             psf:Hide()
             _G.PlayerSpellsFrame = psf
             _G.GetUIPanelAttribute = function(frame, name) if frame == psf and name == "width" then return 809 end end
+            return psf
+            end
             _G.Enum.SpellBookSpellBank = {Player = 0, Pet = 1}
             _G.Enum.SpellBookItemType = {None = 0, Spell = 1, FutureSpell = 2, PetAction = 3, Flyout = 4}
             _G.PAGE_NUMBER = "Page %d"; _G.SPELLBOOK = "Spellbook"; _G.PET = "Pet"
@@ -1284,6 +1289,21 @@ do
     check(rows.STRENGTH.Value.text == "|cff20ff2026|r" and rows.STRENGTH.tooltip:find("26", 1, true) and rows.STRENGTH.tooltip:find("+5", 1, true), "sheet: buffed stat shown green with the formula in the tooltip")
     check(rows.ARMOR.Value.text == "|cff20ff20350|r" and rows.ARMOR.tooltip2:find("12.50", 1, true), "sheet: armor with the reduction line")
     check(rows.ATTACK.Value.text == 195 and rows.ATTACK_POWER.Value.text == "|cffff2020115|r", "sheet: weapon skill and attack power (debuffed: red)")
+    -- Forever has no UnitAttackBothHands: the weapon skill comes off the skills list for the equipped weapon
+    local savedBothHands = _G.UnitAttackBothHands
+    _G.UnitAttackBothHands = nil
+    _G.GetInventoryItemID = function(unit, slot) if slot == 16 then return 2092 end end
+    _G.C_Item = {GetItemInfoInstant = function(id) return id, "Weapon", "Daggers", "INVTYPE_WEAPON", 135641, 2, 15 end}
+    sheet.scripts.OnEvent(sheet, "SKILL_LINES_CHANGED")
+    check(rows.ATTACK.Value.text == 1 and rows.ATTACK.tooltip == "Weapon Skill", "sheet: without UnitAttackBothHands the dagger skill rank comes from C_SkillInfo")
+    _G.GetInventoryItemID = function() return nil end
+    w.skills[#w.skills + 1] = {skillID = 162, name = "Unarmed", parentSkillLineID = 0, skillLineCategoryID = 9, rank = 12, maxRank = 195, modifier = 2, tempPoints = 0}
+    sheet.scripts.OnEvent(sheet, "SKILL_LINES_CHANGED")
+    check(rows.ATTACK.Value.text == "|cff20ff2014|r", "sheet: no weapon -> Unarmed, modifier shown green")
+    table.remove(w.skills)
+    _G.UnitAttackBothHands = savedBothHands
+    _G.GetInventoryItemID = nil; _G.C_Item = nil
+    sheet.scripts.OnEvent(sheet, "SKILL_LINES_CHANGED")
     check(rows.DAMAGE.Value.text == "40 - 60" and rows.DAMAGE.dps == 20 and rows.DAMAGE.attackSpeed == 2.5, "sheet: melee damage and dps")
     check(rows.RANGED_ATTACK.Value.text == "N/A" and rows.RANGED_DAMAGE.Value.text == "N/A", "sheet: no ranged weapon -> N/A")
     w.rangedTexture = 12345
@@ -1410,8 +1430,14 @@ end
 do
     local w = NewWorld({style = "6", forever = true})
     local sb = w.ns.modules.spellbook
-    local psf = PlayerSpellsFrame
-    check(sb.mode == "restyled" and sb.book ~= nil and sb.book.parent == psf, "book: re-skinned on Forever, book built on Blizzard's window")
+    check(sb.mode == "waiting" and PlayerSpellsFrame == nil and sb.watcher ~= nil, "book: nothing to hook at login, module waits for Blizzard_PlayerSpells")
+    w.slash("spellbook")
+    check(Printed("waiting for Blizzard's spell window"), "book: status says so")
+    sb.watcher:Fire("ADDON_LOADED", "Blizzard_SomethingElse")
+    check(sb.mode == "waiting", "book: other addons loading change nothing")
+    local psf = w.LoadPlayerSpells()
+    sb.watcher:Fire("ADDON_LOADED", "Blizzard_PlayerSpells")
+    check(sb.mode == "restyled" and sb.book ~= nil and sb.book.parent == psf, "book: re-skinned once Blizzard's window loads, book built on it")
     psf:Show()
     check(psf.width == 384 and psf.height == 512, "book: window is Era's 384x512 once open")
     check(psf.NineSlice.alpha == 0 and psf.Bg.alpha == 0 and psf.TopTileStreaks.alpha == 0 and psf.CloseButton.alpha == 0 and psf.CloseButton.mouse == false and psf.MaximizeMinimizeButton.alpha == 0, "book: retail shell faded, close and maximize unclickable")
