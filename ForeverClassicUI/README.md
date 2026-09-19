@@ -206,20 +206,24 @@ usually enough to rebuild that window in the classic style.
   own backdrop and wide background. The Era panel is drawn behind the lot.
   Forever's title and close button are left alone, and the roster, tabs,
   chat and finder inside are Blizzard's.
-- **The Era panel** — all three of those use one shared piece. Era's
-  *book* art is four fixed quarters with the decoration baked into their
-  corners, so it only looks right at Era's own 384x512; stretching it
-  across a tall narrow quest list or a 703x606 collections window is what
-  made these look mangled in 0.7.1 and 0.7.2. The obvious substitute is
-  Era's dialog frame, tiling `UI-DialogBox-Background` inside the gold
-  nine-slice `UI-DialogBox-Border` — but on Forever those two files
-  resolve to file IDs (131071 and 131072) and then draw nothing, so 0.7.4
-  and 0.7.5 hung invisible panels on all three windows and they went
-  see-through instead of parchment. Since 0.7.6 the panel is built by
-  hand out of things that cannot fail to draw: a solid parchment fill and
-  a gold frame, both plain colour, with Era's parchment laid over the
-  fill. Where that file really draws it covers the flat colour and the
-  panel is Era's own; where it does not, the flat parchment stands in.
+- **The Era panel** — all three of those use one shared piece, and it
+  took three goes to get right. Era's page art is four fixed quarters of
+  a 384x512 page with the decoration baked into their corners, so
+  stretching a quarter whole across some other rectangle pulls the
+  decoration out of shape: that is what looked mangled in 0.7.1 and
+  0.7.2. Era's dialog frame would scale — tiling `UI-DialogBox-Background`
+  inside the nine-slice `UI-DialogBox-Border` — and that is what 0.7.4
+  and 0.7.5 used, but on Forever both files resolve to file IDs (131071
+  and 131072) and then draw nothing, so those panels were invisible and
+  the windows went see-through. 0.7.6 fell back to flat colour and came
+  out as a black slab; Era has no black window. Since 0.7.7 the panel is
+  Era's *spellbook page* — the art the professions window is built from,
+  which demonstrably draws on this client — cut into a nine-slice: the
+  four corners at their own size, the four edges stretched along each
+  side, and a clean patch of parchment from the middle of the page
+  stretched over the inside. Only plain parchment is ever stretched, so
+  the decoration keeps its proportions at any size. A solid parchment
+  fill sits underneath in case the art ever fails too.
 - **Action bars** — Era's whole bottom bar. The addon draws the 1024x53
   `UI-MainMenuBar-Dwarf` stone bar with the gryphon end caps along the
   bottom of the screen and moves Blizzard's pieces onto it: the twelve

@@ -373,6 +373,11 @@ local function PlacePortrait(btn)
     p:ClearAllPoints()
     p:SetSize(18, 25)
     p:SetPoint("CENTER", btn, "CENTER", 0, -1)
+    -- Era draws the face over the button's frame, and Forever's portrait
+    -- sits on ARTWORK like the frame does - but ours is set second, so it
+    -- landed on top and the character button came out as an empty plate.
+    -- The portrait goes a layer up, where Era has it.
+    if p.SetDrawLayer then pcall(p.SetDrawLayer, p, "OVERLAY") end
 end
 
 local function SkinMicroButton(btn, name)
@@ -513,7 +518,11 @@ local function LayoutMicroMenu(art)
     if container and container.SetPoint then
         container:SetSize(natural * scale, MICRO_H * scale)
         container:ClearAllPoints()
-        container:SetPoint("BOTTOMLEFT", art, "BOTTOMLEFT", MICRO_X, MICRO_Y)
+        -- a scaled row is shorter than the bag slots beside it; sitting it
+        -- on the bar's floor left a gap along the top and read as not
+        -- fitting, so it is centred on the band the bags occupy instead
+        local lift = MICRO_Y + (MICRO_H - MICRO_H * scale) / 2
+        container:SetPoint("BOTTOMLEFT", art, "BOTTOMLEFT", MICRO_X, lift)
     end
 end
 

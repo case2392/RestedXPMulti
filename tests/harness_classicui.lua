@@ -1493,7 +1493,7 @@ do
     check(math.abs(c2.scale - 0.8) < 0.001 and math.abs(c2.anchors[1][4] - 42 / 0.8) < 0.001 and MainActionBar.width == 498, "forever: containers re-laid out after Blizzard's grid layout")
     local pn = MainActionBar.ActionBarPageNumber
     check(pn.anchors[1][2] == art and pn.anchors[1][4] == 506 and pn.anchors[1][5] == 3 and pn.Text.anchors[1][4] == 15 and pn.UpButton.NormalTexture.texture == "Interface\\MainMenuBar\\UI-MainMenu-ScrollUpButton-Up" and pn.UpButton.anchors[1][5] == 10, "forever: page number and classic arrows right of the buttons")
-    check(MicroMenuContainer.anchors[1][2] == art and MicroMenuContainer.anchors[1][4] == 552 and MicroMenuContainer.anchors[1][5] == 2 and MicroMenu.BorderArt.alpha == 0, "forever: micro menu on the bar at 552, retail border gone")
+    check(MicroMenuContainer.anchors[1][2] == art and MicroMenuContainer.anchors[1][4] == 552 and math.abs(MicroMenuContainer.anchors[1][5] - (2 + (37 - 37 * ab.microScale) / 2)) < 0.01 and MicroMenu.BorderArt.alpha == 0, "forever: micro menu on the bar at 552, centred on the bag band when the row is scaled, retail border gone")
     check(CharacterMicroButton.width == 31 and CharacterMicroButton.NormalTexture.texture == "Interface\\Buttons\\UI-MicroButtonCharacter-Up" and CharacterMicroButton.NormalTexture.texcoord[3] == 0.359375 and CharacterMicroButton.Background.alpha == 0 and CharacterMicroButton.Portrait.width == 18, "forever: character micro button classic with the small portrait")
     check(SpellbookMicroButton.NormalTexture.texture == "Interface\\Buttons\\UI-MicroButton-Spellbook-Up" and SpellbookMicroButton.HighlightTexture.texture == "Interface\\Buttons\\UI-MicroButton-Hilight" and ab.microSkinned == 12, "forever: every micro button classic")
     check(AchievementMicroButton.anchors == nil or #AchievementMicroButton.anchors == 0, "forever: a micro button parked outside the menu is not pulled into the row")
@@ -2026,7 +2026,8 @@ do
     side:Show()
     local panel, border = ql.panel, QuestScrollFrame.BorderFrame
     check(panel.shown == true and panel.level == 4, "questlog: the Era panel is level with the list so the quest rows draw on top")
-    check(panel.fill ~= nil and panel.fill.color ~= nil and panel.fill.color[4] == 1 and panel.paper ~= nil and panel.paper.texture == "Interface\\DialogFrame\\UI-DialogBox-Background" and #panel.edges == 8, "questlog: solid Era parchment with the gold frame, and Era's own parchment over it where that file draws")
+    check(panel.fill ~= nil and panel.fill.color ~= nil and panel.fill.color[4] == 1 and #panel.art == 9 and panel.art[1].texture == "Interface\\Spellbook\\UI-SpellbookPanel-TopLeft" and panel.art[3].texture == "Interface\\Spellbook\\UI-SpellbookPanel-TopRight", "questlog: Era's page as a nine-slice, so only plain parchment is ever stretched")
+    check(panel.art[2].width == 22 and panel.art[2].height == 22 and panel.art[6].height == 22 and panel.art[6].width == 0 and panel.art[8].width == 22 and panel.art[8].height == 0, "questlog: corners at their own size, edges stretched along each side")
     check(panel.anchors[1][4] == -3 and panel.anchors[1][5] == 7 and panel.anchors[2][4] == 3 and panel.anchors[2][5] == -6, "questlog: the panel takes exactly the rect retail's quest panel filled")
     check(side.Background.alpha == 0 and QuestScrollFrame.Background.alpha == 0 and border.Border.alpha == 0 and border.TopDetail.alpha == 0 and border.Shadow.alpha == 0, "questlog: retail's quest panel, filigree and shadow faded")
     local mapw, mpanel = WorldMapFrame, ql.mapPanel
@@ -2054,7 +2055,7 @@ do
     local cpanel = co.panel
     local page = WardrobeCollectionFrame.activeFrame
     check(cpanel.shown == true and cpanel.fill ~= nil and cpanel.fill.color ~= nil and cpanel.fill.color[4] == 1, "collections: the Era panel behind the window, solid so the window is never see-through")
-    check(cpanel.paper ~= nil and cpanel.paper.texture == "Interface\\DialogFrame\\UI-DialogBox-Background" and #cpanel.edges == 8, "collections: Era's gold frame round it, Era's parchment over the fill, no stretched book art")
+    check(#cpanel.art == 9 and cpanel.art[1].texture == "Interface\\Spellbook\\UI-SpellbookPanel-TopLeft" and cpanel.art[5].texture == "Interface\\Spellbook\\UI-SpellbookPanel-BotRight", "collections: Era's page round it as a nine-slice, no stretched book art")
     check(cj.Bg.alpha == 0 and cj.NineSlice.TopEdge.alpha == 0 and cj.PortraitContainer.portrait.alpha == 0, "collections: retail's shell and portrait faded")
     check(page.Bg.alpha == 0 and page.BackgroundTile.alpha == 0 and page.ShadowCornerTopLeft.alpha == 0 and page.NineSlice.TopEdge.alpha == 0, "collections: the dark page inside the window faded too")
     check(cj.CloseButton.alpha == 1 and cj.CloseButton.mouse ~= false and cj.TitleContainer.TitleText.alpha == 1, "collections: Forever's own title and close button left alone")
@@ -2072,7 +2073,7 @@ do
     cf:Show()
     local gpanel = gu.panel
     local list, finder = CommunitiesList, ClubFinderGuildFinderFrame
-    check(gpanel.shown == true and gpanel.fill ~= nil and gpanel.fill.color ~= nil and gpanel.fill.color[4] == 1 and #gpanel.edges == 8, "guild: the Era panel behind the window, solid so the window is never see-through")
+    check(gpanel.shown == true and gpanel.fill ~= nil and gpanel.fill.color ~= nil and gpanel.fill.color[4] == 1 and #gpanel.art == 9, "guild: Era's page behind the window, on a solid fill so it is never see-through")
     check(cf.Bg.alpha == 0 and cf.TopTileStreaks.alpha == 0 and cf.NineSlice.TopEdge.alpha == 0 and cf.PortraitContainer.portrait.alpha == 0 and cf.PortraitOverlay.Portrait.alpha == 0, "guild: retail's metal shell, streaks and portrait faded")
     check(list.Bg.alpha == 0 and list.TopFiligree.alpha == 0 and list.BottomFiligree.alpha == 0 and list.FilligreeOverlay.LeftBar.alpha == 0 and list.InsetFrame.NineSlice.TopEdge.alpha == 0, "guild: the sidebar's dark page, filigree and inset faded")
     check(finder.DisabledFrame.Bg.alpha == 0 and finder.DisabledFrame.WideBackground.alpha == 0 and finder.DisabledFrame.NineSlice.TopEdge.alpha == 0, "guild: the guild finder page faded too")

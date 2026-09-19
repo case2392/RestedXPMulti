@@ -1,40 +1,45 @@
 -- Forever Classic UI - an Era-looking panel at any size
 --
--- Era's window art (the spellbook book, the quest log book) is four fixed
--- quarters with the decoration baked into their corners. Stretching those
--- across a rectangle that is not Era's own 384x512 pulls the decoration
--- out of shape, so they cannot be used to frame Forever's own windows.
+-- Era's window art is four fixed quarters of a 384x512 page with the
+-- decoration baked into their corners. Stretched whole across some other
+-- rectangle the decoration pulls out of shape, which is why 0.7.1 and
+-- 0.7.2 looked mangled.
 --
--- The obvious substitute is Era's dialog frame - the tiling parchment
--- UI-DialogBox-Background inside the gold nine-slice UI-DialogBox-Border.
--- On this client that turns out not to work: GetFileIDFromPath resolves
--- both files (131071 and 131072), but nothing is drawn, so 0.7.4 and
--- 0.7.5 put invisible panels on the quest log, the Appearances window and
--- the guild window - the windows went see-through instead of parchment.
+-- The dialog frame (tiling UI-DialogBox-Background inside the gold
+-- nine-slice UI-DialogBox-Border) would scale, and it is what 0.7.4 and
+-- 0.7.5 used - but on this client GetFileIDFromPath resolves both files
+-- (131071, 131072) and then nothing is drawn, so those panels were
+-- invisible. 0.7.6 fell back to flat colour, which came out as a black
+-- slab: Era has no black window.
 --
--- So the panel is built by hand out of things that cannot fail to draw:
--- a solid parchment fill and a gold frame, both plain colour, with Era's
--- parchment laid over the fill on top. On a client where the parchment
--- file really does draw (Classic Era itself) it covers the flat colour
--- and the panel is Era's own; where it does not, the flat parchment
--- stands in and the window still reads as Era rather than as a hole.
+-- Era's spellbook page does draw here - it is what the professions window
+-- is built from, and that one looks right. So the panel is that page cut
+-- into a nine-slice: the four corners at their own size, the four edges
+-- stretched along each side, and a clean patch of parchment from the
+-- middle of the page stretched over the inside. The decoration keeps its
+-- proportions at any size because only plain parchment is ever stretched.
+-- A solid parchment fill sits underneath in case the art ever fails.
 
 local addonName, ns = ...
 
-local DF = "Interface\\DialogFrame\\"
+local SB = "Interface\\Spellbook\\UI-SpellbookPanel-"
 ns.ERA_PANEL = {
-    background = DF .. "UI-DialogBox-Background",
-    border = DF .. "UI-DialogBox-Border",
-    edgeSize = 32,
-    tileSize = 256,
-    insets = {left = 11, right = 12, top = 12, bottom = 11}
+    topLeft = SB .. "TopLeft",
+    topRight = SB .. "TopRight",
+    botLeft = SB .. "BotLeft",
+    botRight = SB .. "BotRight"
 }
 
--- Era's parchment, its gold frame and the dark line outside it
-local PARCHMENT = {0.09, 0.07, 0.05, 1}
-local GOLD = {0.42, 0.33, 0.17, 1}
-local OUTLINE = {0.02, 0.02, 0.01, 1}
-local GOLD_W, OUTLINE_W = 3, 1
+-- Era's page is 384x512 drawn from four 256x256 quarters, so the right
+-- quarters only use their left half (384-256 = 128 = half of 256) while
+-- the bottom quarters use all of theirs. B is the decorated border as a
+-- fraction of a quarter: 22 page pixels of frame.
+local B = 22 / 256
+local EDGE = 22          -- how wide that frame is drawn
+-- a patch of plain page, clear of the frame and of the spine at u = 0.75
+local PAPER = {0.12, 0.38, 0.12, 0.38}
+
+local PARCHMENT = {0.32, 0.25, 0.16, 1}
 
 local function HasFile(path)
     if not GetFileIDFromPath then return true end
@@ -44,34 +49,26 @@ end
 
 function ns.EraPanelArtMissing()
     local missing = {}
-    for _, key in ipairs({"background", "border"}) do
+    for _, key in ipairs({"topLeft", "topRight", "botLeft", "botRight"}) do
         local path = ns.ERA_PANEL[key]
         if not HasFile(path) then missing[#missing + 1] = path:match("[^\\]+$") end
     end
     return missing
 end
 
--- four plain-colour bars making a frame `inset` in from the panel's edge
-local function Frame4(panel, layer, width, inset, colour, into)
-    local sides = {
-        {"TOPLEFT", inset, -inset, "TOPRIGHT", -inset, -inset, nil, width},          -- top
-        {"BOTTOMLEFT", inset, inset, "BOTTOMRIGHT", -inset, inset, nil, width},      -- bottom
-        {"TOPLEFT", inset, -inset, "BOTTOMLEFT", inset, inset, width, nil},          -- left
-        {"TOPRIGHT", -inset, -inset, "BOTTOMRIGHT", -inset, inset, width, nil}       -- right
-    }
-    for i, s in ipairs(sides) do
-        local t = panel:CreateTexture(nil, layer)
-        t:SetColorTexture(colour[1], colour[2], colour[3], colour[4])
-        if s[7] then t:SetWidth(s[7]) end
-        if s[8] then t:SetHeight(s[8]) end
-        t:SetPoint(s[1], panel, s[1], s[2], s[3])
-        t:SetPoint(s[4], panel, s[4], s[5], s[6])
-        into[#into + 1] = t
-    end
+-- one piece of the nine-slice: which quarter it comes from, the patch of
+-- it to use, and where on the panel it goes
+local function Piece(panel, path, coord, points, w, h)
+    local t = panel:CreateTexture(nil, "BACKGROUND")
+    t:SetTexture(path)
+    t:SetTexCoord(coord[1], coord[2], coord[3], coord[4])
+    if w then t:SetWidth(w) end
+    if h then t:SetHeight(h) end
+    for _, p in ipairs(points) do t:SetPoint(p[1], panel, p[2], p[3], p[4]) end
+    return t
 end
 
--- a frame of ours, parchment inside Era's gold border. It is only the
--- backdrop: the caller anchors it and decides what it sits over.
+-- a frame of ours, Era's page at whatever size the caller anchors it to.
 function ns.BuildEraPanel(name, parent)
     if not CreateFrame then return nil end
     local ok, panel = pcall(CreateFrame, "Frame", name, parent)
@@ -79,24 +76,33 @@ function ns.BuildEraPanel(name, parent)
     if not panel.CreateTexture then return panel end
     local art = ns.ERA_PANEL
 
-    -- the parchment: flat colour first so the panel is never a hole, then
-    -- Era's own parchment over it for clients where that file draws
+    -- flat parchment under everything, so the panel is never a hole even
+    -- if this client draws nothing for the page either
     local fill = panel:CreateTexture(nil, "BACKGROUND")
     fill:SetAllPoints(panel)
     fill:SetColorTexture(PARCHMENT[1], PARCHMENT[2], PARCHMENT[3], PARCHMENT[4])
     panel.fill = fill
 
-    local paper = panel:CreateTexture(nil, "BACKGROUND")
-    paper:SetAllPoints(panel)
-    pcall(paper.SetTexture, paper, art.background, "REPEAT", "REPEAT")
-    if paper.SetHorizTile then pcall(paper.SetHorizTile, paper, true) end
-    if paper.SetVertTile then pcall(paper.SetVertTile, paper, true) end
-    panel.paper = paper
-
-    -- the frame: a dark line round the outside, Era's gold inside it
-    panel.edges = {}
-    Frame4(panel, "BORDER", OUTLINE_W, 0, OUTLINE, panel.edges)
-    Frame4(panel, "BORDER", GOLD_W, OUTLINE_W, GOLD, panel.edges)
+    local E = EDGE
+    panel.art = {
+        -- the page's own parchment, stretched over everything but the frame
+        Piece(panel, art.topLeft, PAPER,
+              {{"TOPLEFT", "TOPLEFT", E, -E}, {"BOTTOMRIGHT", "BOTTOMRIGHT", -E, E}}),
+        -- the four corners, each at its own size
+        Piece(panel, art.topLeft, {0, B, 0, B}, {{"TOPLEFT", "TOPLEFT", 0, 0}}, E, E),
+        Piece(panel, art.topRight, {0.5 - B, 0.5, 0, B}, {{"TOPRIGHT", "TOPRIGHT", 0, 0}}, E, E),
+        Piece(panel, art.botLeft, {0, B, 1 - B, 1}, {{"BOTTOMLEFT", "BOTTOMLEFT", 0, 0}}, E, E),
+        Piece(panel, art.botRight, {0.5 - B, 0.5, 1 - B, 1}, {{"BOTTOMRIGHT", "BOTTOMRIGHT", 0, 0}}, E, E),
+        -- and the four edges between them
+        Piece(panel, art.topLeft, {B, 0.38, 0, B},
+              {{"TOPLEFT", "TOPLEFT", E, 0}, {"TOPRIGHT", "TOPRIGHT", -E, 0}}, nil, E),
+        Piece(panel, art.botLeft, {B, 0.38, 1 - B, 1},
+              {{"BOTTOMLEFT", "BOTTOMLEFT", E, 0}, {"BOTTOMRIGHT", "BOTTOMRIGHT", -E, 0}}, nil, E),
+        Piece(panel, art.topLeft, {0, B, B, 0.38},
+              {{"TOPLEFT", "TOPLEFT", 0, -E}, {"BOTTOMLEFT", "BOTTOMLEFT", 0, E}}, E, nil),
+        Piece(panel, art.topRight, {0.5 - B, 0.5, B, 0.38},
+              {{"TOPRIGHT", "TOPRIGHT", 0, -E}, {"BOTTOMRIGHT", "BOTTOMRIGHT", 0, E}}, E, nil)
+    }
 
     panel:Hide()
     return panel
