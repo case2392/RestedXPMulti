@@ -141,6 +141,9 @@ local function Frame(name)
     function f:SetValue(v) self.value = v end
     function f:SetValueStep() end
     function f:SetHitRectInsets(...) self.hitRect = {...} end
+    function f:SetCursorPosition(p) self.cursor = p end
+    function f:GetEffectiveScale() return 1 end
+    function f:GetCenter() return 70, 70 end
     function f:LockHighlight() self.highlightLocked = true end
     function f:UnlockHighlight() self.highlightLocked = false end
     function f:SetCheckedTexture(t) self.CheckedTexture = self.CheckedTexture or Region("Texture"); self.CheckedTexture:SetTexture(t) end
@@ -298,6 +301,8 @@ local function NewWorld(opts)
         end
     end
     _G.InCombatLockdown = function() return w.inCombat end
+    _G.Screenshot = function() w.screenshots = (w.screenshots or 0) + 1 end
+    _G.GetCursorPosition = function() return w.cursorX or 0, w.cursorY or 0 end
     _G.YELLOW_FONT_COLOR = {r = 1, g = 0.82, b = 0}
     _G.GetBuildInfo = function() return opts.version or "1.15.9", "69722", "Sep 1 2026", opts.toc or 11509 end
     _G.WOW_PROJECT_ID = 2
@@ -940,7 +945,7 @@ local function NewWorld(opts)
 
     -- load the addon
     local ns = {}
-    for _, file in ipairs({"Core.lua", "Nameplates.lua", "CastBar.lua", "Combo.lua", "UnitFrames.lua", "PartyFrames.lua", "CharacterSheet.lua", "CharacterLists.lua", "SpellBook.lua", "Professions.lua", "ActionBars.lua", "Minimap.lua", "Tracker.lua", "Options.lua", "Probe.lua"}) do
+    for _, file in ipairs({"Core.lua", "Nameplates.lua", "CastBar.lua", "Combo.lua", "UnitFrames.lua", "PartyFrames.lua", "CharacterSheet.lua", "CharacterLists.lua", "SpellBook.lua", "Professions.lua", "ActionBars.lua", "Minimap.lua", "Tracker.lua", "Options.lua", "Probe.lua", "Feedback.lua"}) do
         local chunk, err = loadfile(root .. "/ForeverClassicUI/" .. file)
         assert(chunk, err)
         chunk("ForeverClassicUI", ns)
@@ -1925,7 +1930,7 @@ do
     w.slash("probe")
     check(w.ns.lastProbe and w.ns.lastProbe:find("saved file found at login: yes  logins counted in it: 2", 1, true) and w.ns.lastProbe:find("settings came from: saved file", 1, true), "reload: probe reports the saved file and login count")
     -- the same on a client that never writes the SavedVariables file: the CVar copy carries the settings
-    check(cvarCopy == "nameplates=0,castbar=1,combo=0,unitframes=0,party=0,charsheet=0,spellbook=0,professions=0,actionbars=0,minimap=0,tracker=0", "reload: every change is also written to the settings CVar")
+    check(cvarCopy == "nameplates=0,castbar=1,combo=0,unitframes=0,party=0,charsheet=0,spellbook=0,professions=0,actionbars=0,minimap=0,tracker=0,bugbutton=1,welcomed=0", "reload: every change is also written to the settings CVar, with the feedback flags")
     w = NewWorld({style = "6", forever = true, cvars = {ForeverClassicUI_settings = cvarCopy}})
     check(w.ns.dbLoaded == false and w.ns.db.unitframes == false and w.ns.db.castbar == true and w.ns.modules.unitframes.mode == "off" and w.ns.modules.castbar.mode == "restyled", "no saved file: settings restored from the CVar copy")
     check(w.ns.dbSource:find("cvar fallback", 1, true) and w.ns.optionsPanel.checks.minimap.checked == false, "no saved file: probe names the fallback, boxes match")
@@ -1933,6 +1938,55 @@ do
     check(w.cvars.ForeverClassicUI_settings:find("minimap=1", 1, true) and w.ns.db.minimap == true, "no saved file: slash changes go to the CVar copy too")
     w = NewWorld({style = "6", forever = true, cvars = {ForeverClassicUI_settings = w.cvars.ForeverClassicUI_settings}})
     check(w.ns.modules.minimap.mode == "restyled" and w.ns.modules.unitframes.mode == "off", "no saved file: second reload keeps the change")
+end
+
+--------------------------------------------------------------------------
+-- 7. Reporting a bug: welcome window, minimap button, error notice
+--------------------------------------------------------------------------
+do
+    local w = NewWorld({style = "6", forever = true})
+    local ns = w.ns
+    -- first run on an account: the welcome window is up and says how to send one
+    local welcome = ns.welcomeFrame
+    check(welcome ~= nil and welcome.shown == true and ns.db.welcomed == false, "feedback: the welcome window opens on a first run")
+    check(welcome.body.text:find("/cui report", 1, true) and welcome.body.text:find("screenshot", 1, true) and welcome.body.text:find("still the modern one", 1, true), "feedback: it covers both a broken look and a window not built yet")
+    check(welcome.link.text == ns.FEEDBACK_URL and ns.FEEDBACK_URL:find("curseforge", 1, true), "feedback: the page to paste it on is in a box to copy")
+    welcome.shot.scripts.OnClick(welcome.shot)
+    check(w.screenshots == 1, "feedback: the screenshot button takes one")
+    welcome.report.scripts.OnClick(welcome.report)
+    check(ns.lastProbe ~= nil and ns.lastProbe:find("Paste this", 1, true) and ns.lastProbe:find(ns.FEEDBACK_URL, 1, true), "feedback: the report says on its own first lines where it goes")
+    welcome.close.scripts.OnClick(welcome.close)
+    check(welcome.shown == false and ns.db.welcomed == true and w.cvars.ForeverClassicUI_settings:find("welcomed=1", 1, true), "feedback: closing it is remembered, in the file and the CVar copy")
+    -- the minimap button
+    local button = ns.minimapButton
+    check(button ~= nil and button.shown ~= false and button.parent == Minimap and button.icon.texture == "Interface\\Spellbook\\Spellbook-Icon", "feedback: a minimap button with the book icon")
+    check(button.anchors[1][2] == Minimap and button.anchors[1][1] == "CENTER", "feedback: it sits on the minimap ring")
+    button.scripts.OnEnter(button)
+    check(GameTooltip.lines[1] == "Classic UI for Forever" and GameTooltip.lines[2]:find("bug report", 1, true), "feedback: its tooltip says what it does")
+    ns.lastProbe = nil
+    button.scripts.OnClick(button, "LeftButton")
+    check(ns.lastProbe ~= nil and ns.lastProbe:find("Classic UI for Forever bug report", 1, true), "feedback: left click opens the report")
+    -- dragging round the ring keeps the angle
+    button.scripts.OnDragStart(button)
+    w.cursorX, w.cursorY = 70, 150
+    button.scripts.OnUpdate(button)
+    button.scripts.OnDragStop(button)
+    check(math.abs(ns.db.minimapAngle - 90) < 0.01 and math.abs(button.anchors[1][5] - 80) < 0.01, "feedback: dragging it moves it round the ring and the angle is kept")
+    -- the first error of a session says so, once
+    check(ns.errorNotice == nil, "feedback: no notice before anything goes wrong")
+    ns.errors[#ns.errors + 1] = "castbar: something went wrong"
+    check(ns.errorNotice ~= nil and ns.errorNotice.shown == true and #ns.errors == 1, "feedback: an error raises the notice, and the list is still a plain list")
+    ns.errorNotice.report.scripts.OnClick(ns.errorNotice.report)
+    check(ns.errorNotice.shown == false, "feedback: the notice opens the report and goes away")
+    ns.errors[#ns.errors + 1] = "castbar: and another"
+    check(ns.errorNotice.shown == false and #ns.errors == 2, "feedback: it does not come back a second time in one session")
+    -- turning the button off
+    w.slash("button off")
+    check(button.shown == false and ns.db.bugbutton == false and w.cvars.ForeverClassicUI_settings:find("bugbutton=0", 1, true), "feedback: /cui button off hides it and is remembered")
+    check(ns.optionsPanel.bugButton ~= nil and ns.optionsPanel.bugButton.checked == false, "feedback: the options box follows")
+    w.slash("welcome")
+    check(ns.welcomeFrame.shown == true, "feedback: /cui welcome opens it again")
+    check(#w.blizzErrors == 0, "feedback: no errors")
 end
 
 realPrint(("Forever Classic UI harness: %d passed, %d failed"):format(passed, failed))

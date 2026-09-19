@@ -11,6 +11,30 @@ what its UI source calls it). This addon reads the same Blizzard frames retail
 addons do and moves their art, sizes and anchors to the Classic values taken
 from Classic Era's own UI code.
 
+## Reporting a bug
+
+An addon cannot send anything anywhere: the client gives Lua no network of
+any kind, and a screenshot it takes is saved into the game's Screenshots
+folder and stays there. So the addon does the next best thing and makes
+the report one click away:
+
+- a **welcome window** the first time it runs on an account (`/cui welcome`
+  brings it back), which explains the two things worth reporting: something
+  that looks wrong, and a window that is still the modern one because that
+  part is not built yet (the talent tree, anything past level 25). It has
+  buttons to open the report and to take a screenshot, and the page to
+  paste it on in a box to copy;
+- a **minimap button** (left click opens the report, right click the
+  settings, drag moves it round the ring). `/cui button off` hides it;
+- a **notice the first time something errors** in a session, with the same
+  button on it, once per session so it cannot nag;
+- the report itself now says on its first two lines what it is and where
+  to paste it, so it explains itself wherever it ends up.
+
+The report carries the client build, which parts are on, every error of
+the session and the full layout of whatever window is open, which is
+usually enough to rebuild that window in the classic style.
+
 ## What it does
 
 - **Nameplates** — the old rounded nameplate border with the level in it,

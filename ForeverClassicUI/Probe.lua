@@ -645,8 +645,15 @@ local REPORT_FRAMES_CLASSIC = {"FocusFrame", "TargetFrameToT", "PartyFrame", "Pa
 -- sheet (or spellbook, quest log, friends list) open captures its layout
 local REPORT_FRAMES_OPEN = {"CharacterFrame", "PlayerSpellsFrame", "SpellBookFrame", "PlayerTalentFrame", "ProfessionsBookFrame", "ProfessionsBook", "ProfessionsFrame", "SpellBookProfessionFrame", "QuestLogFrame", "FriendsFrame", "CommunitiesFrame", "ContainerFrame1"}
 
+-- the report is meant to be pasted somewhere public, so it says what it
+-- is and where it goes on its own first two lines
+local function ReportHeader()
+    return ("-- Classic UI for Forever bug report\n-- Paste this, and a screenshot of what looks wrong, as a comment on:\n--   %s")
+        :format(tostring(ns.FEEDBACK_URL or "the addon's page"))
+end
+
 function ns.BuildReport(includeHidden)
-    local parts = {ns.BuildProbe()}
+    local parts = {ReportHeader(), ns.BuildProbe()}
     local names = {}
     for _, n in ipairs(REPORT_FRAMES) do names[#names + 1] = n end
     for _, n in ipairs(REPORT_FRAMES_CLASSIC) do if _G[n] then names[#names + 1] = n end end

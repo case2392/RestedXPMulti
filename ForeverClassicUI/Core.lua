@@ -23,9 +23,14 @@ local DEFAULTS = {
     party = true,
     charsheet = true,
     spellbook = true,
+    professions = true,
     actionbars = true,
     minimap = true,
-    tracker = true
+    tracker = true,
+    -- not a look: the minimap bug-report button, and whether the welcome
+    -- window has been seen. Booleans so they ride the CVar fallback too.
+    bugbutton = true,
+    welcomed = false
 }
 
 function ns.Print(fmt, ...)
@@ -81,6 +86,10 @@ local function SerializeSettings()
     for _, name in ipairs(ns.moduleOrder) do
         parts[#parts + 1] = name .. "=" .. (ns.db[name] == false and "0" or "1")
     end
+    -- Forever does not always write the settings file, so the two
+    -- feedback flags ride the CVar with the rest
+    parts[#parts + 1] = "bugbutton=" .. (ns.db.bugbutton == false and "0" or "1")
+    parts[#parts + 1] = "welcomed=" .. (ns.db.welcomed == true and "1" or "0")
     return table.concat(parts, ",")
 end
 
@@ -148,6 +157,7 @@ function ns.OnLogin()
     end
     if #off > 0 then ns.Print("off (saved): %s", table.concat(off, ", ")) end
     if ns.BuildOptionsPanel then ns.SafeCall("options", ns.BuildOptionsPanel) end
+    if ns.FeedbackLogin then ns.SafeCall("feedback", ns.FeedbackLogin) end
 end
 
 --------------------------------------------------------------------------
@@ -187,6 +197,10 @@ local function PrintHelp()
     ns.Print("  /cui probe - client report only")
     ns.Print("  /cui dump <FrameName> - list a frame's visible parts (e.g. /cui dump TargetFrame)")
     ns.Print("  /cui dump target - the same for your target's nameplate")
+    ns.Print("  /cui welcome - the first-run window again (how to report a bug)")
+    ns.Print("  /cui link - where to send a report")
+    ns.Print("  /cui button on|off - the minimap bug-report button")
+    ns.Print("  /cui screenshot - save a screenshot to your WoW Screenshots folder")
 end
 
 function ns.HandleSlash(input)
@@ -204,6 +218,20 @@ function ns.HandleSlash(input)
             local target, mode = rawArg:match("^(%S*)%s*(%S*)$")
             ns.SafeCall("dump", ns.DumpFrame, target ~= "" and target or "TargetFrame", mode:lower() == "all")
         end
+    elseif cmd == "welcome" then
+        if ns.ShowWelcome then ns.SafeCall("welcome", ns.ShowWelcome) end
+    elseif cmd == "link" or cmd == "bug" then
+        ns.Print("report bugs here: %s", tostring(ns.FEEDBACK_URL))
+        ns.Print("copy the text from /cui report into a comment, with a screenshot.")
+    elseif cmd == "button" then
+        if ns.SetMinimapButton then
+            local on = arg ~= "off"
+            ns.SafeCall("button", ns.SetMinimapButton, on)
+            ns.Print("minimap bug-report button %s.", on and "on" or "off")
+            if ns.optionsPanel and ns.optionsPanel.Refresh then ns.optionsPanel.Refresh() end
+        end
+    elseif cmd == "screenshot" then
+        if ns.TakeScreenshot then ns.SafeCall("screenshot", ns.TakeScreenshot) end
     elseif cmd == "options" or cmd == "config" then
         if ns.OpenOptions then ns.SafeCall("options", ns.OpenOptions) end
     elseif cmd == "help" then

@@ -83,6 +83,31 @@ function ns.BuildOptionsPanel()
         y = y - rowHeight
     end
 
+    -- not a look setting: the bug-report button and the window that
+    -- explains how to send one
+    local bug = CreateFrame("CheckButton", nil, panel, "UICheckButtonTemplate")
+    bug:SetPoint("TOPLEFT", 16, y)
+    bug:SetSize(26, 26)
+    local bugLabel = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+    bugLabel:SetPoint("LEFT", bug, "RIGHT", 4, 0)
+    bugLabel:SetWidth(LABEL_WIDTH)
+    bugLabel:SetJustifyH("LEFT")
+    bugLabel:SetText("Minimap button for bug reports (and a notice when something errors)")
+    bug:SetScript("OnClick", function(self)
+        if ns.SetMinimapButton then ns.SetMinimapButton(self:GetChecked() and true or false) end
+    end)
+    panel.bugButton = bug
+    y = y - 30
+
+    local howto = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+    howto:SetPoint("TOPLEFT", 20, y - 4)
+    howto:SetSize(200, 24)
+    howto:SetText("How to report a bug")
+    howto:SetScript("OnClick", function()
+        if ns.ShowWelcome then ns.SafeCall("welcome", ns.ShowWelcome) end
+    end)
+    y = y - 34
+
     local status = panel:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
     status:SetPoint("TOPLEFT", 20, y - 8)
     status:SetWidth(LABEL_WIDTH + 30)
@@ -122,6 +147,7 @@ function ns.BuildOptionsPanel()
         for key, cb in pairs(panel.checks) do
             cb:SetChecked(ns.db[key] ~= false)
         end
+        if panel.bugButton then panel.bugButton:SetChecked(ns.db.bugbutton ~= false) end
         panel.RefreshStatus()
     end
     panel:SetScript("OnShow", panel.Refresh)
