@@ -192,7 +192,17 @@ usually enough to rebuild that window in the classic style.
   Forever's own title and close button are left alone: the title is
   already Era's gold font, and the X is the only way out. The lists, the
   model, the tabs and the filters inside are Blizzard's.
-- **The Era panel** — both of those use one shared piece: Era's tiling
+- **Guild** — Era's guild was a tab on the friends window; Forever ships
+  retail's separate `CommunitiesFrame`, so this is Era furniture too.
+  Retail's dark metal shell is faded — the window's own `Bg` and
+  `TopTileStreaks`, its nine-slice, portrait and portrait overlay — and so
+  is the dark art inside it, which hangs off frames of its own: the
+  sidebar's `Bg`, its top and bottom filigree and the bars and corners of
+  its `FilligreeOverlay`, every inset's nine-slice, and the guild finder's
+  own backdrop and wide background. The Era panel is drawn behind the lot.
+  Forever's title and close button are left alone, and the roster, tabs,
+  chat and finder inside are Blizzard's.
+- **The Era panel** — all three of those use one shared piece: Era's tiling
   parchment (`UI-DialogBox-Background`) inside the gold 32px nine-slice
   border (`UI-DialogBox-Border`), which is what Era's own dialogs and
   every Era-styled panel are built from. Era's *book* art is four fixed

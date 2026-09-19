@@ -73,6 +73,10 @@ local CLASSIC_TEXTURES = {
     "Interface\\Buttons\\CancelButton-Up",
     "Interface\\Buttons\\UI-CheckBox-SwordCheck",
     "Interface\\DialogFrame\\UI-DialogBox-Corner",
+    -- the two the Era panel is built from, on the quest log, the
+    -- Appearances window and the guild window
+    "Interface\\DialogFrame\\UI-DialogBox-Background",
+    "Interface\\DialogFrame\\UI-DialogBox-Border",
     "Interface\\TargetingFrame\\UI-PartyFrame",
     "Interface\\PaperDollInfoFrame\\UI-Character-Honor-TopLeft",
     "Interface\\PvPRankBadges\\PvPRank01",
@@ -707,7 +711,8 @@ local REPORT_FRAMES_CLASSIC = {"FocusFrame", "TargetFrameToT", "PartyFrame", "Pa
 -- panels: dumped only while open, so a report taken with the character
 -- sheet (or spellbook, quest log, friends list) open captures its layout
 local REPORT_FRAMES_OPEN = {"CharacterFrame", "PlayerSpellsFrame", "SpellBookFrame", "PlayerTalentFrame", "ProfessionsBookFrame", "ProfessionsBook", "ProfessionsFrame", "SpellBookProfessionFrame", "QuestLogFrame", "FriendsFrame", "CommunitiesFrame", "ContainerFrame1",
-    "WorldMapFrame", "QuestMapFrame", "QuestScrollFrame", "CollectionsJournal", "WardrobeFrame", "WardrobeCollectionFrame"}
+    "WorldMapFrame", "QuestMapFrame", "QuestScrollFrame", "CollectionsJournal", "WardrobeFrame", "WardrobeCollectionFrame",
+    "CommunitiesList", "ClubFinderGuildFinderFrame", "GuildFrame"}
 
 -- the report is meant to be pasted somewhere public, so it says what it
 -- is and where it goes on its own first two lines

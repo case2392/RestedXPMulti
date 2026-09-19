@@ -878,6 +878,52 @@ local function NewWorld(opts)
             _G.CollectionsJournal_SetTab = function(f, n) f.selectedTab = n end
             return cj
             end
+            -- Forever's guild window: retail's CommunitiesFrame, where Era
+            -- had a tab on the friends window
+            function w.LoadGuild()
+            local cf = Frame("CommunitiesFrame"); cf:SetSize(814, 426); cf.level = 1
+            cf.Bg = Region("Texture", {layer = "BACKGROUND"})
+            cf.TopTileStreaks = Region("Texture", {atlas = "_UI-Frame-TopTileStreaks", layer = "BORDER"})
+            cf.NineSlice = Frame("NineSlice")
+            cf.NineSlice.TopLeftCorner = Region("Texture", {atlas = "UI-Frame-PortraitMetal-CornerTopLeft"})
+            cf.NineSlice.TopEdge = Region("Texture", {atlas = "UI-Frame-Metal-EdgeTop"})
+            cf.PortraitContainer = Frame("PortraitContainer"); cf.PortraitContainer.portrait = Region("Texture")
+            cf.PortraitOverlay = Frame("PortraitOverlay"); cf.PortraitOverlay.Portrait = Region("Texture")
+            cf.CloseButton = Frame("CloseButton")
+            cf.TitleContainer = Frame("TitleContainer")
+            cf.TitleContainer.TitleText = Region("FontString"); cf.TitleContainer.TitleText:SetText("Guild & Communities")
+            -- the sidebar: its own dark page, filigree and inset nine-slice
+            local list = Frame("CommunitiesList"); list:SetSize(171, 374); list.parent = cf
+            list.Bg = Region("Texture", {layer = "BACKGROUND"})
+            list.TopFiligree = Region("Texture")
+            list.BottomFiligree = Region("Texture")
+            list.FilligreeOverlay = Frame("FilligreeOverlay")
+            list.FilligreeOverlay.LeftBar = Region("Texture")
+            list.FilligreeOverlay.TopBar = Region("Texture")
+            list.InsetFrame = Frame("InsetFrame")
+            list.InsetFrame.NineSlice = Frame("NineSlice")
+            list.InsetFrame.NineSlice.TopEdge = Region("Texture", {atlas = "UI-Frame-InnerTopTile"})
+            list.ScrollBox = Frame("ScrollBox"); list.ScrollBox.parent = list
+            cf.CommunitiesList = list
+            _G.CommunitiesList = list
+            -- the guild finder page, dark art of its own again
+            local finder = Frame("ClubFinderGuildFinderFrame"); finder:SetSize(611, 314); finder.parent = cf
+            finder.DisabledFrame = Frame("DisabledFrame")
+            finder.DisabledFrame.Bg = Region("Texture", {layer = "BACKGROUND"})
+            finder.DisabledFrame.WideBackground = Region("Texture", {atlas = "communities-widebackground"})
+            finder.DisabledFrame.NineSlice = Frame("NineSlice")
+            finder.DisabledFrame.NineSlice.TopEdge = Region("Texture", {atlas = "UI-Frame-InnerTopTile"})
+            finder.Title = Region("FontString"); finder.Title:SetText("Guild")
+            cf.GuildFinderFrame = finder
+            _G.ClubFinderGuildFinderFrame = finder
+            cf.displayMode = 1
+            function cf:SetDisplayMode(m) self.displayMode = m end
+            cf.shown = false
+            function cf:Show() if not self.shown then self.shown = true; if self.scripts and self.scripts.OnShow then self.scripts.OnShow(self) end end end
+            function cf:Hide() if self.shown then self.shown = false; if self.scripts and self.scripts.OnHide then self.scripts.OnHide(self) end end end
+            _G.CommunitiesFrame = cf
+            return cf
+            end
             _G.Enum.SpellBookSpellBank = {Player = 0, Pet = 1}
             _G.Enum.SpellBookItemType = {None = 0, Spell = 1, FutureSpell = 2, PetAction = 3, Flyout = 4}
             _G.PAGE_NUMBER = "Page %d"; _G.SPELLBOOK = "Spellbook"; _G.PET = "Pet"
@@ -1004,7 +1050,7 @@ local function NewWorld(opts)
 
     -- load the addon
     local ns = {}
-    for _, file in ipairs({"Core.lua", "EraPanel.lua", "Nameplates.lua", "CastBar.lua", "Combo.lua", "UnitFrames.lua", "PartyFrames.lua", "CharacterSheet.lua", "CharacterLists.lua", "SpellBook.lua", "Professions.lua", "QuestLog.lua", "Collections.lua", "ActionBars.lua", "Minimap.lua", "Tracker.lua", "Options.lua", "Probe.lua", "Feedback.lua"}) do
+    for _, file in ipairs({"Core.lua", "EraPanel.lua", "Nameplates.lua", "CastBar.lua", "Combo.lua", "UnitFrames.lua", "PartyFrames.lua", "CharacterSheet.lua", "CharacterLists.lua", "SpellBook.lua", "Professions.lua", "QuestLog.lua", "Collections.lua", "Guild.lua", "ActionBars.lua", "Minimap.lua", "Tracker.lua", "Options.lua", "Probe.lua", "Feedback.lua"}) do
         local chunk, err = loadfile(root .. "/ForeverClassicUI/" .. file)
         assert(chunk, err)
         chunk("ForeverClassicUI", ns)
@@ -2002,7 +2048,28 @@ do
     check(co.mode == "off" and cpanel.shown == false and cj.Bg.alpha == 1 and cj.NineSlice.TopEdge.alpha == 1 and page.Bg.alpha == 1 and page.NineSlice.TopEdge.alpha == 1, "collections off: retail's window back")
     w.slash("collections on")
     check(co.mode == "restyled" and cpanel.shown == true, "collections on: Era framing again")
-    check(#w.ns.errors == 0 and #w.blizzErrors == 0, "questlog and collections: no errors")
+
+    -- the guild window: Era's guild was a friends tab, so this is furniture too
+    local gu = w.ns.modules.guild
+    check(gu.mode == "waiting" and CommunitiesFrame == nil, "guild: waits for Forever's CommunitiesFrame")
+    local cf = w.LoadGuild()
+    gu.watcher:Fire("ADDON_LOADED", "Blizzard_Communities")
+    check(gu.mode == "restyled" and gu.panel ~= nil and gu.panel.shown == false, "guild: framed once the window exists, kept hidden until it opens")
+    cf:Show()
+    local gpanel = gu.panel
+    local list, finder = CommunitiesList, ClubFinderGuildFinderFrame
+    check(gpanel.shown == true and gpanel.backdrop ~= nil and gpanel.backdrop.bgFile == "Interface\\DialogFrame\\UI-DialogBox-Background" and gpanel.backdrop.edgeFile == "Interface\\DialogFrame\\UI-DialogBox-Border", "guild: the Era panel behind the window")
+    check(cf.Bg.alpha == 0 and cf.TopTileStreaks.alpha == 0 and cf.NineSlice.TopEdge.alpha == 0 and cf.PortraitContainer.portrait.alpha == 0 and cf.PortraitOverlay.Portrait.alpha == 0, "guild: retail's metal shell, streaks and portrait faded")
+    check(list.Bg.alpha == 0 and list.TopFiligree.alpha == 0 and list.BottomFiligree.alpha == 0 and list.FilligreeOverlay.LeftBar.alpha == 0 and list.InsetFrame.NineSlice.TopEdge.alpha == 0, "guild: the sidebar's dark page, filigree and inset faded")
+    check(finder.DisabledFrame.Bg.alpha == 0 and finder.DisabledFrame.WideBackground.alpha == 0 and finder.DisabledFrame.NineSlice.TopEdge.alpha == 0, "guild: the guild finder page faded too")
+    check(cf.CloseButton.alpha == 1 and cf.TitleContainer.TitleText.alpha == 1 and finder.Title.alpha == 1 and list.ScrollBox.alpha == 1, "guild: Forever's title, close button and the roster itself left alone")
+    cf:SetDisplayMode(2)
+    check(gpanel.shown == true and list.Bg.alpha == 0, "guild: the panel survives a tab switch")
+    w.slash("guild off")
+    check(gu.mode == "off" and gpanel.shown == false and cf.Bg.alpha == 1 and cf.NineSlice.TopEdge.alpha == 1 and list.Bg.alpha == 1 and list.TopFiligree.alpha == 1 and finder.DisabledFrame.NineSlice.TopEdge.alpha == 1, "guild off: retail's window back")
+    w.slash("guild on")
+    check(gu.mode == "restyled" and gpanel.shown == true, "guild on: Era framing again")
+    check(#w.ns.errors == 0 and #w.blizzErrors == 0, "questlog, collections and guild: no errors")
 end
 
 --------------------------------------------------------------------------
@@ -2031,12 +2098,12 @@ do
     check(w.ns.dbLoaded == true and w.ns.db.logins == 2, "reload: saved file found, login count raised")
     check(w.ns.db.unitframes == false and w.ns.modules.unitframes.mode == "off" and w.ns.modules.minimap.mode == "off", "reload: parts turned off stay off")
     check(w.ns.db.castbar == true and w.ns.modules.castbar.mode == "restyled", "reload: the part turned back on is on")
-    check(Printed("off (saved): nameplates, combo, unitframes, party, charsheet, spellbook, professions, questlog, collections, actionbars, minimap, tracker"), "reload: login line names the parts that are off")
+    check(Printed("off (saved): nameplates, combo, unitframes, party, charsheet, spellbook, professions, questlog, collections, guild, actionbars, minimap, tracker"), "reload: login line names the parts that are off")
     check(w.ns.optionsPanel.checks.unitframes.checked == false and w.ns.optionsPanel.checks.castbar.checked == true, "reload: options boxes match the saved settings")
     w.slash("probe")
     check(w.ns.lastProbe and w.ns.lastProbe:find("saved file found at login: yes  logins counted in it: 2", 1, true) and w.ns.lastProbe:find("settings came from: saved file", 1, true), "reload: probe reports the saved file and login count")
     -- the same on a client that never writes the SavedVariables file: the CVar copy carries the settings
-    check(cvarCopy == "nameplates=0,castbar=1,combo=0,unitframes=0,party=0,charsheet=0,spellbook=0,professions=0,questlog=0,collections=0,actionbars=0,minimap=0,tracker=0,bugbutton=1,welcomed=0", "reload: every change is also written to the settings CVar, with the feedback flags")
+    check(cvarCopy == "nameplates=0,castbar=1,combo=0,unitframes=0,party=0,charsheet=0,spellbook=0,professions=0,questlog=0,collections=0,guild=0,actionbars=0,minimap=0,tracker=0,bugbutton=1,welcomed=0", "reload: every change is also written to the settings CVar, with the feedback flags")
     w = NewWorld({style = "6", forever = true, cvars = {ForeverClassicUI_settings = cvarCopy}})
     check(w.ns.dbLoaded == false and w.ns.db.unitframes == false and w.ns.db.castbar == true and w.ns.modules.unitframes.mode == "off" and w.ns.modules.castbar.mode == "restyled", "no saved file: settings restored from the CVar copy")
     check(w.ns.dbSource:find("cvar fallback", 1, true) and w.ns.optionsPanel.checks.minimap.checked == false, "no saved file: probe names the fallback, boxes match")

@@ -14,6 +14,7 @@ local LABELS = {
     professions = "Classic professions window (Era book, the professions as rows down the page)",
     questlog = "Classic quest log (Era parchment panel on the quest list in Forever's map window)",
     collections = "Classic framing on the Appearances window (Era parchment panel; Era had no transmog)",
+    guild = "Classic framing on the Guild & Communities window (Era parchment panel; Era's guild was a friends tab)",
     actionbars = "Classic bottom bar (stone bar, 36px buttons, micro buttons and bags on the bar, XP bar in the bar)",
     minimap = "Classic round minimap with the ring border",
     tracker = "Plain quest tracker (retail header boxes hidden)"
