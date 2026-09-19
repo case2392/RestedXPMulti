@@ -498,6 +498,35 @@ local SHEET_EVENTS_GLOBAL = {
 -- filling the panels
 --------------------------------------------------------------------------
 
+-- Forever can hand a unit number back as a "secret value" once addon code
+-- has tainted the call path (the error reads "arithmetic on a secret
+-- number value"). The C layer throws that straight past pcall, so a
+-- secret has to be spotted before it is used. Every number a unit API
+-- returns comes through here: plain numbers come back as a list, and a
+-- single secret one returns nil, which leaves the row showing whatever it
+-- last had instead of erroring out of the whole update.
+local function Numbers(...)
+    local count = select("#", ...)
+    local out = {}
+    for i = 1, count do
+        local v = select(i, ...)
+        if v == nil then
+            out[i] = 0
+        else
+            if issecretvalue then
+                local ok, secret = pcall(issecretvalue, v)
+                if (not ok) or secret == true then
+                    M.secretReads = (M.secretReads or 0) + 1
+                    return nil
+                end
+            end
+            if type(v) ~= "number" then return nil end
+            out[i] = v
+        end
+    end
+    return out
+end
+
 local function ClassStatTooltip(stat)
     if not UnitClass then return end
     local _, classFile = UnitClass("player")
@@ -511,13 +540,15 @@ local function UpdatePrimaryStats(sheet)
     if not UnitStat then return end
     for i, stat in ipairs(STATS) do
         local row = sheet.rows[stat]
-        local base, effective, posBuff, negBuff = UnitStat("player", i)
-        base, effective, posBuff, negBuff = base or 0, effective or 0, posBuff or 0, negBuff or 0
-        local name = Str("SPELL_STAT" .. i .. "_NAME", stat)
-        local text, tooltip = FormatStat(name, effective - posBuff - negBuff, posBuff, negBuff)
-        row.Value:SetText(text)
-        row.tooltip = tooltip
-        row.tooltip2 = ClassStatTooltip(stat)
+        local n = Numbers(UnitStat("player", i))
+        if n then
+            local effective, posBuff, negBuff = n[2], n[3], n[4]
+            local name = Str("SPELL_STAT" .. i .. "_NAME", stat)
+            local text, tooltip = FormatStat(name, effective - posBuff - negBuff, posBuff, negBuff)
+            row.Value:SetText(text)
+            row.tooltip = tooltip
+            row.tooltip2 = ClassStatTooltip(stat)
+        end
     end
 end
 
@@ -527,8 +558,9 @@ local function UpdateArmor(sheet)
         row.Value:SetText("-")
         return
     end
-    local base, effective, _, posBuff, negBuff = UnitArmor("player")
-    base, effective, posBuff, negBuff = base or 0, effective or 0, posBuff or 0, negBuff or 0
+    local n = Numbers(UnitArmor("player"))
+    if not n then return end
+    local base, effective, posBuff, negBuff = n[1], n[2], n[4], n[5]
     local text, tooltip = FormatStat(Str("ARMOR", "Armor"), base, posBuff, negBuff)
     row.Value:SetText(text)
     row.tooltip = tooltip
@@ -583,11 +615,15 @@ end
 local function UpdateMelee(sheet)
     local rows = sheet.rows
     -- weapon skill line (Era "Melee Attack 195")
-    local base, mod
-    if UnitAttackBothHands then base, mod = UnitAttackBothHands("player") end
-    if base == nil then base, mod = WeaponSkillFromSkills() end
-    if base ~= nil then
-        mod = mod or 0
+    local skill
+    if UnitAttackBothHands then skill = Numbers(UnitAttackBothHands("player")) end
+    if not skill then
+        -- the skills list also hands back a name: only the two numbers go in
+        local rank, mod = WeaponSkillFromSkills()
+        if rank ~= nil then skill = Numbers(rank, mod) end
+    end
+    if skill and skill[1] then
+        local base, mod = skill[1], skill[2] or 0
         if mod == 0 then
             rows.ATTACK.Value:SetText(base)
         else
@@ -599,32 +635,34 @@ local function UpdateMelee(sheet)
         rows.ATTACK.Value:SetText("-")
         rows.ATTACK.tooltip = nil
     end
-    if UnitAttackPower then
-        local base, posBuff, negBuff = UnitAttackPower("player")
-        base, posBuff, negBuff = base or 0, posBuff or 0, negBuff or 0
+    local ap = UnitAttackPower and Numbers(UnitAttackPower("player"))
+    if ap then
+        local base, posBuff, negBuff = ap[1], ap[2], ap[3]
         local text, tooltip = FormatStat(Str("MELEE_ATTACK_POWER", "Melee Attack Power"), base, posBuff, negBuff)
         rows.ATTACK_POWER.Value:SetText(text)
         rows.ATTACK_POWER.tooltip = tooltip
         local perSecond = math.max(base + posBuff + negBuff, 0) / (ATTACK_POWER_MAGIC_NUMBER or 14)
         rows.ATTACK_POWER.tooltip2 = ("Increases damage with melee weapons by %.1f damage per second."):format(perSecond)
-    else
+    elseif not UnitAttackPower then
         rows.ATTACK_POWER.Value:SetText("-")
     end
-    if UnitDamage then
-        local minDamage, maxDamage, minOff, maxOff, bonusPos, bonusNeg, percent = UnitDamage("player")
-        local speed, offSpeed
-        if UnitAttackSpeed then speed, offSpeed = UnitAttackSpeed("player") end
-        local text, tooltip, dps = FormatDamage(minDamage or 0, maxDamage or 0, bonusPos or 0, bonusNeg or 0, percent or 1, speed or 0)
+    local dmg = UnitDamage and Numbers(UnitDamage("player"))
+    local spd = UnitAttackSpeed and Numbers(UnitAttackSpeed("player"))
+    if dmg then
+        local minDamage, maxDamage, minOff, maxOff = dmg[1], dmg[2], dmg[3], dmg[4]
+        local bonusPos, bonusNeg, percent = dmg[5], dmg[6], dmg[7] ~= 0 and dmg[7] or 1
+        local speed, offSpeed = spd and spd[1] or 0, spd and spd[2] or 0
+        local text, tooltip, dps = FormatDamage(minDamage, maxDamage, bonusPos, bonusNeg, percent, speed)
         local row = rows.DAMAGE
         row.Value:SetText(text)
         row.damage, row.dps, row.attackSpeed = tooltip, dps, speed or 0
-        if offSpeed and offSpeed > 0 and minOff and maxOff then
-            local _, offTooltip, offDps = FormatDamage(minOff, maxOff, bonusPos or 0, bonusNeg or 0, percent or 1, offSpeed)
+        if offSpeed > 0 and minOff and maxOff then
+            local _, offTooltip, offDps = FormatDamage(minOff, maxOff, bonusPos, bonusNeg, percent, offSpeed)
             row.offhandDamage, row.offhandDps, row.offhandSpeed = offTooltip, offDps, offSpeed
         else
             row.offhandDamage, row.offhandDps, row.offhandSpeed = nil, nil, nil
         end
-    else
+    elseif not UnitDamage then
         rows.DAMAGE.Value:SetText("-")
     end
 end
@@ -643,34 +681,40 @@ local function UpdateRanged(sheet)
         rows.RANGED_DAMAGE.damage = nil
         return
     end
-    local base, mod = UnitRangedAttack("player")
-    base, mod = base or 0, mod or 0
-    if mod == 0 then
-        rows.RANGED_ATTACK.Value:SetText(base)
-    else
-        rows.RANGED_ATTACK.Value:SetText(Colored(mod > 0 and GREEN or RED, base + mod))
+    local ranged = Numbers(UnitRangedAttack("player"))
+    if ranged then
+        local base, mod = ranged[1], ranged[2]
+        if mod == 0 then
+            rows.RANGED_ATTACK.Value:SetText(base)
+        else
+            rows.RANGED_ATTACK.Value:SetText(Colored(mod > 0 and GREEN or RED, base + mod))
+        end
+        rows.RANGED_ATTACK.tooltip = Str("RANGED_ATTACK_TOOLTIP", "Ranged Weapon Skill")
+        rows.RANGED_ATTACK.tooltip2 = Str("RANGED_ATTACK_TOOLTIP_SUBTEXT", "Your skill with the equipped ranged weapon.")
     end
-    rows.RANGED_ATTACK.tooltip = Str("RANGED_ATTACK_TOOLTIP", "Ranged Weapon Skill")
-    rows.RANGED_ATTACK.tooltip2 = Str("RANGED_ATTACK_TOOLTIP_SUBTEXT", "Your skill with the equipped ranged weapon.")
     local wand = HasWandEquipped and HasWandEquipped()
     if wand or not UnitRangedAttackPower then
         rows.RANGED_ATTACK_POWER.Value:SetText("--")
         rows.RANGED_ATTACK_POWER.tooltip = nil
     else
-        local apBase, posBuff, negBuff = UnitRangedAttackPower("player")
-        apBase, posBuff, negBuff = apBase or 0, posBuff or 0, negBuff or 0
-        local text, tooltip = FormatStat(Str("RANGED_ATTACK_POWER", "Ranged Attack Power"), apBase, posBuff, negBuff)
-        rows.RANGED_ATTACK_POWER.Value:SetText(text)
-        rows.RANGED_ATTACK_POWER.tooltip = tooltip
-        rows.RANGED_ATTACK_POWER.tooltip2 = ("Increases damage with ranged weapons by %.1f damage per second."):format(apBase / (ATTACK_POWER_MAGIC_NUMBER or 14))
+        local rap = Numbers(UnitRangedAttackPower("player"))
+        if rap then
+            local apBase, posBuff, negBuff = rap[1], rap[2], rap[3]
+            local text, tooltip = FormatStat(Str("RANGED_ATTACK_POWER", "Ranged Attack Power"), apBase, posBuff, negBuff)
+            rows.RANGED_ATTACK_POWER.Value:SetText(text)
+            rows.RANGED_ATTACK_POWER.tooltip = tooltip
+            rows.RANGED_ATTACK_POWER.tooltip2 = ("Increases damage with ranged weapons by %.1f damage per second."):format(apBase / (ATTACK_POWER_MAGIC_NUMBER or 14))
+        end
     end
-    if UnitRangedDamage then
-        local speed, minDamage, maxDamage, bonusPos, bonusNeg, percent = UnitRangedDamage("player")
-        local text, tooltip, dps = FormatDamage(minDamage or 0, maxDamage or 0, bonusPos or 0, bonusNeg or 0, percent or 1, speed or 0)
+    local rdmg = UnitRangedDamage and Numbers(UnitRangedDamage("player"))
+    if rdmg then
+        local speed, minDamage, maxDamage = rdmg[1], rdmg[2], rdmg[3]
+        local bonusPos, bonusNeg, percent = rdmg[4], rdmg[5], rdmg[6] ~= 0 and rdmg[6] or 1
+        local text, tooltip, dps = FormatDamage(minDamage, maxDamage, bonusPos, bonusNeg, percent, speed)
         local row = rows.RANGED_DAMAGE
         row.Value:SetText(text)
-        row.damage, row.dps, row.attackSpeed = tooltip, dps, speed or 0
-    else
+        row.damage, row.dps, row.attackSpeed = tooltip, dps, speed
+    elseif not UnitRangedDamage then
         rows.RANGED_DAMAGE.Value:SetText("-")
     end
 end
@@ -678,8 +722,9 @@ end
 local function UpdateResistances(sheet)
     if not UnitResistance then return end
     for _, f in ipairs(sheet.resistances) do
-        local base, resistance, positive, negative = UnitResistance("player", f.id)
-        base, resistance, positive, negative = base or 0, resistance or 0, positive or 0, negative or 0
+        local n = Numbers(UnitResistance("player", f.id))
+        if n then
+        local base, resistance, positive, negative = n[1], n[2], n[3], n[4]
         if math.abs(negative) > positive then
             f.Value:SetText(Colored(RED, resistance))
         elseif math.abs(negative) == positive then
@@ -696,6 +741,7 @@ local function UpdateResistances(sheet)
             tooltip = tooltip .. CLOSE .. " )"
         end
         f.tooltip = tooltip
+        end
     end
 end
 
@@ -1190,6 +1236,9 @@ function M:Status()
             if panel.built then tabs[#tabs + 1] = panel.label end
         end
         local s = "classic 384x512 sheet (" .. table.concat(tabs, ", ") .. " tabs), Era slot layout, bottom tabs"
+        if (self.secretReads or 0) > 0 then
+            s = s .. (" (%d stat reads came back secret and were left as they were)"):format(self.secretReads)
+        end
         if self.missingArt and #self.missingArt > 0 then
             s = s .. " (art missing: " .. table.concat(self.missingArt, ", ") .. ")"
         end

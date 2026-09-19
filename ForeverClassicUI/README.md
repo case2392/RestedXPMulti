@@ -103,6 +103,10 @@ from Classic Era's own UI code.
   text with the button disabled, the way Era's PanelTemplates did; Era's
   raised "active tab" art is not used because Forever's copy of that file
   draws as a glow with no tab body.
+  Forever can hand a unit number back as a "secret value" when the call
+  comes from addon code; arithmetic on one is a hard error the client
+  throws past `pcall`, so every number the attribute box reads is checked
+  with `issecretvalue` first and a refused row keeps what it last showed.
 - **Spellbook** — Forever's spell window (`PlayerSpellsFrame`) becomes Era's
   384x512 book while its spellbook page is up: the four-piece
   `UI-SpellbookPanel` art, the book icon in the corner, "Spellbook" over

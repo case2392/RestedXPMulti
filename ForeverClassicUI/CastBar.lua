@@ -59,21 +59,35 @@ local function IsClassicAlready(bar)
     return false
 end
 
+-- Forever hands enemy cast bars secret values: bar.barType cannot be used
+-- as a table key and the isFull flag cannot be used in a condition from
+-- addon code. Both raise an error the C layer throws straight past pcall,
+-- so a secret value has to be recognised before it is used, never caught
+-- afterwards. issecretvalue is safe to call on one.
+local function Secret(v)
+    if v == nil or not issecretvalue then return false end
+    local ok, secret = pcall(issecretvalue, v)
+    return (not ok) or secret == true
+end
+M.Secret = Secret
+
 -- classic fill: UI-StatusBar coloured by bar type (yellow while casting,
--- green when full/channeling), the same colours Blizzard's classic path uses
--- Forever hands enemy cast bars secret values: bar.barType (and the isFull
--- flag) cannot be used as a table key or in a condition from addon code
--- (error "cannot be indexed with secret keys"), so the colour lookup runs
--- under pcall and the classic colours stand in when it fails.
+-- green when full/channeling), the same colours Blizzard's classic path
+-- uses. When either value is secret the classic yellow stands in: it is
+-- what Era shows for the whole cast.
 local function FillColor(bar, isFull)
-    local ok, r, g, b = pcall(function()
-        local info = CastingBarTypeInfo[bar.barType]
-        local color = isFull and info.classicFullColor or info.classicFillColor
-        return color:GetRGB()
-    end)
-    if ok and r then return r, g, b end
-    local okFull, full = pcall(function() return isFull and true or false end)
-    local c = (okFull and full) and CLASSIC_GREEN or CLASSIC_YELLOW
+    local barType = bar and bar.barType
+    local typeSafe, fullSafe = not Secret(barType), not Secret(isFull)
+    if typeSafe and fullSafe and barType ~= nil and CastingBarTypeInfo then
+        local ok, r, g, b = pcall(function()
+            local info = CastingBarTypeInfo[barType]
+            local color = isFull and info.classicFullColor or info.classicFillColor
+            return color:GetRGB()
+        end)
+        if ok and r then return r, g, b end
+    end
+    -- a secret flag cannot be a condition either: yellow, as Era casts are
+    local c = (fullSafe and isFull) and CLASSIC_GREEN or CLASSIC_YELLOW
     return c[1], c[2], c[3]
 end
 

@@ -1589,6 +1589,19 @@ do
     local rows = sheet.rows
     check(rows.STRENGTH.Value.text == "|cff20ff2026|r" and rows.STRENGTH.tooltip:find("26", 1, true) and rows.STRENGTH.tooltip:find("+5", 1, true), "sheet: buffed stat shown green with the formula in the tooltip")
     check(rows.ARMOR.Value.text == "|cff20ff20350|r" and rows.ARMOR.tooltip2:find("12.50", 1, true), "sheet: armor with the reduction line")
+    -- Forever hands unit numbers back as secret values once addon code has
+    -- tainted the call: arithmetic on one is fatal, so the row is left alone
+    local savedStat, savedArmor = _G.UnitStat, _G.UnitArmor
+    local secret = setmetatable({__secret = true}, {__index = function() error("secret value used") end})
+    _G.UnitStat = function(unit, i) return 20 + i, secret, 5, 0 end
+    _G.UnitArmor = function() return secret, secret, 0, 0, 0 end
+    local beforeErrors = #w.ns.errors
+    sheet.scripts.OnEvent(sheet, "UNIT_STATS", "player")
+    check(#w.ns.errors == beforeErrors and rows.STRENGTH.Value.text == "|cff20ff2026|r" and rows.ARMOR.Value.text == "|cff20ff20350|r", "sheet: a secret stat leaves the row as it was instead of erroring")
+    check(w.ns.charsheet.secretReads >= 2, "sheet: secret reads counted for the report")
+    _G.UnitStat, _G.UnitArmor = savedStat, savedArmor
+    sheet.scripts.OnEvent(sheet, "UNIT_STATS", "player")
+    check(rows.STRENGTH.Value.text == "|cff20ff2026|r" and #w.ns.errors == beforeErrors, "sheet: plain numbers fill the rows again")
     check(rows.ATTACK.Value.text == 195 and rows.ATTACK_POWER.Value.text == "|cffff2020115|r", "sheet: weapon skill and attack power (debuffed: red)")
     -- Forever has no UnitAttackBothHands: the weapon skill comes off the skills list for the equipped weapon
     local savedBothHands = _G.UnitAttackBothHands
