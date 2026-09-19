@@ -96,7 +96,22 @@ local CLASSIC_TEXTURES = {
     "Interface\\TALENTFRAME\\UI-TalentFrame-BotRight",
     "Interface\\Buttons\\UI-Button-Borders2",
     "Interface\\TargetingFrame\\UI-PartyFrame-Flash",
-    "Interface\\QuestFrame\\UI-QuestLog-Left",
+    -- Era's quest log is its own 384x512 book, nothing to do with the map
+    "Interface\\QuestFrame\\UI-QuestLog-TopLeft",
+    "Interface\\QuestFrame\\UI-QuestLog-TopRight",
+    "Interface\\QuestFrame\\UI-QuestLog-BotLeft",
+    "Interface\\QuestFrame\\UI-QuestLog-BotRight",
+    "Interface\\QuestFrame\\UI-QuestLog-BookIcon",
+    "Interface\\QuestFrame\\UI-QuestLogTitleHighlight",
+    "Interface\\QuestFrame\\UI-QuestLog-Empty-TopLeft",
+    "Interface\\QuestFrame\\UI-QuestLogSortTab-Middle",
+    "Interface\\QuestFrame\\UI-QuestLogSortTab-Right",
+    "Interface\\Buttons\\UI-RadioButton",
+    "Interface\\Buttons\\UI-CheckBox-Check",
+    "Interface\\Buttons\\UI-PlusButton-Hilight",
+    "Interface\\WorldMap\\UI-World-Map-Frame",
+    "Interface\\WorldMap\\WorldMap-Icon",
+    "Interface\\WorldMap\\WorldMapFrame-Border",
     "Interface\\FriendsFrame\\UI-FriendsFrame-Left",
     "Interface\\Minimap\\UI-Minimap-Border",
     "Interface\\MainMenuBar\\UI-MainMenuBar-Dwarf",
@@ -349,6 +364,54 @@ function ns.BuildProbe()
         if _G[n] ~= nil then craftGlobals[#craftGlobals + 1] = n end
     end
     line("classic trade skill globals: %s", #craftGlobals > 0 and table.concat(craftGlobals, ", ") or "none")
+
+    -- Era kept the quest log and the world map apart: a 384x512 book and a
+    -- map. Forever merges them, so both sides are worth knowing about.
+    local mapNames = {}
+    for _, n in ipairs({"WorldMapFrame", "QuestMapFrame", "QuestScrollFrame", "QuestLogFrame",
+                        "QuestLogListScrollFrame", "QuestLogDetailScrollFrame", "QuestLogTitle1",
+                        "ToggleQuestLog", "ToggleWorldMap", "QuestMapQuestOptions_TrackQuest"}) do
+        local v = _G[n]
+        if v ~= nil then
+            local shown = type(v) == "table" and v.IsShown and v:IsShown()
+            mapNames[#mapNames + 1] = n .. (type(v) == "function" and " (function)" or (shown and " (shown)" or ""))
+        end
+    end
+    line("map and quest log: %s", #mapNames > 0 and table.concat(mapNames, ", ") or "none found")
+    if C_QuestLog then
+        local keys = {}
+        for k in pairs(C_QuestLog) do keys[#keys + 1] = tostring(k) end
+        table.sort(keys)
+        line("C_QuestLog: %s", table.concat(keys, ", "))
+        local okNum, num = pcall(function()
+            return C_QuestLog.GetNumQuestLogEntries and C_QuestLog.GetNumQuestLogEntries()
+        end)
+        line("quest log entries: %s", (okNum and tostring(num)) or "could not be read")
+        local okInfo, fields = pcall(function()
+            local info = C_QuestLog.GetInfo and C_QuestLog.GetInfo(1)
+            if type(info) ~= "table" then return nil end
+            local acc = {}
+            for k, v in pairs(info) do acc[#acc + 1] = tostring(k) .. "=" .. tostring(v) end
+            table.sort(acc)
+            return table.concat(acc, " ")
+        end)
+        line("first quest log entry: %s", (okInfo and fields) or "none")
+    else
+        line("C_QuestLog: none")
+    end
+
+    -- the appearances (transmog) window: Era never had one, so this is only
+    -- about what Forever builds it from
+    local wardrobeNames = {}
+    for _, n in ipairs({"CollectionsJournal", "WardrobeFrame", "WardrobeCollectionFrame",
+                        "WardrobeTransmogFrame", "ToggleCollectionsJournal", "C_TransmogCollection"}) do
+        local v = _G[n]
+        if v ~= nil then
+            local shown = type(v) == "table" and v.IsShown and v:IsShown()
+            wardrobeNames[#wardrobeNames + 1] = n .. (type(v) == "function" and " (function)" or (shown and " (shown)" or ""))
+        end
+    end
+    line("appearances window: %s", #wardrobeNames > 0 and table.concat(wardrobeNames, ", ") or "none found")
 
     line("")
     line("-- classic textures still in the client")
@@ -643,7 +706,8 @@ local REPORT_FRAMES_CLASSIC = {"FocusFrame", "TargetFrameToT", "PartyFrame", "Pa
     "ForeverClassicUIMainMenuBar", "MicroMenuContainer", "MicroMenu", "BagsBar", "StatusTrackingBarManager", "MultiBarBottomLeft", "MultiBarBottomRight", "MultiBarRight", "MultiBarLeft"}
 -- panels: dumped only while open, so a report taken with the character
 -- sheet (or spellbook, quest log, friends list) open captures its layout
-local REPORT_FRAMES_OPEN = {"CharacterFrame", "PlayerSpellsFrame", "SpellBookFrame", "PlayerTalentFrame", "ProfessionsBookFrame", "ProfessionsBook", "ProfessionsFrame", "SpellBookProfessionFrame", "QuestLogFrame", "FriendsFrame", "CommunitiesFrame", "ContainerFrame1"}
+local REPORT_FRAMES_OPEN = {"CharacterFrame", "PlayerSpellsFrame", "SpellBookFrame", "PlayerTalentFrame", "ProfessionsBookFrame", "ProfessionsBook", "ProfessionsFrame", "SpellBookProfessionFrame", "QuestLogFrame", "FriendsFrame", "CommunitiesFrame", "ContainerFrame1",
+    "WorldMapFrame", "QuestMapFrame", "QuestScrollFrame", "CollectionsJournal", "WardrobeFrame", "WardrobeCollectionFrame"}
 
 -- the report is meant to be pasted somewhere public, so it says what it
 -- is and where it goes on its own first two lines
