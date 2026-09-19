@@ -31,21 +31,34 @@ local LABEL_WIDTH = 560   -- the panel is ~640 wide on the AddOns page; long lab
 
 -- returns the check button and the height its row needs
 local function MakeCheck(parent, y, key)
+    local soon = ns.IsComingSoon and ns.IsComingSoon(key)
     local cb = CreateFrame("CheckButton", nil, parent, "UICheckButtonTemplate")
     cb:SetPoint("TOPLEFT", 16, y)
     cb:SetSize(26, 26)
-    local label = parent:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+    -- a part that is not finished is shown, so it is clear it is coming,
+    -- but greyed and dead to the mouse: there is nothing worth turning on
+    local font = soon and "GameFontDisable" or "GameFontHighlight"
+    local label = parent:CreateFontString(nil, "ARTWORK", font)
     label:SetPoint("LEFT", cb, "RIGHT", 4, 0)
     label:SetWidth(LABEL_WIDTH)
     label:SetJustifyH("LEFT")
     if label.SetWordWrap then label:SetWordWrap(true) end
-    label:SetText(LABELS[key] or key)
+    local text = LABELS[key] or key
+    if soon then text = "|cFFFFD100Coming soon:|r " .. text end
+    label:SetText(text)
     cb.label = label
     cb.key = key
-    cb:SetScript("OnClick", function(self)
-        SetPart(self.key, self:GetChecked() and true or false)
-        if panel and panel.RefreshStatus then panel.RefreshStatus() end
-    end)
+    cb.comingSoon = soon or nil
+    if soon then
+        cb:SetChecked(false)
+        if cb.Disable then cb:Disable() end
+        cb:SetScript("OnClick", function(self) self:SetChecked(false) end)
+    else
+        cb:SetScript("OnClick", function(self)
+            SetPart(self.key, self:GetChecked() and true or false)
+            if panel and panel.RefreshStatus then panel.RefreshStatus() end
+        end)
+    end
     local h = label.GetStringHeight and label:GetStringHeight() or 0
     return cb, math.max(30, h + 12)
 end
@@ -55,7 +68,9 @@ local function MakeAllButton(parent, anchor, text, on)
     b:SetSize(110, 22)
     b:SetText(text)
     b:SetScript("OnClick", function()
-        for _, key in ipairs(ns.moduleOrder) do SetPart(key, on) end
+        for _, key in ipairs(ns.moduleOrder) do
+            if not (ns.IsComingSoon and ns.IsComingSoon(key)) then SetPart(key, on) end
+        end
         if panel and panel.Refresh then panel.Refresh() end
     end)
     if anchor then b:SetPoint("LEFT", anchor, "RIGHT", 6, 0) end
@@ -137,7 +152,11 @@ function ns.BuildOptionsPanel()
         for _, key in ipairs(ns.moduleOrder) do
             local mod = ns.modules[key]
             local state = ns.db[key] == false and "off" or "on"
-            lines[#lines + 1] = ("%s: %s %s"):format(key, state, mod.Status and mod:Status() or "")
+            local detail = mod.Status and mod:Status() or ""
+            if ns.IsComingSoon and ns.IsComingSoon(key) then
+                state, detail = "coming soon", "not finished yet, so off for now"
+            end
+            lines[#lines + 1] = ("%s: %s %s"):format(key, state, detail)
         end
         if #ns.errors > 0 then
             lines[#lines + 1] = ("%d error(s) this session - send the probe report."):format(#ns.errors)
@@ -148,7 +167,7 @@ function ns.BuildOptionsPanel()
     function panel.Refresh()
         if not ns.db then return end
         for key, cb in pairs(panel.checks) do
-            cb:SetChecked(ns.db[key] ~= false)
+            cb:SetChecked(not cb.comingSoon and ns.db[key] ~= false)
         end
         if panel.bugButton then panel.bugButton:SetChecked(ns.db.bugbutton ~= false) end
         panel.RefreshStatus()

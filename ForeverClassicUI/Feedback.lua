@@ -14,6 +14,10 @@ local addonName, ns = ...
 
 -- the page people are already commenting on; /cui link prints it
 ns.FEEDBACK_URL = "https://www.curseforge.com/wow/addons/classic-ui-for-forever"
+-- the report carries the whole client and every open frame, so it can run
+-- past what a CurseForge comment will take. Someone hit that, so there is
+-- somewhere else to put it.
+ns.FEEDBACK_EMAIL = "classicuiforforever@gmail.com"
 
 local ICON = "Interface\\Spellbook\\Spellbook-Icon"
 local RING = "Interface\\Minimap\\MiniMap-TrackingBorder"
@@ -50,6 +54,8 @@ local WELCOME_LINES = {
     "3. Take a screenshot of the window or the thing that looks wrong. The button below saves one into your WoW Screenshots folder.",
     "4. Paste the text, and the screenshot, as a comment on the page below.",
     "",
+    "|cffffd100If the report is too long for a comment|r - it can be, it carries every open window - email it instead, to the address below. Either one reaches me.",
+    "",
     "If the window you are reporting is open when you take the report, its whole layout comes with it, which is usually enough to build the classic version.",
     "",
     "Reports are usually turned around within a day. Nothing is sent anywhere on its own: an addon cannot, so this is all by your hand."
@@ -79,18 +85,18 @@ ns.TakeScreenshot = TakeScreenshot
 -- the welcome window
 --------------------------------------------------------------------------
 
-local function LinkBox(parent, width)
+local function LinkBox(parent, width, text)
     local box = CreateFrame("EditBox", nil, parent, "InputBoxTemplate")
     box:SetSize(width, 20)
     box:SetAutoFocus(false)
     if box.SetFontObject then box:SetFontObject("ChatFontNormal") end
-    box:SetText(ns.FEEDBACK_URL)
+    box:SetText(text)
     box:SetCursorPosition(0)
     box:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
     -- a link nobody can edit away: any change puts it back
     box:SetScript("OnTextChanged", function(self, user)
         if user then
-            self:SetText(ns.FEEDBACK_URL)
+            self:SetText(text)
             self:HighlightText()
         end
     end)
@@ -108,7 +114,7 @@ end
 
 local function BuildWelcome()
     local f = CreateFrame("Frame", "ForeverClassicUIWelcome", UIParent, "BackdropTemplate")
-    f:SetSize(480, 470)
+    f:SetSize(480, 560)
     f:SetPoint("CENTER", UIParent, "CENTER", 0, 60)
     f:SetFrameStrata("DIALOG")
     f:SetMovable(true)
@@ -137,10 +143,16 @@ local function BuildWelcome()
     f.body:SetText(table.concat(WELCOME_LINES, "\n"))
 
     f.linkLabel = f:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-    f.linkLabel:SetPoint("TOPLEFT", f, "BOTTOMLEFT", 22, 76)
+    f.linkLabel:SetPoint("TOPLEFT", f, "BOTTOMLEFT", 22, 132)
     f.linkLabel:SetText("Paste it here (click to select, Ctrl+C to copy):")
-    f.link = LinkBox(f, 420)
+    f.link = LinkBox(f, 420, ns.FEEDBACK_URL)
     f.link:SetPoint("TOPLEFT", f.linkLabel, "BOTTOMLEFT", 6, -6)
+
+    f.mailLabel = f:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+    f.mailLabel:SetPoint("TOPLEFT", f.link, "BOTTOMLEFT", -6, -10)
+    f.mailLabel:SetText("Or email it, if it is too long for a comment:")
+    f.mail = LinkBox(f, 420, ns.FEEDBACK_EMAIL)
+    f.mail:SetPoint("TOPLEFT", f.mailLabel, "BOTTOMLEFT", 6, -6)
 
     f.report = Button(f, "Open the report", 130, Guard("welcome report", OpenReport))
     f.report:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 22, 18)
@@ -277,7 +289,7 @@ end
 
 local function BuildNotice()
     local f = CreateFrame("Frame", "ForeverClassicUIErrorNotice", UIParent, "BackdropTemplate")
-    f:SetSize(380, 96)
+    f:SetSize(380, 120)
     f:SetPoint("TOP", UIParent, "TOP", 0, -120)
     f:SetFrameStrata("DIALOG")
     f:SetMovable(true)
@@ -298,7 +310,7 @@ local function BuildNotice()
     f.text:SetWidth(344)
     f.text:SetJustifyH("LEFT")
     if f.text.SetWordWrap then f.text:SetWordWrap(true) end
-    f.text:SetText("Classic UI for Forever hit an error. Open the report and paste it on the addon page: that is how it gets fixed.")
+    f.text:SetText("Classic UI for Forever hit an error. Open the report and paste it on the addon page, or email it to " .. tostring(ns.FEEDBACK_EMAIL) .. " if it is too long for a comment: that is how it gets fixed.")
     f.report = Button(f, "Open the report", 130, Guard("notice report", function()
         OpenReport()
         f:Hide()

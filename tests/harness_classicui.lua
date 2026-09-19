@@ -1067,6 +1067,9 @@ local function NewWorld(opts)
     end
     w.ns = ns
     lastNs = ns
+    -- the parts held back as "coming soon" still have their code and their
+    -- tests: a world can lift the hold so those tests can drive them
+    if opts.unhold then for k in pairs(ns.COMING_SOON) do ns.COMING_SOON[k] = nil end end
     -- login
     ns.eventFrame:Fire("ADDON_LOADED", "ForeverClassicUI")
     ns.eventFrame:Fire("PLAYER_LOGIN")
@@ -1566,14 +1569,17 @@ do
     -- options panel
     local panel = w.ns.optionsPanel
     check(panel ~= nil and panel.checks.unitframes ~= nil and panel.checks.minimap ~= nil, "forever: options panel lists every part")
+    -- the held-back parts are left out of both buttons: nothing to turn on
+    local function Every(value)
+        for _, key in ipairs(w.ns.moduleOrder) do
+            if not w.ns.IsComingSoon(key) and w.ns.db[key] ~= value then return false end
+        end
+        return true
+    end
     panel.deselectAll:Click()
-    local allOff = true
-    for _, key in ipairs(w.ns.moduleOrder) do if w.ns.db[key] ~= false then allOff = false end end
-    check(allOff and w.ns.modules.unitframes.mode == "off" and panel.checks.minimap.checked == false, "forever: Deselect all switches every part off and unticks the boxes")
+    check(Every(false) and w.ns.modules.unitframes.mode == "off" and panel.checks.minimap.checked == false, "forever: Deselect all switches every part off and unticks the boxes")
     panel.selectAll:Click()
-    local allOn = true
-    for _, key in ipairs(w.ns.moduleOrder) do if w.ns.db[key] ~= true then allOn = false end end
-    check(allOn and w.ns.modules.unitframes.mode == "restyled" and panel.checks.minimap.checked == true, "forever: Select all switches every part back on")
+    check(Every(true) and w.ns.modules.unitframes.mode == "restyled" and panel.checks.minimap.checked == true and panel.checks.questlog.checked == false, "forever: Select all switches every part back on, except the ones held back")
     panel.Refresh()
     check(panel.checks.nameplates.checked == true, "forever: panel reflects settings")
     panel.checks.minimap:Click()
@@ -1909,7 +1915,9 @@ end
 -- 3e. Forever spellbook: Era's 384x512 book on Blizzard's PlayerSpellsFrame
 --------------------------------------------------------------------------
 do
-    local w = NewWorld({style = "6", forever = true})
+    -- the quest log, appearances and guild parts are held back as coming
+    -- soon (section 8); the hold is lifted here so their code is still tested
+    local w = NewWorld({style = "6", forever = true, unhold = true})
     local sb = w.ns.modules.spellbook
     check(sb.mode == "waiting" and PlayerSpellsFrame == nil and sb.watcher ~= nil, "book: nothing to hook at login, module waits for Blizzard_PlayerSpells")
     w.slash("spellbook")
@@ -2117,12 +2125,15 @@ do
     check(w.ns.dbLoaded == true and w.ns.db.logins == 2, "reload: saved file found, login count raised")
     check(w.ns.db.unitframes == false and w.ns.modules.unitframes.mode == "off" and w.ns.modules.minimap.mode == "off", "reload: parts turned off stay off")
     check(w.ns.db.castbar == true and w.ns.modules.castbar.mode == "restyled", "reload: the part turned back on is on")
-    check(Printed("off (saved): nameplates, combo, unitframes, party, charsheet, spellbook, professions, questlog, collections, guild, actionbars, minimap, tracker"), "reload: login line names the parts that are off")
+    check(Printed("off (saved): nameplates, combo, unitframes, party, charsheet, spellbook, professions, actionbars, minimap, tracker"), "reload: login line names the parts that are off")
+    check(Printed("coming soon, so off for now: questlog, collections, guild"), "reload: login line names the parts held back, apart from the ones turned off")
     check(w.ns.optionsPanel.checks.unitframes.checked == false and w.ns.optionsPanel.checks.castbar.checked == true, "reload: options boxes match the saved settings")
     w.slash("probe")
     check(w.ns.lastProbe and w.ns.lastProbe:find("saved file found at login: yes  logins counted in it: 2", 1, true) and w.ns.lastProbe:find("settings came from: saved file", 1, true), "reload: probe reports the saved file and login count")
     -- the same on a client that never writes the SavedVariables file: the CVar copy carries the settings
-    check(cvarCopy == "nameplates=0,castbar=1,combo=0,unitframes=0,party=0,charsheet=0,spellbook=0,professions=0,questlog=0,collections=0,guild=0,actionbars=0,minimap=0,tracker=0,bugbutton=1,welcomed=0", "reload: every change is also written to the settings CVar, with the feedback flags")
+    -- the held parts keep whatever was saved for them: the hold is not a
+    -- setting, so it does not overwrite what anyone chose before it
+    check(cvarCopy == "nameplates=0,castbar=1,combo=0,unitframes=0,party=0,charsheet=0,spellbook=0,professions=0,questlog=1,collections=1,guild=1,actionbars=0,minimap=0,tracker=0,bugbutton=1,welcomed=0", "reload: every change is also written to the settings CVar, with the feedback flags")
     w = NewWorld({style = "6", forever = true, cvars = {ForeverClassicUI_settings = cvarCopy}})
     check(w.ns.dbLoaded == false and w.ns.db.unitframes == false and w.ns.db.castbar == true and w.ns.modules.unitframes.mode == "off" and w.ns.modules.castbar.mode == "restyled", "no saved file: settings restored from the CVar copy")
     check(w.ns.dbSource:find("cvar fallback", 1, true) and w.ns.optionsPanel.checks.minimap.checked == false, "no saved file: probe names the fallback, boxes match")
@@ -2143,10 +2154,14 @@ do
     check(welcome ~= nil and welcome.shown == true and ns.db.welcomed == false, "feedback: the welcome window opens on a first run")
     check(welcome.body.text:find("/cui report", 1, true) and welcome.body.text:find("screenshot", 1, true) and welcome.body.text:find("still the modern one", 1, true), "feedback: it covers both a broken look and a window not built yet")
     check(welcome.link.text == ns.FEEDBACK_URL and ns.FEEDBACK_URL:find("curseforge", 1, true), "feedback: the page to paste it on is in a box to copy")
+    -- the report can run past what a comment will take, so there is an address too
+    check(welcome.mail ~= nil and welcome.mail.text == ns.FEEDBACK_EMAIL and ns.FEEDBACK_EMAIL == "classicuiforforever@gmail.com", "feedback: the email address is in a box of its own to copy")
+    check(welcome.body.text:find("too long for a comment", 1, true) ~= nil, "feedback: the window says why the email is there")
     welcome.shot.scripts.OnClick(welcome.shot)
     check(w.screenshots == 1, "feedback: the screenshot button takes one")
     welcome.report.scripts.OnClick(welcome.report)
     check(ns.lastProbe ~= nil and ns.lastProbe:find("Paste this", 1, true) and ns.lastProbe:find(ns.FEEDBACK_URL, 1, true), "feedback: the report says on its own first lines where it goes")
+    check(ns.lastProbe:find(ns.FEEDBACK_EMAIL, 1, true) and ns.lastProbe:find("length limit", 1, true), "feedback: and that it can be emailed if it will not fit in a comment")
     welcome.close.scripts.OnClick(welcome.close)
     check(welcome.shown == false and ns.db.welcomed == true and w.cvars.ForeverClassicUI_settings:find("welcomed=1", 1, true), "feedback: closing it is remembered, in the file and the CVar copy")
     -- the minimap button
@@ -2179,6 +2194,38 @@ do
     w.slash("welcome")
     check(ns.welcomeFrame.shown == true, "feedback: /cui welcome opens it again")
     check(#w.blizzErrors == 0, "feedback: no errors")
+    w.slash("link")
+    check(Printed(ns.FEEDBACK_EMAIL) and Printed(ns.FEEDBACK_URL), "feedback: /cui link prints both the page and the address")
+end
+
+--------------------------------------------------------------------------
+-- 8. Parts held back as "coming soon": built, kept, but not switchable
+--------------------------------------------------------------------------
+do
+    local w = NewWorld({style = "6", forever = true})
+    local ns = w.ns
+    check(ns.IsComingSoon("questlog") and ns.IsComingSoon("collections") and ns.IsComingSoon("guild") and not ns.IsComingSoon("charsheet"), "coming soon: the three parts built after 0.7.0 are held, the rest are not")
+    check(ns.modules.questlog.mode ~= "restyled" and ns.modules.collections.mode ~= "restyled" and ns.modules.guild.mode ~= "restyled", "coming soon: none of them enables at login")
+    check(Printed("coming soon, so off for now: questlog, collections, guild"), "coming soon: login says which parts are held")
+    -- and they stay off however hard they are pushed
+    w.slash("questlog on")
+    check(ns.modules.questlog.mode ~= "restyled" and Printed("questlog: coming soon"), "coming soon: the slash command says so rather than turning it on")
+    check(ns.SetPart("guild", true) == false and ns.modules.guild.mode ~= "restyled", "coming soon: SetPart refuses to turn one on")
+    -- a saved setting from an older version does not let one back in
+    local saved = ns.db
+    saved.questlog = true
+    w = NewWorld({style = "6", forever = true, savedDB = saved})
+    check(w.ns.modules.questlog.mode ~= "restyled", "coming soon: a saved 'on' from an older version does not bring it back")
+    check(w.ns.db.questlog == true, "coming soon: but the saved setting is kept, for when the part returns")
+    -- the options panel shows them, greyed and dead
+    local panel = w.ns.optionsPanel
+    local box = panel.checks.questlog
+    check(box ~= nil and box.checked == false and box.enabled == false and box.label.text:find("Coming soon", 1, true), "coming soon: the options box is there, unticked, greyed and disabled")
+    box:Click()
+    check(box.checked == false and w.ns.modules.questlog.mode ~= "restyled", "coming soon: clicking the box does nothing")
+    panel.RefreshStatus()
+    check(panel.status.text:find("questlog: coming soon", 1, true), "coming soon: the options panel status says so too")
+    check(#w.ns.errors == 0 and #w.blizzErrors == 0, "coming soon: no errors")
 end
 
 realPrint(("Forever Classic UI harness: %d passed, %d failed"):format(passed, failed))

@@ -22,14 +22,19 @@ the report one click away:
   brings it back), which explains the two things worth reporting: something
   that looks wrong, and a window that is still the modern one because that
   part is not built yet (the talent tree, anything past level 25). It has
-  buttons to open the report and to take a screenshot, and the page to
-  paste it on in a box to copy;
+  buttons to open the report and to take a screenshot, and two boxes to
+  copy from: the page to paste it on, and an address to email it to
+  instead. The report carries every open window and can run past what a
+  CurseForge comment will take — someone hit that limit — so both routes
+  are offered everywhere the page is: in that window, on the report's own
+  first lines, on the error notice, and from `/cui link`;
 - a **minimap button** (left click opens the report, right click the
   settings, drag moves it round the ring). `/cui button off` hides it;
 - a **notice the first time something errors** in a session, with the same
   button on it, once per session so it cannot nag;
-- the report itself now says on its first two lines what it is and where
-  to paste it, so it explains itself wherever it ends up.
+- the report itself says on its first lines what it is, where to paste it
+  and where to email it if it will not fit, so it explains itself wherever
+  it ends up.
 
 The report carries the client build, which parts are on, every error of
 the session and the full layout of whatever window is open, which is
@@ -170,6 +175,18 @@ usually enough to rebuild that window in the classic style.
   that page gets its classic version. Era had no such window
   (professions were the Skills tab), so this is the closest classic
   layout.
+- **Quest log, Appearances and Guild — coming soon, held back in 0.7.9.**
+  The three parts below all hang off one shared Era panel, and that panel
+  has not come out looking like Era yet (see *The Era panel*). Rather
+  than ship something that looks worse than what it replaces, the switch
+  is held: `ns.COMING_SOON` in `Core.lua` names them, they never enable
+  whatever the saved settings say, `/cui questlog on` answers "coming
+  soon", and their options boxes are greyed out and dead to the mouse.
+  None of the code is deleted — it is all still here, still covered by
+  the harness (the test world lifts the hold), and taking a name out of
+  that one table is all it takes to bring a part back. Anyone who had
+  deliberately turned one of these off keeps that setting for when it
+  returns. What follows describes what they do once they are let back on.
 - **Quest log** — Forever merges the quest log into the map window
   (`WorldMapFrame` with `QuestMapFrame` down its side) and it stays
   merged: the two cannot be pulled apart without taking the map's own
@@ -207,7 +224,7 @@ usually enough to rebuild that window in the classic style.
   Forever's title and close button are left alone, and the roster, tabs,
   chat and finder inside are Blizzard's.
 - **The Era panel** — all three of those use one shared piece, and it
-  has been got wrong four times. Era's page art is four fixed quarters of
+  has been got wrong four times, which is why they are held back. Era's page art is four fixed quarters of
   a 384x512 page with the decoration baked into their corners, so
   stretching a quarter whole across some other rectangle pulls the
   decoration out of shape: that is what looked mangled in 0.7.1 and

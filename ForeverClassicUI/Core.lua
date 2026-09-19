@@ -15,6 +15,23 @@ ns.modules = {}
 ns.moduleOrder = {}
 ns.errors = {}
 
+-- Parts that are built but not finished. Everything after 0.7.0 - the Era
+-- framing on the quest list and the map window, the Appearances window and
+-- the Guild window - shares one panel that has not come out looking like
+-- Era yet, so none of it is worth having on. The code stays exactly where
+-- it is: it is the switch that is held, so the work is not lost and can be
+-- picked up from here. Taking a name out of this table is all it takes to
+-- let it back on, and it comes back on by default. While a name is here
+-- the part never enables, whatever the saved settings say, it will not
+-- turn on from the slash command, and its options box is greyed out. The
+-- saved setting itself is left alone, so anyone who had deliberately
+-- turned one of these off still has it off when it comes back.
+ns.COMING_SOON = {questlog = true, collections = true, guild = true}
+
+function ns.IsComingSoon(name)
+    return ns.COMING_SOON[name] == true
+end
+
 local DEFAULTS = {
     nameplates = true,
     castbar = true,
@@ -142,21 +159,28 @@ end
 
 -- switch one part on or off: saved setting + module enable/disable
 function ns.SetPart(key, on)
+    if on and ns.IsComingSoon(key) then return false end
     if ns.db[key] == on then return end
     ns.db[key] = on
     ns.SaveFallback()
     if on then EnableModule(key) else DisableModule(key) end
+    return true
 end
 
 function ns.OnLogin()
     if not ns.db then ns.InitDB() end
-    local off = {}
+    local off, soon = {}, {}
     for _, name in ipairs(ns.moduleOrder) do
-        if ns.db[name] ~= false then
+        if ns.IsComingSoon(name) then
+            soon[#soon + 1] = name
+        elseif ns.db[name] ~= false then
             EnableModule(name)
         else
             off[#off + 1] = name
         end
+    end
+    if #soon > 0 then
+        ns.Print("coming soon, so off for now: %s", table.concat(soon, ", "))
     end
     if #off > 0 then ns.Print("off (saved): %s", table.concat(off, ", ")) end
     if ns.BuildOptionsPanel then ns.SafeCall("options", ns.BuildOptionsPanel) end
@@ -174,6 +198,9 @@ local function PrintStatus()
         local state = ns.db[name] == false and "|cFFFF6666off|r" or
                           "|cFF66FF66on|r"
         local detail = mod.Status and mod:Status() or ""
+        if ns.IsComingSoon(name) then
+            state, detail = "|cFFFFD100coming soon|r", "not finished yet, so off for now"
+        end
         ns.Print("  %s: %s %s", name, state, detail)
     end
     if #ns.errors > 0 then
@@ -194,9 +221,7 @@ local function PrintHelp()
     ns.Print("  /cui combo offset <x> <y> - nudge the combo points (no numbers = reset)")
     ns.Print("  /cui combo force - draw the classic combo points now (testing)")
     ns.Print("  /cui unitframes|party|charsheet|spellbook|professions|actionbars|minimap|tracker on|off|force - the other classic parts")
-    ns.Print("  /cui questlog on|off|force - the Era panel on the map window's quest list")
-    ns.Print("  /cui collections on|off|force - the Era panel on the Appearances window")
-    ns.Print("  /cui guild on|off|force - the Era panel on the Guild & Communities window")
+    ns.Print("  /cui questlog|collections|guild - coming soon: the quest log, Appearances and Guild windows are not finished, so they stay off for now")
     ns.Print("  /cui options - open the settings panel (Options > AddOns > Classic UI for Forever)")
     ns.Print("  /cui report - everything for support in one window: probe, every frame, Lua errors")
     ns.Print("  /cui report all - the same including hidden parts (use this on Classic Era for comparison)")
@@ -229,6 +254,8 @@ function ns.HandleSlash(input)
     elseif cmd == "link" or cmd == "bug" then
         ns.Print("report bugs here: %s", tostring(ns.FEEDBACK_URL))
         ns.Print("copy the text from /cui report into a comment, with a screenshot.")
+        ns.Print("the report is long and a comment has a limit: if it will not fit, email it to %s instead.",
+                 tostring(ns.FEEDBACK_EMAIL))
     elseif cmd == "button" then
         if ns.SetMinimapButton then
             local on = arg ~= "off"
@@ -244,7 +271,9 @@ function ns.HandleSlash(input)
         PrintHelp()
     elseif ns.modules[cmd] then
         local mod = ns.modules[cmd]
-        if arg == "on" then
+        if ns.IsComingSoon(cmd) then
+            ns.Print("%s: coming soon. It is built but it does not look right yet, so it is off until it does.", cmd)
+        elseif arg == "on" then
             ns.SetPart(cmd, true)
             ns.Print("%s on.", cmd)
             if ns.optionsPanel and ns.optionsPanel.Refresh then ns.optionsPanel.Refresh() end

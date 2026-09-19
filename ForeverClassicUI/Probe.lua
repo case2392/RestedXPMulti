@@ -717,8 +717,9 @@ local REPORT_FRAMES_OPEN = {"CharacterFrame", "PlayerSpellsFrame", "SpellBookFra
 -- the report is meant to be pasted somewhere public, so it says what it
 -- is and where it goes on its own first two lines
 local function ReportHeader()
-    return ("-- Classic UI for Forever bug report\n-- Paste this, and a screenshot of what looks wrong, as a comment on:\n--   %s")
-        :format(tostring(ns.FEEDBACK_URL or "the addon's page"))
+    return ("-- Classic UI for Forever bug report\n-- Paste this, and a screenshot of what looks wrong, as a comment on:\n--   %s\n-- A comment has a length limit and this report can run past it. If it\n-- will not fit, email it instead - either one reaches me:\n--   %s")
+        :format(tostring(ns.FEEDBACK_URL or "the addon's page"),
+                tostring(ns.FEEDBACK_EMAIL or "the address on the addon's page"))
 end
 
 function ns.BuildReport(includeHidden)
