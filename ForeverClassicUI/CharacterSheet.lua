@@ -505,9 +505,14 @@ local SHEET_EVENTS_GLOBAL = {
 -- returns comes through here: plain numbers come back as a list, and a
 -- single secret one returns nil, which leaves the row showing whatever it
 -- last had instead of erroring out of the whole update.
+-- a value the client did not return at all reads as zero, the way every
+-- one of these call sites used to write "or 0"; .count says how many it
+-- really returned, for the one caller that has a fallback
+local ZERO_DEFAULT = {__index = function() return 0 end}
+
 local function Numbers(...)
     local count = select("#", ...)
-    local out = {}
+    local out = setmetatable({count = count}, ZERO_DEFAULT)
     for i = 1, count do
         local v = select(i, ...)
         if v == nil then
@@ -622,7 +627,7 @@ local function UpdateMelee(sheet)
         local rank, mod = WeaponSkillFromSkills()
         if rank ~= nil then skill = Numbers(rank, mod) end
     end
-    if skill and skill[1] then
+    if skill and skill.count > 0 then
         local base, mod = skill[1], skill[2] or 0
         if mod == 0 then
             rows.ATTACK.Value:SetText(base)

@@ -1599,6 +1599,12 @@ do
     sheet.scripts.OnEvent(sheet, "UNIT_STATS", "player")
     check(#w.ns.errors == beforeErrors and rows.STRENGTH.Value.text == "|cff20ff2026|r" and rows.ARMOR.Value.text == "|cff20ff20350|r", "sheet: a secret stat leaves the row as it was instead of erroring")
     check(w.ns.charsheet.secretReads >= 2, "sheet: secret reads counted for the report")
+    -- Forever's own unit calls return fewer values than Era's did: the
+    -- missing ones read as zero instead of blowing up the row
+    _G.UnitStat = function(unit, i) return 20 + i, 25 + i end
+    _G.UnitArmor = function() return 300, 350, 300, 50 end
+    sheet.scripts.OnEvent(sheet, "UNIT_STATS", "player")
+    check(#w.ns.errors == beforeErrors and rows.STRENGTH.Value.text == "26" and rows.ARMOR.Value.text == "|cff20ff20350|r", "sheet: a short unit return fills the missing numbers with zero")
     _G.UnitStat, _G.UnitArmor = savedStat, savedArmor
     sheet.scripts.OnEvent(sheet, "UNIT_STATS", "player")
     check(rows.STRENGTH.Value.text == "|cff20ff2026|r" and #w.ns.errors == beforeErrors, "sheet: plain numbers fill the rows again")
