@@ -4,16 +4,17 @@
 -- so the Appearances window is one of Forever's own. It is treated the
 -- way the Currency and Statistics tabs were - not rebuilt, but dressed in
 -- Era's furniture so it sits with the rest of the UI:
---   * retail's nine-slice shell, portrait and flat backdrop are faded and
---     the spellbook's parchment (the same four pieces the professions
---     book uses, stretched to the window's size) is drawn behind it;
---   * the title goes over the top edge in Era's font and Era's round
---     minimise-style close button replaces retail's X;
---   * the bottom tabs are redrawn from the character sheet's tab art, cut
---     into three so the middle stretches to the label - the same tabs the
---     spellbook part builds - with the open one brightened.
--- The lists, the model and the filters inside are Blizzard's and are left
--- alone: only the frame around them changes.
+--   * retail's nine-slice shell, portrait and flat backdrop are faded,
+--     along with the dark page inside it (the wardrobe's own Bg, tiled
+--     background, corner shadows and inner nine-slice, which hang off a
+--     frame of their own), and the spellbook's parchment - the same four
+--     pieces the professions book uses, stretched to the window's size -
+--     is drawn in their place;
+--   * Forever's own title and close button are left alone: the title is
+--     already Era's gold font over the top edge, and the X is the only
+--     way out of the window.
+-- The lists, the model, the tabs and the filters inside are Blizzard's
+-- and are left alone: only the frame around them changes.
 -- Rule as elsewhere: widget calls and hooksecurefunc only, nothing of
 -- ours written into Blizzard's tables (M.own holds what hangs on them),
 -- and everything we change is remembered so /cui collections off puts it
@@ -29,11 +30,6 @@ local ART = {
     topRight = SB .. "UI-SpellbookPanel-TopRight",
     bottomLeft = SB .. "UI-SpellbookPanel-BotLeft",
     bottomRight = SB .. "UI-SpellbookPanel-BotRight",
-    tabArt = "Interface\\PaperDollInfoFrame\\UI-Character-InActiveTab",
-    tabGlow = "Interface\\PaperDollInfoFrame\\UI-Character-Tab-Highlight",
-    closeUp = "Interface\\Buttons\\UI-Panel-MinimizeButton-Up",
-    closeDown = "Interface\\Buttons\\UI-Panel-MinimizeButton-Down",
-    closeHighlight = "Interface\\Buttons\\UI-Panel-MinimizeButton-Highlight"
 }
 M.ART = ART
 
@@ -41,12 +37,9 @@ local FRAME_NAME = "CollectionsJournal"
 -- the parchment is a 384x512 book: a 256 left page and a 128 right one,
 -- 256 top and 256 bottom. Those fractions hold at any window size.
 local ART_LEFT, ART_TOP = 256 / 384, 256 / 512
-local TITLE_Y = -18
-local TAB_HEIGHT, TAB_END = 32, 20
-local SELECTED_TINT = {1, 1, 1}
-local UNSELECTED_TINT = {0.65, 0.65, 0.65}
-local TAB_NAMES = {"CollectionsJournalTab1", "CollectionsJournalTab2", "CollectionsJournalTab3",
-                   "CollectionsJournalTab4", "CollectionsJournalTab5", "CollectionsJournalTab6"}
+-- the frames inside the window whose own art is a dark modern page; each
+-- one is tried under CollectionsJournal and as a global
+local PAGE_FRAMES = {"WardrobeCollectionFrame", "PetJournal", "MountJournal", "ToyBox", "HeirloomsJournal", "WardrobeFrame"}
 
 M.own = setmetatable({}, {__mode = "k"})
 local function Own(frame)
@@ -142,6 +135,19 @@ local function ShellPieces(frame)
     end
     if frame.portrait then out[#out + 1] = frame.portrait end
     if frame.PortraitFrame then out[#out + 1] = frame.PortraitFrame end
+    -- the dark page inside: the open journal's activeFrame carries its own
+    -- background, tiled fill, corner shadows and inner nine-slice, none of
+    -- which are regions of the window itself
+    for _, name in ipairs(PAGE_FRAMES) do
+        local journal = frame[name] or G(name)
+        local page = type(journal) == "table" and journal.activeFrame
+        if type(page) == "table" then
+            for _, region in ipairs(TextureRegions(page)) do out[#out + 1] = region end
+            if page.NineSlice then
+                for _, region in ipairs(TextureRegions(page.NineSlice)) do out[#out + 1] = region end
+            end
+        end
+    end
     return out
 end
 
@@ -165,22 +171,6 @@ local function BuildBook(frame)
     book.bottomLeft = Piece(ART.bottomLeft, "BOTTOMLEFT")
     book.bottomRight = Piece(ART.bottomRight, "BOTTOMRIGHT")
 
-    book.title = book:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-    book.title:SetPoint("TOP", book, "TOP", 0, TITLE_Y)
-    book.title:SetText(Str("APPEARANCES", Str("COLLECTIONS", "Appearances")))
-
-    local close = CreateFrame("Button", nil, book)
-    close:SetSize(32, 32)
-    close:SetPoint("CENTER", book, "TOPRIGHT", -44, -25)
-    close:SetFrameLevel(book:GetFrameLevel() + 3)
-    close:SetNormalTexture(ART.closeUp)
-    close:SetPushedTexture(ART.closeDown)
-    close:SetHighlightTexture(ART.closeHighlight, "ADD")
-    close:SetScript("OnClick", function()
-        if HideUIPanel then HideUIPanel(frame) else frame:Hide() end
-    end)
-    book.close = close
-
     book:Hide()
     return book
 end
@@ -198,74 +188,6 @@ local function SizeBook(book, frame)
 end
 
 --------------------------------------------------------------------------
--- the bottom tabs, redrawn from the character sheet's tab art
---------------------------------------------------------------------------
-
-local function Tabs(frame)
-    local out = {}
-    for _, name in ipairs(TAB_NAMES) do
-        local tab = G(name)
-        if type(tab) == "table" and tab.GetObjectType then out[#out + 1] = tab end
-    end
-    if #out == 0 and frame and frame.Tabs then
-        for _, tab in ipairs(frame.Tabs) do
-            if type(tab) == "table" and tab.GetObjectType then out[#out + 1] = tab end
-        end
-    end
-    return out
-end
-
-local function TabPiece(tab, l, r)
-    local t = tab:CreateTexture(nil, "BACKGROUND")
-    t:SetTexture(ART.tabArt)
-    t:SetSize(TAB_END, TAB_HEIGHT)
-    t:SetTexCoord(l, r, 0, 1)
-    return t
-end
-
-local function SkinTab(tab, index, selected, on)
-    local own = Own(tab)
-    if on then
-        if not own.pieces then
-            local left = TabPiece(tab, 0, 0.15625)
-            local middle = TabPiece(tab, 0.15625, 0.84375)
-            local right = TabPiece(tab, 0.84375, 1)
-            left:SetPoint("TOPLEFT", tab, "TOPLEFT", 0, 0)
-            right:SetPoint("TOPRIGHT", tab, "TOPRIGHT", 0, 0)
-            middle:ClearAllPoints()
-            middle:SetPoint("TOPLEFT", left, "TOPRIGHT", 0, 0)
-            middle:SetPoint("BOTTOMRIGHT", right, "BOTTOMLEFT", 0, 0)
-            own.pieces = {left, middle, right}
-        end
-        local tint = selected and SELECTED_TINT or UNSELECTED_TINT
-        for _, piece in ipairs(own.pieces) do
-            piece:Show()
-            if piece.SetVertexColor then piece:SetVertexColor(tint[1], tint[2], tint[3]) end
-        end
-        for _, region in ipairs(TextureRegions(tab)) do
-            local ours = false
-            for _, piece in ipairs(own.pieces) do if piece == region then ours = true end end
-            if not ours then Fade(region, true) end
-        end
-    else
-        if own.pieces then
-            for _, piece in ipairs(own.pieces) do piece:Hide() end
-        end
-        for _, region in ipairs(TextureRegions(tab)) do Restore(region) end
-    end
-end
-
-local function SelectedTab(frame)
-    local n = frame and frame.selectedTab
-    if type(n) == "number" then return n end
-    if type(PanelTemplates_GetSelectedTab) == "function" then
-        local ok, value = pcall(PanelTemplates_GetSelectedTab, frame)
-        if ok and type(value) == "number" then return value end
-    end
-    return 1
-end
-
---------------------------------------------------------------------------
 -- applying and undoing
 --------------------------------------------------------------------------
 
@@ -274,12 +196,6 @@ local function Shell(frame, on)
     for _, region in ipairs(ShellPieces(frame)) do
         Fade(region, on)
         M.faded = M.faded + 1
-    end
-    -- retail's own close button goes with the shell; ours takes its place
-    local close = frame.CloseButton or (frame.NineSlice and frame.NineSlice.CloseButton)
-    if close and close.SetAlpha then
-        Fade(close, on)
-        if close.EnableMouse then close:EnableMouse(not on) end
     end
 end
 
@@ -295,10 +211,6 @@ function M.Apply()
     Shell(frame, true)
     SizeBook(M.book, frame)
     M.book:Show()
-    local tabs = Tabs(frame)
-    local selected = SelectedTab(frame)
-    for i, tab in ipairs(tabs) do SkinTab(tab, i, i == selected, true) end
-    M.tabs = #tabs
 end
 
 local function ApplyLater()
@@ -310,7 +222,6 @@ local function Undo()
     local frame = G(FRAME_NAME)
     if not frame then return end
     Shell(frame, false)
-    for i, tab in ipairs(Tabs(frame)) do SkinTab(tab, i, false, false) end
     if M.book then M.book:Hide() end
 end
 
@@ -363,7 +274,7 @@ function M:Enable()
         return
     end
     self.missingArt = {}
-    for _, key in ipairs({"topLeft", "topRight", "bottomLeft", "bottomRight", "tabArt"}) do
+    for _, key in ipairs({"topLeft", "topRight", "bottomLeft", "bottomRight"}) do
         if not HasFile(ART[key]) then self.missingArt[#self.missingArt + 1] = ART[key]:match("[^\\]+$") end
     end
     self.mode = "restyled"
@@ -383,7 +294,7 @@ end
 
 function M:Status()
     if self.mode == "restyled" then
-        local s = ("Era framing on Forever's Appearances window, %d tabs in Era's tab art"):format(self.tabs or 0)
+        local s = ("Era parchment on Forever's Appearances window, %d retail pieces faded"):format(self.faded or 0)
         if self.missingArt and #self.missingArt > 0 then
             s = s .. " (art missing: " .. table.concat(self.missingArt, ", ") .. ")"
         end

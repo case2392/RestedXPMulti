@@ -59,6 +59,7 @@ local function Region(kind, init)
     function r:SetText(t) self.text = t end
     function r:GetText() return self.text end
     function r:SetTextColor(...) self.textColor = {...} end
+    function r:GetTextColor() if self.textColor then return unpack(self.textColor) end return 1, 1, 1, 1 end
     function r:SetJustifyV(j) self.justifyV = j end
     function r:SetWordWrap() end
     function r:GetStringWidth() return self.text and (#tostring(self.text) * 6) or 0 end
@@ -826,8 +827,14 @@ local function NewWorld(opts)
             local side = Frame("QuestMapFrame"); side:SetSize(340, 500); side.parent = map; side.level = 2
             side.Background = Region("Texture", {atlas = "QuestLogBackground", layer = "BACKGROUND"})
             side.Border = Region("Texture", {atlas = "QuestLog-nineslice", layer = "BORDER"})
-            local scroll = Frame("QuestScrollFrame"); scroll:SetSize(320, 430); scroll.parent = side
+            local scroll = Frame("QuestScrollFrame"); scroll:SetSize(320, 430); scroll.parent = side; scroll.level = 4
             scroll.Background = Region("Texture", {atlas = "QuestLogList-background", layer = "BACKGROUND"})
+            scroll.EmptyText = Region("FontString"); scroll.EmptyText:SetText("No quests available"); scroll.EmptyText.textColor = {1, 1, 1}
+            -- retail's quest panel art lives on a frame of its own
+            scroll.BorderFrame = Frame("BorderFrame"); scroll.BorderFrame.parent = scroll
+            scroll.BorderFrame.Border = Region("Texture", {atlas = "QuestLog-frame", layer = "BORDER"})
+            scroll.BorderFrame.TopDetail = Region("Texture", {atlas = "QuestLog-frame-filigree", layer = "ARTWORK"})
+            scroll.BorderFrame.Shadow = Region("Texture", {atlas = "QuestLog-Frame-Gradient-bottom", layer = "BACKGROUND"})
             scroll.Contents = Frame("Contents"); scroll.Contents.parent = scroll
             local function QuestRow(key, title)
                 local b = Frame(nil); b:SetSize(300, 16); b.parent = scroll.Contents
@@ -854,11 +861,17 @@ local function NewWorld(opts)
             cj.NineSlice = Frame("NineSlice"); cj.NineSlice.TopEdge = Region("Texture", {atlas = "nineslice-top"})
             cj.PortraitContainer = Frame("PortraitContainer"); cj.PortraitContainer.portrait = Region("Texture")
             cj.CloseButton = Frame("CloseButton")
-            for i = 1, 5 do
-                local t = Frame("CollectionsJournalTab" .. i); t:SetSize(90, 32); t.parent = cj
-                t.Left = Region("Texture", {atlas = "tab-left"}); t.Middle = Region("Texture", {atlas = "tab-middle"}); t.Right = Region("Texture", {atlas = "tab-right"})
-                _G["CollectionsJournalTab" .. i] = t
-            end
+            cj.TitleContainer = Frame("TitleContainer"); cj.TitleContainer.TitleText = Region("FontString"); cj.TitleContainer.TitleText:SetText("Appearances")
+            -- the dark page inside: the wardrobe's own activeFrame art
+            local wardrobe = Frame("WardrobeCollectionFrame"); wardrobe.parent = cj
+            local page = Frame("activeFrame"); page.parent = wardrobe
+            page.Bg = Region("Texture", {layer = "BACKGROUND"})
+            page.BackgroundTile = Region("Texture", {atlas = "collections-background-tile", layer = "BACKGROUND"})
+            page.ShadowCornerTopLeft = Region("Texture", {atlas = "collections-background-shadow-large", layer = "BORDER"})
+            page.NineSlice = Frame("NineSlice"); page.NineSlice.TopEdge = Region("Texture", {atlas = "UI-Frame-InnerTopTile"})
+            wardrobe.activeFrame = page
+            cj.WardrobeCollectionFrame = wardrobe
+            _G.WardrobeCollectionFrame = wardrobe
             cj.shown = false
             function cj:Show() if not self.shown then self.shown = true; if self.scripts and self.scripts.OnShow then self.scripts.OnShow(self) end end end
             function cj:Hide() if self.shown then self.shown = false; if self.scripts and self.scripts.OnHide then self.scripts.OnHide(self) end end end
@@ -1951,19 +1964,24 @@ do
     check(ql.mode == "waiting" and QuestMapFrame == nil and ql.watcher ~= nil, "questlog: waits for Forever's QuestMapFrame")
     local side = w.LoadQuestMap()
     ql.watcher:Fire("PLAYER_ENTERING_WORLD")
-    check(ql.mode == "restyled" and ql.book ~= nil and ql.book.parent == side and ql.book.shown == false, "questlog: re-skinned once the sidebar exists, parchment kept hidden until it opens")
+    check(ql.mode == "restyled" and ql.book ~= nil and ql.book.parent == QuestScrollFrame and ql.book.shown == false, "questlog: re-skinned once the sidebar exists, parchment kept hidden until it opens")
     side:Show()
     local qbook = ql.book
-    check(qbook.shown == true and qbook.title.text == "Quest Log" and qbook.topLeft.texture == "Interface\\QuestFrame\\UI-QuestLog-TopLeft" and qbook.icon.texture == "Interface\\QuestFrame\\UI-QuestLog-BookIcon", "questlog: Era's quest log parchment and book icon once open")
-    check(qbook.topLeft.width == 227 and qbook.topRight.width == 114 and qbook.topLeft.height == 250 and qbook.bottomLeft.height == 250, "questlog: the four pieces keep Era's two-thirds split at the sidebar's size")
+    local border = QuestScrollFrame.BorderFrame
+    check(qbook.shown == true and qbook.parent == QuestScrollFrame and qbook.level == 4 and qbook.topLeft.texture == "Interface\\QuestFrame\\UI-QuestLog-TopLeft", "questlog: Era's parchment over the list, level with the scroll frame so the rows draw on top")
+    check(qbook.anchors[1][4] == -3 and qbook.anchors[1][5] == 7 and qbook.anchors[2][4] == 3 and qbook.anchors[2][5] == -6, "questlog: the parchment takes exactly the rect retail's panel border filled")
+    -- 320+6 wide, 430+13 tall
+    check(qbook.topLeft.width == 217 and qbook.topRight.width == 109 and qbook.topLeft.height == 222 and qbook.bottomLeft.height == 222, "questlog: the four pieces keep Era's two-thirds split at the panel's size")
     check(side.Background.alpha == 0 and side.Border.alpha == 0 and QuestScrollFrame.Background.alpha == 0, "questlog: retail's dark sidebar art faded")
+    check(border.Border.alpha == 0 and border.TopDetail.alpha == 0 and border.Shadow.alpha == 0, "questlog: retail's quest panel border, filigree and shadow faded too")
+    check(QuestScrollFrame.EmptyText.textColor[1] == 0.25 and QuestScrollFrame.EmptyText.textColor[3] == 0, "questlog: the 'no quests' text re-coloured for parchment")
     local q1 = QuestScrollFrame.Contents.Quest1
     check(q1.Text.font == GameFontNormal and q1.HighlightTexture.texture == "Interface\\QuestFrame\\UI-QuestLogTitleHighlight" and q1.HighlightTexture.blend == "ADD" and ql.rows == 2, "questlog: quest titles in Era's font under Era's highlight")
     side:Hide()
     check(qbook.shown == false, "questlog: parchment goes with the window")
     side:Show()
     w.slash("questlog off")
-    check(ql.mode == "off" and qbook.shown == false and side.Background.alpha == 1 and QuestScrollFrame.Background.alpha == 1 and q1.Text.font == "QuestFont_Enormous" and q1.HighlightTexture.texture == "Interface\\QuestFrame\\UI-QuestLogTitleHighlightRetail", "questlog off: retail sidebar, fonts and highlights back")
+    check(ql.mode == "off" and qbook.shown == false and side.Background.alpha == 1 and QuestScrollFrame.Background.alpha == 1 and border.Border.alpha == 1 and QuestScrollFrame.EmptyText.textColor[1] == 1 and q1.Text.font == "QuestFont_Enormous" and q1.HighlightTexture.texture == "Interface\\QuestFrame\\UI-QuestLogTitleHighlightRetail", "questlog off: retail panel, fonts, colours and highlights back")
     w.slash("questlog on")
     check(ql.mode == "restyled" and qbook.shown == true and q1.Text.font == GameFontNormal, "questlog on: Era's parchment again")
 
@@ -1975,17 +1993,14 @@ do
     check(co.mode == "restyled" and co.book ~= nil and co.book.shown == false, "collections: framed once the window exists, kept hidden until it opens")
     cj:Show()
     local cbook = co.book
-    check(cbook.shown == true and cbook.title.text == "Appearances" and cbook.topLeft.texture == "Interface\\Spellbook\\UI-SpellbookPanel-TopLeft" and cbook.close.NormalTexture.texture == "Interface\\Buttons\\UI-Panel-MinimizeButton-Up", "collections: Era parchment, title and round close button")
+    local page = WardrobeCollectionFrame.activeFrame
+    check(cbook.shown == true and cbook.topLeft.texture == "Interface\\Spellbook\\UI-SpellbookPanel-TopLeft", "collections: Era parchment behind the window")
     check(cbook.topLeft.width == 553 and cbook.topLeft.height == 300 and cbook.bottomRight.width == 277, "collections: the parchment keeps Era's split at the window's size")
-    check(cj.Bg.alpha == 0 and cj.NineSlice.TopEdge.alpha == 0 and cj.PortraitContainer.portrait.alpha == 0 and cj.CloseButton.alpha == 0 and cj.CloseButton.mouse == false, "collections: retail's shell, portrait and X faded")
-    local tab1, tab2 = CollectionsJournalTab1, CollectionsJournalTab2
-    check(co.tabs == 5 and co.own[tab1].pieces[1].texture == "Interface\\PaperDollInfoFrame\\UI-Character-InActiveTab" and co.own[tab1].pieces[1].texcoord[2] == 0.15625, "collections: bottom tabs redrawn from Era's tab art, cut into three")
-    check(co.own[tab2].pieces[1].vertex[1] == 1 and co.own[tab1].pieces[1].vertex[1] == 0.65, "collections: the open tab is the bright one")
-    cj.selectedTab = 1
-    _G.CollectionsJournal_SetTab(cj, 1)
-    check(co.own[tab1].pieces[1].vertex[1] == 1 and co.own[tab2].pieces[1].vertex[1] == 0.65, "collections: the tint follows the open tab")
+    check(cj.Bg.alpha == 0 and cj.NineSlice.TopEdge.alpha == 0 and cj.PortraitContainer.portrait.alpha == 0, "collections: retail's shell and portrait faded")
+    check(page.Bg.alpha == 0 and page.BackgroundTile.alpha == 0 and page.ShadowCornerTopLeft.alpha == 0 and page.NineSlice.TopEdge.alpha == 0, "collections: the dark page inside the window faded too")
+    check(cj.CloseButton.alpha == 1 and cj.CloseButton.mouse ~= false and cj.TitleContainer.TitleText.alpha == 1, "collections: Forever's own title and close button left alone")
     w.slash("collections off")
-    check(co.mode == "off" and cbook.shown == false and cj.Bg.alpha == 1 and cj.NineSlice.TopEdge.alpha == 1 and cj.CloseButton.mouse == true and co.own[tab1].pieces[1].shown == false, "collections off: retail's window back")
+    check(co.mode == "off" and cbook.shown == false and cj.Bg.alpha == 1 and cj.NineSlice.TopEdge.alpha == 1 and page.Bg.alpha == 1 and page.NineSlice.TopEdge.alpha == 1, "collections off: retail's window back")
     w.slash("collections on")
     check(co.mode == "restyled" and cbook.shown == true, "collections on: Era framing again")
     check(#w.ns.errors == 0 and #w.blizzErrors == 0, "questlog and collections: no errors")

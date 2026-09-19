@@ -175,23 +175,30 @@ usually enough to rebuild that window in the classic style.
   retail's merged window instead (`WorldMapFrame` with `QuestMapFrame`
   docked down its left side), and no addon can pull the two apart without
   taking the map's own panel handling with it, so the quest log side is
-  reskinned in place: retail's dark sidebar background and border are
-  faded and Era's quest log parchment (`UI-QuestLog-TopLeft` and the
-  three pieces that go with it, stretched to whatever height Forever's
-  window is) is drawn behind it, with Era's book icon in the corner and
-  "Quest Log" over the top in Era's font, and every quest title gets
-  Era's font and `UI-QuestLogTitleHighlight` under the mouse in place of
-  retail's flat bar. The map itself is left alone — it is the same map
-  either way.
+  reskinned in place: retail's quest panel — the `QuestLog-frame` border,
+  its filigree and its shadow, which hang off `QuestScrollFrame.BorderFrame`
+  rather than the scroll frame itself, plus the flat background behind
+  the list — is faded, and Era's quest log parchment
+  (`UI-QuestLog-TopLeft` and the three pieces that go with it, stretched
+  over exactly the rect that panel filled) is drawn in its place. Every
+  quest title gets Era's font and `UI-QuestLogTitleHighlight` under the
+  mouse in place of retail's flat bar, and the "no quests" text is
+  re-coloured to Era's parchment brown. The search box and quest count
+  above the list are Forever's and stay where they are; Forever's window
+  portrait is already Era's `UI-QuestLog-BookIcon`. The map itself is
+  left alone — it is the same map either way.
 - **Appearances** — there is no Era original here: transmog did not exist
   in 1.15, so Forever's Appearances window (`CollectionsJournal`) is
   treated the way the Currency and Statistics tabs were, dressed in Era's
   furniture rather than rebuilt. Retail's nine-slice shell, portrait and
-  flat backdrop are faded and the spellbook's parchment drawn behind it,
-  the title goes over the top edge in Era's font with Era's round close
-  button, and the bottom tabs are redrawn from the character sheet's tab
-  art cut into three, the open one brightened. The lists, the model and
-  the filters inside are Blizzard's and are left alone.
+  flat backdrop are faded, along with the dark page inside it (the
+  wardrobe's own `Bg`, tiled fill, corner shadows and inner nine-slice,
+  which hang off `WardrobeCollectionFrame.activeFrame` rather than the
+  window), and the spellbook's parchment is drawn in their place.
+  Forever's own title and close button are left alone: the title is
+  already Era's gold font over the top edge, and the X is the only way
+  out of the window. The lists, the model, the tabs and the filters
+  inside are Blizzard's and are left alone.
 - **Action bars** — Era's whole bottom bar. The addon draws the 1024x53
   `UI-MainMenuBar-Dwarf` stone bar with the gryphon end caps along the
   bottom of the screen and moves Blizzard's pieces onto it: the twelve

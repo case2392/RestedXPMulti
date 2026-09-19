@@ -7,14 +7,17 @@
 -- quest log docked down its left side as QuestMapFrame - and one addon
 -- cannot pull the two apart without taking the map's own panel handling
 -- with it. So this part reskins the quest log side in place:
---   * the retail sidebar's dark background and border art are faded and
---     Era's quest log parchment (UI-QuestLog-TopLeft and friends, the
---     same four pieces Era's book is built from, stretched to whatever
---     height Forever's window is) is drawn behind it, with Era's book
---     icon in the corner and "Quest Log" over the top in Era's font;
+--   * retail's quest panel (the QuestLog-frame border, its filigree and
+--     its shadow, which hang off QuestScrollFrame.BorderFrame, plus the
+--     flat background behind the list) is faded, and Era's quest log
+--     parchment (UI-QuestLog-TopLeft and the three pieces that go with
+--     it, stretched over exactly the rect that panel filled) is drawn in
+--     its place. The search box and quest count above it are Forever's
+--     and are left where they are;
 --   * every quest title in the list gets Era's font and Era's
 --     UI-QuestLogTitleHighlight under the mouse, in place of retail's
---     flat highlight bar;
+--     flat highlight bar, and the "no quests" text is re-coloured to
+--     Era's parchment brown so it can be read on the new background;
 --   * the map itself is left alone - it is the same map either way.
 -- Rule as elsewhere: widget calls and hooksecurefunc only, nothing of
 -- ours written into Blizzard's tables (M.own holds what hangs on them),
@@ -31,17 +34,19 @@ local ART = {
     topRight = QF .. "UI-QuestLog-TopRight",
     bottomLeft = QF .. "UI-QuestLog-BotLeft",
     bottomRight = QF .. "UI-QuestLog-BotRight",
-    bookIcon = QF .. "UI-QuestLog-BookIcon",
     titleHighlight = QF .. "UI-QuestLogTitleHighlight"
 }
 M.ART = ART
 
 -- Era's book is 384 wide (a 256 left page and a 128 right one) and 512
 -- tall (256 top, 256 bottom); the four pieces keep those fractions at
--- whatever size Forever's sidebar happens to be
+-- whatever size Forever's quest panel happens to be
 local ART_LEFT, ART_TOP = 256 / 384, 256 / 512
-local BOOK_ICON_SIZE = 60
-local TITLE_Y = -18
+-- retail's QuestLog-frame border sits 3px out either side of the scroll
+-- frame, 7px above it and 6px below; the parchment takes exactly that rect
+local PAD_L, PAD_T, PAD_R, PAD_B = 3, 7, 3, 6
+-- Era's body text on parchment
+local PARCHMENT_TEXT = {0.25, 0.12, 0}
 
 M.own = setmetatable({}, {__mode = "k"})
 local function Own(frame)
@@ -147,22 +152,43 @@ local function TitleRows()
     return out
 end
 
--- the retail sidebar's own shell: the flat dark background and border
--- textures sitting behind the list
-local function ShellRegions(frame)
+-- retail's quest panel art hangs off a frame of its own inside the scroll
+-- frame, so fading the scroll frame's own regions is not enough
+local function BorderFrame()
+    local scroll = ScrollFrame()
+    local border = scroll and scroll.BorderFrame
+    if type(border) == "table" and border.GetRegions then return border end
+end
+
+local function Textures(frame, anyLayer)
     if not frame or not frame.GetRegions then return {} end
     local out = {}
     local ok, regions = pcall(function() return {frame:GetRegions()} end)
     if not ok then return out end
     for _, region in ipairs(regions) do
         local okType, kind = pcall(function() return region:GetObjectType() end)
-        if okType and kind == "Texture" and region.GetDrawLayer then
-            local okLayer, layer = pcall(region.GetDrawLayer, region)
-            if okLayer and (layer == "BACKGROUND" or layer == "BORDER") then
+        if okType and kind == "Texture" then
+            if anyLayer then
                 out[#out + 1] = region
+            elseif region.GetDrawLayer then
+                local okLayer, layer = pcall(region.GetDrawLayer, region)
+                if okLayer and (layer == "BACKGROUND" or layer == "BORDER") then
+                    out[#out + 1] = region
+                end
             end
         end
     end
+    return out
+end
+
+-- the retail panel: the flat background behind the list, the sidebar's own
+-- background, and every piece of the QuestLog-frame border
+local function ShellRegions()
+    local out = {}
+    for _, region in ipairs(Textures(Sidebar())) do out[#out + 1] = region end
+    for _, region in ipairs(Textures(ScrollFrame())) do out[#out + 1] = region end
+    -- the border frame is nothing but retail's panel art, so all of it goes
+    for _, region in ipairs(Textures(BorderFrame(), true)) do out[#out + 1] = region end
     return out
 end
 
@@ -170,11 +196,16 @@ end
 -- our parchment: Era's four book pieces behind the sidebar
 --------------------------------------------------------------------------
 
-local function BuildBook(side)
-    local book = CreateFrame("Frame", "ForeverClassicUIQuestBook", side)
-    book:SetAllPoints(side)
-    local level = side.GetFrameLevel and side:GetFrameLevel() or 1
-    book:SetFrameLevel(math.max(level - 1, 0))
+-- the parchment takes the rect retail's panel border filled, so it lines up
+-- with the list and leaves the search box and quest count above it alone
+local function BuildBook(scroll)
+    local book = CreateFrame("Frame", "ForeverClassicUIQuestBook", scroll)
+    book:SetPoint("TOPLEFT", scroll, "TOPLEFT", -PAD_L, PAD_T)
+    book:SetPoint("BOTTOMRIGHT", scroll, "BOTTOMRIGHT", PAD_R, -PAD_B)
+    -- the list's own Contents frame sits a level above the scroll frame, so
+    -- ours stays level with the scroll frame and the quest rows draw over it
+    local level = scroll.GetFrameLevel and scroll:GetFrameLevel() or 1
+    book:SetFrameLevel(level)
     local function Piece(path, point)
         local t = book:CreateTexture(nil, "BACKGROUND")
         t:SetTexture(path)
@@ -185,27 +216,18 @@ local function BuildBook(side)
     book.topRight = Piece(ART.topRight, "TOPRIGHT")
     book.bottomLeft = Piece(ART.bottomLeft, "BOTTOMLEFT")
     book.bottomRight = Piece(ART.bottomRight, "BOTTOMRIGHT")
-
-    book.icon = book:CreateTexture(nil, "ARTWORK")
-    book.icon:SetTexture(ART.bookIcon)
-    book.icon:SetSize(BOOK_ICON_SIZE, BOOK_ICON_SIZE)
-    book.icon:SetPoint("TOPLEFT", book, "TOPLEFT", 8, -6)
-
-    book.title = book:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-    book.title:SetPoint("TOP", book, "TOP", 0, TITLE_Y)
-    book.title:SetText(Str("QUEST_LOG", "Quest Log"))
-
     book:Hide()
     return book
 end
 
 -- Era's pieces split the book two thirds / one third across and in half
--- down; the sidebar is whatever size Forever made it, so they are sized
--- from it every time it changes
-local function SizeBook(book, side)
-    if not book or not side or not side.GetSize then return end
-    local ok, w, h = pcall(side.GetSize, side)
-    if not ok or not w or w <= 0 or h <= 0 then return end
+-- down; the panel is whatever size Forever made it, so they are sized from
+-- it every time it changes
+local function SizeBook(book, scroll)
+    if not book or not scroll or not scroll.GetSize then return end
+    local ok, sw, sh = pcall(scroll.GetSize, scroll)
+    if not ok or not sw or sw <= 0 or sh <= 0 then return end
+    local w, h = sw + PAD_L + PAD_R, sh + PAD_T + PAD_B
     local lw, rw = math.floor(w * ART_LEFT + 0.5), math.ceil(w * (1 - ART_LEFT))
     local th, bh = math.floor(h * ART_TOP + 0.5), math.ceil(h * (1 - ART_TOP))
     book.topLeft:SetSize(lw, th)
@@ -255,17 +277,21 @@ end
 -- applying and undoing
 --------------------------------------------------------------------------
 
-local function Shell(side, on)
+local function Shell(on)
     M.faded = 0
-    for _, region in ipairs(ShellRegions(side)) do
+    for _, region in ipairs(ShellRegions()) do
         Fade(region, on)
         M.faded = M.faded + 1
     end
+    -- "No quests available" is white, which is unreadable on parchment
     local scroll = ScrollFrame()
-    if scroll then
-        for _, region in ipairs(ShellRegions(scroll)) do
-            Fade(region, on)
-            M.faded = M.faded + 1
+    local empty = scroll and scroll.EmptyText
+    if empty and empty.SetTextColor then
+        if on then
+            Remember(empty)
+            empty:SetTextColor(PARCHMENT_TEXT[1], PARCHMENT_TEXT[2], PARCHMENT_TEXT[3])
+        else
+            Restore(empty)
         end
     end
 end
@@ -273,12 +299,13 @@ end
 function M.Apply()
     if M.mode ~= "restyled" then return end
     local side = Sidebar()
-    if not side then return end
-    if not M.book then M.book = BuildBook(side) end
+    local scroll = ScrollFrame()
+    if not side or not scroll then return end
+    if not M.book then M.book = BuildBook(scroll) end
     local shown = side.IsShown and side:IsShown()
     if shown then
-        Shell(side, true)
-        SizeBook(M.book, side)
+        Shell(true)
+        SizeBook(M.book, scroll)
         M.book:Show()
         Rows(true)
     else
@@ -292,8 +319,7 @@ local function ApplyLater()
 end
 
 local function Undo()
-    local side = Sidebar()
-    if side then Shell(side, false) end
+    Shell(false)
     Rows(false)
     if M.book then M.book:Hide() end
 end
@@ -312,7 +338,13 @@ local function Hook()
         side:HookScript("OnShow", Guard("OnShow", ApplyLater))
         side:HookScript("OnHide", Guard("OnHide", function() if M.book then M.book:Hide() end end))
         side:HookScript("OnSizeChanged", Guard("OnSizeChanged", function()
-            if M.mode == "restyled" and M.book then SizeBook(M.book, Sidebar()) end
+            if M.mode == "restyled" and M.book then SizeBook(M.book, ScrollFrame()) end
+        end))
+    end
+    local scroll = ScrollFrame()
+    if scroll and scroll.HookScript then
+        scroll:HookScript("OnSizeChanged", Guard("scroll OnSizeChanged", function()
+            if M.mode == "restyled" and M.book then SizeBook(M.book, ScrollFrame()) end
         end))
     end
     -- the rows are pooled: Blizzard hands a row to a different quest on
@@ -371,7 +403,7 @@ function M:Enable()
         return
     end
     self.missingArt = {}
-    for _, key in ipairs({"topLeft", "topRight", "bottomLeft", "bottomRight", "bookIcon", "titleHighlight"}) do
+    for _, key in ipairs({"topLeft", "topRight", "bottomLeft", "bottomRight", "titleHighlight"}) do
         if not HasFile(ART[key]) then self.missingArt[#self.missingArt + 1] = ART[key]:match("[^\\]+$") end
     end
     self.mode = "restyled"
@@ -391,7 +423,7 @@ end
 
 function M:Status()
     if self.mode == "restyled" then
-        local s = ("Era quest log parchment on Forever's map sidebar, %d quest titles in Era's font"):format(self.rows or 0)
+        local s = ("Era quest log parchment over Forever's quest panel (%d retail pieces faded), %d quest titles in Era's font"):format(self.faded or 0, self.rows or 0)
         if self.missingArt and #self.missingArt > 0 then
             s = s .. " (art missing: " .. table.concat(self.missingArt, ", ") .. ")"
         end
