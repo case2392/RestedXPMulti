@@ -179,9 +179,13 @@ usually enough to rebuild that window in the classic style.
   the scroll frame, plus the flat background behind the list — is faded,
   and an Era panel is drawn over exactly the rect it filled. Quest titles
   get Era's font and `UI-QuestLogTitleHighlight` under the mouse, and the
-  "no quests" text is re-coloured to read on parchment. The search box
-  and quest count above the list are Forever's and stay put; the map half
-  is untouched.
+  "no quests" text is re-coloured to read on parchment. The window round
+  both halves is dressed the same way: its flat dark backdrop, the inset
+  line under the title and retail's metal nine-slice and portrait are
+  faded and a second Era panel is drawn behind the lot, so the map side
+  matches the quest side. The search box and quest count above the list
+  are Forever's and stay put, and so are the title, the close button, the
+  maximise button and the map itself.
 - **Appearances** — there is no Era original here: transmog did not exist
   in 1.15, so Forever's Appearances window (`CollectionsJournal`) is
   dressed in Era's furniture rather than rebuilt. Retail's nine-slice
@@ -202,14 +206,20 @@ usually enough to rebuild that window in the classic style.
   own backdrop and wide background. The Era panel is drawn behind the lot.
   Forever's title and close button are left alone, and the roster, tabs,
   chat and finder inside are Blizzard's.
-- **The Era panel** — all three of those use one shared piece: Era's tiling
-  parchment (`UI-DialogBox-Background`) inside the gold 32px nine-slice
-  border (`UI-DialogBox-Border`), which is what Era's own dialogs and
-  every Era-styled panel are built from. Era's *book* art is four fixed
-  quarters with the decoration baked into their corners, so it only looks
-  right at Era's own 384x512; stretching it across a tall narrow quest
-  list or a 703x606 collections window is what made both of these look
-  mangled in 0.7.1 and 0.7.2.
+- **The Era panel** — all three of those use one shared piece. Era's
+  *book* art is four fixed quarters with the decoration baked into their
+  corners, so it only looks right at Era's own 384x512; stretching it
+  across a tall narrow quest list or a 703x606 collections window is what
+  made these look mangled in 0.7.1 and 0.7.2. The obvious substitute is
+  Era's dialog frame, tiling `UI-DialogBox-Background` inside the gold
+  nine-slice `UI-DialogBox-Border` — but on Forever those two files
+  resolve to file IDs (131071 and 131072) and then draw nothing, so 0.7.4
+  and 0.7.5 hung invisible panels on all three windows and they went
+  see-through instead of parchment. Since 0.7.6 the panel is built by
+  hand out of things that cannot fail to draw: a solid parchment fill and
+  a gold frame, both plain colour, with Era's parchment laid over the
+  fill. Where that file really draws it covers the flat colour and the
+  panel is Era's own; where it does not, the flat parchment stands in.
 - **Action bars** — Era's whole bottom bar. The addon draws the 1024x53
   `UI-MainMenuBar-Dwarf` stone bar with the gryphon end caps along the
   bottom of the screen and moves Blizzard's pieces onto it: the twelve
@@ -223,8 +233,11 @@ usually enough to rebuild that window in the classic style.
   over it, purple/blue fill, the classic rest tick and none of Forever's
   segment dividers. Forever has more micro buttons than Era's nine
   (professions, legacy, group finder, collections): they are laid out at
-  Era's 26px stride and the row is scaled down just enough to end before
-  the keyring; the disabled Store button is hidden so it takes no slot.
+  Era's 26px stride — never closer, because that is as far as the 29px
+  art interlocks and squeezing past it buried each button's right edge
+  under the next, which is what made the character button look gone — and
+  the row is scaled down to end before the keyring; the disabled Store
+  button is hidden so it takes no slot.
   Forever fades a micro button's own icon out under the mouse and
   cross-fades its modern hover art in, so with Era's glow in that art's
   place the icon vanished on hover; the icon is now held at full alpha

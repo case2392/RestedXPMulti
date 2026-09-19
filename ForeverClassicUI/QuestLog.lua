@@ -9,11 +9,15 @@
 --   * retail's quest panel - the QuestLog-frame border, its filigree and
 --     its shadow, which hang off QuestScrollFrame.BorderFrame rather than
 --     the scroll frame, plus the flat background behind the list - is
---     faded, and an Era panel (tiling parchment inside the gold
---     UI-DialogBox border) is drawn over exactly the rect that panel
+--     faded, and an Era panel is drawn over exactly the rect that panel
 --     filled. Era's book art is not used here: it is four fixed quarters
 --     with the decoration baked in, and stretching it into a tall narrow
 --     panel is what made this look wrong before.
+--   * the window round both halves is dressed the same way: its flat
+--     dark backdrop, the inset line under the title and retail's metal
+--     nine-slice and portrait are faded and a second Era panel is drawn
+--     behind the lot, so the map side matches the quest side. The title,
+--     the close button and the maximise button are left alone.
 --   * every quest title gets Era's font and UI-QuestLogTitleHighlight
 --     under the mouse in place of retail's flat bar, and the "no quests"
 --     text is re-coloured so it reads on parchment.
@@ -96,6 +100,11 @@ local function Sidebar()
     if type(f) == "table" and f.GetObjectType then return f end
 end
 
+local function MapWindow()
+    local f = G("WorldMapFrame")
+    if type(f) == "table" and f.GetRegions then return f end
+end
+
 local function ScrollFrame()
     local f = G("QuestScrollFrame")
     if type(f) == "table" and f.GetObjectType then return f end
@@ -134,6 +143,24 @@ local function ShellRegions()
     for _, r in ipairs(Textures(ScrollFrame())) do out[#out + 1] = r end
     -- the border frame is nothing but retail's panel art, so all of it goes
     for _, r in ipairs(Textures(BorderFrame(), true)) do out[#out + 1] = r end
+    -- and the window round both halves: its flat dark backdrop, the inset
+    -- line under the title, retail's metal nine-slice and the portrait.
+    -- The title, the close button and the maximise button hang off the
+    -- same border frame and are left alone.
+    local map = MapWindow()
+    if map then
+        for _, r in ipairs(Textures(map)) do out[#out + 1] = r end
+        local border = map.BorderFrame
+        if type(border) == "table" then
+            for _, r in ipairs(Textures(border)) do out[#out + 1] = r end
+            for _, key in ipairs({"NineSlice", "PortraitContainer"}) do
+                local child = border[key]
+                if type(child) == "table" then
+                    for _, r in ipairs(Textures(child, true)) do out[#out + 1] = r end
+                end
+            end
+        end
+    end
     return out
 end
 
@@ -164,6 +191,16 @@ local function BuildPanel(scroll)
     -- stays level with it and the quest rows draw on top
     local level = scroll.GetFrameLevel and scroll:GetFrameLevel() or 1
     panel:SetFrameLevel(level)
+    return panel
+end
+
+-- and one behind the whole window, so the map half is framed in Era too
+local function BuildMapPanel(map)
+    local panel = ns.BuildEraPanel("ForeverClassicUIMapPanel", map)
+    if not panel then return nil end
+    panel:SetAllPoints(map)
+    local level = map.GetFrameLevel and map:GetFrameLevel() or 1
+    panel:SetFrameLevel(math.max(level - 1, 0))
     return panel
 end
 
@@ -233,12 +270,16 @@ function M.Apply()
     if not side or not scroll then return end
     if not M.panel then M.panel = BuildPanel(scroll) end
     if not M.panel then return end
+    local map = MapWindow()
+    if map and not M.mapPanel then M.mapPanel = BuildMapPanel(map) end
     if side.IsShown and side:IsShown() then
         Shell(true)
         M.panel:Show()
+        if M.mapPanel then M.mapPanel:Show() end
         Rows(true)
     else
         M.panel:Hide()
+        if M.mapPanel then M.mapPanel:Hide() end
     end
 end
 
@@ -251,6 +292,7 @@ local function Undo()
     Shell(false)
     Rows(false)
     if M.panel then M.panel:Hide() end
+    if M.mapPanel then M.mapPanel:Hide() end
 end
 
 local function HookMethod(frame, name)
@@ -265,7 +307,10 @@ local function Hook()
     if not side or not hooksecurefunc then return end
     if side.HookScript then
         side:HookScript("OnShow", Guard("OnShow", ApplyLater))
-        side:HookScript("OnHide", Guard("OnHide", function() if M.panel then M.panel:Hide() end end))
+        side:HookScript("OnHide", Guard("OnHide", function()
+            if M.panel then M.panel:Hide() end
+            if M.mapPanel then M.mapPanel:Hide() end
+        end))
     end
     -- the rows are pooled: Blizzard hands a row to a different quest on
     -- every refresh, so ours runs again after each one
@@ -338,11 +383,11 @@ end
 
 function M:Status()
     if self.mode == "restyled" then
-        local s = ("Era panel over Forever's quest list (%d retail pieces faded), %d quest titles in Era's font"):format(self.faded or 0, self.rows or 0)
+        local s = ("Era panels over Forever's map window and its quest list (%d retail pieces faded), %d quest titles in Era's font"):format(self.faded or 0, self.rows or 0)
         if self.missingArt and #self.missingArt > 0 then
             s = s .. " (art missing: " .. table.concat(self.missingArt, ", ") .. ")"
         end
-        return s .. " (the map half is left alone)"
+        return s .. " (the map itself, the title and the buttons are left alone)"
     elseif self.mode == "native" then
         return "classic client, Era's own quest log"
     elseif self.mode == "waiting" then

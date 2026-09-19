@@ -65,7 +65,11 @@ local KEYRING_W, KEYRING_H = 18, 39
 local KEYRING_TEX = BUTTONS .. "UI-Button-KeyRing"
 local KEYRING_COORDS = {0, 0.5625, 0, 0.609375}
 local REAGENT_BUTTON, KEYRING_BUTTON = "CharacterReagentBag0Slot", "KeyRingButton"
-local MICRO_MIN_STRIDE = 20      -- the 29px art has ~3px of clear margin a side; closer than this they pile up
+-- Era's own stride is as close as the 29px art goes: it interlocks by 3px
+-- and no more. Packing tighter than this buries each button's right edge
+-- under the next one, which is what made the character button look gone,
+-- so when the row will not fit it is scaled down instead of squeezed.
+local MICRO_MIN_STRIDE = MICRO_STRIDE
 local XP_H, XP_TOP_H = 13, 8
 local BOTTOM_BAR_X, BOTTOM_BAR_Y = 6, 52
 -- the four stone strips: rows of the 256x256 image (Era's MainMenuBarTexture0..3)
@@ -454,8 +458,8 @@ end
 -- Era: 552 + 26 per button. Forever has more buttons than Era's nine (and
 -- the keyring and reagent bag to the right), so the row always spans the
 -- room between the page arrows and the bag cluster: at Era's stride when
--- that fits, else packed closer (down to MICRO_MIN_STRIDE), and only then
--- scaled down.
+-- that fits, and is scaled down when it does not: never packed closer,
+-- because at Era's stride the art already interlocks as far as it goes.
 local function LayoutMicroMenu(art)
     local container = G("MicroMenuContainer")
     local menu = G("MicroMenu")

@@ -824,7 +824,17 @@ local function NewWorld(opts)
             end
             -- Forever's merged map window: the quest log docked down its side
             function w.LoadQuestMap()
-            local map = Frame("WorldMapFrame"); map:SetSize(1035, 534)
+            local map = Frame("WorldMapFrame"); map:SetSize(1035, 534); map.level = 1
+            map.WorldMapFrameBg = Region("Texture", {layer = "BACKGROUND"})
+            map.BorderFrame = Frame("BorderFrame"); map.BorderFrame.parent = map
+            map.BorderFrame.InsetBorderTop = Region("Texture", {atlas = "_UI-Frame-InnerTopTile", layer = "BACKGROUND"})
+            map.BorderFrame.NineSlice = Frame("NineSlice")
+            map.BorderFrame.NineSlice.TopEdge = Region("Texture", {atlas = "_UI-Frame-Metal-EdgeTop"})
+            map.BorderFrame.PortraitContainer = Frame("PortraitContainer")
+            map.BorderFrame.PortraitContainer.portrait = Region("Texture")
+            map.BorderFrame.TitleContainer = Frame("TitleContainer")
+            map.BorderFrame.TitleContainer.TitleText = Region("FontString"); map.BorderFrame.TitleContainer.TitleText:SetText("Map & Quest Log")
+            map.BorderFrame.CloseButton = Frame("CloseButton")
             local side = Frame("QuestMapFrame"); side:SetSize(330, 506); side.parent = map; side.level = 2
             side.Background = Region("Texture", {atlas = "QuestLogBackground", layer = "BACKGROUND"})
             local scroll = Frame("QuestScrollFrame"); scroll:SetSize(308, 468); scroll.parent = side; scroll.level = 4
@@ -1494,8 +1504,8 @@ do
     SpellbookMicroButton:SetSize(32, 40); SpellbookMicroButton.scripts.OnSizeChanged(SpellbookMicroButton)
     check(SpellbookMicroButton.width == 31 and SpellbookMicroButton.height == 37, "forever: micro button re-skinned when Blizzard's layout resizes it")
     -- room left of the bag cluster: 1024-6-261-4-552 = 201; ten buttons at Era's 26 need 265, at the 20 minimum 211, so 20 apart at 201/211
-    check(StoreMicroButton.shown == false and ab.microShown == 10 and ProfessionMicroButton.anchors[1][2] == MicroMenu and ProfessionMicroButton.anchors[1][4] == 20 and MainMenuMicroButton.anchors[1][4] == 9 * 20, "forever: disabled Store button hidden, the ten others packed 20 apart on the menu")
-    check(MicroMenu.width == 211 and math.abs(MicroMenu.scale - 201 / 211) < 0.001 and math.abs(MicroMenuContainer.width - 201) < 0.01 and MicroMenu.anchors[1][2] == MicroMenuContainer, "forever: ten buttons fill the room up to the keyring, scaled only for the last few px")
+    check(StoreMicroButton.shown == false and ab.microShown == 10 and ProfessionMicroButton.anchors[1][2] == MicroMenu and ProfessionMicroButton.anchors[1][4] == 26 and MainMenuMicroButton.anchors[1][4] == 9 * 26, "forever: disabled Store button hidden, the ten others at Era's 26px stride so none is buried under the next")
+    check(MicroMenu.width == 265 and math.abs(MicroMenu.scale - 201 / 265) < 0.001 and math.abs(MicroMenuContainer.width - 201) < 0.01 and MicroMenu.anchors[1][2] == MicroMenuContainer, "forever: the row is scaled to the room up to the keyring rather than squeezed into it")
     UpdateMicroButtons()
     check(StoreMicroButton.shown == false and ab.microShown == 10, "forever: Store hidden again after Blizzard's micro button refresh")
     MainMenuMicroButton:SetNormalAtlas("UI-HUD-MicroMenu-MainMenu-Up")
@@ -2015,18 +2025,22 @@ do
     check(ql.mode == "restyled" and ql.panel ~= nil and ql.panel.parent == QuestScrollFrame and ql.panel.shown == false, "questlog: panel built once the quest list exists, hidden until it opens")
     side:Show()
     local panel, border = ql.panel, QuestScrollFrame.BorderFrame
-    check(panel.shown == true and panel.level == 4 and panel.backdrop ~= nil, "questlog: the Era panel is level with the list so the quest rows draw on top")
-    check(panel.backdrop.bgFile == "Interface\\DialogFrame\\UI-DialogBox-Background" and panel.backdrop.edgeFile == "Interface\\DialogFrame\\UI-DialogBox-Border" and panel.backdrop.tile == true and panel.backdrop.edgeSize == 32, "questlog: tiling Era parchment in Era's gold border, which is right at any size")
+    check(panel.shown == true and panel.level == 4, "questlog: the Era panel is level with the list so the quest rows draw on top")
+    check(panel.fill ~= nil and panel.fill.color ~= nil and panel.fill.color[4] == 1 and panel.paper ~= nil and panel.paper.texture == "Interface\\DialogFrame\\UI-DialogBox-Background" and #panel.edges == 8, "questlog: solid Era parchment with the gold frame, and Era's own parchment over it where that file draws")
     check(panel.anchors[1][4] == -3 and panel.anchors[1][5] == 7 and panel.anchors[2][4] == 3 and panel.anchors[2][5] == -6, "questlog: the panel takes exactly the rect retail's quest panel filled")
     check(side.Background.alpha == 0 and QuestScrollFrame.Background.alpha == 0 and border.Border.alpha == 0 and border.TopDetail.alpha == 0 and border.Shadow.alpha == 0, "questlog: retail's quest panel, filigree and shadow faded")
+    local mapw, mpanel = WorldMapFrame, ql.mapPanel
+    check(mpanel ~= nil and mpanel.shown == true and mpanel.parent == mapw and mpanel.level == 0 and mpanel.fill ~= nil, "questlog: a second Era panel behind the whole map window")
+    check(mapw.WorldMapFrameBg.alpha == 0 and mapw.BorderFrame.InsetBorderTop.alpha == 0 and mapw.BorderFrame.NineSlice.TopEdge.alpha == 0 and mapw.BorderFrame.PortraitContainer.portrait.alpha == 0, "questlog: the map window's dark backdrop, inset line, metal shell and portrait faded")
+    check(mapw.BorderFrame.TitleContainer.TitleText.alpha == 1 and mapw.BorderFrame.CloseButton.alpha == 1, "questlog: Forever's title and close button on the map window left alone")
     check(QuestScrollFrame.EmptyText.textColor[1] == 0.85, "questlog: the 'no quests' text re-coloured for parchment")
     local q1 = QuestScrollFrame.Contents.Quest1
     check(q1.Text.font == GameFontNormal and q1.HighlightTexture.texture == "Interface\\QuestFrame\\UI-QuestLogTitleHighlight" and q1.HighlightTexture.blend == "ADD" and ql.rows == 2, "questlog: quest titles in Era's font under Era's highlight")
     side:Hide()
-    check(panel.shown == false, "questlog: the panel goes with the window")
+    check(panel.shown == false and mpanel.shown == false, "questlog: both panels go with the window")
     side:Show()
     w.slash("questlog off")
-    check(ql.mode == "off" and panel.shown == false and border.Border.alpha == 1 and QuestScrollFrame.EmptyText.textColor[1] == 1 and q1.Text.font == "QuestFont_Enormous", "questlog off: retail's quest panel, fonts and colours back")
+    check(ql.mode == "off" and panel.shown == false and mpanel.shown == false and border.Border.alpha == 1 and mapw.WorldMapFrameBg.alpha == 1 and mapw.BorderFrame.NineSlice.TopEdge.alpha == 1 and QuestScrollFrame.EmptyText.textColor[1] == 1 and q1.Text.font == "QuestFont_Enormous", "questlog off: retail's map window, quest panel, fonts and colours back")
     w.slash("questlog on")
     check(ql.mode == "restyled" and panel.shown == true, "questlog on: the Era panel again")
 
@@ -2039,8 +2053,8 @@ do
     cj:Show()
     local cpanel = co.panel
     local page = WardrobeCollectionFrame.activeFrame
-    check(cpanel.shown == true and cpanel.backdrop ~= nil and cpanel.backdrop.bgFile == "Interface\\DialogFrame\\UI-DialogBox-Background", "collections: the Era panel behind the window")
-    check(cpanel.backdrop.edgeFile == "Interface\\DialogFrame\\UI-DialogBox-Border" and cpanel.backdrop.edgeSize == 32 and cpanel.backdrop.tile == true, "collections: Era's gold border, tiling parchment, no stretched book art")
+    check(cpanel.shown == true and cpanel.fill ~= nil and cpanel.fill.color ~= nil and cpanel.fill.color[4] == 1, "collections: the Era panel behind the window, solid so the window is never see-through")
+    check(cpanel.paper ~= nil and cpanel.paper.texture == "Interface\\DialogFrame\\UI-DialogBox-Background" and #cpanel.edges == 8, "collections: Era's gold frame round it, Era's parchment over the fill, no stretched book art")
     check(cj.Bg.alpha == 0 and cj.NineSlice.TopEdge.alpha == 0 and cj.PortraitContainer.portrait.alpha == 0, "collections: retail's shell and portrait faded")
     check(page.Bg.alpha == 0 and page.BackgroundTile.alpha == 0 and page.ShadowCornerTopLeft.alpha == 0 and page.NineSlice.TopEdge.alpha == 0, "collections: the dark page inside the window faded too")
     check(cj.CloseButton.alpha == 1 and cj.CloseButton.mouse ~= false and cj.TitleContainer.TitleText.alpha == 1, "collections: Forever's own title and close button left alone")
@@ -2058,7 +2072,7 @@ do
     cf:Show()
     local gpanel = gu.panel
     local list, finder = CommunitiesList, ClubFinderGuildFinderFrame
-    check(gpanel.shown == true and gpanel.backdrop ~= nil and gpanel.backdrop.bgFile == "Interface\\DialogFrame\\UI-DialogBox-Background" and gpanel.backdrop.edgeFile == "Interface\\DialogFrame\\UI-DialogBox-Border", "guild: the Era panel behind the window")
+    check(gpanel.shown == true and gpanel.fill ~= nil and gpanel.fill.color ~= nil and gpanel.fill.color[4] == 1 and #gpanel.edges == 8, "guild: the Era panel behind the window, solid so the window is never see-through")
     check(cf.Bg.alpha == 0 and cf.TopTileStreaks.alpha == 0 and cf.NineSlice.TopEdge.alpha == 0 and cf.PortraitContainer.portrait.alpha == 0 and cf.PortraitOverlay.Portrait.alpha == 0, "guild: retail's metal shell, streaks and portrait faded")
     check(list.Bg.alpha == 0 and list.TopFiligree.alpha == 0 and list.BottomFiligree.alpha == 0 and list.FilligreeOverlay.LeftBar.alpha == 0 and list.InsetFrame.NineSlice.TopEdge.alpha == 0, "guild: the sidebar's dark page, filigree and inset faded")
     check(finder.DisabledFrame.Bg.alpha == 0 and finder.DisabledFrame.WideBackground.alpha == 0 and finder.DisabledFrame.NineSlice.TopEdge.alpha == 0, "guild: the guild finder page faded too")
