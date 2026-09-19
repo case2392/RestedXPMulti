@@ -110,7 +110,8 @@ local function Frame(name)
     function f:SetMovable() end
     function f:EnableMouse(on) self.mouse = on end
     function f:RegisterForDrag() end
-    function f:SetBackdrop() end
+    function f:SetBackdrop(b) self.backdrop = b end
+    function f:GetBackdrop() return self.backdrop end
     function f:CreateFontString() return Region("FontString") end
     function f:SetMultiLine() end
     function f:SetAutoFocus() end
@@ -821,6 +822,36 @@ local function NewWorld(opts)
             end
             return pb
             end
+            -- Forever's merged map window: the quest log docked down its side
+            function w.LoadQuestMap()
+            local map = Frame("WorldMapFrame"); map:SetSize(1035, 534)
+            local side = Frame("QuestMapFrame"); side:SetSize(330, 506); side.parent = map; side.level = 2
+            side.Background = Region("Texture", {atlas = "QuestLogBackground", layer = "BACKGROUND"})
+            local scroll = Frame("QuestScrollFrame"); scroll:SetSize(308, 468); scroll.parent = side; scroll.level = 4
+            scroll.Background = Region("Texture", {atlas = "QuestLog-empty-quest-background", layer = "BACKGROUND"})
+            scroll.EmptyText = Region("FontString"); scroll.EmptyText:SetText("No quests available"); scroll.EmptyText.textColor = {1, 1, 1}
+            -- retail's quest panel art lives on a frame of its own
+            scroll.BorderFrame = Frame("BorderFrame"); scroll.BorderFrame.parent = scroll
+            scroll.BorderFrame.Border = Region("Texture", {atlas = "QuestLog-frame", layer = "BORDER"})
+            scroll.BorderFrame.TopDetail = Region("Texture", {atlas = "QuestLog-frame-filigree", layer = "ARTWORK"})
+            scroll.BorderFrame.Shadow = Region("Texture", {atlas = "QuestLog-Frame-Gradient-bottom", layer = "BACKGROUND"})
+            scroll.Contents = Frame("Contents"); scroll.Contents.parent = scroll
+            local function QuestRow(key, title)
+                local b = Frame(nil); b:SetSize(300, 16); b.parent = scroll.Contents
+                b.Text = Region("FontString"); b.Text:SetText(title); b.Text:SetFontObject("QuestFont_Enormous")
+                b:SetHighlightTexture("Interface\\QuestFrame\\UI-QuestLogTitleHighlightRetail")
+                scroll.Contents[key] = b
+                return b
+            end
+            QuestRow("Quest1", "Wolves Across the Border"); QuestRow("Quest2", "Kobold Candles")
+            side.shown = false
+            function side:Show() if not self.shown then self.shown = true; if self.scripts and self.scripts.OnShow then self.scripts.OnShow(self) end end end
+            function side:Hide() if self.shown then self.shown = false; if self.scripts and self.scripts.OnHide then self.scripts.OnHide(self) end end end
+            side.QuestsFrame = scroll
+            map.QuestMapFrame = side
+            _G.WorldMapFrame = map; _G.QuestMapFrame = side; _G.QuestScrollFrame = scroll
+            return side
+            end
             -- Forever's Appearances window: retail's CollectionsJournal, which Era never had
             function w.LoadCollections()
             local cj = Frame("CollectionsJournal"); cj:SetSize(830, 600); cj.level = 1; cj.selectedTab = 2
@@ -973,7 +1004,7 @@ local function NewWorld(opts)
 
     -- load the addon
     local ns = {}
-    for _, file in ipairs({"Core.lua", "Nameplates.lua", "CastBar.lua", "Combo.lua", "UnitFrames.lua", "PartyFrames.lua", "CharacterSheet.lua", "CharacterLists.lua", "SpellBook.lua", "Professions.lua", "Collections.lua", "ActionBars.lua", "Minimap.lua", "Tracker.lua", "Options.lua", "Probe.lua", "Feedback.lua"}) do
+    for _, file in ipairs({"Core.lua", "EraPanel.lua", "Nameplates.lua", "CastBar.lua", "Combo.lua", "UnitFrames.lua", "PartyFrames.lua", "CharacterSheet.lua", "CharacterLists.lua", "SpellBook.lua", "Professions.lua", "QuestLog.lua", "Collections.lua", "ActionBars.lua", "Minimap.lua", "Tracker.lua", "Options.lua", "Probe.lua", "Feedback.lua"}) do
         local chunk, err = loadfile(root .. "/ForeverClassicUI/" .. file)
         assert(chunk, err)
         chunk("ForeverClassicUI", ns)
@@ -1930,25 +1961,48 @@ do
     check(pr.mode == "restyled" and pb.width == 384 and pr.book.shown == true, "professions on: classic again")
     check(#w.ns.errors == 0 and #w.blizzErrors == 0, "professions: no errors")
 
+    -- the quest list inside Forever's merged map window
+    local ql = w.ns.modules.questlog
+    check(ql.mode == "waiting" and QuestMapFrame == nil and ql.watcher ~= nil, "questlog: waits for Forever's QuestMapFrame")
+    local side = w.LoadQuestMap()
+    ql.watcher:Fire("PLAYER_ENTERING_WORLD")
+    check(ql.mode == "restyled" and ql.panel ~= nil and ql.panel.parent == QuestScrollFrame and ql.panel.shown == false, "questlog: panel built once the quest list exists, hidden until it opens")
+    side:Show()
+    local panel, border = ql.panel, QuestScrollFrame.BorderFrame
+    check(panel.shown == true and panel.level == 4 and panel.backdrop ~= nil, "questlog: the Era panel is level with the list so the quest rows draw on top")
+    check(panel.backdrop.bgFile == "Interface\\DialogFrame\\UI-DialogBox-Background" and panel.backdrop.edgeFile == "Interface\\DialogFrame\\UI-DialogBox-Border" and panel.backdrop.tile == true and panel.backdrop.edgeSize == 32, "questlog: tiling Era parchment in Era's gold border, which is right at any size")
+    check(panel.anchors[1][4] == -3 and panel.anchors[1][5] == 7 and panel.anchors[2][4] == 3 and panel.anchors[2][5] == -6, "questlog: the panel takes exactly the rect retail's quest panel filled")
+    check(side.Background.alpha == 0 and QuestScrollFrame.Background.alpha == 0 and border.Border.alpha == 0 and border.TopDetail.alpha == 0 and border.Shadow.alpha == 0, "questlog: retail's quest panel, filigree and shadow faded")
+    check(QuestScrollFrame.EmptyText.textColor[1] == 0.85, "questlog: the 'no quests' text re-coloured for parchment")
+    local q1 = QuestScrollFrame.Contents.Quest1
+    check(q1.Text.font == GameFontNormal and q1.HighlightTexture.texture == "Interface\\QuestFrame\\UI-QuestLogTitleHighlight" and q1.HighlightTexture.blend == "ADD" and ql.rows == 2, "questlog: quest titles in Era's font under Era's highlight")
+    side:Hide()
+    check(panel.shown == false, "questlog: the panel goes with the window")
+    side:Show()
+    w.slash("questlog off")
+    check(ql.mode == "off" and panel.shown == false and border.Border.alpha == 1 and QuestScrollFrame.EmptyText.textColor[1] == 1 and q1.Text.font == "QuestFont_Enormous", "questlog off: retail's quest panel, fonts and colours back")
+    w.slash("questlog on")
+    check(ql.mode == "restyled" and panel.shown == true, "questlog on: the Era panel again")
+
     -- the Appearances window: Era furniture round a window Era never had
     local co = w.ns.modules.collections
     check(co.mode == "waiting" and CollectionsJournal == nil, "collections: waits for Forever's CollectionsJournal")
     local cj = w.LoadCollections()
     co.watcher:Fire("ADDON_LOADED", "Blizzard_Collections")
-    check(co.mode == "restyled" and co.book ~= nil and co.book.shown == false, "collections: framed once the window exists, kept hidden until it opens")
+    check(co.mode == "restyled" and co.panel ~= nil and co.panel.shown == false, "collections: framed once the window exists, kept hidden until it opens")
     cj:Show()
-    local cbook = co.book
+    local cpanel = co.panel
     local page = WardrobeCollectionFrame.activeFrame
-    check(cbook.shown == true and cbook.topLeft.texture == "Interface\\Spellbook\\UI-SpellbookPanel-TopLeft", "collections: Era parchment behind the window")
-    check(cbook.topLeft.width == 553 and cbook.topLeft.height == 300 and cbook.bottomRight.width == 277, "collections: the parchment keeps Era's split at the window's size")
+    check(cpanel.shown == true and cpanel.backdrop ~= nil and cpanel.backdrop.bgFile == "Interface\\DialogFrame\\UI-DialogBox-Background", "collections: the Era panel behind the window")
+    check(cpanel.backdrop.edgeFile == "Interface\\DialogFrame\\UI-DialogBox-Border" and cpanel.backdrop.edgeSize == 32 and cpanel.backdrop.tile == true, "collections: Era's gold border, tiling parchment, no stretched book art")
     check(cj.Bg.alpha == 0 and cj.NineSlice.TopEdge.alpha == 0 and cj.PortraitContainer.portrait.alpha == 0, "collections: retail's shell and portrait faded")
     check(page.Bg.alpha == 0 and page.BackgroundTile.alpha == 0 and page.ShadowCornerTopLeft.alpha == 0 and page.NineSlice.TopEdge.alpha == 0, "collections: the dark page inside the window faded too")
     check(cj.CloseButton.alpha == 1 and cj.CloseButton.mouse ~= false and cj.TitleContainer.TitleText.alpha == 1, "collections: Forever's own title and close button left alone")
     w.slash("collections off")
-    check(co.mode == "off" and cbook.shown == false and cj.Bg.alpha == 1 and cj.NineSlice.TopEdge.alpha == 1 and page.Bg.alpha == 1 and page.NineSlice.TopEdge.alpha == 1, "collections off: retail's window back")
+    check(co.mode == "off" and cpanel.shown == false and cj.Bg.alpha == 1 and cj.NineSlice.TopEdge.alpha == 1 and page.Bg.alpha == 1 and page.NineSlice.TopEdge.alpha == 1, "collections off: retail's window back")
     w.slash("collections on")
-    check(co.mode == "restyled" and cbook.shown == true, "collections on: Era framing again")
-    check(#w.ns.errors == 0 and #w.blizzErrors == 0, "collections: no errors")
+    check(co.mode == "restyled" and cpanel.shown == true, "collections on: Era framing again")
+    check(#w.ns.errors == 0 and #w.blizzErrors == 0, "questlog and collections: no errors")
 end
 
 --------------------------------------------------------------------------
@@ -1977,12 +2031,12 @@ do
     check(w.ns.dbLoaded == true and w.ns.db.logins == 2, "reload: saved file found, login count raised")
     check(w.ns.db.unitframes == false and w.ns.modules.unitframes.mode == "off" and w.ns.modules.minimap.mode == "off", "reload: parts turned off stay off")
     check(w.ns.db.castbar == true and w.ns.modules.castbar.mode == "restyled", "reload: the part turned back on is on")
-    check(Printed("off (saved): nameplates, combo, unitframes, party, charsheet, spellbook, professions, collections, actionbars, minimap, tracker"), "reload: login line names the parts that are off")
+    check(Printed("off (saved): nameplates, combo, unitframes, party, charsheet, spellbook, professions, questlog, collections, actionbars, minimap, tracker"), "reload: login line names the parts that are off")
     check(w.ns.optionsPanel.checks.unitframes.checked == false and w.ns.optionsPanel.checks.castbar.checked == true, "reload: options boxes match the saved settings")
     w.slash("probe")
     check(w.ns.lastProbe and w.ns.lastProbe:find("saved file found at login: yes  logins counted in it: 2", 1, true) and w.ns.lastProbe:find("settings came from: saved file", 1, true), "reload: probe reports the saved file and login count")
     -- the same on a client that never writes the SavedVariables file: the CVar copy carries the settings
-    check(cvarCopy == "nameplates=0,castbar=1,combo=0,unitframes=0,party=0,charsheet=0,spellbook=0,professions=0,collections=0,actionbars=0,minimap=0,tracker=0,bugbutton=1,welcomed=0", "reload: every change is also written to the settings CVar, with the feedback flags")
+    check(cvarCopy == "nameplates=0,castbar=1,combo=0,unitframes=0,party=0,charsheet=0,spellbook=0,professions=0,questlog=0,collections=0,actionbars=0,minimap=0,tracker=0,bugbutton=1,welcomed=0", "reload: every change is also written to the settings CVar, with the feedback flags")
     w = NewWorld({style = "6", forever = true, cvars = {ForeverClassicUI_settings = cvarCopy}})
     check(w.ns.dbLoaded == false and w.ns.db.unitframes == false and w.ns.db.castbar == true and w.ns.modules.unitframes.mode == "off" and w.ns.modules.castbar.mode == "restyled", "no saved file: settings restored from the CVar copy")
     check(w.ns.dbSource:find("cvar fallback", 1, true) and w.ns.optionsPanel.checks.minimap.checked == false, "no saved file: probe names the fallback, boxes match")
