@@ -24,7 +24,6 @@ local DEFAULTS = {
     charsheet = true,
     spellbook = true,
     professions = true,
-    questlog = true,
     collections = true,
     actionbars = true,
     minimap = true,
@@ -193,7 +192,6 @@ local function PrintHelp()
     ns.Print("  /cui combo offset <x> <y> - nudge the combo points (no numbers = reset)")
     ns.Print("  /cui combo force - draw the classic combo points now (testing)")
     ns.Print("  /cui unitframes|party|charsheet|spellbook|professions|actionbars|minimap|tracker on|off|force - the other classic parts")
-    ns.Print("  /cui questlog on|off|force - Era's quest log parchment on the map window")
     ns.Print("  /cui collections on|off|force - Era framing on the Appearances window")
     ns.Print("  /cui options - open the settings panel (Options > AddOns > Classic UI for Forever)")
     ns.Print("  /cui report - everything for support in one window: probe, every frame, Lua errors")

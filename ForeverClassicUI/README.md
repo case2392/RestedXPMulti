@@ -170,23 +170,12 @@ usually enough to rebuild that window in the classic style.
   that page gets its classic version. Era had no such window
   (professions were the Skills tab), so this is the closest classic
   layout.
-- **Quest log** — Era kept the quest log and the map apart: the quest log
-  was its own 384x512 parchment book, the map was the map. Forever ships
-  retail's merged window instead (`WorldMapFrame` with `QuestMapFrame`
-  docked down its left side), and no addon can pull the two apart without
-  taking the map's own panel handling with it, so the quest log side is
-  reskinned in place: retail's quest panel — the `QuestLog-frame` border,
-  its filigree and its shadow, which hang off `QuestScrollFrame.BorderFrame`
-  rather than the scroll frame itself, plus the flat background behind
-  the list — is faded, and Era's quest log parchment
-  (`UI-QuestLog-TopLeft` and the three pieces that go with it, stretched
-  over exactly the rect that panel filled) is drawn in its place. Every
-  quest title gets Era's font and `UI-QuestLogTitleHighlight` under the
-  mouse in place of retail's flat bar, and the "no quests" text is
-  re-coloured to Era's parchment brown. The search box and quest count
-  above the list are Forever's and stay where they are; Forever's window
-  portrait is already Era's `UI-QuestLog-BookIcon`. The map itself is
-  left alone — it is the same map either way.
+- **Quest log** — left as Forever ships it. Era kept the quest log and the
+  map apart (a 384x512 parchment book, and a map); Forever merges them into
+  one window, and 0.7.1/0.7.2 tried to reskin the quest side in place with
+  Era's parchment. It looked wrong squeezed into the map's metal frame, so
+  it was taken out again in 0.7.3. If the quest log is to be classic it
+  needs to be its own Era window, not a panel inside the map.
 - **Appearances** — there is no Era original here: transmog did not exist
   in 1.15, so Forever's Appearances window (`CollectionsJournal`) is
   treated the way the Currency and Statistics tabs were, dressed in Era's
@@ -213,7 +202,10 @@ usually enough to rebuild that window in the classic style.
   segment dividers. Forever has more micro buttons than Era's nine
   (professions, legacy, group finder, collections): they are laid out at
   Era's 26px stride and the row is scaled down just enough to end before
-  the keyring; the disabled Store button is hidden so it takes no slot
+  the keyring; the disabled Store button is hidden so it takes no slot.
+  Forever fades a micro button's own icon out under the mouse and
+  cross-fades its modern hover art in, so with Era's glow in that art's
+  place the icon vanished on hover; the icon is now held at full alpha
   (it comes back if the client ever enables it). Every action
   button on every bar gets the classic look: square icon, the
   `UI-Quickslot2` ring, classic pushed/highlight textures, no retail

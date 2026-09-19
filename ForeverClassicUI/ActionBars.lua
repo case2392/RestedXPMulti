@@ -400,9 +400,32 @@ local function SkinMicroButton(btn, name)
     Fade(btn.FlashContent)
     PlacePortrait(btn)
     M.inSkin = nil
+    -- Forever fades the icon out under the mouse and cross-fades its own
+    -- modern hover art in; ours is Era's glow, so the fade just made the
+    -- icon vanish. The normal art is held at full alpha.
+    local normal = btn.GetNormalTexture and btn:GetNormalTexture()
+    if normal and hooksecurefunc then
+        local mine = Own(normal)
+        if not mine.alphaHooked then
+            mine.alphaHooked = true
+            hooksecurefunc(normal, "SetAlpha", function(t, a)
+                if M.mode ~= "restyled" or M.inAlpha then return end
+                if type(a) == "number" and a < 1 then
+                    M.inAlpha = true
+                    t:SetAlpha(1)
+                    M.inAlpha = nil
+                end
+            end)
+        end
+        normal:SetAlpha(1)
+    end
     if not own.hooked and hooksecurefunc then
         own.hooked = true
         local function Again(b) if M.mode == "restyled" and not M.inSkin then SkinMicroButton(b, name) end end
+        if btn.HookScript then
+            btn:HookScript("OnEnter", Again)
+            btn:HookScript("OnLeave", Again)
+        end
         for _, m in ipairs({"SetNormalAtlas", "SetPushedAtlas", "SetDisabledAtlas", "SetHighlightAtlas"}) do
             if type(btn[m]) == "function" then hooksecurefunc(btn, m, Again) end
         end
