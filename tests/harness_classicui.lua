@@ -1956,6 +1956,19 @@ do
     check(b[7].item == nil and b[7].Icon.shown == false and b[2].item == nil, "book: future spell left out, right column empty on a short page")
     check(b[1].attributes.type == "spell" and b[1].attributes.spell == 6603 and b[5].attributes.type == nil, "book: secure cast attributes on castable spells only")
     check(b[1].Cooldown.cooldown[1] == 100 and b[1].Cooldown.cooldown[2] == 5, "book: cooldown from C_Spell")
+    -- SPELL_UPDATE_COOLDOWN storms in combat - every cast, every global
+    -- cooldown - and was sweeping all twelve buttons with the book shut
+    local swept = 0
+    local cd1 = b[1].Cooldown
+    local realUpdate = cd1.SetCooldown
+    function cd1:SetCooldown(st, d) swept = swept + 1; return realUpdate(self, st, d) end
+    book:Hide()
+    book:Fire("SPELL_UPDATE_COOLDOWN")
+    check(swept == 0, "book: no cooldown work while the book is shut, however hard the event fires")
+    book:Show()
+    book:Fire("SPELL_UPDATE_COOLDOWN")
+    check(swept == 1, "book: the swirls are redrawn again once it is open")
+    cd1.SetCooldown = realUpdate
     -- Forever keeps cooldown times secret, and SetCooldown throws on one:
     -- the swirl goes off for the session instead of erroring every update
     local before = #w.ns.errors

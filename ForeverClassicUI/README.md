@@ -162,7 +162,14 @@ usually enough to rebuild that window in the classic style.
   only written out of combat and caught up afterwards). Blizzard's window
   is resized and its shell faded, its page moved out of reach; on the
   talents page the retail size comes back until talents get their classic
-  version.
+  version. The cooldown swirls are only redrawn while the book is
+  actually open: `SPELL_UPDATE_COOLDOWN` storms in combat — every cast,
+  every global cooldown — and sweeping twelve buttons each time was work
+  nobody could see. On top of that this client keeps cooldown times
+  secret, and a secret number cannot be handed to `SetCooldown` from an
+  addon: the call throws rather than returning anything. The first
+  refusal turns the swirl off for the session, says so once and puts it
+  in the status line, instead of erroring on every spell of every update.
 - **Professions window** — Forever's professions window
   (`ProfessionsFrame`, the professions micro button) becomes the same Era
   384x512 book as the spellbook while its overview page is up, the way

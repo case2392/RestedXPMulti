@@ -767,6 +767,10 @@ function M:Enable()
         ev:RegisterEvent("PLAYER_REGEN_ENABLED")
         ev:SetScript("OnEvent", Guard("event", function(_, event)
             if event == "SPELL_UPDATE_COOLDOWN" then
+                -- this one storms in combat: every cast, every global
+                -- cooldown. The swirls are only worth redrawing while the
+                -- book is actually open, and opening it fills them anyway.
+                if M.book.IsShown and not M.book:IsShown() then return end
                 for _, b in ipairs(M.book.buttons) do UpdateCooldown(b) end
             elseif event == "PLAYER_REGEN_ENABLED" then
                 if M.attributesDirty then M.attributesDirty = nil; M.Update() end
