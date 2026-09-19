@@ -207,7 +207,7 @@ usually enough to rebuild that window in the classic style.
   Forever's title and close button are left alone, and the roster, tabs,
   chat and finder inside are Blizzard's.
 - **The Era panel** — all three of those use one shared piece, and it
-  took three goes to get right. Era's page art is four fixed quarters of
+  has been got wrong four times. Era's page art is four fixed quarters of
   a 384x512 page with the decoration baked into their corners, so
   stretching a quarter whole across some other rectangle pulls the
   decoration out of shape: that is what looked mangled in 0.7.1 and
@@ -216,14 +216,17 @@ usually enough to rebuild that window in the classic style.
   and 0.7.5 used, but on Forever both files resolve to file IDs (131071
   and 131072) and then draw nothing, so those panels were invisible and
   the windows went see-through. 0.7.6 fell back to flat colour and came
-  out as a black slab; Era has no black window. Since 0.7.7 the panel is
-  Era's *spellbook page* — the art the professions window is built from,
-  which demonstrably draws on this client — cut into a nine-slice: the
-  four corners at their own size, the four edges stretched along each
-  side, and a clean patch of parchment from the middle of the page
-  stretched over the inside. Only plain parchment is ever stretched, so
-  the decoration keeps its proportions at any size. A solid parchment
-  fill sits underneath in case the art ever fails too.
+  out as a black slab; Era has no black window. 0.7.7 cut Era's spellbook
+  page into a nine-slice, which is sound in principle but needs to know
+  where the decoration ends and the plain parchment begins inside each
+  quarter — those numbers were guessed, they were wrong, and the windows
+  came out as swooping curves and checkerboard. So nothing here depends
+  on guessing what is inside a texture any more: since 0.7.8 the panel is
+  drawn from plain colour, Era's parchment brown with a lighter page
+  inside its gold frame and a dark line outside it. That is not Era's own
+  art, but it is Era's colours and it is the same at any size. If a
+  scalable piece of classic art is ever confirmed to draw on this client,
+  `EraPanel.lua` is the one place to swap it in.
 - **Action bars** — Era's whole bottom bar. The addon draws the 1024x53
   `UI-MainMenuBar-Dwarf` stone bar with the gryphon end caps along the
   bottom of the screen and moves Blizzard's pieces onto it: the twelve
@@ -236,12 +239,16 @@ usually enough to rebuild that window in the classic style.
   the experience bar in the top 13px of the bar with the 10px stone ledge
   over it, purple/blue fill, the classic rest tick and none of Forever's
   segment dividers. Forever has more micro buttons than Era's nine
-  (professions, legacy, group finder, collections): they are laid out at
-  Era's 26px stride — never closer, because that is as far as the 29px
-  art interlocks and squeezing past it buried each button's right edge
-  under the next, which is what made the character button look gone — and
-  the row is scaled down to end before the keyring; the disabled Store
-  button is hidden so it takes no slot.
+  (professions, legacy, group finder, collections): ten of them at Era's
+  26px stride need 265px and only about 201 are free between the page
+  arrows and the bag cluster, so the row has to give somewhere. Scaling
+  it down left it shorter than the bag slots beside it with a band of
+  empty bar along the top, so instead the buttons keep Era's full 37px
+  height and pack closer, about 19px apart. Packed that close they
+  overlap, and they are stacked left over right — descending frame levels
+  — so it is each button's trailing edge that goes under its neighbour,
+  the way Era's own art interlocks, rather than the icon's middle. The
+  disabled Store button is hidden so it takes no slot.
   Forever fades a micro button's own icon out under the mouse and
   cross-fades its modern hover art in, so with Era's glow in that art's
   place the icon vanished on hover; the icon is now held at full alpha

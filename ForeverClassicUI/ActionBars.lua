@@ -65,11 +65,16 @@ local KEYRING_W, KEYRING_H = 18, 39
 local KEYRING_TEX = BUTTONS .. "UI-Button-KeyRing"
 local KEYRING_COORDS = {0, 0.5625, 0, 0.609375}
 local REAGENT_BUTTON, KEYRING_BUTTON = "CharacterReagentBag0Slot", "KeyRingButton"
--- Era's own stride is as close as the 29px art goes: it interlocks by 3px
--- and no more. Packing tighter than this buries each button's right edge
--- under the next one, which is what made the character button look gone,
--- so when the row will not fit it is scaled down instead of squeezed.
-local MICRO_MIN_STRIDE = MICRO_STRIDE
+-- Era had nine micro buttons and Forever has ten, in the same run of bar.
+-- Era's 26px stride needs 265px and there are about 201, so the row has
+-- to give somewhere. Scaling it down left it shorter than the bag slots
+-- beside it, with a band of empty bar along the top, so instead it keeps
+-- Era's full 37px height and packs closer: the buttons overlap. They are
+-- stacked left over right (see LayoutMicroMenu) so it is each one's right
+-- edge that goes under its neighbour, the way Era's own art interlocks.
+-- The floor is how close they may get before the faces are unreadable;
+-- past that - far more buttons than Forever has - the row scales instead.
+local MICRO_MIN_STRIDE = 16
 local XP_H, XP_TOP_H = 13, 8
 local BOTTOM_BAR_X, BOTTOM_BAR_Y = 6, 52
 -- the four stone strips: rows of the 256x256 image (Era's MainMenuBarTexture0..3)
@@ -463,8 +468,9 @@ end
 -- Era: 552 + 26 per button. Forever has more buttons than Era's nine (and
 -- the keyring and reagent bag to the right), so the row always spans the
 -- room between the page arrows and the bag cluster: at Era's stride when
--- that fits, and is scaled down when it does not: never packed closer,
--- because at Era's stride the art already interlocks as far as it goes.
+-- that fits, packed closer when it does not, and only scaled down if even
+-- the closest packing would not fit. Packing keeps the buttons the height
+-- of the bag slots beside them, so the row fills the bar's whole band.
 local function LayoutMicroMenu(art)
     local container = G("MicroMenuContainer")
     local menu = G("MicroMenu")
@@ -504,8 +510,14 @@ local function LayoutMicroMenu(art)
         if natural > room then scale = room / natural end
     end
     M.microStride, M.microScale = stride, scale
+    -- packed closer than Era, the buttons overlap. Blizzard's own order
+    -- draws each one over the one to its left, which buries the left
+    -- button's face; the row reads right stacking the other way, so the
+    -- levels descend and only the trailing edges go under.
+    local base = (menu and menu.GetFrameLevel and menu:GetFrameLevel() or 1) + 1
     for i, btn in ipairs(row) do
         if menu and btn.SetPoint then Anchor(btn, "BOTTOMLEFT", menu, "BOTTOMLEFT", (i - 1) * stride, 0) end
+        if btn.SetFrameLevel then pcall(btn.SetFrameLevel, btn, base + shown - i) end
     end
     if menu and menu.SetSize then
         menu:SetSize(natural, MICRO_H)
@@ -518,11 +530,7 @@ local function LayoutMicroMenu(art)
     if container and container.SetPoint then
         container:SetSize(natural * scale, MICRO_H * scale)
         container:ClearAllPoints()
-        -- a scaled row is shorter than the bag slots beside it; sitting it
-        -- on the bar's floor left a gap along the top and read as not
-        -- fitting, so it is centred on the band the bags occupy instead
-        local lift = MICRO_Y + (MICRO_H - MICRO_H * scale) / 2
-        container:SetPoint("BOTTOMLEFT", art, "BOTTOMLEFT", MICRO_X, lift)
+        container:SetPoint("BOTTOMLEFT", art, "BOTTOMLEFT", MICRO_X, MICRO_Y)
     end
 end
 
