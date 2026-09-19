@@ -152,9 +152,46 @@ local BLIZZ_ADDONS = {
     "Blizzard_ObjectiveTracker", "Blizzard_CooldownViewer"
 }
 
+-- Forever hands values back "secret": they cannot be formatted, and a
+-- boolean test on one does not return false, it throws, from any
+-- execution an addon has tainted. A single unguarded `if f:IsShown()`
+-- took the whole report down on a live client, so nothing here tests a
+-- value it did not read through these.
+local function IsSecret(v)
+    return issecretvalue ~= nil and issecretvalue(v)
+end
+
+-- true, false, or nil when the value cannot be read at all
+local function Truthy(v)
+    if IsSecret(v) then return nil end
+    local ok, result = pcall(function() return v and true or false end)
+    if not ok then return nil end
+    return result
+end
+
 local function yn(v)
-    if v then return "yes" end
+    local t = Truthy(v)
+    if t == nil then return "<secret>" end
+    if t then return "yes" end
     return "no"
+end
+
+-- a frame whose state cannot be read counts as shown: a report that
+-- leaves a window out is worse than one that lists a hidden frame
+local function Shown(obj)
+    if type(obj) ~= "table" or not obj.IsShown then return true end
+    local ok, value = pcall(obj.IsShown, obj)
+    if not ok then return true end
+    local t = Truthy(value)
+    if t == nil then return true end
+    return t
+end
+
+local function ShownWord(obj)
+    if type(obj) ~= "table" or not obj.IsShown then return "?" end
+    local ok, value = pcall(obj.IsShown, obj)
+    if not ok then return "<secret>" end
+    return yn(value)
 end
 
 local function has(global) return _G[global] ~= nil end
@@ -321,7 +358,7 @@ function ns.BuildProbe()
             v = nil
         end
         if v ~= nil or loaded then
-            local shown = type(v) == "table" and v.IsShown and v:IsShown()
+            local shown = type(v) == "table" and v.IsShown ~= nil and Shown(v)
             profNames[#profNames + 1] = n .. (type(v) == "function" and " (function)" or (loaded and " (loaded)" or (shown and " (shown)" or "")))
         end
     end
@@ -334,7 +371,7 @@ function ns.BuildProbe()
     local page = ProfessionsFrame and ProfessionsFrame.CraftingPage
     if page then
         line("crafting page: %s  RecipeList: %s  SchematicForm: %s  RankBar: %s",
-             page.IsShown and yn(page:IsShown()) or "?", yn(page.RecipeList),
+             ShownWord(page), yn(page.RecipeList),
              yn(page.SchematicForm), yn(page.RankBar))
     end
     if C_TradeSkillUI then
@@ -377,7 +414,7 @@ function ns.BuildProbe()
                         "ToggleQuestLog", "ToggleWorldMap", "QuestMapQuestOptions_TrackQuest"}) do
         local v = _G[n]
         if v ~= nil then
-            local shown = type(v) == "table" and v.IsShown and v:IsShown()
+            local shown = type(v) == "table" and v.IsShown ~= nil and Shown(v)
             mapNames[#mapNames + 1] = n .. (type(v) == "function" and " (function)" or (shown and " (shown)" or ""))
         end
     end
@@ -411,7 +448,7 @@ function ns.BuildProbe()
                         "WardrobeTransmogFrame", "ToggleCollectionsJournal", "C_TransmogCollection"}) do
         local v = _G[n]
         if v ~= nil then
-            local shown = type(v) == "table" and v.IsShown and v:IsShown()
+            local shown = type(v) == "table" and v.IsShown ~= nil and Shown(v)
             wardrobeNames[#wardrobeNames + 1] = n .. (type(v) == "function" and " (function)" or (shown and " (shown)" or ""))
         end
     end
@@ -514,12 +551,8 @@ local function KeyOf(parent, child)
     end
 end
 
--- secret values (Forever, retail) cannot be formatted or concatenated;
--- every piece is built in its own pcall and replaced by "<secret>" on failure
-local function IsSecret(v)
-    return issecretvalue ~= nil and issecretvalue(v)
-end
-
+-- every piece of a description is built in its own pcall and replaced by
+-- "<secret>" on failure, for the same reason as IsSecret above
 local function Piece(fn)
     local ok, r = pcall(fn)
     if not ok then return "<secret>" end
@@ -594,7 +627,7 @@ local function Describe(obj, label)
     if obj.GetFrameLevel and obj.GetFrameStrata then
         add(function() return ("lvl=%s/%s"):format(tostring(obj:GetFrameStrata()), tostring(obj:GetFrameLevel())) end)
     end
-    if obj.IsShown and not obj:IsShown() then parts[#parts + 1] = "(hidden)" end
+    if obj.IsShown and not Shown(obj) then parts[#parts + 1] = "(hidden)" end
     if kind == "FontString" and obj.GetText then
         add(function() local t = obj:GetText(); return t and ("text=%q"):format(tostring(t)) end)
     end
@@ -631,7 +664,7 @@ local function Walk(frame, label, depth, out, seen, includeHidden)
         if regions[1] then
             for i = 2, #regions do
                 local r = regions[i]
-                if type(r) == "table" and (includeHidden or not r.IsShown or r:IsShown()) then
+                if type(r) == "table" and (includeHidden or Shown(r)) then
                     local key = KeyOf(frame, r) or (r.GetName and r:GetName()) or ("region" .. (i - 1))
                     out[#out + 1] = ("%s%s"):format(("  "):rep(depth + 1), Describe(r, key))
                 end
@@ -643,7 +676,7 @@ local function Walk(frame, label, depth, out, seen, includeHidden)
         if children[1] then
             for i = 2, #children do
                 local c = children[i]
-                if type(c) == "table" and (includeHidden or not c.IsShown or c:IsShown()) then
+                if type(c) == "table" and (includeHidden or Shown(c)) then
                     local key = KeyOf(frame, c) or (c.GetName and c:GetName()) or ("child" .. (i - 1))
                     Walk(c, key, depth + 1, out, seen, includeHidden)
                 end
@@ -729,7 +762,7 @@ function ns.BuildReport(includeHidden)
     for _, n in ipairs(REPORT_FRAMES_CLASSIC) do if _G[n] then names[#names + 1] = n end end
     for _, n in ipairs(REPORT_FRAMES_OPEN) do
         local f = _G[n]
-        if type(f) == "table" and f.IsShown and f:IsShown() then names[#names + 1] = n end
+        if type(f) == "table" and f.IsShown and Shown(f) then names[#names + 1] = n end
     end
     for _, name in ipairs(names) do
         local text, why = ns.BuildDump(name, includeHidden)

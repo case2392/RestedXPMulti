@@ -470,9 +470,17 @@ local function SetCastAttributes(button, item)
     end
 end
 
+-- Forever hands cooldown times back as secret values, and a secret number
+-- cannot be passed to SetCooldown from execution an addon has tainted:
+-- the call throws. There is no way to read round it, so the first refusal
+-- turns the swirl off for the session. Without this the book errored on
+-- every spell of every update - hundreds of lines in one report.
+M.cooldownsBlocked = false
+
 local function UpdateCooldown(button)
     local item = button.item
     if not item or not item.spellID or not button.Cooldown or not button.Cooldown.SetCooldown then return end
+    if M.cooldownsBlocked then return end
     local start, duration = 0, 0
     if C_Spell and C_Spell.GetSpellCooldown then
         local ok, info = pcall(C_Spell.GetSpellCooldown, item.spellID)
@@ -481,7 +489,10 @@ local function UpdateCooldown(button)
         local ok, s, d = pcall(GetSpellCooldown, item.spellID)
         if ok then start, duration = s or 0, d or 0 end
     end
-    button.Cooldown:SetCooldown(start, duration)
+    if pcall(button.Cooldown.SetCooldown, button.Cooldown, start, duration) then return end
+    M.cooldownsBlocked = true
+    pcall(button.Cooldown.Clear, button.Cooldown)
+    ns.Print("this client will not hand an addon spell cooldown times, so the spellbook's cooldown swirl stays off. The rest of the book works as it should.")
 end
 
 local function FillButton(button, item)
@@ -791,6 +802,7 @@ function M:Status()
         if self.missingArt and #self.missingArt > 0 then
             s = s .. " (art missing: " .. table.concat(self.missingArt, ", ") .. ")"
         end
+        if self.cooldownsBlocked then s = s .. " (cooldown swirl off: this client keeps cooldown times secret)" end
         return s
     elseif self.mode == "native" then
         return "classic client, Blizzard's book left alone"

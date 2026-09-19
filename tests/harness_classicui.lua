@@ -1646,6 +1646,18 @@ do
     function secretRegion:GetText() return {__secret = true} end
     w.slash("dump TargetFrame")
     check(w.ns.lastDump:find("Name  FontString  <secret>", 1, true) and not Printed("dump hit an error"), "beta: dump survives secret values")
+    -- a secret boolean does not test false, it throws, so reading a shown
+    -- state can blow up where nothing else does: one unguarded
+    -- `if f:IsShown()` took a whole live report down. Plain Lua has no
+    -- way to make a value throw on a truth test, so the throw is put in
+    -- IsShown itself, which fails in the same place for the same reason.
+    function secretRegion:IsShown() error("attempt to perform boolean test on a secret boolean value") end
+    function TargetFrame:IsShown() error("attempt to perform boolean test on a secret boolean value") end
+    w.slash("dump TargetFrame")
+    check(w.ns.lastDump:find("TargetFrame", 1, true) and w.ns.lastDump:find("Name  FontString", 1, true) and not Printed("dump hit an error"), "beta: a frame whose shown state is secret is still listed, not dropped and not fatal")
+    w.slash("report")
+    check(w.ns.lastReport ~= nil and w.ns.lastReport:find("Classic UI for Forever bug report", 1, true) and not Printed("report hit an error"), "beta: the whole report survives a secret shown state")
+    secretRegion.IsShown, TargetFrame.IsShown = nil, nil
     check(#w.ns.errors == 0, "beta: no errors")
 end
 
@@ -1944,6 +1956,19 @@ do
     check(b[7].item == nil and b[7].Icon.shown == false and b[2].item == nil, "book: future spell left out, right column empty on a short page")
     check(b[1].attributes.type == "spell" and b[1].attributes.spell == 6603 and b[5].attributes.type == nil, "book: secure cast attributes on castable spells only")
     check(b[1].Cooldown.cooldown[1] == 100 and b[1].Cooldown.cooldown[2] == 5, "book: cooldown from C_Spell")
+    -- Forever keeps cooldown times secret, and SetCooldown throws on one:
+    -- the swirl goes off for the session instead of erroring every update
+    local before = #w.ns.errors
+    _G.C_Spell = {GetSpellCooldown = function() return {startTime = {__secret = true}, duration = {__secret = true}} end}
+    local cd = b[1].Cooldown
+    function cd:SetCooldown() error("bad argument #1 to 'SetCooldown': Secret values are only allowed during untainted execution") end
+    function cd:Clear() self.cleared = true end
+    sb:Force()
+    check(#w.ns.errors == before and sb.cooldownsBlocked == true and cd.cleared == true, "book: a secret cooldown turns the swirl off rather than erroring")
+    check(Printed("cooldown swirl stays off") and sb:Status():find("cooldown swirl off", 1, true), "book: it says so once, and the status carries it for the report")
+    local said = #printed
+    sb:Force()
+    check(#w.ns.errors == before and #printed == said, "book: it does not say so again, or error, on the next update")
     check(book.pageText.text == "Page 1" and book.prev.enabled == false and book.next.enabled == false, "book: one page for General")
     local t1, t2, t3 = book.skillTabs[1], book.skillTabs[2], book.skillTabs[3]
     check(t1.shown and t1.Icon.texture == 626005 and t1.checked == true and t2.shown and t2.checked == false and t3.shown == false, "book: skill line tabs down the right edge, General checked")

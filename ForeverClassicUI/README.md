@@ -36,6 +36,15 @@ the report one click away:
   and where to email it if it will not fit, so it explains itself wherever
   it ends up.
 
+Forever hands some values back "secret", and a secret boolean does not
+test false — the test itself throws, from any execution an addon has
+tainted. One unguarded `if frame:IsShown()` was enough to kill a whole
+report, so nothing in `Probe.lua` tests a value it did not read through
+`Truthy`, `Shown` or `yn`, each of which answers "cannot be read" instead
+of raising. A frame whose state cannot be read is listed as shown: a
+report that leaves a window out is worse than one that lists a hidden
+frame.
+
 The report carries the client build, which parts are on, every error of
 the session and the full layout of whatever window is open, which is
 usually enough to rebuild that window in the classic style.
