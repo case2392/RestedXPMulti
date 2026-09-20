@@ -49,10 +49,10 @@ function ns.BuildReport()
     end
     local c = ns._comm or {}
     local waiting = {}
-    for name in pairs(c.pending or {}) do waiting[#waiting + 1] = name end
+    for _, p in pairs(c.pending or {}) do waiting[#waiting + 1] = p.name or "?" end
     line("waiting on: %s", #waiting > 0 and table.concat(waiting, ", ") or "nobody")
-    line("comm: prefix %s registered=%s  C_ChatInfo=%s  Menu=%s  BackdropTemplate=%s",
-         ns.PREFIX, yn(ns.commRegistered), yn(C_ChatInfo ~= nil), yn(Menu and Menu.ModifyMenu), yn(BackdropTemplateMixin ~= nil))
+    line("comm: prefix %s registered=%s  sent=%d  queued=%d  C_ChatInfo=%s  Menu=%s  BackdropTemplate=%s",
+         ns.PREFIX, yn(ns.commRegistered), ns.sentCount or 0, #(c.outbox or {}), yn(C_ChatInfo ~= nil), yn(Menu and Menu.ModifyMenu), yn(BackdropTemplateMixin ~= nil))
     local w = ns.window
     line("window: built=%s shown=%s own=%s key=%s model=%s", yn(w), yn(w and w:IsShown()), yn(w and w.own), tostring(w and w.key),
          w and (w.model:IsShown() and "shown" or "hidden (class icon)") or "-")

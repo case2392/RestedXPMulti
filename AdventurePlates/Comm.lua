@@ -8,21 +8,28 @@
 -- control characters escaped the URL way. Everything received is put
 -- through CleanPlate before it is shown or kept.
 --
--- Nothing goes out unasked: a plate is only sent to someone who asked
--- for it, and only if the settings allow them (everyone, or friends,
--- guildmates and party members, or nobody). A whisper to the same
--- player is not repeated within a few seconds.
+-- Nothing goes out unasked, and nothing comes in unasked: a plate is only
+-- sent to someone who whispered for it and whom the settings allow
+-- (everyone, or friends, guildmates and group members, or nobody), and a
+-- plate is only shown if it answers a request we made. Whose plate it is
+-- comes from the server's word on who sent it, not from the plate. A
+-- request from the same player is not answered again within a few
+-- seconds, and everything outgoing passes through one slow queue so a
+-- burst of requests cannot make the client flood the channel.
 
 local addonName, ns = ...
 
 local CHUNK = 240          -- bytes of plate text per message
 local REPLY_GAP = 5        -- seconds before answering the same player again
 local WAIT = 6             -- seconds before giving up on a request
+local RATE, BURST = 3, 6   -- outgoing messages per second, and at once
+local OUTBOX_MAX = 60      -- messages waiting to go, beyond which the oldest are dropped
 
 local runID = 0
 local replies = {}         -- name -> time of last plate sent
 local inbox = {}           -- sender -> {id, n, parts}
-local pending = {}         -- name -> {unit, asked}
+local pending = {}         -- lowercased name -> {name, unit, asked}
+local outbox = {}          -- messages waiting for the channel
 
 local function Call(fn, ...)
     if type(fn) ~= "function" then return nil end
@@ -32,6 +39,16 @@ end
 
 local function Now()
     return Call(GetTime) or 0
+end
+
+local function Key(name)
+    return type(name) == "string" and name:lower() or ""
+end
+
+-- "Name" -> "Name-OurRealm"; "Name-Realm" as it is
+local function Qualify(name)
+    if not name:find("-", 1, true) then return name .. "-" .. ns.RealmName() end
+    return name
 end
 
 --------------------------------------------------------------------------
@@ -97,14 +114,83 @@ function ns.Chunks(text)
 end
 
 --------------------------------------------------------------------------
--- sending
+-- sending: one queue, a few messages a second
 --------------------------------------------------------------------------
 
+local function Api()
+    return C_ChatInfo and C_ChatInfo.SendAddonMessage or SendAddonMessage
+end
+
+-- the client's word on a send: newer clients return a result code, older
+-- ones nothing
+local THROTTLED = (Enum and Enum.SendAddonMessageResult and Enum.SendAddonMessageResult.AddonMessageThrottle) or 3
+
+local function Transmit(text, target)
+    local api = Api()
+    if not api then return "failed" end
+    local ok, result = pcall(api, ns.PREFIX, text, "WHISPER", target)
+    if not ok then return "failed" end
+    if result == nil or result == 0 or result == true then return "sent" end
+    if result == THROTTLED then return "throttled" end
+    return "failed"
+end
+
+local tokens, filled = BURST, nil
+local pumpArmed
+
+local function Refill()
+    local now = Now()
+    if filled and now > filled then tokens = math.min(BURST, tokens + (now - filled) * RATE) end
+    filled = now
+end
+
+local Pump
+
+local function Tick()
+    pumpArmed = nil
+    Pump()
+end
+
+Pump = function()
+    Refill()
+    while outbox[1] and tokens >= 1 do
+        local m = outbox[1]
+        m.result = Transmit(m.text, m.target)
+        if m.result == "throttled" then
+            -- the client says slow down: the message stays at the head
+            m.result = nil
+            tokens = 0
+            break
+        end
+        table.remove(outbox, 1)
+        tokens = tokens - 1
+        ns.sentCount = (ns.sentCount or 0) + 1
+    end
+    if outbox[1] then
+        if C_Timer and C_Timer.After then
+            if not pumpArmed then
+                pumpArmed = true
+                C_Timer.After(1 / RATE, Tick)
+            end
+        else
+            -- no timer to wait on: out it goes, the client will throttle
+            while outbox[1] do
+                local m = table.remove(outbox, 1)
+                m.result = Transmit(m.text, m.target)
+            end
+        end
+    end
+end
+
+-- false only when the message could not be sent at all; a queued message
+-- counts as sent
 local function Send(text, target)
-    local api = C_ChatInfo and C_ChatInfo.SendAddonMessage or SendAddonMessage
-    if not api then return false end
-    local ok = pcall(api, ns.PREFIX, text, "WHISPER", target)
-    return ok
+    if not Api() then return false end
+    local m = {text = text, target = target}
+    outbox[#outbox + 1] = m
+    while #outbox > OUTBOX_MAX do table.remove(outbox, 1) end
+    Pump()
+    return m.result ~= "failed"
 end
 
 function ns.RegisterComm()
@@ -112,24 +198,35 @@ function ns.RegisterComm()
     if api then ns.commRegistered = pcall(api, ns.PREFIX) end
 end
 
--- may this player have our plate?
+-- may this player (Name-Realm, as the server names them) have our plate?
+-- In friends mode the whole name counts: a stranger on another realm who
+-- shares a guildmate's first name is not that guildmate.
 function ns.MayShareWith(name)
     local mode = ns.db and ns.db.settings.share or "everyone"
     if mode == "off" then return false end
     if mode == "everyone" then return true end
-    local short = name:match("^([^%-]+)") or name
-    if Call(UnitInParty, short) or Call(UnitInRaid, short) then return true end
+    if type(name) ~= "string" then return false end
+    local want = Key(Qualify(name))
+    local members = Call(GetNumGroupMembers) or 0
+    local prefix = Call(IsInRaid) and "raid" or "party"
+    for i = 1, members do
+        local uname, urealm = Call(UnitName, prefix .. i)
+        if type(uname) == "string" then
+            local full = (type(urealm) == "string" and urealm ~= "") and (uname .. "-" .. urealm) or Qualify(uname)
+            if Key(full) == want then return true end
+        end
+    end
     if Call(IsInGuild) and GetNumGuildMembers and GetGuildRosterInfo then
         for i = 1, Call(GetNumGuildMembers) or 0 do
             local member = Call(GetGuildRosterInfo, i)
-            if type(member) == "string" and (member == name or member:match("^([^%-]+)") == short) then return true end
+            if type(member) == "string" and Key(Qualify(member)) == want then return true end
         end
     end
     if C_FriendList and C_FriendList.GetNumFriends and C_FriendList.GetFriendInfoByIndex then
         for i = 1, Call(C_FriendList.GetNumFriends) or 0 do
             local info = Call(C_FriendList.GetFriendInfoByIndex, i)
             local friend = type(info) == "table" and info.name
-            if type(friend) == "string" and (friend == name or friend:match("^([^%-]+)") == short) then return true end
+            if type(friend) == "string" and Key(Qualify(friend)) == want then return true end
         end
     end
     return false
@@ -150,24 +247,26 @@ function ns.RequestPlate(name, unit)
         ns.Print("whose plate? /plate <name>, or /plate target")
         return false
     end
-    if name == ns.CharKey() then
+    if ns.SameName(name, ns.CharKey()) then
         ns.ShowOwnPlate()
         return true
     end
-    pending[name] = {unit = unit, asked = Now()}
+    local key = Key(name)
+    pending[key] = {name = name, unit = unit, asked = Now()}
     -- show what we have straight away, and refresh it when the reply comes
     local cached, seen = ns.Cached(name)
     if cached and ns.ShowPlate then ns.ShowPlate(cached, {key = name, unit = unit, cached = seen}) end
     if not Send("Q" .. ns.FORMAT, name) then
+        pending[key] = nil
         ns.Print("could not ask %s for their plate", name)
         return false
     end
     if not cached then ns.Print("asking %s for their plate...", name) end
     if C_Timer and C_Timer.After then
         C_Timer.After(WAIT, function()
-            local p = pending[name]
+            local p = pending[key]
             if p and p.asked and Now() - p.asked >= WAIT - 0.5 then
-                pending[name] = nil
+                pending[key] = nil
                 if not cached then ns.Print("no plate from %s (they need Adventure Plates too, and to be online)", name) end
             end
         end)
@@ -185,6 +284,8 @@ local function Assemble(sender, text)
     i, n = tonumber(i), tonumber(n)
     if n < 1 or i < 1 or i > n then return nil end
     local box = inbox[sender]
+    -- pieces of an old run that never finished are not stitched to a new one
+    if box and Now() - box.started > WAIT * 2 then box = nil end
     if not box or box.id ~= id or box.n ~= n then
         box = {id = id, n = n, parts = {}, count = 0, started = Now()}
         inbox[sender] = box
@@ -198,26 +299,34 @@ end
 
 function ns.OnAddonMessage(prefix, text, channel, sender)
     if prefix ~= ns.PREFIX or type(text) ~= "string" or type(sender) ~= "string" then return end
-    if sender == ns.CharKey() then return end
+    if ns.SameName(sender, ns.CharKey()) then return end
+    -- plates travel by whisper only: a request shouted at a group or guild
+    -- would have everyone in it whisper back at once
+    if channel ~= nil and channel ~= "WHISPER" then return end
     if text:sub(1, 1) == "Q" then
-        if not ns.MayShareWith(sender) then return end
         local last = replies[sender]
         if last and Now() - last < REPLY_GAP then return end
+        if not ns.MayShareWith(sender) then return end
         replies[sender] = Now()
         ns.SendPlate(sender)
         if ns.db.settings.greet then ns.Print("%s looked at your plate", sender) end
     elseif text:sub(1, 1) == "P" then
+        -- only an answer to something we asked
+        local p = pending[Key(sender)]
+        if not p then return end
         local whole = Assemble(sender, text)
         if not whole then return end
         local plate = ns.Decode(whole)
         if not plate then return end
-        if plate.name == "" then plate.name = sender:match("^([^%-]+)") or sender end
+        -- whose it is comes from the server, whatever the plate says
+        local sname, srealm = sender:match("^([^%-]+)%-?(.*)$")
+        plate.name = sname or sender
+        plate.realm = (srealm and srealm ~= "") and srealm or ns.RealmName()
+        pending[Key(sender)] = nil
         ns.Remember(sender, plate)
-        local p = pending[sender]
-        pending[sender] = nil
-        if ns.ShowPlate then ns.ShowPlate(plate, {key = sender, unit = p and p.unit, fresh = true}) end
+        if ns.ShowPlate then ns.ShowPlate(plate, {key = sender, unit = p.unit, fresh = true}) end
     end
 end
 
--- for the harness
-ns._comm = {pending = pending, replies = replies, inbox = inbox}
+-- for the harness and the report
+ns._comm = {pending = pending, replies = replies, inbox = inbox, outbox = outbox}

@@ -365,7 +365,7 @@ local function BuildEditor(win)
     ed.motto:SetScript("OnTextChanged", function(self)
         if not W.draft then return end
         W.draft.motto = self:GetText() or ""
-        ed.mottoCount:SetText(("%d/%d"):format(#W.draft.motto, ns.MAX_MOTTO))
+        ed.mottoCount:SetText(("%d/%d"):format(ns.Utf8Len(W.draft.motto), ns.MAX_MOTTO))
     end)
     box:SetScript("OnMouseDown", function() if ed.motto.SetFocus then ed.motto:SetFocus() end end)
 
@@ -500,13 +500,17 @@ end
 -- filling the card
 --------------------------------------------------------------------------
 
--- a unit whose name is this plate's, if one is in range
+-- a unit who is this plate's player (name and realm), if one is in range
 local function UnitFor(plate, hint)
     local units = {hint, "target", "mouseover", "focus", "party1", "party2", "party3", "party4"}
+    local want = ((plate.name or "") .. "-" .. (plate.realm ~= "" and plate.realm or ns.RealmName())):lower()
     for _, u in ipairs(units) do
         if u then
-            local name = Call(UnitName, u)
-            if name and name == plate.name and Call(UnitIsPlayer, u) then return u end
+            local name, realm = Call(UnitName, u)
+            if type(name) == "string" and Call(UnitIsPlayer, u) then
+                local full = name .. "-" .. ((type(realm) == "string" and realm ~= "") and realm or ns.RealmName())
+                if full:lower() == want then return u end
+            end
         end
     end
 end
@@ -689,7 +693,7 @@ function ns.RefreshEditor()
             if on then c:SetColorTexture(LIT[1], LIT[2], LIT[3], 1) else c:SetColorTexture(DIM[1], DIM[2], DIM[3], 1) end
         end
     end
-    ed.mottoCount:SetText(("%d/%d"):format(#(d.motto or ""), ns.MAX_MOTTO))
+    ed.mottoCount:SetText(("%d/%d"):format(ns.Utf8Len(d.motto or ""), ns.MAX_MOTTO))
 end
 
 function ns.OpenEditor()
@@ -722,7 +726,8 @@ end
 -- the entry on a player's right-click menu, and on your own portrait
 --------------------------------------------------------------------------
 
-local MENUS = {"MENU_UNIT_PLAYER", "MENU_UNIT_ENEMY_PLAYER", "MENU_UNIT_PARTY", "MENU_UNIT_RAID_PLAYER", "MENU_UNIT_FRIEND", "MENU_UNIT_GUILD", "MENU_UNIT_COMMUNITIES_GUILD_MEMBER"}
+-- not the enemy player menu: addon whispers do not cross factions
+local MENUS = {"MENU_UNIT_PLAYER", "MENU_UNIT_PARTY", "MENU_UNIT_RAID_PLAYER", "MENU_UNIT_FRIEND", "MENU_UNIT_GUILD", "MENU_UNIT_COMMUNITIES_GUILD_MEMBER"}
 local SELF_MENUS = {"MENU_UNIT_SELF"}
 
 function ns.InstallMenu()

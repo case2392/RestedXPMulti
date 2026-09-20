@@ -90,7 +90,13 @@ local function NewWorld(opts)
     _G.date = function(fmt, t) return "01 Jan 12:00" end
     _G.UnitName = function(u)
         if u == "player" then return "Siggy" end
-        if u == "target" then return opts.target end
+        if u == "target" then return opts.target, opts.targetRealm end
+        local i = u:match("^party(%d)$")
+        if i and opts.party and opts.party[tonumber(i)] then
+            local full = opts.party[tonumber(i)]
+            local name, realm = full:match("^([^%-]+)%-?(.*)$")
+            return name, realm ~= "" and realm or nil
+        end
         return nil
     end
     _G.UnitExists = function(u) return u == "target" and opts.target ~= nil end
@@ -115,8 +121,8 @@ local function NewWorld(opts)
             table.insert(sent, {prefix = prefix, text = text, kind = kind, target = target})
         end
     }
-    _G.UnitInParty = function(n) return opts.party and opts.party[n] or false end
-    _G.UnitInRaid = function() return false end
+    _G.GetNumGroupMembers = function() return opts.party and #opts.party or 0 end
+    _G.IsInRaid = function() return false end
     _G.IsInGuild = function() return opts.guild ~= nil end
     _G.GetNumGuildMembers = function() return opts.guild and #opts.guild or 0 end
     _G.GetGuildRosterInfo = function(i) return opts.guild[i] end
@@ -157,6 +163,16 @@ do
     local c = ns.CleanPlate({title = "The |cffExplorer", tags = {"dungeons", "bogus", "pvp", "worldpvp", "raiding", "roleplay", "gold"}, roles = {tank = true, dps = "yes"}, level = "14", motto = string.rep("x", 400)})
     check(c.title == "The cffExplorer" and #c.tags == 4 and c.tags[2] == "worldpvp" and c.tags[4] == "roleplay" and c.roles.tank == true and c.roles.dps == nil and c.level == 14 and #c.motto == ns.MAX_MOTTO, "clean: unknown tags dropped, capped at four, roles must be true, motto capped")
     check(ns.FullName("bob") == "Bob-Firemaw" and ns.FullName("Bob-Gehennas") == "Bob-Gehennas" and ns.FullName("  ") == nil, "names: realm added when missing, capitalised")
+    -- numbers off the wire stay within reason
+    local odd = ns.CleanPlate({level = "1e999", updated = "-1e999"})
+    local nan = ns.CleanPlate({level = "nan", updated = "0/0"})
+    check(odd.level == 0 and odd.updated == 0 and nan.level == 0 and nan.updated == 0 and ns.CleanPlate({level = "500"}).level == 0 and ns.CleanPlate({level = "60.7", updated = "1700000000.5"}).level == 60 and ns.CleanPlate({updated = "1700000000.5"}).updated == 1700000000, "clean: infinite, nan and out-of-range numbers become 0, fractions are floored")
+    -- lengths count letters, not bytes
+    local accented = string.rep("é", 200)
+    check(ns.Utf8Len(accented) == 200 and ns.Utf8Len("abc") == 3 and ns.Utf8Len("") == 0, "utf8: letters counted, not bytes")
+    local cut = ns.Sanitize(accented, ns.MAX_MOTTO)
+    check(ns.Utf8Len(cut) == ns.MAX_MOTTO and #cut == 2 * ns.MAX_MOTTO and cut:sub(-2) == "é", "utf8: the motto is cut at 160 letters, never in the middle of one")
+    check(ns.Sanitize("héllo wörld", 6) == "héllo " and ns.Sanitize("日本語テキスト", 3) == "日本語", "utf8: two- and three-byte letters cut whole")
 end
 
 -- 2. the wire: encode, decode, chunks
@@ -207,45 +223,104 @@ do
     check(win.sub.text == "Bob - Firemaw", "card: the window says whose plate it is")
     local cached, seen = ns.Cached("Bob-Firemaw")
     check(cached ~= nil and cached.name == "Bob" and seen == 1700000000 and #ns.db.cache == 1, "answer: the plate is kept")
+    _G.GetTime = function() return 1007 end
     RunTimers()
     check(not Printed("no plate from"), "ask: no complaint once the answer came")
+    _G.GetTime = function() return 1000 end
     -- asking again shows the cached plate at once and asks for a fresh one
     local said = #printed
     ns.slash("bob")
     check(#sent == 2 and card.stamp.text:find("as of", 1, true) ~= nil and #printed == said, "ask again: the kept plate shows straight away with its date, a fresh one is asked for quietly")
-    -- someone we never asked
+    -- someone we never asked: their plate is dropped, it cannot open a window on us
     ns.OnEvent("CHAT_MSG_ADDON", "ADVPLATE", ns.Chunks(ns.Encode(ns.CleanPlate({name = "Eve", classFile = "HUNTER"})))[1], "WHISPER", "Eve-Firemaw")
-    check(win.card.name.text == "Eve" and ns.Cached("Eve-Firemaw") ~= nil, "answer: a plate sent unasked still shows (they wanted you to see it)")
+    check(win.card.name.text == "Bob" and ns.Cached("Eve-Firemaw") == nil and ns._comm.inbox["Eve-Firemaw"] == nil, "answer: a plate sent unasked is ignored, not shown, not kept")
+    -- an answer claims to be someone else: the server's word on the sender wins
+    ns.slash("Mallory")
+    ns.OnEvent("CHAT_MSG_ADDON", "ADVPLATE", ns.Chunks(ns.Encode(ns.CleanPlate({name = "Bob", realm = "Gehennas", classFile = "HUNTER", title = "Not Bob"})))[1], "WHISPER", "Mallory-Firemaw")
+    local mal = ns.Cached("Mallory-Firemaw")
+    check(win.card.name.text == "Mallory" and win.sub.text == "Mallory - Firemaw" and mal ~= nil and mal.name == "Mallory" and mal.realm == "Firemaw" and ns.Cached("Bob-Firemaw").title == "Beast Whisperer", "answer: the plate is filed and shown under the sender's real name and realm")
+    -- a name typed with a realm keeps its case, so the reply matches
+    sent = {}
+    ns.slash("Tia-Gehennas")
+    check(sent[1].target == "Tia-Gehennas" and ns._comm.pending["tia-gehennas"] ~= nil, "ask: /plate Tia-Gehennas asks that realm's Tia, as typed")
+    ns.slash("tia-gehennas")
+    check(sent[2].target == "Tia-gehennas", "ask: typed lowercase, only the first letter is fixed up")
+    ns.OnEvent("CHAT_MSG_ADDON", "ADVPLATE", ns.Chunks(ns.Encode(ns.CleanPlate({classFile = "DRUID"})))[1], "WHISPER", "Tia-Gehennas")
+    check(win.card.name.text == "Tia" and win.sub.text == "Tia - Gehennas" and ns._comm.pending["tia-gehennas"] == nil, "answer: the reply from Tia-Gehennas is matched to the request whatever the case typed")
+    -- a plate that was half received long ago is not stitched to a new one
+    local long = ns.Chunks(ns.Encode(ns.CleanPlate({motto = string.rep("x", 200), classFile = "DRUID"})))
+    ns.slash("Zed")
+    ns.OnEvent("CHAT_MSG_ADDON", "ADVPLATE", long[2], "WHISPER", "Zed-Firemaw")
+    _G.GetTime = function() return 1003 end
+    ns.slash("Zed")
+    ns.OnEvent("CHAT_MSG_ADDON", "ADVPLATE", long[1], "WHISPER", "Zed-Firemaw")
+    check(win.card.name.text == "Zed", "answer: two pieces a few seconds apart make a plate")
+    ns.slash("Zed")
+    ns.OnEvent("CHAT_MSG_ADDON", "ADVPLATE", long[2], "WHISPER", "Zed-Firemaw")
+    _G.GetTime = function() return 1003 + 20 end
+    ns.slash("Zed")
+    ns.OnEvent("CHAT_MSG_ADDON", "ADVPLATE", long[1], "WHISPER", "Zed-Firemaw")
+    check(ns._comm.inbox["Zed-Firemaw"] ~= nil and ns._comm.inbox["Zed-Firemaw"].count == 1, "answer: a piece from twenty seconds ago is forgotten, the plate waits for its other half")
+    _G.GetTime = function() return 1030 end
     -- a request from Bob: our plate goes out
     sent = {}
+    ns.OnEvent("CHAT_MSG_ADDON", "ADVPLATE", "Q1", "GUILD", "Bob-Firemaw")
+    check(#sent == 0, "answer: a request that was not whispered is ignored")
     ns.OnEvent("CHAT_MSG_ADDON", "ADVPLATE", "Q1", "WHISPER", "Bob-Firemaw")
     check(#sent == 1 and sent[1].target == "Bob-Firemaw" and sent[1].text:sub(1, 1) == "P" and sent[1].text:find("name=Siggy", 1, true) ~= nil, "answer: a request gets our plate back")
     ns.OnEvent("CHAT_MSG_ADDON", "ADVPLATE", "Q1", "WHISPER", "Bob-Firemaw")
     check(#sent == 1, "answer: not twice within a few seconds")
-    _G.GetTime = function() return 1010 end
+    _G.GetTime = function() return 1040 end
     ns.OnEvent("CHAT_MSG_ADDON", "ADVPLATE", "Q1", "WHISPER", "Bob-Firemaw")
     check(#sent == 2, "answer: again later")
     ns.OnEvent("CHAT_MSG_ADDON", "ADVPLATE", "Q1", "WHISPER", "Siggy-Firemaw")
     check(#sent == 2, "answer: our own echo is ignored")
     ns.db.settings.greet = true
-    _G.GetTime = function() return 1020 end
+    _G.GetTime = function() return 1050 end
     ns.OnEvent("CHAT_MSG_ADDON", "ADVPLATE", "Q1", "WHISPER", "Carl-Firemaw")
     check(Printed("Carl-Firemaw looked at your plate"), "answer: greet says who looked")
     -- no answer
     sent = {}
     ns.slash("nobody")
-    _G.GetTime = function() return 1030 end
+    _G.GetTime = function() return 1060 end
     RunTimers()
     check(Printed("no plate from Nobody-Firemaw"), "ask: says so when nothing comes back")
-    -- comm failure
+    -- a flood of requests: the answers leave a few a second, the client is never swamped
+    sent = {}
+    timers = {}
+    _G.GetTime = function() return 2000 end
+    for i = 1, 10 do ns.OnEvent("CHAT_MSG_ADDON", "ADVPLATE", "Q1", "WHISPER", "Flood" .. i .. "-Firemaw") end
+    check(#sent == 6 and #ns._comm.outbox == 4 and #timers == 1, "flood: six go at once, the rest wait in the queue on a timer")
+    _G.GetTime = function() return 2000.34 end
+    RunTimers()
+    check(#sent == 7 and #ns._comm.outbox == 3 and #timers == 1, "flood: a third of a second later, one more")
+    _G.GetTime = function() return 2010 end
+    RunTimers()
+    check(#sent == 10 and #ns._comm.outbox == 0 and #timers == 0, "flood: the queue drains and the timer stops")
+    -- the client says it is throttling: the message waits at the head of the queue
+    local realSend = C_ChatInfo.SendAddonMessage
+    local throttle = 2
+    C_ChatInfo.SendAddonMessage = function(...) if throttle > 0 then throttle = throttle - 1; return 3 end return realSend(...) end
+    _G.GetTime = function() return 2020 end
+    ns.OnEvent("CHAT_MSG_ADDON", "ADVPLATE", "Q1", "WHISPER", "Late-Firemaw")
+    check(#sent == 10 and #ns._comm.outbox == 1 and #timers == 1, "throttled: the plate stays queued")
+    _G.GetTime = function() return 2021 end
+    RunTimers()
+    check(#sent == 10 and #ns._comm.outbox == 1 and #timers == 1, "throttled: still refused, still queued")
+    _G.GetTime = function() return 2022 end
+    RunTimers()
+    check(#sent == 11 and #ns._comm.outbox == 0 and sent[11].target == "Late-Firemaw", "throttled: through once the client lets it")
+    C_ChatInfo.SendAddonMessage = realSend
     check(#ns.errors == 0, "no errors")
 end
 
 -- 4. who may see it
 do
-    local ns = NewWorld({guild = {"Gil-Firemaw", "Gilda"}, friends = {"Fay"}, party = {Pat = true}})
+    local ns = NewWorld({guild = {"Gil-Firemaw", "Gilda"}, friends = {"Fay", "Far-Gehennas"}, party = {"Pat", "Pam-Gehennas"}})
     ns.db.settings.share = "friends"
     check(ns.MayShareWith("Gil-Firemaw") and ns.MayShareWith("Gilda-Firemaw") and ns.MayShareWith("Fay-Firemaw") and ns.MayShareWith("Pat-Firemaw") and not ns.MayShareWith("Rando-Firemaw"), "friends mode: guild, friends and group yes, strangers no")
+    check(ns.MayShareWith("Far-Gehennas") and ns.MayShareWith("Pam-Gehennas") and ns.MayShareWith("gilda-firemaw"), "friends mode: friends and group members on other realms, whatever the case")
+    check(not ns.MayShareWith("Gilda-Gehennas") and not ns.MayShareWith("Fay-Gehennas") and not ns.MayShareWith("Pat-Gehennas") and not ns.MayShareWith("Far-Firemaw"), "friends mode: a stranger on another realm with a friend's first name is not the friend")
     sent = {}
     ns.OnEvent("CHAT_MSG_ADDON", "ADVPLATE", "Q1", "WHISPER", "Rando-Firemaw")
     check(#sent == 0, "friends mode: a stranger's request is ignored")
@@ -320,7 +395,7 @@ do
     _G.__menus.MENU_UNIT_PLAYER(nil, root, {name = "Tia", server = "Gehennas", unit = "target"})
     check(root.divided and root.buttons[1].label == "View Adventure Plate", "menu: one entry after a divider")
     root.buttons[1].fn()
-    check(#sent == 1 and sent[1].target == "Tia-Gehennas" and ns._comm.pending["Tia-Gehennas"].unit == "target", "menu: clicking it asks Tia on her realm, remembering the unit for the model")
+    check(#sent == 1 and sent[1].target == "Tia-Gehennas" and ns._comm.pending["tia-gehennas"].unit == "target", "menu: clicking it asks Tia on her realm, remembering the unit for the model")
     sent = {}
     ns.slash("target")
     check(#sent == 1 and sent[1].target == "Tia-Firemaw", "/plate target: asks the targeted player")
@@ -358,7 +433,7 @@ do
     ns2.slash("welcome")
     check(ns2.welcomeFrame ~= nil and ns2.welcomeFrame.shown == true, "welcome: /plate welcome brings it back")
     ns2.welcomeFrame.report:Press()
-    check(ns2.reportFrame ~= nil and ns2.reportFrame.shown == true and ns2.reportFrame.box.text:find("Adventure Plates 1.1.0 report", 1, true) ~= nil, "welcome: Report a bug opens the report")
+    check(ns2.reportFrame ~= nil and ns2.reportFrame.shown == true and ns2.reportFrame.box.text:find("Adventure Plates 1.1.1 report", 1, true) ~= nil, "welcome: Report a bug opens the report")
     -- the plate window on Era's page
     ns.slash("")
     local win = ns.window
@@ -423,7 +498,7 @@ do
     local rep = ns.reportFrame
     check(rep ~= nil and rep.shown == true and rep.pieces ~= nil, "report: /plate report opens it on Era's page")
     local text = rep.box.text
-    check(text:find("Adventure Plates 1.1.0 report", 1, true) and text:find(ns.FEEDBACK_URL, 1, true) and text:find(ns.FEEDBACK_EMAIL, 1, true) and text:find("suggestions are welcome", 1, true), "report: says where it goes, for bugs and ideas")
+    check(text:find("Adventure Plates 1.1.1 report", 1, true) and text:find(ns.FEEDBACK_URL, 1, true) and text:find(ns.FEEDBACK_EMAIL, 1, true) and text:find("suggestions are welcome", 1, true), "report: says where it goes, for bugs and ideas")
     check(text:find("client: version 1.60.1 build 69913", 1, true) and text:find("character: Siggy-Firemaw", 1, true) and text:find("settings: share=everyone", 1, true) and text:find("my plate: title=\"\"", 1, true) and text:find("era art: all four page files present", 1, true) and text:find("errors caught: 0", 1, true), "report: client, character, settings, plate and art")
     ns.slash("probe")
     check(ns.lastReport == text or ns.lastReport:find("report", 1, true), "report: /plate probe is the same window")

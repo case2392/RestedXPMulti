@@ -68,12 +68,21 @@ if not. Plates you have seen are kept, so asking again shows the last one
 at once and refreshes it when the new answer arrives.
 
 Who may ask for yours is a setting: everyone (the default, it is a social
-feature), only friends, guildmates and your group, or nobody. A request
-from the same player is answered at most once every few seconds. Text in
-a plate that came from someone else is stripped of links, colour codes
-and control characters before it is shown or kept, and every field is
-length-capped, so a plate cannot be used to inject anything into your
-chat or your saved file.
+feature), only friends, guildmates and your group (matched on the whole
+Name-Realm, so a stranger on another realm with a friend's first name is
+not the friend), or nobody. Requests are only answered when whispered,
+and a request from the same player is answered at most once every few
+seconds. Everything outgoing passes through one slow queue (a few
+messages a second) so a burst of requests can never make your client
+flood the channel.
+
+Nothing comes in unasked either: a plate is only shown if it answers a
+request you made, and whose plate it is comes from the server's word on
+who sent it, never from the plate itself. Text in a plate that came from
+someone else is stripped of links, colour codes and control characters
+before it is shown or kept, every field is length-capped (in letters, so
+accented text is never cut mid-character), and numbers are bounded, so a
+plate cannot be used to inject anything into your chat or your saved file.
 
 One plate per character on the account, in `AdventurePlatesDB`.
 

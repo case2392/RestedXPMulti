@@ -19,7 +19,7 @@
 
 local addonName, ns = ...
 
-ns.VERSION = "1.1.0"
+ns.VERSION = "1.1.1"
 ns.PREFIX = "ADVPLATE"
 ns.FORMAT = 1
 ns.MAX_TAGS = 4
@@ -84,12 +84,41 @@ end
 -- text from other players: no links, no colour codes, no control codes
 --------------------------------------------------------------------------
 
+-- lengths are counted in characters, not bytes, so an accented motto is
+-- capped where the editor caps it and never cut in the middle of a letter
+function ns.Utf8Len(s)
+    if type(s) ~= "string" then return 0 end
+    local n = 0
+    for _ in s:gmatch("[^\128-\191]") do n = n + 1 end
+    return n
+end
+
+function ns.Utf8Cut(s, limit)
+    if type(s) ~= "string" or not limit then return s end
+    local n, cut = 0, #s
+    for i = 1, #s do
+        local b = s:byte(i)
+        if b < 128 or b > 191 then
+            n = n + 1
+            if n > limit then cut = i - 1; break end
+        end
+    end
+    return s:sub(1, cut)
+end
+
 function ns.Sanitize(text, limit)
     if type(text) ~= "string" then return "" end
     text = text:gsub("|", ""):gsub("[%c]", " ")
     text = text:gsub("^%s+", ""):gsub("%s+$", "")
-    if limit and #text > limit then text = text:sub(1, limit) end
+    if limit then text = ns.Utf8Cut(text, limit) end
     return text
+end
+
+-- a number from the wire: within its bounds, or 0 (inf and nan included)
+function ns.CleanNumber(v, lo, hi)
+    v = tonumber(v)
+    if type(v) ~= "number" or v ~= v or v < lo or v > hi then return 0 end
+    return math.floor(v)
 end
 
 -- a 24-character string of 0/1, one per hour from midnight
@@ -137,7 +166,7 @@ function ns.CleanPlate(p)
     -- what the sender's client said about them
     out.name = ns.Sanitize(p.name, 48)
     out.realm = ns.Sanitize(p.realm, 48)
-    out.level = tonumber(p.level) or 0
+    out.level = ns.CleanNumber(p.level, 0, 100)
     out.race = ns.Sanitize(p.race, 32)
     out.class = ns.Sanitize(p.class, 32)
     out.classFile = ns.Sanitize(p.classFile, 16):upper()
@@ -145,7 +174,7 @@ function ns.CleanPlate(p)
     out.rank = ns.Sanitize(p.rank, 32)
     out.gameTitle = ns.Sanitize(p.gameTitle, 48)
     out.faction = ns.Sanitize(p.faction, 16)
-    out.updated = tonumber(p.updated) or 0
+    out.updated = ns.CleanNumber(p.updated, 0, 4102444800) -- up to the year 2100
     return out
 end
 
@@ -200,14 +229,20 @@ end
 -- the cache of plates seen, newest first, capped
 function ns.Remember(key, plate)
     local cache = ns.db.cache
-    for i = #cache, 1, -1 do if cache[i].key == key then table.remove(cache, i) end end
+    for i = #cache, 1, -1 do if ns.SameName(cache[i].key, key) then table.remove(cache, i) end end
     table.insert(cache, 1, {key = key, plate = plate, seen = Call(time) or 0})
     while #cache > ns.CACHE_SIZE do table.remove(cache) end
 end
 
+-- names compare without case: what a player types and what the server
+-- says are the same player either way
+function ns.SameName(a, b)
+    return type(a) == "string" and type(b) == "string" and a:lower() == b:lower()
+end
+
 function ns.Cached(key)
     for _, entry in ipairs(ns.db.cache) do
-        if entry.key == key then return entry.plate, entry.seen end
+        if ns.SameName(entry.key, key) then return entry.plate, entry.seen end
     end
 end
 
@@ -239,8 +274,9 @@ end
 
 local function Slash(msg)
     msg = (msg or ""):gsub("^%s+", ""):gsub("%s+$", "")
-    local cmd, rest = msg:match("^(%S*)%s*(.-)$")
-    cmd = (cmd or ""):lower()
+    local typed, rest = msg:match("^(%S*)%s*(.-)$")
+    typed = typed or ""
+    local cmd = typed:lower()
     if cmd == "" or cmd == "me" or cmd == "show" then
         ns.ShowOwnPlate()
     elseif cmd == "edit" then
@@ -281,7 +317,9 @@ local function Slash(msg)
     elseif cmd == "help" then
         ns.Print("/plate - your plate.  /plate edit - fill it in.  /plate <name> - ask for someone's plate.  /plate target - the player you have targeted.  /plate share everyone|friends|off - who may ask for yours.  /plate button on|off - the minimap button.  /plate report - a report to paste with a bug or an idea.  /plate welcome - the welcome again.  /plate options.")
     else
-        ns.RequestPlate(ns.FullName(cmd))
+        -- a name, as typed: the realm part keeps its case so the reply's
+        -- sender matches it
+        ns.RequestPlate(ns.FullName(typed))
     end
 end
 
