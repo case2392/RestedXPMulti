@@ -133,14 +133,21 @@ end
 -- claim holds ours is put back; otherwise the size is the one to restore
 local function Hook(psf)
     if PSF.hooked == psf or not hooksecurefunc then return end
-    hooksecurefunc(psf, "SetSize", function(_, w, h)
+    -- Blizzard sizes the window by SetSize on show and by SetWidth when it
+    -- minimises and maximises: all three are watched
+    local function Sized()
         if PSF.resizing then return end
+        local ok, w, h = pcall(psf.GetSize, psf)
+        if not ok then return end
         if PSF.owner then
             if w ~= PSF.WIDTH or h ~= PSF.HEIGHT then Resize(psf, PSF.WIDTH, PSF.HEIGHT) end
         else
             PSF.savedSize = {w, h}
         end
-    end)
+    end
+    for _, method in ipairs({"SetSize", "SetWidth", "SetHeight"}) do
+        if type(psf[method]) == "function" then hooksecurefunc(psf, method, Sized) end
+    end
     PSF.hooked = psf
 end
 

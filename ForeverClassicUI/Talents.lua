@@ -169,7 +169,9 @@ local function Remember(region)
             if okp and a then saved.points[#saved.points + 1] = {a, b, c, d, e} end
         end
     end
-    if region.GetSize then
+    -- a FontString sizes itself to its text; pinning it to a remembered
+    -- size would box Forever's rank numbers to whatever they were
+    if region.GetSize and ObjectType(region) ~= "FontString" then
         local ok, w, h = pcall(region.GetSize, region)
         if ok then saved.width, saved.height = w, h end
     end
@@ -229,6 +231,12 @@ local function PageShown()
     local tf, psf = TreeFrame()
     if not tf or not psf then return false end
     if psf.IsShown and not psf:IsShown() then return false end
+    -- inspecting another player: their trees, their name; retail's page
+    -- is left as it is for that
+    if psf.IsInspecting then
+        local ok, inspecting = pcall(psf.IsInspecting, psf)
+        if ok and inspecting then return false end
+    end
     return tf.IsShown ~= nil and tf:IsShown() == true
 end
 
@@ -284,13 +292,39 @@ local function VisualState(node)
     return STATE.Normal
 end
 
+-- every talent button on the canvas, shown or waiting in Forever's pool
+local function AllNodes(tf)
+    local out = {}
+    for _, child in ipairs(Children(tf.ButtonsParent)) do
+        if IsNode(child) then out[#out + 1] = child end
+    end
+    return out
+end
+
+-- Forever re-anchors a node when it lays the tree out again (every
+-- commit reloads the tree and hands the pooled buttons out afresh), and
+-- what it anchored is what must be remembered, not what we did: so a
+-- SetPoint that is not ours forgets the old memory
+local function WatchNode(node)
+    local own = Own(node)
+    if own.watched or not hooksecurefunc then return end
+    hooksecurefunc(node, "SetPoint", function()
+        if not M.placing then
+            local o = M.own[node]
+            if o then o.saved = nil end
+        end
+    end)
+    own.watched = true
+end
+
 -- the nodes on the page, with where Forever put them
 local function Nodes(tf)
     local out = {}
-    for _, child in ipairs(Children(tf.ButtonsParent)) do
-        if IsNode(child) and Shown(child) then
+    for _, child in ipairs(AllNodes(tf)) do
+        if Shown(child) then
             local info = NodeInfo(child)
             if info and info.isVisible ~= false then
+                WatchNode(child)
                 Remember(child)
                 local p = Own(child).saved.points[1]
                 -- Forever anchors each node CENTER to ButtonsParent's TOPLEFT
@@ -307,6 +341,18 @@ local function Edges(tf)
     local out = {}
     for _, child in ipairs(Children(tf.ButtonsParent)) do
         if IsEdge(child) then out[#out + 1] = child end
+    end
+    return out
+end
+
+-- whatever else Forever hangs on the canvas (its tier gates, for one):
+-- not Era's, so faded while the page is ours
+local function Others(tf)
+    local out = {}
+    for _, child in ipairs(Children(tf.ButtonsParent)) do
+        if not IsNode(child) and not IsEdge(child) and child ~= M.lines and child ~= M.arrows then
+            out[#out + 1] = child
+        end
     end
     return out
 end
@@ -355,29 +401,54 @@ local function PlayerClass()
     if ok then return file, id end
 end
 
-local function TreeName(k)
-    local _, classID = PlayerClass()
-    if classID and GetSpecializationInfoForClassID then
-        local ok, _, name = pcall(GetSpecializationInfoForClassID, classID, k)
-        if ok and type(name) == "string" and name ~= "" then return name end
+-- Era's painting whose name matches a tree's (Beast Mastery, Feral,
+-- Elemental...), if any does
+local function ArtByName(class, name)
+    local set = class and TREE_ART[class]
+    if not set or type(name) ~= "string" then return nil end
+    local key = name:lower():gsub("[^%a]", "")
+    if key == "" then return nil end
+    for _, art in ipairs(set) do
+        local body = art:lower():gsub("^" .. class:lower(), "")
+        if body:find(key, 1, true) then return art end
     end
-    return TREE_FALLBACK:format(k)
+end
+
+-- the client's spec names, in order, as the trees' names. A class the
+-- retail client gives more specs than Forever gives trees (a druid's
+-- Guardian) loses the ones Era never had a tree for.
+local function SpecNames()
+    local class, classID = PlayerClass()
+    local names = {}
+    if not classID or not GetSpecializationInfoForClassID then return names end
+    local okn, count = pcall(GetNumSpecializationsForClassID or function() return MAX_TREES end, classID)
+    count = (okn and tonumber(count)) or MAX_TREES
+    for i = 1, math.max(count, MAX_TREES) do
+        local ok, _, name = pcall(GetSpecializationInfoForClassID, classID, i)
+        if ok and type(name) == "string" and name ~= "" then names[#names + 1] = name end
+    end
+    if #names > MAX_TREES and class and TREE_ART[class] then
+        local kept = {}
+        for _, n in ipairs(names) do
+            if ArtByName(class, n) then kept[#kept + 1] = n end
+        end
+        if #kept >= MAX_TREES then names = kept end
+    end
+    return names
+end
+
+local function TreeName(k)
+    local names = SpecNames()
+    return names[k] or TREE_FALLBACK:format(k)
 end
 
 -- Era's painting for the k-th tree: matched by name where the names
--- agree (Beast Mastery, Feral, Elemental...), by Era's tab order otherwise
+-- agree, by Era's tab order otherwise
 local function TreeArt(k, name)
     local class = PlayerClass()
     local set = class and TREE_ART[class]
     if not set then return nil end
-    if type(name) == "string" then
-        local key = name:lower():gsub("[^%a]", "")
-        for _, art in ipairs(set) do
-            local body = art:lower():gsub("^" .. class:lower(), "")
-            if key ~= "" and body:find(key, 1, true) then return art end
-        end
-    end
-    return set[k]
+    return ArtByName(class, name) or set[k]
 end
 
 -- unspent points: Forever's frame keeps the tree's currencies on itself
@@ -413,11 +484,15 @@ local function Piece(parent, layer, path, w, h, point, rel, relPoint, x, y)
 end
 
 local function BuildSlider(controls, view)
+    -- Era's scroll bar template may be gone on this client; without it
+    -- CreateFrame hands back a bare slider (or throws), so the thumb and
+    -- the direction are set whenever they are missing
     local ok, s = pcall(CreateFrame, "Slider", nil, controls, "UIPanelScrollBarTemplate")
-    if not ok or not s then
-        s = CreateFrame("Slider", nil, controls)
-        if s.SetOrientation then s:SetOrientation("VERTICAL") end
-        if s.SetThumbTexture then s:SetThumbTexture(ART.knob) end
+    if not ok or not s then s = CreateFrame("Slider", nil, controls) end
+    local hasThumb = s.GetThumbTexture and select(2, pcall(s.GetThumbTexture, s))
+    if not hasThumb then
+        if s.SetOrientation then pcall(s.SetOrientation, s, "VERTICAL") end
+        if s.SetThumbTexture then pcall(s.SetThumbTexture, s, ART.knob) end
     end
     s:SetWidth(16)
     s:SetPoint("TOPLEFT", view, "TOPRIGHT", 6, -16)
@@ -536,14 +611,22 @@ local function BuildFrame(psf)
     return f
 end
 
--- our branches and arrows live on ButtonsParent, under the nodes, so they
--- are clipped and scrolled with them
+-- our branches live on ButtonsParent under the nodes, and the arrow
+-- heads on a second frame over them, as Era's ArrowFrame sat over its
+-- buttons; both are clipped and scrolled with the nodes
+local ARROWS_ABOVE = 600   -- Forever's nodes sit some 500 levels above ButtonsParent
+
 local function BuildLines(bp)
     local lines = CreateFrame("Frame", nil, bp)
     lines:SetAllPoints(bp)
     lines:SetFrameLevel(bp:GetFrameLevel() + 1)
     lines.branches, lines.arrows = {}, {}
     lines.usedBranches, lines.usedArrows = 0, 0
+    local arrows = CreateFrame("Frame", nil, bp)
+    arrows:SetAllPoints(bp)
+    arrows:SetFrameLevel(bp:GetFrameLevel() + ARROWS_ABOVE)
+    lines.arrowFrame = arrows
+    M.arrows = arrows
     return lines
 end
 
@@ -551,10 +634,13 @@ end
 -- the nodes: moved onto Era's page and dressed in Era's art
 --------------------------------------------------------------------------
 
+-- Forever's own art on a node: everything but the icon, the masks, and
+-- the pieces we drew on it ourselves (GetRegions returns those too)
 local function NodeRegionsToFade(node)
-    local out = {}
+    local own, out = M.own[node], {}
     for _, r in ipairs(Regions(node)) do
-        if r ~= node.Icon and ObjectType(r) ~= "MaskTexture" then out[#out + 1] = r end
+        local ours = own and (r == own.slot or r == own.ring or r == own.rankBorder or r == own.rank)
+        if r ~= node.Icon and ObjectType(r) ~= "MaskTexture" and not ours then out[#out + 1] = r end
     end
     return out
 end
@@ -681,7 +767,8 @@ local function Arrow(lines, kind, active, cx, cy)
     lines.usedArrows = lines.usedArrows + 1
     local t = lines.arrows[lines.usedArrows]
     if not t then
-        t = lines:CreateTexture(nil, "OVERLAY")
+        local parent = lines.arrowFrame or lines
+        t = parent:CreateTexture(nil, "OVERLAY")
         t:SetTexture(ART.arrows)
         t:SetSize(TILE, TILE)
         lines.arrows[lines.usedArrows] = t
@@ -693,10 +780,16 @@ local function Arrow(lines, kind, active, cx, cy)
     t:Show()
 end
 
-local function Occupied(tree, x, y, selected, k)
+-- is any talent (other than the two ends) in the way of a run along a
+-- row (y fixed, x0..x1) or down a column (x fixed, y0..y1)?
+local function Blocked(tree, a, b, x0, y0, x1, y1, selected, k)
+    local lo, hi = math.min(x0, x1) - 25, math.max(x0, x1) + 25
+    local top, bottom = math.min(y0, y1) - 25, math.max(y0, y1) + 25
     for _, p in ipairs(tree.nodes) do
-        local px, py = Place(tree, p, selected, k)
-        if math.abs(px - x) < 25 and math.abs(py - y) < 25 then return true end
+        if p ~= a and p ~= b then
+            local px, py = Place(tree, p, selected, k)
+            if px > lo and px < hi and py > top and py < bottom then return true end
+        end
     end
     return false
 end
@@ -719,20 +812,22 @@ local function DrawEdge(lines, tree, a, b, active, selected, k)
         end
         return 1
     end
+    -- Era names its arrow tiles by the side of the talent they sit on:
+    -- "left" is the tile on the dependent's left, pointing in at it
     if math.abs(ay - by) < 2 then
         -- across: the bar between them, the arrow at B's near side
         if bx > ax then
             local w = (bx - half) - (ax + half)
             if w > 0 then Branch(lines, "right", active, ax + half, ay - halfTile, w, TILE) end
-            Arrow(lines, "right", active, bx - half - ARROW_LIFT, by)
+            Arrow(lines, "left", active, bx - half - ARROW_LIFT, by)
         else
             local w = (ax - half) - (bx + half)
             if w > 0 then Branch(lines, "left", active, bx + half, ay - halfTile, w, TILE) end
-            Arrow(lines, "left", active, bx + half + ARROW_LIFT, by)
+            Arrow(lines, "right", active, bx + half + ARROW_LIFT, by)
         end
         return 1
     end
-    if by > ay and not Occupied(tree, bx, ay, selected, k) then
+    if by > ay and not Blocked(tree, a, b, ax, ay, bx, ay, selected, k) and not Blocked(tree, a, b, bx, ay, bx, by, selected, k) then
         -- Era's way round a corner: along A's row to B's column, then down into B
         if bx > ax then
             local w = (bx - halfTile) - (ax + half)
@@ -756,12 +851,12 @@ local function DrawEdge(lines, tree, a, b, active, selected, k)
             Branch(lines, "bottomleft", active, ax - halfTile, by - halfTile, TILE, TILE)
             local w = (bx - half) - (ax + halfTile)
             if w > 0 then Branch(lines, "right", active, ax + halfTile, by - halfTile, w, TILE) end
-            Arrow(lines, "right", active, bx - half - ARROW_LIFT, by)
+            Arrow(lines, "left", active, bx - half - ARROW_LIFT, by)
         else
             Branch(lines, "bottomright", active, ax - halfTile, by - halfTile, TILE, TILE)
             local w = (ax - halfTile) - (bx + half)
             if w > 0 then Branch(lines, "left", active, bx + half, by - halfTile, w, TILE) end
-            Arrow(lines, "left", active, bx + half + ARROW_LIFT, by)
+            Arrow(lines, "right", active, bx + half + ARROW_LIFT, by)
         end
         return 1
     end
@@ -792,7 +887,12 @@ local function DrawLines(tf, lines, tree, selected)
                     local target = type(e) == "table" and e.targetNode
                     local button = target ~= nil and ButtonFor(tf, target, byID)
                     local b = button and tree.byNode[button]
-                    if b then drawn = drawn + DrawEdge(lines, tree, a, b, e.isActive == true, selected, selected) end
+                    if b then
+                        -- Era's gold ran only into a talent whose tier was
+                        -- open too; a gated one gets the grey branch
+                        local active = e.isActive == true and VisualState(b.node) ~= STATE.Gated
+                        drawn = drawn + DrawEdge(lines, tree, a, b, active, selected, selected)
+                    end
                 end
             end
         end
@@ -883,18 +983,18 @@ local function Furniture(tf, on)
     for _, child in ipairs(Children(tf)) do
         if not keepFrames[child] and not holders[child] and child ~= apply then
             local kind = ObjectType(child)
-            if kind == "EditBox" then
+            if kind == "Button" and Text(child) and Text(child) ~= "" then
+                -- a side button: placed below
+            else
+                -- faded, and dead to the mouse: alpha alone leaves a
+                -- box or a button there to click on
                 if on then
                     Fade(child)
                     if child.EnableMouse then child:EnableMouse(false) end
-                    boxes = boxes + 1
+                    if kind == "EditBox" then boxes = boxes + 1 else faded = faded + 1 end
                 else
                     Restore(child)
                 end
-            elseif kind == "Button" and Text(child) and Text(child) ~= "" then
-                -- a side button: placed below
-            else
-                if on then Fade(child); faded = faded + 1 else Restore(child) end
             end
         end
     end
@@ -942,16 +1042,20 @@ local function FadeEdges(tf, on)
         local own = Own(edge)
         if on then
             if not own.hooked and hooksecurefunc and type(edge.UpdateState) == "function" then
+                -- Forever sets an edge's alpha itself on every redraw
                 hooksecurefunc(edge, "UpdateState", function(e)
                     if M.mode == "restyled" and M.applied and e.SetAlpha then e:SetAlpha(0) end
                 end)
                 own.hooked = true
             end
-            if edge.SetAlpha then edge:SetAlpha(0) end
+            Fade(edge)
             n = n + 1
-        elseif edge.SetAlpha then
-            edge:SetAlpha(1)
+        else
+            Restore(edge)
         end
+    end
+    for _, other in ipairs(Others(tf)) do
+        if on then Fade(other) else Restore(other) end
     end
     return n
 end
@@ -971,9 +1075,11 @@ end
 local function UndoInner()
     local tf = TreeFrame()
     if tf and M.applied then
-        for _, p in ipairs(Nodes(tf)) do
-            Restore(p.node)
-            SkinNode(p.node, false)
+        -- every button, the ones back in Forever's pool included: a
+        -- pooled button keeps its dress until it is handed out again
+        for _, node in ipairs(AllNodes(tf)) do
+            Restore(node)
+            SkinNode(node, false)
         end
         FadeEdges(tf, false)
         Furniture(tf, false)
@@ -1062,11 +1168,14 @@ end
 -- a scroll or a tab change: only the positions move
 function M.Reflow()
     local tf = TreeFrame()
-    if not tf or not M.applied or not M.trees then return end
+    if not tf or not M.applied or not M.trees or M.applying then return end
     M.applying = true
-    PlaceNodes(tf.ButtonsParent, M.trees, M.tree)
-    M.branches = DrawLines(tf, M.lines, M.trees[M.tree], M.tree)
+    local ok, err = pcall(function()
+        PlaceNodes(tf.ButtonsParent, M.trees, M.tree)
+        M.branches = DrawLines(tf, M.lines, M.trees[M.tree], M.tree)
+    end)
     M.applying = nil
+    if not ok then error(err, 0) end
 end
 
 local function ApplyInner()
@@ -1079,12 +1188,16 @@ local function ApplyInner()
     end
     M.applying = true
     ns.PSF.Claim("talents", {portrait = false})
+    -- from here on the page is ours, whatever happens next: an error
+    -- part way through must still be undone in full
+    M.applied = true
     local bp = tf.ButtonsParent
     if not M.lines or M.lines:GetParent() ~= bp then M.lines = BuildLines(bp) end
     -- the controls above Forever's page, which covers the whole window
     local level = math.max(tf:GetFrameLevel(), bp:GetFrameLevel()) + 50
     M.frame.controls:SetFrameLevel(level)
     M.lines:SetFrameLevel(bp:GetFrameLevel() + 1)
+    if M.arrows then M.arrows:SetFrameLevel(bp:GetFrameLevel() + ARROWS_ABOVE) end
     Furniture(tf, true)
     PlaceCanvas(tf, true)
     M.edgesFaded = FadeEdges(tf, true)
@@ -1095,7 +1208,6 @@ local function ApplyInner()
     end
     if not M.tree or not trees[M.tree] then M.tree = DefaultTree(trees) end
     local tree = trees[M.tree]
-    M.applied = true
     UpdateScroll(tree)
     PlaceNodes(bp, trees, M.tree)
     M.branches = DrawLines(tf, M.lines, tree, M.tree)
@@ -1130,7 +1242,8 @@ function M.ApplyLater()
 end
 
 local TREE_METHODS = {"UpdateAllTalentButtonPositions", "UpdateTalentButtonPosition", "LoadTalentTreeInternal",
-                      "UpdateAllButtons", "UpdateTreeCurrencyInfo", "UpdatePadding", "InstantiateTalentButton"}
+                      "UpdateAllButtons", "UpdateTreeCurrencyInfo", "UpdatePadding", "InstantiateTalentButton",
+                      "AcquireEdge", "UpdateEdgesForButton", "RefreshGates"}
 
 local function Hook()
     if M.hooked then return end

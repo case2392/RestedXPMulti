@@ -112,14 +112,16 @@ local function Frame(name)
     function f:RegisterForDrag() end
     function f:SetBackdrop(b) self.backdrop = b end
     function f:GetBackdrop() return self.backdrop end
-    function f:CreateFontString() return Region("FontString") end
+    -- regions an addon creates on a Blizzard frame come back from
+    -- GetRegions in the real client too
+    function f:CreateFontString() local r = Region("FontString"); self.created = self.created or {}; table.insert(self.created, r); return r end
     function f:SetMultiLine() end
     function f:SetAutoFocus() end
     function f:SetScrollChild(c) self.child = c end
     function f:SetFocus() end
     function f:ClearFocus() end
     function f:HighlightText() end
-    function f:CreateTexture() return Region("Texture") end
+    function f:CreateTexture() local r = Region("Texture"); self.created = self.created or {}; table.insert(self.created, r); return r end
     function f:SetParent(p) self.parent = p end
     function f:UnregisterAllEvents() self.events = {} end
     function f:RegisterUnitEvent(e) self.events[e] = true end
@@ -182,7 +184,12 @@ local function Frame(name)
     function f:GetRegions()
         local t = {}
         for k, v in pairs(self) do
-            if type(v) == "table" and v.kind and v.kind ~= "Frame" and type(k) == "string" then t[#t + 1] = v end
+            if type(v) == "table" and v.kind and v.kind ~= "Frame" and type(k) == "string" and k ~= "created" then t[#t + 1] = v end
+        end
+        for _, r in ipairs(self.created or {}) do
+            local seen
+            for _, s in ipairs(t) do if s == r then seen = true end end
+            if not seen then t[#t + 1] = r end
         end
         return unpack(t)
     end
@@ -835,6 +842,7 @@ local function NewWorld(opts)
             end
             Edge(n.DA, n.BS, true); Edge(n.DA, n.IRP, true); Edge(n.BS, n.UF, false); Edge(n.BS, n.INT, false)
             Edge(n.UF, n.FER, false); Edge(n.FER, n.FRZ, false); Edge(n.INT, n.BW, false); Edge(n.IRP, n.SH, false)
+            Edge(n.FER, n.SH, false) -- along a row, the unlocked talent to the right
             Edge(n.MM1, n.MM2, false); Edge(n.SV1, n.SV2, false)
             tf.treeCurrencyInfo = {{traitCurrencyID = 1, quantity = 3, maxQuantity = 4, spent = 1}}
             function tf:GetTalentButtonByNodeID(id) return self.byID[id] end
@@ -2366,10 +2374,15 @@ do
     check(ofrz.slot.vertex[1] == 0.5 and ofrz.rankBorder.shown == false and ofrz.rank.shown == false, "talents: a locked talent: grey slot and no rank box until a point is in it")
     -- Era's branches and arrows from the nodes' own edges, retail's arrows faded
     local lines = ta.lines
-    check(lines ~= nil and lines.parent == bp and lines.usedBranches == 10 and lines.usedArrows == 8 and ta.branches == 8, "talents: eight edges drawn: bars between the talents, an arrow into each unlocked one, a corner for the diagonal")
+    check(lines ~= nil and lines.parent == bp and lines.usedBranches == 11 and lines.usedArrows == 9 and ta.branches == 9, "talents: nine edges drawn: bars between the talents, an arrow into each unlocked one, a corner for the diagonal")
     local gold, grey = 0, 0
     for i = 1, lines.usedArrows do if lines.arrows[i].texcoord[3] == 0 then gold = gold + 1 else grey = grey + 1 end end
-    check(gold == 2 and grey == 6 and lines.arrows[1].texture == "Interface\\TalentFrame\\UI-TalentArrows" and lines.branches[1].texture == "Interface\\TalentFrame\\UI-TalentBranches", "talents: gold where the talent is learned, grey where it is not, from Era's two files")
+    check(gold == 2 and grey == 7 and lines.arrows[1].texture == "Interface\\TalentFrame\\UI-TalentArrows" and lines.branches[1].texture == "Interface\\TalentFrame\\UI-TalentBranches", "talents: gold where the talent is learned, grey where it is not, from Era's two files")
+    -- the arrow into Summon Hawk from Ferocity on its left: Era's "left" tile (the one on the dependent's left side, pointing right at it)
+    local sideArrow
+    for i = 1, lines.usedArrows do local a = lines.arrows[i]; if a.anchors[1][5] == -216 and a.anchors[1][4] == 238 - 20 - 5 then sideArrow = a end end
+    check(sideArrow ~= nil and sideArrow.texcoord[1] == 0.5 and sideArrow.texcoord[2] == 1.0, "talents: an arrow along a row sits on the unlocked talent's near side and points at it")
+    check(lines.arrowFrame ~= nil and lines.arrowFrame.level > bp.level + 500, "talents: arrows drawn over the talents, as Era's are")
     local vertical
     for i = 1, lines.usedBranches do local b = lines.branches[i]; if b.width == 32 and b.height == 80 and b.anchors[1][4] == 102 and b.anchors[1][5] == -56 then vertical = b end end
     check(vertical ~= nil and vertical.texcoord[1] == 0 and vertical.texcoord[2] == 0.125, "talents: the bar from the first talent's foot to the next tier, 32 wide like Era's tile")
@@ -2398,6 +2411,22 @@ do
     n.BS.state = 6; n.BS.nodeInfo.currentRank = 3; n.BS.nodeInfo.ranksPurchased = 3
     n.BS:FullUpdate()
     check(obs.rank.text == "3" and obs.slot.vertex[1] == 1 and obs.slot.vertex[2] == 0.82 and controls.box.text.text == "Beast Mastery: 4", "talents: a talent maxed out goes gold and the points spent follow")
+    check(oda.slot.alpha ~= 0 and oda.ring.alpha ~= 0 and oda.rankBorder.alpha ~= 0 and oda.rank.alpha ~= 0 and obs.slot.alpha ~= 0, "talents: Era's own slot, ring and rank box survive the second pass over the node's regions")
+    -- a commit reloads the tree: Forever hands the pooled buttons out afresh, so the
+    -- frame that showed Deadly Aspects now shows Bestial Wrath and is anchored there
+    da.nodeInfo, bw.nodeInfo = bw.nodeInfo, da.nodeInfo
+    da.nodeID, bw.nodeID = bw.nodeID, da.nodeID
+    tf.byID[da.nodeID], tf.byID[bw.nodeID] = da, bw
+    tf:LoadTalentTreeInternal()
+    check(da.anchors[1][4] == 118 and da.anchors[1][5] == -396 and bw.anchors[1][5] == -36, "talents: after a reload each button is placed by the talent it now holds, not the one it held")
+    tf:Hide()
+    check(da.anchors[1][4] == 173 and da.anchors[1][5] == -580 and bw.anchors[1][5] == -220, "talents: and leaving the page gives it back Forever's newer anchor")
+    tf:Show()
+    da.nodeInfo, bw.nodeInfo = bw.nodeInfo, da.nodeInfo
+    da.nodeID, bw.nodeID = bw.nodeID, da.nodeID
+    tf.byID[da.nodeID], tf.byID[bw.nodeID] = da, bw
+    tf:LoadTalentTreeInternal()
+    check(da.anchors[1][5] == -36 and bw.anchors[1][5] == -396, "talents: swapped back, the layout follows again")
     -- another tree
     t3.scripts.OnClick(t3)
     check(ta.tree == 3 and controls.box.text.text == "Survival: 0" and t3.enabled == false and t1.enabled ~= false and n.SV1.anchors[1][4] == 118 and n.SV1.anchors[1][5] == -36 and da.anchors[1][4] < -1000, "talents: the Survival tab brings its tree in and parks Beast Mastery")
