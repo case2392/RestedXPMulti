@@ -10,11 +10,13 @@
 --
 -- The retail window (PlayerSpellsFrame) stays the frame that is shown and
 -- closed, so keybinds, the micro button and Blizzard's own logic keep
--- working; while its spellbook page is up it is resized to 384x512, its
--- shell faded and its page moved out of reach, and a book of ours drawn
+-- working; while its spellbook page is up it is claimed through the
+-- shared shell (PlayerSpells.lua: resized to 384x512, retail's frame and
+-- portrait faded), its page moved out of reach, and a book of ours drawn
 -- on it from C_SpellBook. Spell buttons are secure action buttons (left
 -- click casts, drag picks the spell up); their attributes are only set
--- out of combat. When the talents page is up the retail size is put back.
+-- out of combat. When another page is up the claim is released: the
+-- talents part takes the window then, or retail's size comes back.
 --
 -- Numbers come from Era's SpellBookFrame.xml and a `/cui report all`
 -- taken on Classic Era 1.15.9 with the book open.
@@ -56,8 +58,6 @@ local ART = {
 }
 M.ART = ART
 
-local FRAME_WIDTH, FRAME_HEIGHT = 384, 512
-local PANEL_WIDTH = 400
 local SPELLS_PER_PAGE = 12
 local MAX_SKILL_TABS = 8
 -- Era's SpellButton order: button i shows page slot ORDER[i] (left column 1-6, right column 7-12)
@@ -306,47 +306,10 @@ local function SkillTab(book, i)
     return t
 end
 
--- bottom tabs: Spellbook, and Pet when the player has one. The tab art is
--- the character sheet's, cut into three (10px ends of a 64px image) so the
--- middle stretches to whatever the label needs.
-local TAB_HEIGHT, TAB_END, TAB_PAD, TAB_MIN = 32, 20, 44, 84
-
-local function TabPiece(tab, l, r)
-    local t = tab:CreateTexture(nil, "BACKGROUND")
-    t:SetTexture(ART.tabArt)
-    t:SetSize(TAB_END, TAB_HEIGHT)
-    t:SetTexCoord(l, r, 0, 1)
-    return t
-end
-
+-- bottom tabs: Spellbook, and Pet when the player has one. Era's tab,
+-- built from the character sheet's tab art (EraPanel.lua)
 local function BookTab(book, text)
-    local t = CreateFrame("Button", nil, book)
-    t:SetHeight(TAB_HEIGHT)
-    t:SetFrameLevel(book:GetFrameLevel() + 2)
-    t.Left = TabPiece(t, 0, 0.15625)
-    t.Middle = TabPiece(t, 0.15625, 0.84375)
-    t.Right = TabPiece(t, 0.84375, 1)
-    t.Left:SetPoint("TOPLEFT", t, "TOPLEFT", 0, 0)
-    t.Right:SetPoint("TOPRIGHT", t, "TOPRIGHT", 0, 0)
-    t.Middle:ClearAllPoints()
-    t.Middle:SetPoint("TOPLEFT", t.Left, "TOPRIGHT", 0, 0)
-    t.Middle:SetPoint("BOTTOMRIGHT", t.Right, "BOTTOMLEFT", 0, 0)
-    t.Text = t:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-    t.Text:SetPoint("CENTER", t, "CENTER", 0, 2)
-    t.Text:SetText(text)
-    local width = TAB_MIN
-    if t.Text.GetStringWidth then width = math.max(TAB_MIN, t.Text:GetStringWidth() + TAB_PAD) end
-    t:SetWidth(width)
-    if HasFile(ART.tabGlow) then
-        t:SetHighlightTexture(ART.tabGlow, "ADD")
-        local hl = t:GetHighlightTexture()
-        if hl then
-            hl:ClearAllPoints()
-            hl:SetPoint("TOPLEFT", t, "TOPLEFT", 3, 5)
-            hl:SetPoint("BOTTOMRIGHT", t, "BOTTOMRIGHT", -3, 0)
-        end
-    end
-    return t
+    return ns.BuildEraTab(book, text)
 end
 
 local function PageButton(book, prev)
@@ -440,19 +403,7 @@ end
 -- filling the page
 --------------------------------------------------------------------------
 
--- Era lifted the selected tab onto its own art; that file is one of the
--- ones Forever did not keep, so the selected tab is told apart the other
--- Era way (white text, button disabled), as the character sheet does.
-local function SetTabSelected(tab, selected)
-    tab.selected = selected
-    if selected then
-        if tab.Disable then tab:Disable() end
-        tab.Text:SetTextColor(1, 1, 1)
-    else
-        if tab.Enable then tab:Enable() end
-        tab.Text:SetTextColor(1, 0.82, 0)
-    end
-end
+local SetTabSelected = ns.SetEraTabSelected
 
 -- secure attributes: left click casts; only out of combat, re-done after combat
 local function SetCastAttributes(button, item)
@@ -595,38 +546,9 @@ local function SpellPageShown()
     return page ~= nil and page.IsShown ~= nil and page:IsShown() == true
 end
 
+-- the retail page: transparent and moved out of reach while ours is up.
+-- The window's shell round it is the shared one (PlayerSpells.lua).
 local function Shell(psf, classic)
-    Fade(psf.NineSlice, classic)
-    Fade(psf.Bg, classic)
-    Fade(psf.TopTileStreaks, classic)
-    Fade(psf.CloseButton, classic)
-    Mouse(psf.CloseButton, not classic)
-    Fade(psf.MaximizeMinimizeButton, classic)
-    Mouse(psf.MaximizeMinimizeButton, not classic)
-    if psf.MaximizeMinimizeButton then
-        Mouse(psf.MaximizeMinimizeButton.MaximizeButton, not classic)
-        Mouse(psf.MaximizeMinimizeButton.MinimizeButton, not classic)
-    end
-    Fade(psf.TabSystem, classic)
-    Mouse(psf.TabSystem, not classic)
-    local portrait = psf.PortraitContainer and psf.PortraitContainer.portrait
-    local mask = psf.PortraitContainer and psf.PortraitContainer.CircleMask
-    if classic then
-        -- Era: the book icon 58x58 at 10,-8; "Spellbook" over the top edge (our title draws it)
-        Anchor(portrait, "TOPLEFT", psf, "TOPLEFT", 10, -8, 58, 58)
-        if mask then
-            Remember(mask)
-            mask:ClearAllPoints()
-            mask:SetPoint("TOPLEFT", portrait, "TOPLEFT", 0, 0)
-            mask:SetPoint("BOTTOMRIGHT", portrait, "BOTTOMRIGHT", 0, 0)
-        end
-        Fade(psf.TitleContainer, true)
-    else
-        Restore(portrait)
-        Restore(mask)
-        Fade(psf.TitleContainer, false)
-    end
-    -- the retail page: transparent and moved out of reach while ours is up
     local page = psf.SpellBookFrame
     if page then
         Fade(page, classic)
@@ -648,20 +570,13 @@ function M.Apply()
         M.applied = classic
     end
     if classic then
-        M.resizing = true
-        psf:SetSize(FRAME_WIDTH, FRAME_HEIGHT)
-        M.resizing = nil
-        if SetUIPanelAttribute then pcall(SetUIPanelAttribute, psf, "width", PANEL_WIDTH) end
+        -- Era: the book icon 58x58 at 10,-8; "Spellbook" over the top edge (our title draws it)
+        ns.PSF.Claim("spellbook", {portrait = {10, -8, 58}})
         M.book:Show()
         M.Update()
     else
         M.book:Hide()
-        if M.savedSize and M.savedSize[1] then
-            M.resizing = true
-            psf:SetSize(M.savedSize[1], M.savedSize[2])
-            M.resizing = nil
-        end
-        if SetUIPanelAttribute and M.savedPanelWidth then pcall(SetUIPanelAttribute, psf, "width", M.savedPanelWidth) end
+        ns.PSF.Release("spellbook")
     end
 end
 
@@ -671,27 +586,13 @@ local function Undo()
     Shell(psf, false)
     M.applied = false
     if M.book then M.book:Hide() end
-    if M.savedSize and M.savedSize[1] then psf:SetSize(M.savedSize[1], M.savedSize[2]) end
-    if SetUIPanelAttribute and M.savedPanelWidth then pcall(SetUIPanelAttribute, psf, "width", M.savedPanelWidth) end
+    ns.PSF.Release("spellbook")
 end
 
 local function Hook()
     if M.hooked then return end
     local psf = G("PlayerSpellsFrame")
     if not psf or not hooksecurefunc then return end
-    -- Blizzard sizes the window itself (show, maximize/minimize): re-apply ours after it
-    hooksecurefunc(psf, "SetSize", Guard("SetSize", function(_, w, h)
-        if M.resizing or M.mode ~= "restyled" then return end
-        if SpellPageShown() then
-            if w ~= FRAME_WIDTH or h ~= FRAME_HEIGHT then
-                M.resizing = true
-                psf:SetSize(FRAME_WIDTH, FRAME_HEIGHT)
-                M.resizing = nil
-            end
-        else
-            M.savedSize = {w, h}
-        end
-    end))
     if psf.HookScript then
         psf:HookScript("OnShow", Guard("OnShow", M.Apply))
         psf:HookScript("OnHide", Guard("OnHide", function() if M.book then M.book:Hide() end end))
@@ -753,11 +654,7 @@ function M:Enable()
         if not HasFile(ART[key]) then self.missingArt[#self.missingArt + 1] = ART[key]:match("[^\\]+$") end
     end
     local psf = G("PlayerSpellsFrame")
-    if not self.savedSize and psf.GetSize then self.savedSize = {psf:GetSize()} end
-    if not self.savedPanelWidth and GetUIPanelAttribute then
-        local ok, w = pcall(GetUIPanelAttribute, psf, "width")
-        if ok and type(w) == "number" then self.savedPanelWidth = w end
-    end
+    ns.PSF.Init(psf)
     if not self.book then
         self.book = BuildBook()
         local ev = self.book

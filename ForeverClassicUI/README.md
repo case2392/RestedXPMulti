@@ -21,7 +21,7 @@ the report one click away:
 - a **welcome window** the first time it runs on an account (`/cui welcome`
   brings it back), which explains the two things worth reporting: something
   that looks wrong, and a window that is still the modern one because that
-  part is not built yet (the talent tree, anything past level 25). It has
+  part is not built yet (anything past level 25). It has
   buttons to open the report and to take a screenshot, and two boxes to
   copy from: the page to paste it on, and an address to email it to
   instead. The report carries every open window and can run past what a
@@ -160,9 +160,12 @@ usually enough to rebuild that window in the classic style.
   from `C_SpellBook`; each button is a secure action button, so left
   click casts and dragging puts the spell on a bar (cast attributes are
   only written out of combat and caught up afterwards). Blizzard's window
-  is resized and its shell faded, its page moved out of reach; on the
-  talents page the retail size comes back until talents get their classic
-  version. The cooldown swirls are only redrawn while the book is
+  is claimed through the shared shell (`PlayerSpells.lua`: resized to
+  384x512, its metal frame, title, buttons and portrait faded, all
+  remembered once and put back once), its page moved out of reach; when
+  the talents page comes up the talents part takes the claim over, and
+  when neither page is up the retail window comes back. The cooldown
+  swirls are only redrawn while the book is
   actually open: `SPELL_UPDATE_COOLDOWN` storms in combat — every cast,
   every global cooldown — and sweeping twelve buttons each time was work
   nobody could see. On top of that this client keeps cooldown times
@@ -170,6 +173,44 @@ usually enough to rebuild that window in the classic style.
   addon: the call throws rather than returning anything. The first
   refusal turns the swirl off for the session, says so once and puts it
   in the status line, instead of erroring on every spell of every update.
+- **Talents** (`Talents.lua`) — Forever's talents page is retail's talent
+  frame with Forever's own trees on it: three trees side by side on a
+  1212px canvas inside the 1618x883 spell window, 40px square nodes on a
+  60px grid, thin retail arrows between them, animated class art behind,
+  a Primary/Secondary tab strip, a search box and filter, and "Apply
+  Changes" at the bottom. Era's was a 384x512 frame showing one tree at a
+  time, and that is what this part draws: the character sheet's top art
+  and `UI-TalentFrame-BotLeft/BotRight` below, the player's portrait in
+  the ring, "Talents" over the top, the tree's name and points spent in
+  the `Common-Input-Border` box under the title (264x20 at 73,-46),
+  "Talent Points: N" in the bar above the tabs, the three trees as bottom
+  tabs, and Era's scroll frame (296 wide at 23,-77) with the tree's own
+  painting behind the talents (`Interface\TalentFrame\<Class><Tree>-*`,
+  cut as Era cut it: 256+44 wide, 256+75 tall; matched to Forever's tree
+  by name, by Era's tab order otherwise, plain floor if the file is
+  missing). Blizzard's talent buttons stay Blizzard's — clicking still
+  learns through Forever's code, tooltips are theirs — and are moved
+  rather than rebuilt: their anchors on `ButtonsParent` are read once,
+  sorted into trees by column (Forever's columns are 60px apart, its
+  trees 224px), and the chosen tree's nodes re-anchored onto Era's grid
+  (centred, first tier 36px down) while the other trees are parked 2000px
+  outside; `ButtonsParent` itself is resized to the viewport and made to
+  clip its children, and a scroll bar of ours moves the tree when it is
+  taller than the viewport. Each node's retail art (square border,
+  shadow, sheen, rank number) is faded and Era's drawn on the node: the
+  empty slot, the quickslot ring, the rank box with the rank in it — grey
+  and boxless when locked, green while there are ranks to buy, gold when
+  maxed. Branches and arrows are ours, cut from `UI-TalentBranches` and
+  `UI-TalentArrows` with Era's texcoords and drawn from each node's own
+  `visibleEdges` (straight down, across, or round a corner the way Era
+  went; gold where the edge is active, grey where not); retail's arrows
+  are faded and kept faded through their own redraws. Forever's Apply
+  Changes button is kept and moved into Era's points bar; its search box
+  is faded and made unclickable; its Primary/Secondary buttons go to the
+  right edge where Era 1.15 kept its spec tabs; the rest of its furniture
+  (headers, dividers, labels) is faded. The window round it is the shared
+  shell, claimed while the page is up. Everything is remembered once and
+  put back when the page changes or the part is switched off.
 - **Professions window** — Forever's professions window
   (`ProfessionsFrame`, the professions micro button) becomes the same Era
   384x512 book as the spellbook while its overview page is up, the way

@@ -198,6 +198,71 @@ end
 
 local saved = setmetatable({}, {__mode = "k"})
 
+--------------------------------------------------------------------------
+-- Era's bottom tab (the spellbook's and the talent frame's). Era's own
+-- spellbook tab files are not Era's on Forever (its copy of
+-- UI-SpellBook-Tab-Unselected draws as a retail metal box), so the tab is
+-- built from the character sheet's tab art, which the client still
+-- renders right: cut into three (20px ends of a 64px image) so the middle
+-- stretches to whatever the label needs.
+--------------------------------------------------------------------------
+
+local TAB_ART = "Interface\\PaperDollInfoFrame\\UI-Character-InActiveTab"
+local TAB_GLOW = "Interface\\PaperDollInfoFrame\\UI-Character-Tab-Highlight"
+local TAB_HEIGHT, TAB_END, TAB_PAD, TAB_MIN = 32, 20, 44, 84
+
+local function TabPiece(tab, l, r)
+    local t = tab:CreateTexture(nil, "BACKGROUND")
+    t:SetTexture(TAB_ART)
+    t:SetSize(TAB_END, TAB_HEIGHT)
+    t:SetTexCoord(l, r, 0, 1)
+    return t
+end
+
+function ns.BuildEraTab(parent, text)
+    local t = CreateFrame("Button", nil, parent)
+    t:SetHeight(TAB_HEIGHT)
+    t:SetFrameLevel(parent:GetFrameLevel() + 2)
+    t.Left = TabPiece(t, 0, 0.15625)
+    t.Middle = TabPiece(t, 0.15625, 0.84375)
+    t.Right = TabPiece(t, 0.84375, 1)
+    t.Left:SetPoint("TOPLEFT", t, "TOPLEFT", 0, 0)
+    t.Right:SetPoint("TOPRIGHT", t, "TOPRIGHT", 0, 0)
+    t.Middle:ClearAllPoints()
+    t.Middle:SetPoint("TOPLEFT", t.Left, "TOPRIGHT", 0, 0)
+    t.Middle:SetPoint("BOTTOMRIGHT", t.Right, "BOTTOMLEFT", 0, 0)
+    t.Text = t:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+    t.Text:SetPoint("CENTER", t, "CENTER", 0, 2)
+    t.Text:SetText(text)
+    local width = TAB_MIN
+    if t.Text.GetStringWidth then width = math.max(TAB_MIN, t.Text:GetStringWidth() + TAB_PAD) end
+    t:SetWidth(width)
+    if HasFile(TAB_GLOW) then
+        t:SetHighlightTexture(TAB_GLOW, "ADD")
+        local hl = t:GetHighlightTexture()
+        if hl then
+            hl:ClearAllPoints()
+            hl:SetPoint("TOPLEFT", t, "TOPLEFT", 3, 5)
+            hl:SetPoint("BOTTOMRIGHT", t, "BOTTOMRIGHT", -3, 0)
+        end
+    end
+    return t
+end
+
+-- Era lifted the selected tab onto its own art; that file is one of the
+-- ones Forever did not keep, so the selected tab is told apart the other
+-- Era way (white text, button disabled), as the character sheet does.
+function ns.SetEraTabSelected(tab, selected)
+    tab.selected = selected
+    if selected then
+        if tab.Disable then tab:Disable() end
+        tab.Text:SetTextColor(1, 1, 1)
+    else
+        if tab.Enable then tab:Enable() end
+        tab.Text:SetTextColor(1, 0.82, 0)
+    end
+end
+
 function ns.EraPanelRing(panel, tex, on)
     if not tex or not tex.SetPoint or not panel or not panel.ring then return end
     if on then

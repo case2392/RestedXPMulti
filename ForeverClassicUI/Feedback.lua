@@ -45,7 +45,7 @@ local WELCOME_LINES = {
     "Forever is in beta and so is this addon. Two things are worth a report, and both take the same minute:",
     "",
     "|cffffd100Something looks wrong.|r A frame in the wrong place, art that did not load, an error on screen.",
-    "|cffffd100A window is still the modern one.|r Whole parts are not built yet, because they cannot be seen without a character who has reached them: the talent tree, and anything past level 25. A screenshot of that window is what gets it built.",
+    "|cffffd100A window is still the modern one.|r Whole parts are not built yet, because they cannot be seen without a character who has reached them: anything past level 25. A screenshot of that window is what gets it built.",
     "",
     "To send either one:",
     "",

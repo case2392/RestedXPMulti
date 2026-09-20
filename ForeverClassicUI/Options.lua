@@ -11,6 +11,7 @@ local LABELS = {
     party = "Classic party frames (UI-PartyFrame art, 70x8 bars, small pet frames)",
     charsheet = "Classic character sheet (Era paper doll, reputation, skills, honor, currency and statistics, tabs along the bottom)",
     spellbook = "Classic spellbook (Era book, 12 spells a page, skill line tabs on the right)",
+    talents = "Classic talents (Era's talent frame: one tree at a time, its painting behind, branches and arrows, tabs along the bottom)",
     professions = "Classic professions window (Era book, the professions as rows down the page)",
     questlog = "Classic quest log (Era parchment panel on the quest list in Forever's map window)",
     collections = "Classic framing on the Appearances window (Era parchment panel; Era had no transmog)",

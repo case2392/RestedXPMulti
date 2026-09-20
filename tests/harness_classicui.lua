@@ -66,7 +66,7 @@ local function Region(kind, init)
     function r:RemoveMaskTexture(m) self.maskRemoved = m end
     function r:SetShown(v) self.shown = v and true or false end
     -- read-back API used by /cui dump
-    function r:GetObjectType() return self.kind end
+    function r:GetObjectType() return self.objectType or self.kind end
     function r:GetSize() return self.width, self.height end
     function r:GetName() return self.name end
     function r:GetNumPoints() return #self.anchors end
@@ -175,6 +175,9 @@ local function Frame(name)
     function f:GetScale() return self.scale or 1 end
     function f:SetCooldown(s, d) self.cooldown = {s, d} end
     function f:RegisterForClicks(...) self.clicks = {...} end
+    function f:SetClipsChildren(v) self.clips = v and true or false end
+    function f:DoesClipChildren() return self.clips == true end
+    function f:EnableMouseWheel(v) self.wheel = v end
     -- children/regions are whatever tables hang off the frame by key
     function f:GetRegions()
         local t = {}
@@ -753,6 +756,111 @@ local function NewWorld(opts)
             _G.GetUIPanelAttribute = function(frame, name) if frame == psf and name == "width" then return 809 end end
             return psf
             end
+            -- Forever's talents page: retail's talent frame (TalentFrameBase, C_Traits nodes with
+            -- edges) laid out as three trees side by side on a 1212px canvas, 40px nodes on a 60px
+            -- grid. Positions and children are from a 0.7.14 report of a level 10 orc hunter.
+            function w.LoadTalents(psf)
+            local tf = Frame("TalentsFrame"); tf.parent = psf; tf:SetSize(1212, 681); tf:SetPoint("BOTTOM", psf, "BOTTOM", 0, 4); tf.level = 100
+            tf.Background = Region("Texture", {atlas = "Talents-Background-c60", layer = "BACKGROUND"})
+            tf.ClassBackground = Region("Texture", {atlas = "talent-background-hunter", layer = "BACKGROUND"})
+            tf.BackgroundBorder = Region("Texture", {atlas = "Talents-inner-frame-c60", layer = "OVERLAY"})
+            tf.FullMask = Region("MaskTexture", {atlas = "talents-animations-mask-full"})
+            tf.UnspentText = Region("FontString"); tf.UnspentText:SetText("Unspent Talents [3]")
+            tf.AnimationHolder = Frame("AnimationHolder"); tf.AnimationHolder.parent = tf
+            local bp = Frame("ButtonsParent"); bp.parent = tf; bp.level = 1098
+            bp:SetPoint("TOPLEFT", tf, "TOPLEFT", 0, 0); bp:SetPoint("BOTTOMRIGHT", tf, "BOTTOMRIGHT", 0, 40); bp:SetSize(1212, 641)
+            tf.ButtonsParent = bp
+            tf.SearchBox = Frame("SearchBox"); tf.SearchBox.objectType = "EditBox"; tf.SearchBox.parent = tf
+            tf.ApplyButton = Frame("ApplyButton"); tf.ApplyButton.objectType = "Button"; tf.ApplyButton.parent = tf
+            tf.ApplyButton:SetText("Apply Changes"); tf.ApplyButton:SetSize(140, 30); tf.ApplyButton:SetPoint("BOTTOM", tf, "BOTTOM", 0, 10)
+            tf.SpecTabs = Frame("SpecTabs"); tf.SpecTabs.parent = tf
+            for i, name in ipairs({"Primary", "Secondary"}) do
+                local b = Frame(name); b.objectType = "Button"; b.parent = tf.SpecTabs; b:SetText(name); b:SetSize(90, 24)
+                b:SetPoint("TOPLEFT", tf.SpecTabs, "TOPLEFT", (i - 1) * 92, 0)
+                tf.SpecTabs[name] = b
+            end
+            tf.Header1 = Frame("Header1"); tf.Header1.parent = tf; tf.Header1.Name = Region("FontString"); tf.Header1.Name:SetText("Beast Mastery")
+            tf.byID = {}
+            local function Node(name, id, x, y, opts)
+                local b = Frame(name); b.objectType = "Button"; b.parent = bp; b:SetSize(40, 40)
+                b:SetPoint("CENTER", bp, "TOPLEFT", x, -y)
+                b.Icon = Region("Texture", {file = opts.icon or 136076, layer = "BORDER"})
+                b.Shadow = Region("Texture", {atlas = "talents-node-square-shadow", layer = "BACKGROUND"})
+                b.StateBorder = Region("Texture", {atlas = opts.state == 5 and "talents-node-square-green" or "talents-node-square-locked", layer = "ARTWORK"})
+                b.SpendText = Region("FontString"); b.SpendText:SetText(opts.rank and opts.rank > 0 and tostring(opts.rank) or "")
+                b.SpendTextShadow1 = Region("FontString"); b.BorderSheenMask = Region("MaskTexture")
+                b.nodeInfo = {ID = id, posX = x * 10, posY = y * 10, currentRank = opts.rank or 0, maxRanks = opts.max or 1,
+                              ranksPurchased = opts.rank or 0, isVisible = true, visibleEdges = {}}
+                b.nodeID = id
+                function b:GetNodeInfo() return self.nodeInfo end
+                function b:GetNodeID() return self.nodeID end
+                b.state = opts.state or 2
+                function b:GetVisualState() return self.state end
+                b.updates = 0
+                function b:FullUpdate() self.updates = self.updates + 1 end
+                bp[name] = b; tf.byID[id] = b
+                return b
+            end
+            local n = {}
+            -- Beast Mastery, as the report had it
+            n.DA = Node("Deadly Aspects", 101, 173, 220, {state = 6, rank = 1, max = 1})
+            n.IRP = Node("Improved Revive Pet", 102, 293, 280, {state = 5, rank = 0, max = 1, icon = 132163})
+            n.BS = Node("Bestial Swiftness", 103, 173, 340, {state = 5, rank = 0, max = 3})
+            n.UF = Node("Unleashed Fury", 104, 233, 340, {state = 5, rank = 0, max = 5})
+            n.IMP = Node("Improved Mend Pet", 105, 113, 400, {state = 4})
+            n.FER = Node("Ferocity", 106, 233, 400, {state = 2, max = 5})
+            n.SH = Node("Summon Hawk", 107, 293, 400, {state = 2})
+            n.SB = Node("Spirit Bond", 108, 113, 460, {state = 2})
+            n.INT = Node("Intimidation", 109, 173, 460, {state = 2})
+            n.BD = Node("Bestial Discipline", 110, 293, 460, {state = 2})
+            n.FRZ = Node("Frenzy", 111, 233, 520, {state = 2, icon = 134296})
+            n.BW = Node("Bestial Wrath", 112, 173, 580, {state = 2, icon = 132127})
+            -- Marksmanship and Survival, further right on the same canvas
+            n.MM1 = Node("Lethal Shots", 201, 517, 220, {state = 5, max = 5})
+            n.MM2 = Node("Efficiency", 202, 577, 340, {state = 2})
+            n.MM3 = Node("Aimed Shot", 203, 637, 340, {state = 2})
+            n.SV1 = Node("Monster Slaying", 301, 921, 220, {state = 5})
+            n.SV2 = Node("Savage Strikes", 302, 981, 280, {state = 2})
+            tf.nodes = n
+            tf.edges = {}
+            local function Edge(a, b, active)
+                local e = Frame(nil); e.parent = bp; e.objectType = "Frame"
+                e.Line = Region("Line", {atlas = "talents-arrow-line-gray"}); e.ArrowHead = Region("Texture", {atlas = "talents-arrow-head-gray"})
+                function e:GetStartButton() return a end
+                function e:GetEndButton() return b end
+                function e:UpdateState() self.alpha = 1; self.stateUpdates = (self.stateUpdates or 0) + 1 end
+                table.insert(a.nodeInfo.visibleEdges, {targetNode = b.nodeID, type = 0, visualStyle = 1, isActive = active})
+                bp["edge" .. #tf.edges + 1] = e; tf.edges[#tf.edges + 1] = e
+                return e
+            end
+            Edge(n.DA, n.BS, true); Edge(n.DA, n.IRP, true); Edge(n.BS, n.UF, false); Edge(n.BS, n.INT, false)
+            Edge(n.UF, n.FER, false); Edge(n.FER, n.FRZ, false); Edge(n.INT, n.BW, false); Edge(n.IRP, n.SH, false)
+            Edge(n.MM1, n.MM2, false); Edge(n.SV1, n.SV2, false)
+            tf.treeCurrencyInfo = {{traitCurrencyID = 1, quantity = 3, maxQuantity = 4, spent = 1}}
+            function tf:GetTalentButtonByNodeID(id) return self.byID[id] end
+            function tf:UpdateAllTalentButtonPositions()
+                for _, b in pairs(self.nodes) do b:ClearAllPoints(); b:SetPoint("CENTER", bp, "TOPLEFT", b.nodeInfo.posX / 10, -b.nodeInfo.posY / 10) end
+            end
+            function tf:UpdatePadding() bp:ClearAllPoints(); bp:SetPoint("TOPLEFT", tf, "TOPLEFT", 0, 0); bp:SetPoint("BOTTOMRIGHT", tf, "BOTTOMRIGHT", 0, 40) end
+            function tf:UpdateTreeCurrencyInfo() self.currencyUpdates = (self.currencyUpdates or 0) + 1 end
+            function tf:UpdateAllButtons() for _, b in pairs(self.nodes) do b:FullUpdate() end end
+            function tf:LoadTalentTreeInternal() self:UpdateAllTalentButtonPositions() end
+            function tf:InstantiateTalentButton() end
+            function tf:Show() if not self.shown then self.shown = true; if self.scripts and self.scripts.OnShow then self.scripts.OnShow(self) end end end
+            function tf:Hide() if self.shown then self.shown = false; if self.scripts and self.scripts.OnHide then self.scripts.OnHide(self) end end end
+            tf.shown = false
+            psf.TalentsFrame = tf
+            _G.UnitClass = function() return "Hunter", "HUNTER", 3 end
+            _G.GetSpecializationInfoForClassID = function(classID, i) local names = {"Beast Mastery", "Marksmanship", "Survival"}; if names[i] then return 250 + i, names[i], "", 132000 + i end end
+            _G.SetPortraitTexture = function(tex, unit) tex.portraitUnit = unit end
+            local prevFile = _G.GetFileIDFromPath
+            _G.GetFileIDFromPath = function(p)
+                if p:find("HunterSurvival") then return nil end
+                if p:find("TalentFrame") or p:find("TALENTFRAME") or p:find("Common%-Input") then return 136900 end
+                return prevFile(p)
+            end
+            return tf
+            end
             -- professions window: Forever's ProfessionsFrame (overview page with five cards, crafting page, side tabs)
             function w.LoadProfessionsBook()
             local pb = Frame("ProfessionsFrame"); pb:SetSize(673, 594); pb.level = 1
@@ -1065,7 +1173,7 @@ local function NewWorld(opts)
 
     -- load the addon
     local ns = {}
-    for _, file in ipairs({"Core.lua", "EraPanel.lua", "Nameplates.lua", "CastBar.lua", "Combo.lua", "UnitFrames.lua", "PartyFrames.lua", "CharacterSheet.lua", "CharacterLists.lua", "SpellBook.lua", "Professions.lua", "QuestLog.lua", "Collections.lua", "Guild.lua", "ActionBars.lua", "Minimap.lua", "Tracker.lua", "Options.lua", "Probe.lua", "Feedback.lua"}) do
+    for _, file in ipairs({"Core.lua", "EraPanel.lua", "PlayerSpells.lua", "Nameplates.lua", "CastBar.lua", "Combo.lua", "UnitFrames.lua", "PartyFrames.lua", "CharacterSheet.lua", "CharacterLists.lua", "SpellBook.lua", "Talents.lua", "Professions.lua", "QuestLog.lua", "Collections.lua", "Guild.lua", "ActionBars.lua", "Minimap.lua", "Tracker.lua", "Options.lua", "Probe.lua", "Feedback.lua"}) do
         local chunk, err = loadfile(root .. "/ForeverClassicUI/" .. file)
         assert(chunk, err)
         chunk("ForeverClassicUI", ns)
@@ -2211,6 +2319,114 @@ do
 end
 
 --------------------------------------------------------------------------
+-- 5b. Talents: Era's talent frame on Forever's talents page
+--------------------------------------------------------------------------
+do
+    local w = NewWorld({style = "6", forever = true})
+    local ta, sb = w.ns.modules.talents, w.ns.modules.spellbook
+    check(ta.mode == "waiting" and ta.watcher ~= nil, "talents: waits for Blizzard_PlayerSpells like the book")
+    local psf = w.LoadPlayerSpells()
+    local tf = w.LoadTalents(psf)
+    ta.watcher:Fire("ADDON_LOADED", "Blizzard_PlayerSpells")
+    sb.watcher:Fire("ADDON_LOADED", "Blizzard_PlayerSpells")
+    check(ta.mode == "restyled" and sb.mode == "restyled" and ta.frame ~= nil and ta.frame.parent == psf and ta.frame.shown == false, "talents: built once Forever's talent frame exists, hidden until the page is up")
+    local bp, n = tf.ButtonsParent, tf.nodes
+    -- the window opens on the talents page
+    psf.SpellBookFrame:Hide()
+    tf:Show()
+    psf:Show()
+    local frame, controls = ta.frame, ta.frame.controls
+    check(ta.applied == true and frame.shown == true and controls.shown == true and w.ns.PSF.Owner() == "talents", "talents: the page claims the window")
+    check(psf.width == 384 and psf.height == 512 and psf.NineSlice.alpha == 0 and psf.TitleContainer.alpha == 0 and psf.CloseButton.mouse == false, "talents: Era's 384x512 window, retail shell faded")
+    check(psf.PortraitContainer.portrait.alpha == 0 and frame.portrait.portraitUnit == "player" and frame.portrait.width == 60 and frame.portrait.anchors[1][4] == 8 and frame.portrait.anchors[1][5] == -7, "talents: retail's spec icon faded, the player's own portrait in the ring as Era had it")
+    check(frame.art[1].texture == "Interface\\PaperDollInfoFrame\\UI-Character-General-TopLeft" and frame.art[3].texture == "Interface\\TALENTFRAME\\UI-TalentFrame-BotLeft" and frame.art[3].anchors[1][1] == "BOTTOMLEFT" and frame.art[3].anchors[1][4] == 2 and frame.art[3].anchors[1][5] == -1, "talents: Era's frame art, the character sheet's top and the talent frame's bottom")
+    check(controls.title.text == "Talents" and controls.title.anchors[1][5] == -18 and controls.close.anchors[1][3] == "TOPRIGHT" and controls.close.anchors[1][4] == -44, "talents: Era's title and close button")
+    -- three trees, sorted out of one canvas, the one with points in it up first
+    check(#ta.trees == 3 and ta.tree == 1 and #ta.trees[1].nodes == 12 and #ta.trees[2].nodes == 3 and #ta.trees[3].nodes == 2, "talents: three trees told apart by column, Beast Mastery (with the point in it) shown first")
+    local t1, t2, t3 = controls.tabs[1], controls.tabs[2], controls.tabs[3]
+    check(t1.shown and t1.Text.text == "Beast Mastery" and t2.Text.text == "Marksmanship" and t3.Text.text == "Survival" and t1.enabled == false and t1.Text.textColor[1] == 1 and t1.Text.textColor[2] == 1 and t2.enabled ~= false, "talents: the trees as Era's bottom tabs, the shown one white and disabled")
+    check(t1.anchors[1][1] == "BOTTOMLEFT" and t1.anchors[1][4] == 20 and t1.anchors[1][5] == 45 and t2.anchors[1][2] == t1 and t2.anchors[1][4] == 4, "talents: tabs along the foot of the frame")
+    check(controls.box.text.text == "Beast Mastery: 1" and controls.box.anchors[1][4] == 73 and controls.box.anchors[1][5] == -46 and controls.box.left.texture == "Interface\\Common\\Common-Input-Border", "talents: the tree's name and points spent in Era's box under the title")
+    check(controls.points.text == "Talent Points: 3" and controls.points.shown ~= false, "talents: unspent points from Forever's tree currency")
+    -- the canvas becomes Era's viewport and clips
+    check(bp.anchors[1][1] == "TOPLEFT" and bp.anchors[1][2] == frame.view and bp.width == 296 and bp.height == 328 and bp.clips == true, "talents: ButtonsParent resized to Era's 296x328 viewport and clipping its children")
+    check(frame.view.anchors[1][4] == 23 and frame.view.anchors[1][5] == -77 and frame.view.width == 296 and frame.view.height == 328, "talents: the viewport where Era's scroll frame was")
+    check(frame.view.topLeft.texture == "Interface\\TalentFrame\\HunterBeastMastery-TopLeft" and frame.view.topRight.texture == "Interface\\TalentFrame\\HunterBeastMastery-TopRight" and frame.view.topRight.width == 44 and frame.view.bottomLeft.height == 75 and frame.view.topLeft.shown ~= false, "talents: the tree's own painting behind it, cut as Era cut it")
+    -- nodes on Era's grid: the tree centred in the viewport, first tier 36px down
+    local da, bw, mm1 = n.DA, n.BW, n.MM1
+    check(da.anchors[1][1] == "CENTER" and da.anchors[1][2] == bp and da.anchors[1][3] == "TOPLEFT" and da.anchors[1][4] == 118 and da.anchors[1][5] == -36, "talents: the first talent centred on its column 36px under the top")
+    check(bw.anchors[1][4] == 118 and bw.anchors[1][5] == -396 and n.IRP.anchors[1][4] == 238 and n.IRP.anchors[1][5] == -96, "talents: Forever's 60px grid kept, the tree just moved")
+    check(mm1.anchors[1][4] == 2088 and n.SV1.anchors[1][4] > 4000, "talents: the other trees parked outside the clipped viewport")
+    -- each node in Era's dress
+    local oda, obs, ofrz = ta.own[da], ta.own[n.BS], ta.own[n.FRZ]
+    check(da.StateBorder.alpha == 0 and da.Shadow.alpha == 0 and da.SpendText.alpha == 0 and da.SpendTextShadow1.alpha == 0 and da.Icon.alpha == 1, "talents: retail's square border, shadow and rank number faded, the icon kept")
+    check(oda.slot.texture == "Interface\\Buttons\\UI-EmptySlot-White" and oda.ring.texture == "Interface\\Buttons\\UI-Quickslot2" and math.abs(oda.ring.width - 64 * 40 / 37) < 0.01 and oda.rankBorder.texture == "Interface\\TalentFrame\\TalentFrame-RankBorder" and oda.rankBorder.anchors[1][3] == "BOTTOMRIGHT", "talents: Era's empty slot, quickslot ring and rank box on each talent")
+    check(oda.rank.text == "1" and oda.rank.textColor[1] == 1 and oda.rank.textColor[2] == 0.82 and oda.slot.vertex[1] == 1 and oda.slot.vertex[2] == 0.82, "talents: a maxed talent: gold rank, gold slot")
+    check(obs.rank.text == "0" and obs.rank.textColor[2] == 1 and obs.rank.textColor[1] == 0.1 and obs.slot.vertex[2] == 1 and obs.rankBorder.shown == true, "talents: a talent with ranks to buy: green rank and slot")
+    check(ofrz.slot.vertex[1] == 0.5 and ofrz.rankBorder.shown == false and ofrz.rank.shown == false, "talents: a locked talent: grey slot and no rank box until a point is in it")
+    -- Era's branches and arrows from the nodes' own edges, retail's arrows faded
+    local lines = ta.lines
+    check(lines ~= nil and lines.parent == bp and lines.usedBranches == 10 and lines.usedArrows == 8 and ta.branches == 8, "talents: eight edges drawn: bars between the talents, an arrow into each unlocked one, a corner for the diagonal")
+    local gold, grey = 0, 0
+    for i = 1, lines.usedArrows do if lines.arrows[i].texcoord[3] == 0 then gold = gold + 1 else grey = grey + 1 end end
+    check(gold == 2 and grey == 6 and lines.arrows[1].texture == "Interface\\TalentFrame\\UI-TalentArrows" and lines.branches[1].texture == "Interface\\TalentFrame\\UI-TalentBranches", "talents: gold where the talent is learned, grey where it is not, from Era's two files")
+    local vertical
+    for i = 1, lines.usedBranches do local b = lines.branches[i]; if b.width == 32 and b.height == 80 and b.anchors[1][4] == 102 and b.anchors[1][5] == -56 then vertical = b end end
+    check(vertical ~= nil and vertical.texcoord[1] == 0 and vertical.texcoord[2] == 0.125, "talents: the bar from the first talent's foot to the next tier, 32 wide like Era's tile")
+    check(tf.edges[1].alpha == 0 and tf.edges[3].alpha == 0, "talents: retail's arrows faded")
+    tf.edges[1]:UpdateState()
+    check(tf.edges[1].alpha == 0 and tf.edges[1].stateUpdates == 1, "talents: and faded again after Blizzard redraws one")
+    -- Forever's furniture: page art faded, search box dead, Apply Changes kept in Era's bar
+    check(tf.Background.alpha == 0 and tf.ClassBackground.alpha == 0 and tf.BackgroundBorder.alpha == 0 and tf.UnspentText.alpha == 0 and tf.Header1.alpha == 0, "talents: Forever's backgrounds, borders, labels and tree headers faded")
+    check(tf.SearchBox.alpha == 0 and tf.SearchBox.mouse == false and tf.SpecTabs.alpha == 1 and tf.AnimationHolder.alpha == 1, "talents: the search box faded and unclickable, the tab strip and animation holder left alone")
+    local ab = tf.ApplyButton
+    check(ab.alpha == 1 and ab.anchors[1][1] == "RIGHT" and ab.anchors[1][2] == controls and ab.anchors[1][3] == "BOTTOMRIGHT" and ab.anchors[1][4] == -120 and ab.anchors[1][5] == 94 and ab.width == 110 and ab.height == 22, "talents: Apply Changes moved into Era's points bar and sized to fit")
+    check(controls.points.anchors[1][2] == ab and controls.points.anchors[1][3] == "LEFT" and controls.points.anchors[1][4] == -8, "talents: the points text to its left")
+    local pri, sec = tf.SpecTabs.Primary, tf.SpecTabs.Secondary
+    check(pri.anchors[1][2] == controls and pri.anchors[1][3] == "TOPRIGHT" and pri.anchors[1][4] == -32 and (pri.anchors[1][5] == -65 or pri.anchors[1][5] == -95) and sec.anchors[1][3] == "TOPRIGHT" and sec.anchors[1][5] ~= pri.anchors[1][5], "talents: Forever's Primary/Secondary buttons at the right edge, where Era 1.15 kept its spec tabs")
+    -- scrolling: the tree is taller than the viewport
+    local slider = controls.slider
+    check(slider.minmax[1] == 0 and slider.minmax[2] == 104 and slider.shown ~= false, "talents: a scroll bar for the 104px the tree overruns Era's viewport by")
+    slider.scripts.OnValueChanged(slider, 50)
+    check(ta.scroll == 50 and da.anchors[1][5] == 14 and bw.anchors[1][5] == -346, "talents: scrolling moves the tree up under the clip")
+    slider.scripts.OnValueChanged(slider, 0)
+    -- Blizzard laying the nodes out again, and a node redrawing itself
+    tf:UpdateAllTalentButtonPositions()
+    check(da.anchors[1][4] == 118 and da.anchors[1][5] == -36 and mm1.anchors[1][4] == 2088, "talents: Forever's own relayout undone")
+    tf:UpdatePadding()
+    check(bp.anchors[1][2] == frame.view and bp.width == 296, "talents: and its own re-anchoring of the canvas")
+    n.BS.state = 6; n.BS.nodeInfo.currentRank = 3; n.BS.nodeInfo.ranksPurchased = 3
+    n.BS:FullUpdate()
+    check(obs.rank.text == "3" and obs.slot.vertex[1] == 1 and obs.slot.vertex[2] == 0.82 and controls.box.text.text == "Beast Mastery: 4", "talents: a talent maxed out goes gold and the points spent follow")
+    -- another tree
+    t3.scripts.OnClick(t3)
+    check(ta.tree == 3 and controls.box.text.text == "Survival: 0" and t3.enabled == false and t1.enabled ~= false and n.SV1.anchors[1][4] == 118 and n.SV1.anchors[1][5] == -36 and da.anchors[1][4] < -1000, "talents: the Survival tab brings its tree in and parks Beast Mastery")
+    check(ta.treeArt == "HunterSurvival" and ta.treeArtMissing == true and frame.view.topLeft.shown == false and frame.view.floor ~= nil and ta:Status():find("file missing", 1, true), "talents: a tree whose painting this client lacks gets the plain floor, and the status says so")
+    check(lines.usedBranches == 3 and lines.usedArrows == 1 and slider.minmax[2] == 0, "talents: one diagonal edge in the small tree (a bar, a corner, a bar, an arrow), nothing to scroll")
+    t2.scripts.OnClick(t2)
+    check(ta.tree == 2 and frame.view.topLeft.texture == "Interface\\TalentFrame\\HunterMarksmanship-TopLeft" and frame.view.topLeft.shown == true and n.MM1.anchors[1][4] == 88, "talents: Marksmanship with its own painting, its narrower tree centred")
+    t1.scripts.OnClick(t1)
+    -- the page changes: everything of Forever's back, the book takes the window
+    tf:Hide()
+    check(ta.applied == false and frame.shown == false and controls.shown == false and w.ns.PSF.Owner() == nil and psf.width == 809 and psf.NineSlice.alpha == 1, "talents: leaving the page puts the window back")
+    check(da.anchors[1][2] == bp and da.anchors[1][4] == 173 and da.anchors[1][5] == -220 and da.StateBorder.alpha == 1 and da.SpendText.alpha == 1 and oda.slot.shown == false and oda.rankBorder.shown == false, "talents: the nodes back where Forever had them, in Forever's dress")
+    check(bp.anchors[1][2] == tf and bp.anchors[2][1] == "BOTTOMRIGHT" and bp.width == 1212 and bp.clips == false and tf.Background.alpha == 1 and tf.SearchBox.alpha == 1 and tf.SearchBox.mouse ~= false and tf.edges[1].alpha == 1, "talents: the canvas, page art, search box and retail arrows back")
+    check(ab.anchors[1][2] == tf and ab.anchors[1][1] == "BOTTOM" and ab.width == 140 and pri.anchors[1][2] == tf.SpecTabs and psf.PortraitContainer.portrait.alpha == 1, "talents: Apply Changes, the spec buttons and the portrait back")
+    psf.SpellBookFrame:Show()
+    check(w.ns.PSF.Owner() == "spellbook" and psf.width == 384 and sb.book.shown == true and psf.PortraitContainer.portrait.width == 58, "talents: the book page claims the window in turn")
+    psf.SpellBookFrame:Hide()
+    tf:Show()
+    check(w.ns.PSF.Owner() == "talents" and psf.width == 384 and frame.shown == true and psf.PortraitContainer.portrait.alpha == 0 and da.anchors[1][4] == 118, "talents: and hands it back when the talents page returns")
+    -- off and on
+    w.slash("talents off")
+    check(ta.mode == "off" and frame.shown == false and w.ns.PSF.Owner() == nil and psf.width == 809 and da.anchors[1][4] == 173 and bp.clips == false and ab.width == 140, "talents off: Forever's page as it was")
+    w.slash("talents on")
+    check(ta.mode == "restyled" and frame.shown == true and psf.width == 384 and da.anchors[1][4] == 118 and w.ns.PSF.Owner() == "talents", "talents on: Era's frame again")
+    check(ta:Status():find("3 trees", 1, true) and ta:Status():find("Beast Mastery (4)", 1, true), "talents: status names the trees and their points")
+    check(#w.ns.errors == 0 and #w.blizzErrors == 0, "talents: no errors")
+end
+
+--------------------------------------------------------------------------
 -- 5. Client with no nameplate driver at all
 --------------------------------------------------------------------------
 do
@@ -2236,13 +2452,13 @@ do
     check(w.ns.dbLoaded == true and w.ns.db.logins == 2, "reload: saved file found, login count raised")
     check(w.ns.db.unitframes == false and w.ns.modules.unitframes.mode == "off" and w.ns.modules.minimap.mode == "off", "reload: parts turned off stay off")
     check(w.ns.db.castbar == true and w.ns.modules.castbar.mode == "restyled", "reload: the part turned back on is on")
-    check(Printed("off (saved): nameplates, combo, unitframes, party, charsheet, spellbook, professions, questlog, collections, guild, actionbars, minimap, tracker"), "reload: login line names the parts that are off")
+    check(Printed("off (saved): nameplates, combo, unitframes, party, charsheet, spellbook, talents, professions, questlog, collections, guild, actionbars, minimap, tracker"), "reload: login line names the parts that are off")
     check(not Printed("coming soon"), "reload: nothing is held back, so the login line does not say so")
     check(w.ns.optionsPanel.checks.unitframes.checked == false and w.ns.optionsPanel.checks.castbar.checked == true, "reload: options boxes match the saved settings")
     w.slash("probe")
     check(w.ns.lastProbe and w.ns.lastProbe:find("saved file found at login: yes  logins counted in it: 2", 1, true) and w.ns.lastProbe:find("settings came from: saved file", 1, true), "reload: probe reports the saved file and login count")
     -- the same on a client that never writes the SavedVariables file: the CVar copy carries the settings
-    check(cvarCopy == "nameplates=0,castbar=1,combo=0,unitframes=0,party=0,charsheet=0,spellbook=0,professions=0,questlog=0,collections=0,guild=0,actionbars=0,minimap=0,tracker=0,bugbutton=1,welcomed=0", "reload: every change is also written to the settings CVar, with the feedback flags")
+    check(cvarCopy == "nameplates=0,castbar=1,combo=0,unitframes=0,party=0,charsheet=0,spellbook=0,talents=0,professions=0,questlog=0,collections=0,guild=0,actionbars=0,minimap=0,tracker=0,bugbutton=1,welcomed=0", "reload: every change is also written to the settings CVar, with the feedback flags")
     w = NewWorld({style = "6", forever = true, cvars = {ForeverClassicUI_settings = cvarCopy}})
     check(w.ns.dbLoaded == false and w.ns.db.unitframes == false and w.ns.db.castbar == true and w.ns.modules.unitframes.mode == "off" and w.ns.modules.castbar.mode == "restyled", "no saved file: settings restored from the CVar copy")
     check(w.ns.dbSource:find("cvar fallback", 1, true) and w.ns.optionsPanel.checks.minimap.checked == false, "no saved file: probe names the fallback, boxes match")

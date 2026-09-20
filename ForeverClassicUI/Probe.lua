@@ -101,6 +101,13 @@ local CLASSIC_TEXTURES = {
     "Interface\\Buttons\\UI-SpellbookIcon-NextPage-Up",
     "Interface\\TALENTFRAME\\UI-TalentFrame-BotLeft",
     "Interface\\TALENTFRAME\\UI-TalentFrame-BotRight",
+    -- Era's talent frame: the branches and arrows between talents, the
+    -- rank box on each, and one tree painting to show the set is there
+    "Interface\\TalentFrame\\UI-TalentBranches",
+    "Interface\\TalentFrame\\UI-TalentArrows",
+    "Interface\\TalentFrame\\TalentFrame-RankBorder",
+    "Interface\\TalentFrame\\HunterBeastMastery-TopLeft",
+    "Interface\\Buttons\\UI-EmptySlot-White",
     "Interface\\Buttons\\UI-Button-Borders2",
     "Interface\\TargetingFrame\\UI-PartyFrame-Flash",
     -- Era's quest log is its own 384x512 book, nothing to do with the map
