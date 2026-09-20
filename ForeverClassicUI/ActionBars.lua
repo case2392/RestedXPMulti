@@ -391,9 +391,17 @@ local function SkinMicroButton(btn, name)
     if not HasFile(up) then return false end
     local own = Own(btn)
     M.inSkin = true
+    -- A micro button is a protected frame: its art can be changed at any
+    -- time, but its size cannot be touched in combat. This runs from the
+    -- hover and pushed hooks too, which fire mid-fight, so the resize
+    -- waits and the row is laid out again when combat ends.
     -- 31 wide: the menu lays its children out with a -5 overlap, so 31
     -- gives Era's 26px stride; the 29px art is centred in it
-    btn:SetSize(MICRO_W + 2, MICRO_H)
+    if InCombat() then
+        M.pending = true
+    else
+        btn:SetSize(MICRO_W + 2, MICRO_H)
+    end
     btn:SetNormalTexture(up)
     btn:SetPushedTexture(down)
     if disabled and btn.SetDisabledTexture then btn:SetDisabledTexture(disabled) end
@@ -837,12 +845,17 @@ function M.Layout()
     M.HideDividers()
     LayoutPageNumber(art)
     LayoutBags(art)        -- first: the micro menu is scaled to the room left of the bags
-    LayoutMicroMenu(art)
     LayoutStatusBars(art)
+    -- The micro buttons and the menu they sit in are protected frames, so
+    -- moving, resizing or re-levelling them in combat is refused by the
+    -- client and prints "Interface action failed because of an AddOn".
+    -- They go with the rest of the protected work: skipped while fighting,
+    -- caught up the moment combat ends.
     if InCombat() then
         M.pending = true
     else
         M.pending = nil
+        LayoutMicroMenu(art)
         ProtectedLayout(art)
     end
     M.inLayout = nil

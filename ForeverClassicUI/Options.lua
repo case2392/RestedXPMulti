@@ -77,36 +77,64 @@ local function MakeAllButton(parent, anchor, text, on)
     return b
 end
 
+-- The page is taller than the AddOns window and there are more parts every
+-- release, so the whole lot lives on a scroll child rather than running off
+-- the bottom of the frame. If the scroll template is missing the content
+-- goes straight on the panel, exactly as it used to.
+local function BuildScroll(parent)
+    local ok, scroll = pcall(CreateFrame, "ScrollFrame", nil, parent, "UIPanelScrollFrameTemplate")
+    if not ok or not scroll or not scroll.SetScrollChild then return nil, parent end
+    scroll:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, -8)
+    -- room on the right for the scroll bar the template brings
+    scroll:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT", -28, 8)
+    local ok2, content = pcall(CreateFrame, "Frame", nil, scroll)
+    if not ok2 or not content then return nil, parent end
+    content:SetSize(600, 10)
+    scroll:SetScrollChild(content)
+    -- the canvas is sized by the Settings frame, not by us: the child
+    -- follows whatever width it ends up with so the labels wrap to fit
+    local function Fit()
+        local w = scroll.GetWidth and scroll:GetWidth()
+        if type(w) == "number" and w > 1 then content:SetWidth(w) end
+    end
+    if scroll.HookScript then scroll:HookScript("OnSizeChanged", Fit) end
+    Fit()
+    return scroll, content
+end
+
 function ns.BuildOptionsPanel()
     if panel or not CreateFrame then return panel end
     panel = CreateFrame("Frame", "ForeverClassicUIOptionsPanel")
     panel.name = "Classic UI for Forever"
 
-    local title = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
+    local scroll, body = BuildScroll(panel)
+    panel.scroll, panel.body = scroll, body
+
+    local title = body:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
     title:SetPoint("TOPLEFT", 16, -16)
     title:SetText("Classic UI for Forever")
-    local sub = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+    local sub = body:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
     sub:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -6)
     sub:SetText("Tick what should look classic. Turning something off takes effect after /reload. Slash: /cui")
 
-    panel.selectAll = MakeAllButton(panel, nil, "Select all", true)
+    panel.selectAll = MakeAllButton(body, nil, "Select all", true)
     panel.selectAll:SetPoint("TOPLEFT", sub, "BOTTOMLEFT", 0, -8)
-    panel.deselectAll = MakeAllButton(panel, panel.selectAll, "Deselect all", false)
+    panel.deselectAll = MakeAllButton(body, panel.selectAll, "Deselect all", false)
 
     panel.checks = {}
     local y = -96
     for _, key in ipairs(ns.moduleOrder) do
-        local cb, rowHeight = MakeCheck(panel, y, key)
+        local cb, rowHeight = MakeCheck(body, y, key)
         panel.checks[key] = cb
         y = y - rowHeight
     end
 
     -- not a look setting: the bug-report button and the window that
     -- explains how to send one
-    local bug = CreateFrame("CheckButton", nil, panel, "UICheckButtonTemplate")
+    local bug = CreateFrame("CheckButton", nil, body, "UICheckButtonTemplate")
     bug:SetPoint("TOPLEFT", 16, y)
     bug:SetSize(26, 26)
-    local bugLabel = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+    local bugLabel = body:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
     bugLabel:SetPoint("LEFT", bug, "RIGHT", 4, 0)
     bugLabel:SetWidth(LABEL_WIDTH)
     bugLabel:SetJustifyH("LEFT")
@@ -117,7 +145,7 @@ function ns.BuildOptionsPanel()
     panel.bugButton = bug
     y = y - 30
 
-    local howto = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+    local howto = CreateFrame("Button", nil, body, "UIPanelButtonTemplate")
     howto:SetPoint("TOPLEFT", 20, y - 4)
     howto:SetSize(200, 24)
     howto:SetText("How to report a bug")
@@ -126,14 +154,14 @@ function ns.BuildOptionsPanel()
     end)
     y = y - 34
 
-    local status = panel:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
+    local status = body:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
     status:SetPoint("TOPLEFT", 20, y - 8)
     status:SetWidth(LABEL_WIDTH + 30)
     status:SetJustifyH("LEFT")
     if status.SetWordWrap then status:SetWordWrap(true) end
     panel.status = status
 
-    local probe = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+    local probe = CreateFrame("Button", nil, body, "UIPanelButtonTemplate")
     probe:SetPoint("TOPLEFT", status, "BOTTOMLEFT", 0, -16)
     probe:SetSize(200, 24)
     probe:SetText("Support report (copy & send)")
@@ -141,11 +169,22 @@ function ns.BuildOptionsPanel()
         if ns.ShowReport then ns.SafeCall("report", ns.ShowReport) end
     end)
 
-    local reload = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+    local reload = CreateFrame("Button", nil, body, "UIPanelButtonTemplate")
     reload:SetPoint("LEFT", probe, "RIGHT", 8, 0)
     reload:SetSize(120, 24)
     reload:SetText("Reload UI")
     reload:SetScript("OnClick", function() if ReloadUI then ReloadUI() end end)
+
+    -- the child has to be as tall as what is on it or there is nothing to
+    -- scroll; the status text grows as parts are added, so it is measured
+    -- again whenever that text is rebuilt
+    panel.contentBottom = y - 70
+    function panel.FitContent()
+        if body == panel or not body.SetHeight then return end
+        local extra = panel.status and panel.status.GetStringHeight and panel.status:GetStringHeight() or 0
+        body:SetHeight(math.max(10, -panel.contentBottom + (extra or 0)))
+    end
+    panel.FitContent()
 
     function panel.RefreshStatus()
         local lines = {}
@@ -162,6 +201,7 @@ function ns.BuildOptionsPanel()
             lines[#lines + 1] = ("%d error(s) this session - send the probe report."):format(#ns.errors)
         end
         panel.status:SetText(table.concat(lines, "\n"))
+        if panel.FitContent then panel.FitContent() end
     end
 
     function panel.Refresh()

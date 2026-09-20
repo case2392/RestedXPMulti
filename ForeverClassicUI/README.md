@@ -260,6 +260,11 @@ usually enough to rebuild that window in the classic style.
   art, but it is Era's colours and it is the same at any size. If a
   scalable piece of classic art is ever confirmed to draw on this client,
   `EraPanel.lua` is the one place to swap it in.
+- **Options panel** — one checkbox per part with Select all / Deselect all,
+  the bug-report button, and a status block. It is all on a scroll child:
+  the list outgrew the AddOns window and was running off the bottom of the
+  page, so the panel scrolls instead, and the child is re-measured whenever
+  the status text is rebuilt.
 - **Action bars** — Era's whole bottom bar. The addon draws the 1024x53
   `UI-MainMenuBar-Dwarf` stone bar with the gryphon end caps along the
   bottom of the screen and moves Blizzard's pieces onto it: the twelve
@@ -281,7 +286,15 @@ usually enough to rebuild that window in the classic style.
   overlap, and they are stacked left over right — descending frame levels
   — so it is each button's trailing edge that goes under its neighbour,
   the way Era's own art interlocks, rather than the icon's middle. The
-  disabled Store button is hidden so it takes no slot.
+  disabled Store button is hidden so it takes no slot. Micro buttons are
+  protected frames, so their size, anchor and frame level are only touched
+  out of combat: the re-skin runs from the hover and pushed hooks, which
+  fire mid-fight, and a resize there is refused by the client with
+  "Interface action failed because of an AddOn". The row is laid out again
+  the moment combat ends. Blizzard's own layout still moves the bars
+  during a fight and they cannot be moved back until it is over, so the
+  bar can sit shifted for the rest of the fight; that part is the client's
+  lockdown, not something the addon can undo.
   Forever fades a micro button's own icon out under the mouse and
   cross-fades its modern hover art in, so with Era's glow in that art's
   place the icon vanished on hover; the icon is now held at full alpha

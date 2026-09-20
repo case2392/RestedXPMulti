@@ -1549,6 +1549,19 @@ do
     w.inCombat = true
     EditModeManagerFrame:UpdateBottomActionBarPositions()
     check(MainActionBar.anchors[1][2] == MicroMenuContainer and ab.pending == true and math.abs(c2.scale - 0.8) < 0.001, "forever: in combat Blizzard's bar anchor stands, layout pending")
+    -- the micro buttons are protected too: moving, sizing or re-levelling
+    -- one in combat is refused and prints "Interface action failed"
+    local anchorsBefore = #CharacterMicroButton.anchors
+    local xBefore, levelBefore = CharacterMicroButton.anchors[1][4], CharacterMicroButton.level
+    CharacterMicroButton:SetSize(99, 99)
+    MicroMenuContainer:ClearAllPoints()
+    ab.Layout()
+    check(CharacterMicroButton.width == 99 and #MicroMenuContainer.anchors == 0, "forever: in combat the micro row is left alone, not resized or re-anchored")
+    CharacterMicroButton.scripts.OnEnter(CharacterMicroButton)
+    check(CharacterMicroButton.width == 99 and ab.pending == true, "forever: hovering a micro button in combat does not resize it either")
+    w.inCombat = false
+    ab.Layout()
+    check(CharacterMicroButton.width == 31 and math.abs(CharacterMicroButton.anchors[1][4] - xBefore) < 0.001 and #MicroMenuContainer.anchors > 0, "forever: the micro row is put back the moment combat ends")
     w.inCombat = false
     ab.waiter:Fire("PLAYER_REGEN_ENABLED")
     check(MainActionBar.anchors[1][2] == art and ab.pending == nil and MultiBarBottomLeft.anchors[1][1] == "BOTTOMRIGHT", "forever: bar anchors back on the art once combat ends")
