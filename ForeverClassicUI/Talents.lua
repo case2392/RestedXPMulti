@@ -110,6 +110,20 @@ local TREE_NAMES = {
 }
 M.TREE_NAMES = TREE_NAMES
 
+-- the retail spec IDs that are Era's trees, so a client in another
+-- language still keeps its own spec names (a druid's Guardian is not one)
+local SPEC_ART = {
+    [102] = "DruidBalance", [103] = "DruidFeralCombat", [105] = "DruidRestoration",
+    [253] = "HunterBeastMastery", [254] = "HunterMarksmanship", [255] = "HunterSurvival",
+    [62] = "MageArcane", [63] = "MageFire", [64] = "MageFrost",
+    [65] = "PaladinHoly", [66] = "PaladinProtection", [70] = "PaladinCombat",
+    [256] = "PriestDiscipline", [257] = "PriestHoly", [258] = "PriestShadow",
+    [259] = "RogueAssassination", [260] = "RogueCombat", [261] = "RogueSubtlety",
+    [262] = "ShamanElementalCombat", [263] = "ShamanEnhancement", [264] = "ShamanRestoration",
+    [265] = "WarlockCurses", [266] = "WarlockSummoning", [267] = "WarlockDestruction",
+    [71] = "WarriorArms", [72] = "WarriorFury", [73] = "WarriorProtection"
+}
+
 -- Era's TALENT_BRANCH_TEXTURECOORDS / TALENT_ARROW_TEXTURECOORDS: [1] gold, [-1] grey
 local BRANCH = {
     up = {[1] = {0.12890625, 0.25390625, 0, 0.484375}, [-1] = {0.12890625, 0.25390625, 0.515625, 1.0}},
@@ -434,20 +448,23 @@ end
 
 -- the trees' names: the client's spec names when they are the trees'
 -- (they are localised, so they come first), Era's own names otherwise.
--- A spec name counts only if it names one of Era's paintings, which
--- drops a retail druid's Guardian and Forever's class-named single spec.
+-- A spec name counts only if it is one of Era's trees, by its spec ID or
+-- by naming one of Era's paintings, which drops a retail druid's Guardian
+-- and Forever's class-named single spec. A class Era never had (no
+-- painting table) keeps whatever the client says.
 local function SpecNames()
     if M.names then return M.names end
     local class, classID = PlayerClass()
     local names = {}
-    if classID and GetSpecializationInfoForClassID and class and TREE_ART[class] then
+    local eraClass = class and TREE_ART[class] ~= nil
+    if classID and GetSpecializationInfoForClassID then
         local okn, count = pcall(GetNumSpecializationsForClassID or function() return MAX_TREES end, classID)
         count = (okn and tonumber(count)) or MAX_TREES
         local seen = {}
         for i = 1, math.max(count, MAX_TREES) do
-            local ok, _, name = pcall(GetSpecializationInfoForClassID, classID, i)
+            local ok, specID, name = pcall(GetSpecializationInfoForClassID, classID, i)
             if ok and type(name) == "string" and name ~= "" then
-                local art = ArtByName(class, name)
+                local art = eraClass and (SPEC_ART[tonumber(specID) or 0] or ArtByName(class, name)) or name
                 if art and not seen[art] then
                     seen[art] = true
                     names[#names + 1] = name
@@ -455,9 +472,9 @@ local function SpecNames()
             end
         end
     end
-    if #names < MAX_TREES then
+    if eraClass and #names < MAX_TREES then
         names = {}
-        for k, n in ipairs(class and TREE_NAMES[class] or {}) do names[k] = n end
+        for k, n in ipairs(TREE_NAMES[class]) do names[k] = n end
     end
     -- a full set is kept; anything less is looked up again next time
     if #names >= MAX_TREES then M.names = names end
@@ -516,21 +533,34 @@ end
 -- knob and the two arrow buttons are made plain, from Era's art
 local SCROLL_STEP = 30
 
+-- Era's UIPanelScrollBarButton: 18x16, the 32x32 file cropped to its arrow
 local function ScrollButton(s, up)
     local b = CreateFrame("Button", nil, s)
-    b:SetSize(16, 16)
+    b:SetSize(18, 16)
     local base = up and ART.scrollUp or ART.scrollDown
     b:SetNormalTexture(base .. "Up")
     b:SetPushedTexture(base .. "Down")
     if b.SetDisabledTexture then b:SetDisabledTexture(base .. "Disabled") end
     b:SetHighlightTexture(base .. "Highlight", "ADD")
-    if up then b:SetPoint("BOTTOM", s, "TOP", 0, -2) else b:SetPoint("TOP", s, "BOTTOM", 0, 2) end
+    for _, get in ipairs({"GetNormalTexture", "GetPushedTexture", "GetDisabledTexture", "GetHighlightTexture"}) do
+        local ok, t = pcall(function() return b[get] and b[get](b) end)
+        if ok and type(t) == "table" and t.SetTexCoord then t:SetTexCoord(0.2, 0.8, 0.25, 0.75) end
+    end
+    if up then b:SetPoint("BOTTOM", s, "TOP", 0, 0) else b:SetPoint("TOP", s, "BOTTOM", 0, 0) end
     b:SetScript("OnClick", function()
         local lo, hi = s:GetMinMaxValues()
         local v = s:GetValue() + (up and -SCROLL_STEP or SCROLL_STEP)
         s:SetValue(math.max(lo, math.min(hi, v)))
     end)
     return b
+end
+
+-- Era greys the arrow at the end the bar has reached
+local function UpdateArrows(s)
+    local lo, hi = s:GetMinMaxValues()
+    local v = s:GetValue() or 0
+    if s.up and s.up.SetEnabled then s.up:SetEnabled(v > (lo or 0)) end
+    if s.down and s.down.SetEnabled then s.down:SetEnabled(v < (hi or 0)) end
 end
 
 local function BuildSlider(controls, view)
@@ -540,8 +570,9 @@ local function BuildSlider(controls, view)
         pcall(s.SetThumbTexture, s, ART.knob)
         local thumb = s.GetThumbTexture and select(2, pcall(s.GetThumbTexture, s))
         if type(thumb) == "table" and thumb.SetSize then
-            thumb:SetSize(16, 24)
-            if thumb.SetTexCoord then thumb:SetTexCoord(0.125, 0.875, 0.125, 0.875) end
+            -- Era's UIPanelScrollBarTemplate thumb: 18x24, cropped like the buttons
+            thumb:SetSize(18, 24)
+            if thumb.SetTexCoord then thumb:SetTexCoord(0.2, 0.8, 0.125, 0.875) end
         end
     end
     s:SetWidth(16)
@@ -554,10 +585,12 @@ local function BuildSlider(controls, view)
     s.up = ScrollButton(s, true)
     s.down = ScrollButton(s, false)
     s:SetScript("OnValueChanged", function(self, value)
+        UpdateArrows(self)
         if M.settingScroll then return end
         M.scroll = math.floor((tonumber(value) or 0) + 0.5)
         if M.applied then M.Reflow() end
     end)
+    UpdateArrows(s)
     return s
 end
 
@@ -1206,6 +1239,7 @@ local function UpdateScroll(tree)
     slider:SetMinMaxValues(0, range)
     slider:SetValue(M.scroll)
     M.settingScroll = nil
+    UpdateArrows(slider)
     slider:SetShown(range > 0)
 end
 

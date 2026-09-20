@@ -2401,11 +2401,15 @@ do
     -- scrolling: the tree is taller than the viewport
     local slider = controls.slider
     check(slider.minmax[1] == 0 and slider.minmax[2] == 104 and slider.shown ~= false, "talents: a scroll bar for the 104px the tree overruns Era's viewport by")
-    check(slider.template == nil and slider.up ~= nil and slider.up.NormalTexture.texture == "Interface\\Buttons\\UI-ScrollBar-ScrollUpButton-Up" and slider.down.NormalTexture.texture == "Interface\\Buttons\\UI-ScrollBar-ScrollDownButton-Up" and slider.up.anchors[1][1] == "BOTTOM" and slider.up.anchors[1][3] == "TOP", "talents: the scroll bar is Era's own, built plain with its arrow buttons, not the client's template")
+    check(slider.template == nil and slider.up ~= nil and slider.up.NormalTexture.texture == "Interface\\Buttons\\UI-ScrollBar-ScrollUpButton-Up" and slider.down.NormalTexture.texture == "Interface\\Buttons\\UI-ScrollBar-ScrollDownButton-Up" and slider.up.anchors[1][1] == "BOTTOM" and slider.up.anchors[1][3] == "TOP" and slider.up.anchors[1][5] == 0, "talents: the scroll bar is Era's own, built plain with its arrow buttons, not the client's template")
+    check(slider.up.width == 18 and slider.up.height == 16 and slider.up.NormalTexture.texcoord[1] == 0.2 and slider.up.NormalTexture.texcoord[4] == 0.75 and slider.up.PushedTexture.texcoord[2] == 0.8 and slider.down.DisabledTexture.texcoord[3] == 0.25, "talents: the arrows cropped from their files as Era's template crops them")
+    check(slider.up.enabled == false and slider.down.enabled ~= false, "talents: at the top, the up arrow is greyed")
     slider.down.scripts.OnClick(slider.down)
-    check(slider.value == 30, "talents: the down arrow scrolls a step")
+    slider.scripts.OnValueChanged(slider, slider.value)
+    check(slider.value == 30 and slider.up.enabled ~= false and slider.down.enabled ~= false, "talents: the down arrow scrolls a step, both arrows live")
     slider.down.scripts.OnClick(slider.down); slider.down.scripts.OnClick(slider.down); slider.down.scripts.OnClick(slider.down)
-    check(slider.value == 104, "talents: and stops at the end")
+    slider.scripts.OnValueChanged(slider, slider.value)
+    check(slider.value == 104 and slider.down.enabled == false, "talents: and stops at the end, the down arrow greyed")
     slider.up.scripts.OnClick(slider.up)
     check(slider.value == 74, "talents: the up arrow scrolls back")
     slider:SetValue(0)
@@ -2470,7 +2474,14 @@ do
     w.slash("talents off")
     w.slash("talents on")
     check(t1.Text.text == "Beast Mastery" and t2.Text.text == "Marksmanship" and t3.Text.text == "Survival", "talents: a spec with no Era painting is skipped, the rest keep the client's names")
+    -- a German client: its own names, told apart by spec ID
+    _G.GetSpecializationInfoForClassID = function(classID, i) local specs = {{253, "Tierherrschaft"}, {254, "Treffsicherheit"}, {255, "\195\156berleben"}}; if specs[i] then return specs[i][1], specs[i][2], "", 132000 + i end end
+    w.slash("talents off")
+    w.slash("talents on")
+    check(t1.Text.text == "Tierherrschaft" and t3.Text.text == "\195\156berleben" and frame.view.topLeft.texture == "Interface\\TalentFrame\\HunterBeastMastery-TopLeft", "talents: a client in another language keeps its own spec names, the paintings by spec")
     _G.GetSpecializationInfoForClassID = specs
+    w.slash("talents off")
+    w.slash("talents on")
     check(ta:Status():find("3 trees", 1, true) and ta:Status():find("Beast Mastery (4)", 1, true), "talents: status names the trees and their points")
     check(#w.ns.errors == 0 and #w.blizzErrors == 0, "talents: no errors")
 end
