@@ -7,8 +7,10 @@ syncs guide progress between party members, so you and a friend can level
 together in lockstep. (Also in this repo: [RestedXP Professions](RXPProfessions/),
 a second companion that keeps your professions leveled while you follow the
 guides, [Forever Classic UI](ForeverClassicUI/), which brings classic-look nameplates,
-cast bars and combo points back on World of Warcraft Forever, and
-[RIP Bozo](RIPBozo/), hardcore death roasts.)
+cast bars and combo points back on World of Warcraft Forever,
+[RIP Bozo](RIPBozo/), hardcore death roasts, and
+[Adventure Plates](AdventurePlates/), Final Fantasy XIV-style adventurer
+plates you can open on any player who has the addon.)
 
 - **Sync prompt** — when you join a party with another RestedXP Party Sync user, both of
   you get a popup: *"«Name» is also using RestedXP Party Sync. Sync your RestedXP
