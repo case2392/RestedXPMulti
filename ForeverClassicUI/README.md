@@ -293,15 +293,23 @@ usually enough to rebuild that window in the classic style.
   "Interface action failed because of an AddOn". The row is laid out again
   the moment combat ends. Blizzard's own layout still moves the bars
   during a fight and they cannot be moved back until it is over, so the
-  bar can sit shifted for the rest of the fight; that part is the client's
-  lockdown, not something the addon can undo. Since 0.7.13 the addon
-  records where Blizzard put each bar when that happens and carries it in
-  the report, so the anchor can be read off a report taken after the fight
-  rather than needing a command typed during one. If Blizzard derives the
-  main bar's position from the micro menu, moving the Era micro row to
-  where Blizzard expects would make both layouts agree and the jump would
-  stop - at the cost of the micro buttons sitting slightly off Era's exact
-  x=552. That trade needs the real numbers first.
+  bar can sit shifted for the rest of the fight. 0.7.13 made the addon
+  record where Blizzard put each bar when that happens and carry it in the
+  report, and a report came back with the answer:
+  `MainActionBar.BOTTOMRIGHT = MicroMenuContainer.BOTTOMLEFT -4.5,-4`.
+  `MicroMenuContainer` is a frame this addon places, so since 0.7.15 it is
+  put where that sum lands the bar on Era's 8,4 - Blizzard's own layout
+  now agrees with the classic one and the main bar no longer moves when
+  combat forbids moving it back. The micro buttons do not go with it:
+  `MicroMenu` is anchored to the bar art at Era's x=552, so the container
+  is only the hook Blizzard's arithmetic hangs off and has no look of its
+  own, and the container is widened leftwards so its right edge still
+  marks the end of the row for the bag bar. If those two offsets are ever
+  different on another build the cost is nil - the bar would simply jump
+  as it used to. The two bottom bars are a separate case and still move:
+  Blizzard anchors those straight to `UIParent` (`BOTTOM -233.3,+65.7` and
+  `BOTTOM +269.6,+65.7` on the client that reported it), with no frame of
+  ours in the sum to line up, so there is nothing to align them against.
   Forever fades a micro button's own icon out under the mouse and
   cross-fades its modern hover art in, so with Era's glow in that art's
   place the icon vanished on hover; the icon is now held at full alpha

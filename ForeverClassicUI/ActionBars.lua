@@ -75,6 +75,21 @@ local REAGENT_BUTTON, KEYRING_BUTTON = "CharacterReagentBag0Slot", "KeyRingButto
 -- The floor is how close they may get before the faces are unreadable;
 -- past that - far more buttons than Forever has - the row scales instead.
 local MICRO_MIN_STRIDE = 16
+-- Forever positions the main action bar off the micro menu's container:
+--   MainActionBar.BOTTOMRIGHT = MicroMenuContainer.BOTTOMLEFT -4.5,-4
+-- (read straight off a live client - the report records it). It re-applies
+-- that during combat, when a protected frame cannot be anchored back, which
+-- is why the bar jumped right mid-fight and stayed there until the fight
+-- ended. The container is ours to place, so it is put where that sum lands
+-- the bar exactly on Era's spot, and Blizzard's own layout then agrees with
+-- ours instead of fighting it.
+--
+-- The micro buttons do not move with it: MicroMenu is anchored to the bar
+-- art directly, so the container is only the hook Blizzard's arithmetic
+-- hangs off and has no look of its own. That also means these two numbers
+-- being wrong on some other build costs nothing visible - the bar would
+-- simply jump as it used to.
+local BLIZZ_MAIN_GAP_X, BLIZZ_MAIN_GAP_Y = -4.5, -4
 local XP_H, XP_TOP_H = 13, 8
 local BOTTOM_BAR_X, BOTTOM_BAR_Y = 6, 52
 -- the four stone strips: rows of the 256x256 image (Era's MainMenuBarTexture0..3)
@@ -530,15 +545,23 @@ local function LayoutMicroMenu(art)
     if menu and menu.SetSize then
         menu:SetSize(natural, MICRO_H)
         if menu.SetScale then menu:SetScale(scale) end
-        if container then
-            menu:ClearAllPoints()
-            menu:SetPoint("BOTTOMLEFT", container, "BOTTOMLEFT", 0, 0)
-        end
+        -- on the art, not on the container: the container is moved to suit
+        -- Blizzard's arithmetic and the buttons must not follow it
+        Anchor(menu, "BOTTOMLEFT", art, "BOTTOMLEFT", MICRO_X, MICRO_Y)
     end
     if container and container.SetPoint then
-        container:SetSize(natural * scale, MICRO_H * scale)
+        -- the left edge Blizzard measures the main bar from...
+        local mainWidth = BarSize(M.counts and M.counts.MainActionBar or 12, true)
+        local left = MAIN_BAR_X + mainWidth - BLIZZ_MAIN_GAP_X
+        local bottom = MAIN_BAR_Y - BLIZZ_MAIN_GAP_Y
+        -- ...and a width that keeps its right edge where the row really
+        -- ends, so the bag bar, which Blizzard hangs off that edge, is no
+        -- worse off in combat than it was before
+        local right = MICRO_X + natural * scale
+        container:SetSize(math.max(right - left, 1), MICRO_H * scale)
         container:ClearAllPoints()
-        container:SetPoint("BOTTOMLEFT", art, "BOTTOMLEFT", MICRO_X, MICRO_Y)
+        container:SetPoint("BOTTOMLEFT", art, "BOTTOMLEFT", left, bottom)
+        M.microAnchor = left
     end
 end
 

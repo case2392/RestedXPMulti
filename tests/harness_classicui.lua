@@ -1501,7 +1501,14 @@ do
     check(math.abs(c2.scale - 0.8) < 0.001 and math.abs(c2.anchors[1][4] - 42 / 0.8) < 0.001 and MainActionBar.width == 498, "forever: containers re-laid out after Blizzard's grid layout")
     local pn = MainActionBar.ActionBarPageNumber
     check(pn.anchors[1][2] == art and pn.anchors[1][4] == 506 and pn.anchors[1][5] == 3 and pn.Text.anchors[1][4] == 15 and pn.UpButton.NormalTexture.texture == "Interface\\MainMenuBar\\UI-MainMenu-ScrollUpButton-Up" and pn.UpButton.anchors[1][5] == 10, "forever: page number and classic arrows right of the buttons")
-    check(MicroMenuContainer.anchors[1][2] == art and MicroMenuContainer.anchors[1][4] == 552 and MicroMenuContainer.anchors[1][5] == 2 and MicroMenu.BorderArt.alpha == 0, "forever: micro menu on the bar's floor at 552, retail border gone")
+    -- the buttons sit at Era's 552 on the art; the container is placed to
+    -- suit Blizzard's arithmetic, not to be looked at
+    check(MicroMenu.anchors[1][2] == art and MicroMenu.anchors[1][4] == 552 and MicroMenu.anchors[1][5] == 2 and MicroMenu.BorderArt.alpha == 0, "forever: micro buttons on the bar's floor at 552, retail border gone")
+    -- Forever sets MainActionBar.BOTTOMRIGHT = MicroMenuContainer.BOTTOMLEFT -4.5,-4.
+    -- Put the container where that sum lands the bar on Era's 8,4 and the
+    -- two layouts agree, so nothing has to move when combat forbids it.
+    local cx, cy = MicroMenuContainer.anchors[1][4], MicroMenuContainer.anchors[1][5]
+    check(MicroMenuContainer.anchors[1][2] == art and math.abs((cx - 4.5 - 498) - 8) < 0.001 and math.abs((cy - 4) - 4) < 0.001, "forever: the container sits where Blizzard's own sum puts the main bar exactly on Era's spot")
     check(CharacterMicroButton.width == 31 and CharacterMicroButton.NormalTexture.texture == "Interface\\Buttons\\UI-MicroButtonCharacter-Up" and CharacterMicroButton.NormalTexture.texcoord[3] == 0.359375 and CharacterMicroButton.Background.alpha == 0 and CharacterMicroButton.Portrait.width == 18, "forever: character micro button classic with the small portrait")
     check(SpellbookMicroButton.NormalTexture.texture == "Interface\\Buttons\\UI-MicroButton-Spellbook-Up" and SpellbookMicroButton.HighlightTexture.texture == "Interface\\Buttons\\UI-MicroButton-Hilight" and ab.microSkinned == 12, "forever: every micro button classic")
     check(AchievementMicroButton.anchors == nil or #AchievementMicroButton.anchors == 0, "forever: a micro button parked outside the menu is not pulled into the row")
@@ -1516,7 +1523,10 @@ do
     -- full size - above the 16 floor, so nothing is scaled down
     local packed = (201 - 31) / 9
     check(StoreMicroButton.shown == false and ab.microShown == 10 and ProfessionMicroButton.anchors[1][2] == MicroMenu and math.abs(ProfessionMicroButton.anchors[1][4] - packed) < 0.001 and math.abs(MainMenuMicroButton.anchors[1][4] - 9 * packed) < 0.001, "forever: disabled Store button hidden, the ten others packed to fit the room")
-    check(math.abs(MicroMenu.width - 201) < 0.01 and MicroMenu.height == 37 and MicroMenu.scale == 1 and math.abs(MicroMenuContainer.width - 201) < 0.01 and MicroMenuContainer.height == 37 and MicroMenu.anchors[1][2] == MicroMenuContainer, "forever: the row fills the room at Era's full height rather than being scaled down")
+    check(math.abs(MicroMenu.width - 201) < 0.01 and MicroMenu.height == 37 and MicroMenu.scale == 1 and MicroMenuContainer.height == 37, "forever: the row fills the room at Era's full height rather than being scaled down")
+    -- the container is widened leftwards, so its right edge is still where
+    -- the row really ends and the bag bar hangs off the same place as before
+    check(math.abs((MicroMenuContainer.anchors[1][4] + MicroMenuContainer.width) - (552 + 201)) < 0.01, "forever: the container still ends where the micro row ends, so the bags are no worse off")
     check(CharacterMicroButton.level > ProfessionMicroButton.level and ProfessionMicroButton.level > MainMenuMicroButton.level, "forever: packed buttons stack left over right, so only trailing edges go under")
     UpdateMicroButtons()
     check(StoreMicroButton.shown == false and ab.microShown == 10, "forever: Store hidden again after Blizzard's micro button refresh")
@@ -1554,6 +1564,10 @@ do
     w.inCombat = true
     EditModeManagerFrame:UpdateBottomActionBarPositions()
     check(MainActionBar.anchors[1][2] == MicroMenuContainer and ab.pending == true and math.abs(c2.scale - 0.8) < 0.001, "forever: in combat Blizzard's bar anchor stands, layout pending")
+    -- and standing is now fine: Blizzard's own anchor puts it on Era's spot
+    local bx = MicroMenuContainer.anchors[1][4] + MainActionBar.anchors[1][4] - 498
+    local by = MicroMenuContainer.anchors[1][5] + MainActionBar.anchors[1][5]
+    check(math.abs(bx - 8) < 0.001 and math.abs(by - 4) < 0.001, "forever: Blizzard's in-combat anchor lands the bar on Era's 8,4 - the mid-fight jump is gone")
     -- nobody can type a command mid-fight, so where Blizzard put the bars
     -- is written down and carried in the report instead
     check(ab.combatAnchors ~= nil and ab.combatAnchors.MainActionBar == "BOTTOMRIGHT>MicroMenuContainer.BOTTOMLEFT -4.5,-4.0" and ab.combatAnchors.MultiBarBottomLeft ~= nil, "forever: the anchor Blizzard moved the bars to in combat is recorded")
