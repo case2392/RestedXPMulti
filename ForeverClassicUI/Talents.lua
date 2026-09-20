@@ -53,6 +53,8 @@ local ART = {
     scrollBar = "Interface\\PaperDollInfoFrame\\UI-Character-ScrollBar",
     inputBorder = "Interface\\Common\\Common-Input-Border",
     knob = "Interface\\Buttons\\UI-ScrollBar-Knob",
+    scrollUp = "Interface\\Buttons\\UI-ScrollBar-ScrollUpButton-",
+    scrollDown = "Interface\\Buttons\\UI-ScrollBar-ScrollDownButton-",
     closeUp = "Interface\\Buttons\\UI-Panel-MinimizeButton-Up",
     closeDown = "Interface\\Buttons\\UI-Panel-MinimizeButton-Down",
     closeHighlight = "Interface\\Buttons\\UI-Panel-MinimizeButton-Highlight",
@@ -91,6 +93,22 @@ local TREE_ART = {
     WARRIOR = {"WarriorArms", "WarriorFury", "WarriorProtection"}
 }
 M.TREE_ART = TREE_ART
+
+-- Era's tree names, in the same order: what the tabs say when Forever's
+-- spec names are not the trees' (Forever names a hunter's one spec
+-- "Hunter", and the retail client has no name for the other two)
+local TREE_NAMES = {
+    DRUID = {"Balance", "Feral Combat", "Restoration"},
+    HUNTER = {"Beast Mastery", "Marksmanship", "Survival"},
+    MAGE = {"Arcane", "Fire", "Frost"},
+    PALADIN = {"Holy", "Protection", "Retribution"},
+    PRIEST = {"Discipline", "Holy", "Shadow"},
+    ROGUE = {"Assassination", "Combat", "Subtlety"},
+    SHAMAN = {"Elemental", "Enhancement", "Restoration"},
+    WARLOCK = {"Affliction", "Demonology", "Destruction"},
+    WARRIOR = {"Arms", "Fury", "Protection"}
+}
+M.TREE_NAMES = TREE_NAMES
 
 -- Era's TALENT_BRANCH_TEXTURECOORDS / TALENT_ARROW_TEXTURECOORDS: [1] gold, [-1] grey
 local BRANCH = {
@@ -414,26 +432,35 @@ local function ArtByName(class, name)
     end
 end
 
--- the client's spec names, in order, as the trees' names. A class the
--- retail client gives more specs than Forever gives trees (a druid's
--- Guardian) loses the ones Era never had a tree for.
+-- the trees' names: the client's spec names when they are the trees'
+-- (they are localised, so they come first), Era's own names otherwise.
+-- A spec name counts only if it names one of Era's paintings, which
+-- drops a retail druid's Guardian and Forever's class-named single spec.
 local function SpecNames()
+    if M.names then return M.names end
     local class, classID = PlayerClass()
     local names = {}
-    if not classID or not GetSpecializationInfoForClassID then return names end
-    local okn, count = pcall(GetNumSpecializationsForClassID or function() return MAX_TREES end, classID)
-    count = (okn and tonumber(count)) or MAX_TREES
-    for i = 1, math.max(count, MAX_TREES) do
-        local ok, _, name = pcall(GetSpecializationInfoForClassID, classID, i)
-        if ok and type(name) == "string" and name ~= "" then names[#names + 1] = name end
-    end
-    if #names > MAX_TREES and class and TREE_ART[class] then
-        local kept = {}
-        for _, n in ipairs(names) do
-            if ArtByName(class, n) then kept[#kept + 1] = n end
+    if classID and GetSpecializationInfoForClassID and class and TREE_ART[class] then
+        local okn, count = pcall(GetNumSpecializationsForClassID or function() return MAX_TREES end, classID)
+        count = (okn and tonumber(count)) or MAX_TREES
+        local seen = {}
+        for i = 1, math.max(count, MAX_TREES) do
+            local ok, _, name = pcall(GetSpecializationInfoForClassID, classID, i)
+            if ok and type(name) == "string" and name ~= "" then
+                local art = ArtByName(class, name)
+                if art and not seen[art] then
+                    seen[art] = true
+                    names[#names + 1] = name
+                end
+            end
         end
-        if #kept >= MAX_TREES then names = kept end
     end
+    if #names < MAX_TREES then
+        names = {}
+        for k, n in ipairs(class and TREE_NAMES[class] or {}) do names[k] = n end
+    end
+    -- a full set is kept; anything less is looked up again next time
+    if #names >= MAX_TREES then M.names = names end
     return names
 end
 
@@ -483,23 +510,49 @@ local function Piece(parent, layer, path, w, h, point, rel, relPoint, x, y)
     return t
 end
 
+-- Era's scroll bar, built by hand: the client's UIPanelScrollBarTemplate
+-- is not Era's any more (its OnValueChanged scrolls its parent, which it
+-- expects to be a scroll frame, and errors on ours), so the slider, its
+-- knob and the two arrow buttons are made plain, from Era's art
+local SCROLL_STEP = 30
+
+local function ScrollButton(s, up)
+    local b = CreateFrame("Button", nil, s)
+    b:SetSize(16, 16)
+    local base = up and ART.scrollUp or ART.scrollDown
+    b:SetNormalTexture(base .. "Up")
+    b:SetPushedTexture(base .. "Down")
+    if b.SetDisabledTexture then b:SetDisabledTexture(base .. "Disabled") end
+    b:SetHighlightTexture(base .. "Highlight", "ADD")
+    if up then b:SetPoint("BOTTOM", s, "TOP", 0, -2) else b:SetPoint("TOP", s, "BOTTOM", 0, 2) end
+    b:SetScript("OnClick", function()
+        local lo, hi = s:GetMinMaxValues()
+        local v = s:GetValue() + (up and -SCROLL_STEP or SCROLL_STEP)
+        s:SetValue(math.max(lo, math.min(hi, v)))
+    end)
+    return b
+end
+
 local function BuildSlider(controls, view)
-    -- Era's scroll bar template may be gone on this client; without it
-    -- CreateFrame hands back a bare slider (or throws), so the thumb and
-    -- the direction are set whenever they are missing
-    local ok, s = pcall(CreateFrame, "Slider", nil, controls, "UIPanelScrollBarTemplate")
-    if not ok or not s then s = CreateFrame("Slider", nil, controls) end
-    local hasThumb = s.GetThumbTexture and select(2, pcall(s.GetThumbTexture, s))
-    if not hasThumb then
-        if s.SetOrientation then pcall(s.SetOrientation, s, "VERTICAL") end
-        if s.SetThumbTexture then pcall(s.SetThumbTexture, s, ART.knob) end
+    local s = CreateFrame("Slider", nil, controls)
+    if s.SetOrientation then pcall(s.SetOrientation, s, "VERTICAL") end
+    if s.SetThumbTexture then
+        pcall(s.SetThumbTexture, s, ART.knob)
+        local thumb = s.GetThumbTexture and select(2, pcall(s.GetThumbTexture, s))
+        if type(thumb) == "table" and thumb.SetSize then
+            thumb:SetSize(16, 24)
+            if thumb.SetTexCoord then thumb:SetTexCoord(0.125, 0.875, 0.125, 0.875) end
+        end
     end
     s:SetWidth(16)
     s:SetPoint("TOPLEFT", view, "TOPRIGHT", 6, -16)
     s:SetPoint("BOTTOMLEFT", view, "BOTTOMRIGHT", 6, 16)
     if s.SetValueStep then s:SetValueStep(1) end
+    if s.SetObeyStepOnDrag then pcall(s.SetObeyStepOnDrag, s, true) end
     s:SetMinMaxValues(0, 0)
     s:SetValue(0)
+    s.up = ScrollButton(s, true)
+    s.down = ScrollButton(s, false)
     s:SetScript("OnValueChanged", function(self, value)
         if M.settingScroll then return end
         M.scroll = math.floor((tonumber(value) or 0) + 0.5)
@@ -1310,6 +1363,7 @@ function M:Enable()
     local _, psf = TreeFrame()
     ns.PSF.Init(psf)
     self.mode = "restyled"
+    self.names = nil
     Hook()
     M.Apply()
 end

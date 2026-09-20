@@ -145,7 +145,7 @@ local function Frame(name)
         if not a then return nil end
         return a[1], a[2], a[3], a[4], a[5]
     end
-    function f:GetMinMaxValues() return self.minmax and unpack(self.minmax) or 0, 0 end
+    function f:GetMinMaxValues() if self.minmax then return self.minmax[1], self.minmax[2] end return 0, 0 end
     function f:GetValue() return self.value or 0 end
     function f:SetMinMaxValues(a, b) self.minmax = {a, b} end
     function f:SetValue(v) self.value = v end
@@ -295,8 +295,9 @@ local function NewWorld(opts)
     }
     if not opts.noClassicEnum then _G.Enum.NamePlateStyle.Classic = 6 end
 
-    _G.CreateFrame = function(_, name, parent)
+    _G.CreateFrame = function(_, name, parent, template)
         local f = Frame(name)
+        f.template = template
         table.insert(w.frames, f)
         -- a parented frame is a child the dump's GetChildren walk can see
         if type(parent) == "table" then f.parent = parent; parent["ownchild" .. #w.frames] = f end
@@ -2400,6 +2401,14 @@ do
     -- scrolling: the tree is taller than the viewport
     local slider = controls.slider
     check(slider.minmax[1] == 0 and slider.minmax[2] == 104 and slider.shown ~= false, "talents: a scroll bar for the 104px the tree overruns Era's viewport by")
+    check(slider.template == nil and slider.up ~= nil and slider.up.NormalTexture.texture == "Interface\\Buttons\\UI-ScrollBar-ScrollUpButton-Up" and slider.down.NormalTexture.texture == "Interface\\Buttons\\UI-ScrollBar-ScrollDownButton-Up" and slider.up.anchors[1][1] == "BOTTOM" and slider.up.anchors[1][3] == "TOP", "talents: the scroll bar is Era's own, built plain with its arrow buttons, not the client's template")
+    slider.down.scripts.OnClick(slider.down)
+    check(slider.value == 30, "talents: the down arrow scrolls a step")
+    slider.down.scripts.OnClick(slider.down); slider.down.scripts.OnClick(slider.down); slider.down.scripts.OnClick(slider.down)
+    check(slider.value == 104, "talents: and stops at the end")
+    slider.up.scripts.OnClick(slider.up)
+    check(slider.value == 74, "talents: the up arrow scrolls back")
+    slider:SetValue(0)
     slider.scripts.OnValueChanged(slider, 50)
     check(ta.scroll == 50 and da.anchors[1][5] == 14 and bw.anchors[1][5] == -346, "talents: scrolling moves the tree up under the clip")
     slider.scripts.OnValueChanged(slider, 0)
@@ -2451,6 +2460,17 @@ do
     check(ta.mode == "off" and frame.shown == false and w.ns.PSF.Owner() == nil and psf.width == 809 and da.anchors[1][4] == 173 and bp.clips == false and ab.width == 140, "talents off: Forever's page as it was")
     w.slash("talents on")
     check(ta.mode == "restyled" and frame.shown == true and psf.width == 384 and da.anchors[1][4] == 118 and w.ns.PSF.Owner() == "talents", "talents on: Era's frame again")
+    -- Forever names a hunter's one spec "Hunter" and has no name for the others: the tabs say what Era's said
+    local specs = _G.GetSpecializationInfoForClassID
+    _G.GetSpecializationInfoForClassID = function(classID, i) if i == 1 then return 251, "Hunter", "", 132001 end end
+    w.slash("talents off")
+    w.slash("talents on")
+    check(t1.Text.text == "Beast Mastery" and t2.Text.text == "Marksmanship" and t3.Text.text == "Survival" and controls.box.text.text == "Beast Mastery: 4" and ta:Status():find("Survival (0)", 1, true) ~= nil, "talents: Forever's spec names are not the trees', so Era's names are used")
+    _G.GetSpecializationInfoForClassID = function(classID, i) local names = {"Beast Mastery", "Guardian", "Marksmanship", "Survival"}; if names[i] then return 250 + i, names[i], "", 132000 + i end end
+    w.slash("talents off")
+    w.slash("talents on")
+    check(t1.Text.text == "Beast Mastery" and t2.Text.text == "Marksmanship" and t3.Text.text == "Survival", "talents: a spec with no Era painting is skipped, the rest keep the client's names")
+    _G.GetSpecializationInfoForClassID = specs
     check(ta:Status():find("3 trees", 1, true) and ta:Status():find("Beast Mastery (4)", 1, true), "talents: status names the trees and their points")
     check(#w.ns.errors == 0 and #w.blizzErrors == 0, "talents: no errors")
 end
