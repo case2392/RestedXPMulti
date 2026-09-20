@@ -40,7 +40,15 @@ local function Widget(kind)
     function f:CreateFontString() local r = Widget("FontString"); table.insert(self.children, r); return r end
     function f:CreateTexture() local r = Widget("Texture"); table.insert(self.children, r); return r end
     function f:GetFrameLevel() return 1 end
+    function f:GetEffectiveScale() return 1 end
+    function f:GetCenter() return 100, 100 end
+    function f:SetFacing(v) self.facing = v end
+    function f:SetCamDistanceScale(v) self.zoom = v end
     function f:SetUnit(u) if u == "badunit" then error("bad unit") end self.unit = u end
+    -- the metatable answers any capitalised key with a no-op, so these must not read through it
+    function f:SetNormalTexture(t) local r = rawget(self, "NormalTexture") or Widget("Texture"); r.texture = t; rawset(self, "NormalTexture", r) end
+    function f:SetPushedTexture(t) local r = rawget(self, "PushedTexture") or Widget("Texture"); r.texture = t; rawset(self, "PushedTexture", r) end
+    function f:SetHighlightTexture(t) local r = rawget(self, "HighlightTexture") or Widget("Texture"); r.texture = t; rawset(self, "HighlightTexture", r) end
     function f:SetMaxLetters(n) self.maxLetters = n end
     function f:RegisterEvent(e) self.events = self.events or {}; self.events[e] = true end
     setmetatable(f, {__index = function(_, k)
@@ -53,7 +61,7 @@ local function NewWorld(opts)
     opts = opts or {}
     printed, sent, timers = {}, {}, {}
     _G.print = function(...) local t = {} for i = 1, select("#", ...) do t[i] = tostring(select(i, ...)) end table.insert(printed, table.concat(t, " ")) end
-    _G.AdventurePlatesDB = opts.db
+    _G.AdventurePlatesDB = opts.db or (not opts.firstRun and {settings = {welcomed = true}} or nil)
     _G.CreateFrame = function(kind, name, parent, template)
         local f = Widget(kind)
         f.name, f.template, f.parent = name, template, parent
@@ -62,7 +70,13 @@ local function NewWorld(opts)
         return f
     end
     _G.UIParent = Widget("Frame")
+    _G.Minimap = Widget("Minimap")
     _G.UISpecialFrames = {}
+    _G.GetCursorPosition = function() return opts.cursorX or 0, opts.cursorY or 0 end
+    _G.GetBuildInfo = function() return "1.60.1", "69913", "Sep 17 2026", 16001 end
+    _G.SetPortraitTexture = function(tex, unit) tex.portraitUnit = unit end
+    _G.GetFileIDFromPath = function(p) if p:find("Spellbook") or p:find("Rotation") or p:find("Minimap") then return 136000 end end
+    _G.BackdropTemplateMixin = {}
     _G.GameTooltip = Widget("GameTooltip")
     _G.Settings = {
         RegisterCanvasLayoutCategory = function(frame, name) return {ID = "cat_" .. name, frame = frame} end,
@@ -110,17 +124,20 @@ local function NewWorld(opts)
         GetNumFriends = function() return opts.friends and #opts.friends or 0 end,
         GetFriendInfoByIndex = function(i) return {name = opts.friends[i]} end
     }
+    _G.__menus = {}
+    local menus = _G.__menus
     _G.Menu = opts.noMenu and nil or {
-        ModifyMenu = function(tag, fn) _G.__menus = _G.__menus or {}; _G.__menus[tag] = fn end
+        ModifyMenu = function(tag, fn) menus[tag] = fn end
     }
     local ns = {}
-    for _, f in ipairs({"Core.lua", "Comm.lua", "UI.lua", "Options.lua"}) do
+    for _, f in ipairs({"Core.lua", "Era.lua", "Comm.lua", "Report.lua", "UI.lua", "Options.lua"}) do
         local chunk = assert(loadfile(root .. "/AdventurePlates/" .. f))
         chunk("AdventurePlates", ns)
     end
     ns.OnEvent("ADDON_LOADED", "AdventurePlates")
     ns.OnEvent("PLAYER_LOGIN")
-    ns.slash = function(s) SlashCmdList["ADVENTUREPLATES"](s) end
+    local slash = SlashCmdList["ADVENTUREPLATES"]
+    ns.slash = function(s) slash(s) end
     return ns
 end
 
@@ -129,7 +146,7 @@ local function RunTimers() local t = timers; timers = {}; for _, x in ipairs(t) 
 -- 1. defaults, the plate and what the client says about the character
 do
     local ns = NewWorld({guildName = "Lotion Appreciation Club", guildRank = "Gold Member", titleID = 5})
-    check(_G.AdventurePlatesDB ~= nil and ns.db.settings.share == "everyone" and ns.db.settings.menu == true, "defaults: saved variables made, sharing on, menu on")
+    check(_G.AdventurePlatesDB ~= nil and ns.db.settings.share == "everyone" and ns.db.settings.menu == true and ns.db.settings.minimap == true, "defaults: saved variables made, sharing on, menu on, minimap button on")
     check(_G.__prefix == "ADVPLATE" and SlashCmdList.ADVENTUREPLATES ~= nil and _G.__registeredCategory ~= nil, "defaults: prefix registered, slash and options in place")
     local p = ns.MyPlate()
     check(ns.CharKey() == "Siggy-Firemaw" and ns.db.plates["Siggy-Firemaw"] == p, "plate: one plate per character on the account")
@@ -184,7 +201,7 @@ do
     local card = win.card
     check(card.name.text == "Bob" and card.title.text == "« Beast Whisperer »" and card.guild.text == "No guild" and card.line.text == "Level 60 Orc Hunter" and card.line.color[1] == 0.67, "card: name, title, guild line, level/race/class in the class colour")
     check(card.roles.dps.shown == true and card.roles.tank.shown == false and card.tags[1].label.text == "Hardcore / Survival" and card.tags[1].icon.shown == true and card.tags[2].icon.shown == false and card.tags[2].label.text == "", "card: roles and tags")
-    check(card.rows.weekends.cells[0].color[1] == 0.95 and card.rows.weekdays.cells[0].color[1] == 0.16 and card.rows.weekdays.now.shown == true and card.rows.weekends.now.shown == false, "card: weekend hours lit, weekdays dark, the current hour marked on a weekday")
+    check(card.rows.weekends.cells[0].color[1] == 0.95 and card.rows.weekdays.cells[0].color[1] == 0.55 and card.rows.weekdays.now.shown == true and card.rows.weekends.now.shown == false, "card: weekend hours lit, weekdays dark, the current hour marked on a weekday")
     check(card.motto.text == '"' .. string.rep("m", 160) .. '"' and card.edit.shown == false and card.ask.shown == true, "card: motto quoted and capped, Ask Again instead of Edit on someone else's plate")
     check(win.model.shown == false and win.classIcon.shown == true and win.classIcon.coords[1] == 0 and win.classNote.shown == true, "card: Bob is out of range, so his class icon stands in for the model")
     check(win.sub.text == "Bob - Firemaw", "card: the window says whose plate it is")
@@ -274,7 +291,7 @@ do
     check(ed.tagCount.text == "3/4", "editor: unticking frees a slot")
     ed.roles.tank:Click()
     ed.rows.weekdays[18]:Press(); ed.rows.weekdays[19]:Press(); ed.rows.weekdays[19]:Press(); ed.rows.weekends[0]:Press()
-    check(ed.rows.weekdays[18].fill.color[1] == 0.95 and ed.rows.weekdays[19].fill.color[1] == 0.16, "editor: hour cells toggle")
+    check(ed.rows.weekdays[18].fill.color[1] == 0.95 and ed.rows.weekdays[19].fill.color[1] == 0.55, "editor: hour cells toggle")
     check(ed.mottoCount.text == "31/160", "editor: the motto counter")
     ed.save:Press()
     local p = ns.db.plates["Siggy-Firemaw"]
@@ -322,6 +339,98 @@ do
     ns3.slash("bob")
     check(Printed("could not ask Bob-Firemaw"), "comm down: says so")
     check(#ns.errors == 0 and #ns3.errors == 0, "no errors")
+end
+
+-- 7. Era's page, the model controls, the minimap button, the welcome, the report
+do
+    local ns = NewWorld({firstRun = true, cursorX = 150, cursorY = 100})
+    -- a second world below replaces the globals, so keep this world's
+    local menus, minimap = _G.__menus, _G.Minimap
+    -- first run: the welcome, on Era's page
+    local welcome = ns.welcomeFrame
+    check(welcome ~= nil and welcome.shown == true and ns.db.settings.welcomed == false, "welcome: opens the first time")
+    check(welcome.pieces ~= nil and welcome.pieces.topLeft.texture == "Interface\\Spellbook\\UI-SpellbookPanel-TopLeft" and welcome.pieces.center.texture == "Interface\\Spellbook\\UI-SpellbookPanel-BotLeft" and welcome.disc.texture == "Interface\\Minimap\\UI-Minimap-Background" and welcome.portrait.portraitUnit == "player", "welcome: Era's spellbook page with the player's face in the ring")
+    check(welcome.body.text:find("Shobek", 1, true) ~= nil and welcome.body.text:find("/plate report", 1, true) ~= nil and welcome.body.text:find("classicuiforforever@gmail.com", 1, true) ~= nil, "welcome: credits Shobek and says how to report a bug or an idea")
+    welcome.close:Press()
+    check(welcome.shown == false and ns.db.settings.welcomed == true, "welcome: Got it is remembered")
+    local ns2 = NewWorld({db = _G.AdventurePlatesDB})
+    check(ns2.welcomeFrame == nil, "welcome: not again after a reload")
+    ns2.slash("welcome")
+    check(ns2.welcomeFrame ~= nil and ns2.welcomeFrame.shown == true, "welcome: /plate welcome brings it back")
+    ns2.welcomeFrame.report:Press()
+    check(ns2.reportFrame ~= nil and ns2.reportFrame.shown == true and ns2.reportFrame.box.text:find("Adventure Plates 1.1.0 report", 1, true) ~= nil, "welcome: Report a bug opens the report")
+    -- the plate window on Era's page
+    ns.slash("")
+    local win = ns.window
+    check(win.pieces ~= nil and win.pieces.bottomRight.texture == "Interface\\Spellbook\\UI-SpellbookPanel-BotRight" and win.heading.text == "Adventure Plates" and win.heading.anchors[1][5] == -18 and win.close.anchors[1][4] == -44 and win.portrait.portraitUnit == "player", "window: Era's page, the title over the header band, Era's X, my face in the ring")
+    check(win.card.guild.color[1] == 0.35 and win.card.tags[1].label.color[1] == 0.35, "window: body text in Era's parchment brown")
+    -- turning the model
+    check(win.rotateLeft.shown == true and win.rotateLeft.NormalTexture.texture == "Interface\\Buttons\\UI-RotationLeft-Button-Up" and win.rotateRight.NormalTexture.texture == "Interface\\Buttons\\UI-RotationRight-Button-Up" and win.model.facing == 0, "model: Era's rotate buttons under it, facing front")
+    win.rotateLeft.scripts.OnMouseDown(win.rotateLeft)
+    win.rotateLeft.scripts.OnUpdate(win.rotateLeft, 0.5)
+    check(math.abs(win.model.facing - 1.25) < 0.001, "model: holding the left button turns it")
+    win.rotateLeft.scripts.OnMouseUp(win.rotateLeft)
+    check(win.rotateLeft.scripts.OnUpdate == nil, "model: letting go stops it")
+    win.rotateRight.scripts.OnMouseDown(win.rotateRight)
+    win.rotateRight.scripts.OnUpdate(win.rotateRight, 1)
+    win.rotateRight.scripts.OnMouseUp(win.rotateRight)
+    check(math.abs(win.model.facing + 1.25) < 0.001, "model: the right button turns it the other way")
+    _G.GetCursorPosition = function() return 150, 100 end
+    win.model.scripts.OnMouseDown(win.model, "LeftButton")
+    _G.GetCursorPosition = function() return 250, 100 end
+    win.model.scripts.OnUpdate(win.model)
+    win.model.scripts.OnMouseUp(win.model)
+    check(math.abs(win.model.facing - (-1.25 + 100 * 0.012)) < 0.001 and win.model.scripts.OnUpdate == nil, "model: dragging it turns it by the distance dragged")
+    win.model.scripts.OnMouseWheel(win.model, -1)
+    check(math.abs(win.model.zoom - 1.1) < 0.001, "model: the wheel zooms")
+    for _ = 1, 20 do win.model.scripts.OnMouseWheel(win.model, -1) end
+    check(math.abs(win.model.zoom - 1.8) < 0.001, "model: zoom is capped")
+    ns.slash("")
+    check(win.model.facing == 0 and win.model.zoom == 1, "model: opening a plate faces it front again")
+    -- my own portrait's menu
+    local root = {buttons = {}, CreateDivider = function(self) self.divided = true end, CreateButton = function(self, label, fn) self.buttons[#self.buttons + 1] = {label = label, fn = fn} end}
+    check(menus.MENU_UNIT_SELF ~= nil, "menu: an entry on my own portrait")
+    menus.MENU_UNIT_SELF(nil, root)
+    check(root.buttons[1].label == "View My Adventure Plate" and root.buttons[2].label == "Edit My Adventure Plate", "menu: view and edit")
+    win:Hide()
+    root.buttons[1].fn()
+    check(win.shown == true and win.card.shown == true and win.own == true, "menu: View opens my plate")
+    root.buttons[2].fn()
+    check(win.editor.shown == true, "menu: Edit opens the editor")
+    -- the minimap button
+    local mb = ns.minimapButton
+    check(mb ~= nil and mb.shown ~= false and mb.parent == minimap and mb.icon.texture == "Interface\\Icons\\INV_Misc_Map02" and mb.anchors[1][2] == minimap, "minimap: a button on the ring")
+    win:Hide()
+    mb.scripts.OnClick(mb, "LeftButton")
+    check(win.shown == true and win.own == true and win.card.shown == true, "minimap: left click opens my plate")
+    mb.scripts.OnClick(mb, "LeftButton")
+    check(win.shown == false, "minimap: left click again closes it")
+    mb.scripts.OnClick(mb, "RightButton")
+    check(_G.__openedCategory == "cat_Adventure Plates", "minimap: right click opens the settings")
+    mb.scripts.OnDragStart(mb)
+    _G.GetCursorPosition = function() return 100, 180 end
+    mb.scripts.OnUpdate(mb)
+    mb.scripts.OnDragStop(mb)
+    check(math.abs(ns.db.settings.minimapAngle - 90) < 0.01 and math.abs(mb.anchors[1][5] - 80) < 0.01, "minimap: dragging moves it round the ring and the angle is kept")
+    ns.slash("button off")
+    check(mb.shown == false and ns.db.settings.minimap == false and ns.optionsPanel.minimap.checked == false, "minimap: /plate button off hides it, and the options box follows")
+    ns.optionsPanel.minimap:Click()
+    check(mb.shown == true and ns.db.settings.minimap == true, "minimap: the options box brings it back")
+    local ns3 = NewWorld({db = {settings = {welcomed = true, minimap = false}}})
+    check(ns3.minimapButton == nil, "minimap: off in the settings, not built at login")
+    -- the report
+    ns.slash("report")
+    local rep = ns.reportFrame
+    check(rep ~= nil and rep.shown == true and rep.pieces ~= nil, "report: /plate report opens it on Era's page")
+    local text = rep.box.text
+    check(text:find("Adventure Plates 1.1.0 report", 1, true) and text:find(ns.FEEDBACK_URL, 1, true) and text:find(ns.FEEDBACK_EMAIL, 1, true) and text:find("suggestions are welcome", 1, true), "report: says where it goes, for bugs and ideas")
+    check(text:find("client: version 1.60.1 build 69913", 1, true) and text:find("character: Siggy-Firemaw", 1, true) and text:find("settings: share=everyone", 1, true) and text:find("my plate: title=\"\"", 1, true) and text:find("era art: all four page files present", 1, true) and text:find("errors caught: 0", 1, true), "report: client, character, settings, plate and art")
+    ns.slash("probe")
+    check(ns.lastReport == text or ns.lastReport:find("report", 1, true), "report: /plate probe is the same window")
+    ns.slash("link")
+    check(Printed(ns.FEEDBACK_URL) and Printed(ns.FEEDBACK_EMAIL), "link: both places printed")
+    check(ns.optionsPanel.report ~= nil and ns.optionsPanel.feedback.text:find(ns.FEEDBACK_EMAIL, 1, true) ~= nil, "options: the report button and the addresses")
+    check(#ns.errors == 0 and #ns2.errors == 0 and #ns3.errors == 0, "no errors")
 end
 
 realPrint(("Adventure Plates harness: %d passed, %d failed"):format(passed, failed))

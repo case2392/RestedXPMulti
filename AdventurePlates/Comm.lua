@@ -109,7 +109,7 @@ end
 
 function ns.RegisterComm()
     local api = C_ChatInfo and C_ChatInfo.RegisterAddonMessagePrefix or RegisterAddonMessagePrefix
-    if api then pcall(api, ns.PREFIX) end
+    if api then ns.commRegistered = pcall(api, ns.PREFIX) end
 end
 
 -- may this player have our plate?

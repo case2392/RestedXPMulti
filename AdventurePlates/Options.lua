@@ -54,17 +54,40 @@ function ns.BuildOptionsPanel()
     panel.greet = Check(panel, y, "Tell me in chat when someone looks at my plate",
         function() return ns.db.settings.greet end,
         function(v) ns.db.settings.greet = v end)
+    y = y - 28
+    panel.minimap = Check(panel, y, "Show the minimap button (left click: my plate, right click: these settings)",
+        function() return ns.db.settings.minimap end,
+        function(v) ns.SetMinimapButton(v) end)
     y = y - 40
     local open = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
     open:SetSize(160, 24)
     open:SetPoint("TOPLEFT", 16, y)
     open:SetText("Open my plate")
     open:SetScript("OnClick", function() ns.ShowOwnPlate() end)
+    local welcome = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+    welcome:SetSize(160, 24)
+    welcome:SetPoint("LEFT", open, "RIGHT", 8, 0)
+    welcome:SetText("Show the welcome")
+    welcome:SetScript("OnClick", function() ns.ShowWelcome() end)
+    local report = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+    report:SetSize(160, 24)
+    report:SetPoint("LEFT", welcome, "RIGHT", 8, 0)
+    report:SetText("Report a bug or an idea")
+    report:SetScript("OnClick", function() ns.ShowReport() end)
+    panel.open, panel.welcome, panel.report = open, welcome, report
+    y = y - 34
+    local feedback = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+    feedback:SetPoint("TOPLEFT", 16, y)
+    feedback:SetWidth(560)
+    feedback:SetJustifyH("LEFT")
+    feedback:SetText("Bugs and suggestions: post a comment at " .. ns.FEEDBACK_URL .. " or email " .. ns.FEEDBACK_EMAIL .. ". /plate report gives you the details to paste.")
+    panel.feedback = feedback
 
     function panel.Refresh()
         for _, cb in pairs(panel.share) do cb:Refresh() end
         panel.menu:Refresh()
         panel.greet:Refresh()
+        panel.minimap:Refresh()
     end
     panel:SetScript("OnShow", panel.Refresh)
     panel.Refresh()

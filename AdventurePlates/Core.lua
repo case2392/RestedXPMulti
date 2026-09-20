@@ -19,7 +19,7 @@
 
 local addonName, ns = ...
 
-ns.VERSION = "1.0.0"
+ns.VERSION = "1.1.0"
 ns.PREFIX = "ADVPLATE"
 ns.FORMAT = 1
 ns.MAX_TAGS = 4
@@ -58,7 +58,10 @@ ns.ROLES = {
 local DEFAULT_SETTINGS = {
     share = "everyone", -- who may ask for your plate: everyone, friends (friends, guild, party), off
     menu = true,        -- the entry on a player's right-click menu
-    greet = false       -- say in chat when someone looks at your plate
+    greet = false,      -- say in chat when someone looks at your plate
+    minimap = true,     -- the button on the minimap
+    minimapAngle = 160, -- where round the minimap it sits
+    welcomed = false    -- the welcome has been read
 }
 
 ns.errors = {}
@@ -260,8 +263,23 @@ local function Slash(msg)
         end
     elseif cmd == "options" then
         if ns.OpenOptions then ns.OpenOptions() end
+    elseif cmd == "welcome" then
+        if ns.ShowWelcome then ns.ShowWelcome() end
+    elseif cmd == "report" or cmd == "probe" or cmd == "bug" then
+        if ns.ShowReport then ns.ShowReport() end
+    elseif cmd == "link" then
+        ns.Print("comments: %s", ns.FEEDBACK_URL)
+        ns.Print("email: %s", ns.FEEDBACK_EMAIL)
+    elseif cmd == "button" then
+        local mode = rest:lower()
+        if mode == "on" or mode == "off" then
+            ns.SetMinimapButton(mode == "on")
+            ns.Print("minimap button %s", mode)
+        else
+            ns.Print("the minimap button is %s. /plate button on|off", ns.db.settings.minimap and "on" or "off")
+        end
     elseif cmd == "help" then
-        ns.Print("/plate - your plate.  /plate edit - fill it in.  /plate <name> - ask for someone's plate.  /plate target - the player you have targeted.  /plate share everyone|friends|off - who may ask for yours.  /plate options.")
+        ns.Print("/plate - your plate.  /plate edit - fill it in.  /plate <name> - ask for someone's plate.  /plate target - the player you have targeted.  /plate share everyone|friends|off - who may ask for yours.  /plate button on|off - the minimap button.  /plate report - a report to paste with a bug or an idea.  /plate welcome - the welcome again.  /plate options.")
     else
         ns.RequestPlate(ns.FullName(cmd))
     end
@@ -275,6 +293,8 @@ function ns.OnEvent(event, arg1, arg2, arg3, arg4)
         if not ns.db then LoadDB() end
         if ns.InstallMenu then Guard("menu", ns.InstallMenu)() end
         if ns.BuildOptionsPanel then Guard("options", ns.BuildOptionsPanel)() end
+        if ns.SetMinimapButton and ns.db.settings.minimap then Guard("minimap", ns.SetMinimapButton)(true) end
+        if ns.ShowWelcome and not ns.db.settings.welcomed then Guard("welcome", ns.ShowWelcome)() end
         _G.SLASH_ADVENTUREPLATES1 = "/plate"
         _G.SLASH_ADVENTUREPLATES2 = "/adventureplates"
         _G.SLASH_ADVENTUREPLATES3 = "/aplate"

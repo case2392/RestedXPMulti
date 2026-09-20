@@ -1,37 +1,35 @@
--- Adventure Plates - the plate window and its editor
+-- Adventure Plates - the plate window, its editor, the welcome, the
+-- minimap button
 --
--- One window: the character's model down the left, the card down the
--- right. The card shows the name in orange with the flavour title under
--- it in quotes, the guild and rank, "Level 14 Night Elf Druid" in the
+-- The window is Era's page (Era.lua): the stone header band with the
+-- character's portrait in the ring and "Adventure Plates" over it, then
+-- the model down the left in a dark inset and the card down the right on
+-- the parchment. The card: the name in orange with the flavour title in
+-- quotes under it, the guild and rank, "Level 14 Night Elf Druid" in the
 -- class colour, the roles as the LFG role icons top right, up to four
 -- playstyle tags with their icons, the two playtime rows (24 cells each,
 -- lit for the hours they play, the current server hour outlined), and
--- the motto in a box. "Edit My Plate" turns the card into the editor:
--- a title box, role and tag checkboxes, clickable hour cells, a motto
--- box, Save and Cancel. Another player's plate shows the same card with
--- their model if they are in range (targeted, moused over, in the group)
--- and their class icon if not.
+-- the motto in a box. "Edit My Plate" turns the card into the editor.
+-- The model turns like the character screen's: drag it, use the wheel,
+-- or hold Era's rotate buttons under it. Another player's plate shows
+-- their model if they are in range and their class icon if not.
 
 local addonName, ns = ...
 
 local WIDTH, HEIGHT = 740, 520
 local CARD_W = 372
+local TOP = -100                      -- content starts under the header band
 local CELL, GAP = 10, 1
 local CELL_ROWS = {{key = "weekdays", label = "Weekdays"}, {key = "weekends", label = "Weekends"}}
-local GOLD = {1, 0.82, 0}
 local ORANGE = {1, 0.5, 0}
 local LIT = {0.95, 0.75, 0.1}
-local DIM = {0.16, 0.16, 0.18}
+local DIM = {0.55, 0.47, 0.34}
 local ROLE_SIZE = 20
-local TITLE_ICON = "Interface\\Icons\\INV_Misc_Map02"
 local CLASS_SHEET = "Interface\\GLUES\\CHARACTERCREATE\\UI-CHARACTERCREATE-CLASSES"
+local ROTATE_SPEED = 2.5              -- radians a second while a rotate button is held
+local DRAG_SPEED = 0.012              -- radians a pixel while dragging the model
+local ZOOM_MIN, ZOOM_MAX = 0.6, 1.8
 
-local BACKDROP = {
-    bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
-    edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
-    tile = true, tileSize = 16, edgeSize = 16,
-    insets = {left = 4, right = 4, top = 4, bottom = 4}
-}
 local INSET = {
     bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
     edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
@@ -51,29 +49,37 @@ local function Frame(kind, name, parent, template)
     return CreateFrame(kind, name, parent)
 end
 
-local function Backdrop(f, def, r, g, b, a)
+local function Backdrop(f, def, r, g, b, a, br, bg, bb)
     if not f.SetBackdrop then return end
     pcall(f.SetBackdrop, f, def)
     if f.SetBackdropColor then pcall(f.SetBackdropColor, f, r or 0, g or 0, b or 0, a or 0.9) end
+    if br and f.SetBackdropBorderColor then pcall(f.SetBackdropBorderColor, f, br, bg, bb, 1) end
 end
 
 local function Text(parent, font, layer)
     return parent:CreateFontString(nil, layer or "ARTWORK", font or "GameFontHighlight")
 end
 
+local function Ink(fs)
+    local c = ns.ERA.brown
+    fs:SetTextColor(c[1], c[2], c[3])
+    return fs
+end
+
 local function Line(parent, y)
     local t = parent:CreateTexture(nil, "ARTWORK")
-    t:SetColorTexture(GOLD[1], GOLD[2], GOLD[3], 0.6)
+    local c = ns.ERA.gold
+    t:SetColorTexture(c[1], c[2], c[3], 0.7)
     t:SetHeight(1)
-    t:SetPoint("TOPLEFT", parent, "TOPLEFT", 12, y)
-    t:SetPoint("TOPRIGHT", parent, "TOPRIGHT", -12, y)
+    t:SetPoint("TOPLEFT", parent, "TOPLEFT", 4, y)
+    t:SetPoint("TOPRIGHT", parent, "TOPRIGHT", -4, y)
     return t
 end
 
 local function ClassColor(classFile)
     local c = RAID_CLASS_COLORS and RAID_CLASS_COLORS[classFile]
     if c then return c.r, c.g, c.b end
-    return GOLD[1], GOLD[2], GOLD[3]
+    return ns.ERA.brown[1], ns.ERA.brown[2], ns.ERA.brown[3]
 end
 
 -- server time: the hour now, and whether today is a weekend
@@ -87,6 +93,13 @@ local function ServerNow()
     return hour, weekend
 end
 
+local function Cursor()
+    local x, y = Call(GetCursorPosition)
+    local scale = UIParent and UIParent.GetEffectiveScale and Call(UIParent.GetEffectiveScale, UIParent) or 1
+    if type(x) ~= "number" then return nil end
+    return x / (scale or 1), y / (scale or 1)
+end
+
 --------------------------------------------------------------------------
 -- building
 --------------------------------------------------------------------------
@@ -95,113 +108,112 @@ local W -- the window
 
 local function HourRow(parent, y, label)
     local row = {}
-    row.label = Text(parent, "GameFontHighlightSmall")
-    row.label:SetPoint("TOPLEFT", parent, "TOPLEFT", 12, y)
+    row.label = Ink(Text(parent, "GameFontNormalSmall"))
+    row.label:SetPoint("TOPLEFT", parent, "TOPLEFT", 4, y)
     row.label:SetText(label)
     row.cells = {}
     for h = 0, 23 do
         local c = parent:CreateTexture(nil, "ARTWORK")
         c:SetSize(CELL, CELL)
-        c:SetPoint("TOPLEFT", parent, "TOPLEFT", 80 + h * (CELL + GAP), y + 1)
+        c:SetPoint("TOPLEFT", parent, "TOPLEFT", 72 + h * (CELL + GAP), y + 1)
         c:SetColorTexture(DIM[1], DIM[2], DIM[3], 1)
         row.cells[h] = c
     end
     row.now = parent:CreateTexture(nil, "OVERLAY")
-    row.now:SetSize(CELL + 2, CELL + 2)
-    row.now:SetColorTexture(1, 1, 1, 0.35)
+    row.now:SetSize(CELL + 4, CELL + 4)
+    row.now:SetColorTexture(0.2, 0.1, 0, 0.6)
     row.now:Hide()
     return row
 end
 
 local function BuildCard(win)
-    local card = Frame("Frame", nil, win, "BackdropTemplate")
-    card:SetSize(CARD_W, HEIGHT - 90)
-    card:SetPoint("TOPRIGHT", win, "TOPRIGHT", -18, -58)
-    Backdrop(card, INSET, 0.02, 0.02, 0.03, 0.85)
+    local card = Frame("Frame", nil, win)
+    card:SetSize(CARD_W, HEIGHT + TOP - 60)
+    card:SetPoint("TOPLEFT", win, "TOPLEFT", WIDTH - CARD_W - 28, TOP)
 
     card.name = Text(card, "GameFontNormalHuge")
-    card.name:SetPoint("TOPLEFT", card, "TOPLEFT", 14, -12)
+    card.name:SetPoint("TOPLEFT", card, "TOPLEFT", 4, -2)
     card.name:SetTextColor(ORANGE[1], ORANGE[2], ORANGE[3])
     card.title = Text(card, "GameFontNormalSmall")
-    card.title:SetPoint("TOPLEFT", card.name, "BOTTOMLEFT", 0, -2)
-    card.guild = Text(card, "GameFontHighlight")
-    card.guild:SetPoint("TOPLEFT", card.title, "BOTTOMLEFT", 0, -4)
+    card.title:SetPoint("TOPLEFT", card.name, "BOTTOMLEFT", 0, -1)
+    card.guild = Ink(Text(card, "GameFontHighlight"))
+    card.guild:SetPoint("TOPLEFT", card.title, "BOTTOMLEFT", 0, -3)
     card.line = Text(card, "GameFontNormal")
-    card.line:SetPoint("TOPLEFT", card.guild, "BOTTOMLEFT", 0, -4)
+    card.line:SetPoint("TOPLEFT", card.guild, "BOTTOMLEFT", 0, -3)
     card.roles = {}
     for i, r in ipairs(ns.ROLES) do
         local t = card:CreateTexture(nil, "ARTWORK")
         t:SetSize(ROLE_SIZE, ROLE_SIZE)
         t:SetTexture(ns.ROLE_ICON)
         t:SetTexCoord(r.coords[1], r.coords[2], r.coords[3], r.coords[4])
-        t:SetPoint("TOPRIGHT", card, "TOPRIGHT", -14 - (i - 1) * (ROLE_SIZE + 4), -14)
+        t:SetPoint("TOPRIGHT", card, "TOPRIGHT", -4 - (i - 1) * (ROLE_SIZE + 4), -4)
         t:Hide()
         card.roles[r.key] = t
     end
-    Line(card, -96)
+    Line(card, -84)
 
     card.tagsHeader = Text(card, "GameFontNormal")
-    card.tagsHeader:SetPoint("TOPLEFT", card, "TOPLEFT", 14, -104)
+    card.tagsHeader:SetPoint("TOPLEFT", card, "TOPLEFT", 4, -92)
     card.tagsHeader:SetText("Playstyle & Focus")
     card.tags = {}
     for i = 1, ns.MAX_TAGS do
         local col, row = (i - 1) % 2, math.floor((i - 1) / 2)
         local icon = card:CreateTexture(nil, "ARTWORK")
         icon:SetSize(18, 18)
-        icon:SetPoint("TOPLEFT", card, "TOPLEFT", 14 + col * 176, -126 - row * 26)
-        local label = Text(card, "GameFontHighlight")
+        icon:SetPoint("TOPLEFT", card, "TOPLEFT", 4 + col * 184, -112 - row * 24)
+        local label = Ink(Text(card, "GameFontHighlight"))
         label:SetPoint("LEFT", icon, "RIGHT", 6, 0)
         card.tags[i] = {icon = icon, label = label}
     end
-    Line(card, -184)
+    Line(card, -164)
 
     card.hoursHeader = Text(card, "GameFontNormal")
-    card.hoursHeader:SetPoint("TOPLEFT", card, "TOPLEFT", 14, -192)
+    card.hoursHeader:SetPoint("TOPLEFT", card, "TOPLEFT", 4, -172)
     card.hoursHeader:SetText("Active Playtime (Server Time)")
     local marks = {{0, "12:00 a.m."}, {12, "12:00 p.m."}, {24, "24:00"}}
     card.marks = {}
     for i, m in ipairs(marks) do
-        local t = Text(card, "GameFontDisableSmall")
-        local x = 80 + m[1] * (CELL + GAP)
-        if m[1] == 0 then t:SetPoint("TOPLEFT", card, "TOPLEFT", x, -212)
-        elseif m[1] == 24 then t:SetPoint("TOPRIGHT", card, "TOPLEFT", x, -212)
-        else t:SetPoint("TOP", card, "TOPLEFT", x, -212) end
+        local t = Ink(Text(card, "GameFontNormalSmall"))
+        local x = 72 + m[1] * (CELL + GAP)
+        if m[1] == 0 then t:SetPoint("TOPLEFT", card, "TOPLEFT", x, -190)
+        elseif m[1] == 24 then t:SetPoint("TOPRIGHT", card, "TOPLEFT", x, -190)
+        else t:SetPoint("TOP", card, "TOPLEFT", x, -190) end
         t:SetText(m[2])
         card.marks[i] = t
     end
     card.rows = {}
     for i, r in ipairs(CELL_ROWS) do
-        card.rows[r.key] = HourRow(card, -228 - (i - 1) * 18, r.label)
+        card.rows[r.key] = HourRow(card, -206 - (i - 1) * 18, r.label)
     end
-    Line(card, -272)
+    Line(card, -250)
 
     card.mottoHeader = Text(card, "GameFontNormal")
-    card.mottoHeader:SetPoint("TOPLEFT", card, "TOPLEFT", 14, -280)
+    card.mottoHeader:SetPoint("TOPLEFT", card, "TOPLEFT", 4, -258)
     card.mottoHeader:SetText("Adventurer Motto")
     card.mottoBox = Frame("Frame", nil, card, "BackdropTemplate")
-    card.mottoBox:SetPoint("TOPLEFT", card, "TOPLEFT", 12, -298)
-    card.mottoBox:SetPoint("TOPRIGHT", card, "TOPRIGHT", -12, -298)
-    card.mottoBox:SetHeight(72)
-    Backdrop(card.mottoBox, INSET, 0.05, 0.05, 0.06, 0.9)
-    card.motto = Text(card.mottoBox, "GameFontHighlight")
+    card.mottoBox:SetPoint("TOPLEFT", card, "TOPLEFT", 2, -276)
+    card.mottoBox:SetPoint("TOPRIGHT", card, "TOPRIGHT", -2, -276)
+    card.mottoBox:SetHeight(64)
+    Backdrop(card.mottoBox, INSET, 0.93, 0.87, 0.72, 0.9, 0.6, 0.45, 0.15)
+    card.motto = Ink(Text(card.mottoBox, "GameFontHighlight"))
     card.motto:SetPoint("TOPLEFT", card.mottoBox, "TOPLEFT", 10, -8)
     card.motto:SetPoint("BOTTOMRIGHT", card.mottoBox, "BOTTOMRIGHT", -10, 8)
     card.motto:SetJustifyH("LEFT")
     card.motto:SetJustifyV("TOP")
     if card.motto.SetWordWrap then card.motto:SetWordWrap(true) end
 
-    card.stamp = Text(card, "GameFontDisableSmall")
-    card.stamp:SetPoint("BOTTOMLEFT", card, "BOTTOMLEFT", 14, 14)
+    card.stamp = Ink(Text(card, "GameFontNormalSmall"))
+    card.stamp:SetPoint("BOTTOMLEFT", card, "BOTTOMLEFT", 4, 6)
 
     card.edit = Frame("Button", nil, card, "UIPanelButtonTemplate")
     card.edit:SetSize(130, 24)
-    card.edit:SetPoint("BOTTOMRIGHT", card, "BOTTOMRIGHT", -14, 12)
+    card.edit:SetPoint("BOTTOMRIGHT", card, "BOTTOMRIGHT", -4, 2)
     card.edit:SetText("Edit My Plate")
     card.edit:SetScript("OnClick", function() ns.ShowOwnPlate(true) end)
 
     card.ask = Frame("Button", nil, card, "UIPanelButtonTemplate")
     card.ask:SetSize(110, 24)
-    card.ask:SetPoint("BOTTOMRIGHT", card, "BOTTOMRIGHT", -14, 12)
+    card.ask:SetPoint("BOTTOMRIGHT", card, "BOTTOMRIGHT", -4, 2)
     card.ask:SetText("Ask Again")
     card.ask:SetScript("OnClick", function() if W.key then ns.RequestPlate(W.key, W.unit) end end)
     return card
@@ -233,53 +245,52 @@ local function EditCell(parent, x, y, rowKey, hour)
 end
 
 local function BuildEditor(win)
-    local ed = Frame("Frame", nil, win, "BackdropTemplate")
-    ed:SetSize(CARD_W, HEIGHT - 90)
-    ed:SetPoint("TOPRIGHT", win, "TOPRIGHT", -18, -58)
-    Backdrop(ed, INSET, 0.02, 0.02, 0.03, 0.9)
+    local ed = Frame("Frame", nil, win)
+    ed:SetSize(CARD_W, HEIGHT + TOP - 60)
+    ed:SetPoint("TOPLEFT", win, "TOPLEFT", WIDTH - CARD_W - 28, TOP)
     if ed.SetFrameLevel and win.GetFrameLevel then ed:SetFrameLevel(win:GetFrameLevel() + 5) end
 
-    local y = -12
+    local y = -2
     local titleLabel = Text(ed, "GameFontNormal")
-    titleLabel:SetPoint("TOPLEFT", ed, "TOPLEFT", 14, y)
+    titleLabel:SetPoint("TOPLEFT", ed, "TOPLEFT", 4, y)
     titleLabel:SetText("Flavour title (shown under your name)")
     ed.title = Frame("EditBox", nil, ed, "InputBoxTemplate")
-    ed.title:SetSize(CARD_W - 40, 20)
-    ed.title:SetPoint("TOPLEFT", ed, "TOPLEFT", 20, y - 18)
+    ed.title:SetSize(CARD_W - 20, 20)
+    ed.title:SetPoint("TOPLEFT", ed, "TOPLEFT", 10, y - 18)
     ed.title:SetAutoFocus(false)
     ed.title:SetMaxLetters(ns.MAX_TITLE)
     ed.title:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
-    ed.title:SetScript("OnTextChanged", function(self) W.draft.title = self:GetText() or "" end)
-    y = y - 46
+    ed.title:SetScript("OnTextChanged", function(self) if W.draft then W.draft.title = self:GetText() or "" end end)
+    y = y - 44
 
     local roleLabel = Text(ed, "GameFontNormal")
-    roleLabel:SetPoint("TOPLEFT", ed, "TOPLEFT", 14, y)
+    roleLabel:SetPoint("TOPLEFT", ed, "TOPLEFT", 4, y)
     roleLabel:SetText("Roles")
     ed.roles = {}
     for i, r in ipairs(ns.ROLES) do
         local cb = Frame("CheckButton", nil, ed, "UICheckButtonTemplate")
         cb:SetSize(22, 22)
-        cb:SetPoint("TOPLEFT", ed, "TOPLEFT", 70 + (i - 1) * 100, y + 4)
+        cb:SetPoint("TOPLEFT", ed, "TOPLEFT", 60 + (i - 1) * 100, y + 4)
         local icon = ed:CreateTexture(nil, "ARTWORK")
         icon:SetSize(16, 16)
         icon:SetTexture(ns.ROLE_ICON)
         icon:SetTexCoord(r.coords[1], r.coords[2], r.coords[3], r.coords[4])
         icon:SetPoint("LEFT", cb, "RIGHT", 2, 0)
-        local label = Text(ed, "GameFontHighlightSmall")
+        local label = Ink(Text(ed, "GameFontHighlightSmall"))
         label:SetPoint("LEFT", icon, "RIGHT", 3, 0)
         label:SetText(r.label)
         cb.key = r.key
         cb:SetScript("OnClick", function(self)
-            W.draft.roles[self.key] = self:GetChecked() and true or nil
+            if W.draft then W.draft.roles[self.key] = self:GetChecked() and true or nil end
         end)
         ed.roles[r.key] = cb
     end
-    y = y - 30
+    y = y - 28
 
     local tagLabel = Text(ed, "GameFontNormal")
-    tagLabel:SetPoint("TOPLEFT", ed, "TOPLEFT", 14, y)
+    tagLabel:SetPoint("TOPLEFT", ed, "TOPLEFT", 4, y)
     tagLabel:SetText(("Playstyle & Focus (up to %d)"):format(ns.MAX_TAGS))
-    ed.tagCount = Text(ed, "GameFontDisableSmall")
+    ed.tagCount = Ink(Text(ed, "GameFontNormalSmall"))
     ed.tagCount:SetPoint("LEFT", tagLabel, "RIGHT", 8, 0)
     y = y - 18
     ed.tags = {}
@@ -287,17 +298,18 @@ local function BuildEditor(win)
         local col, row = (i - 1) % 2, math.floor((i - 1) / 2)
         local cb = Frame("CheckButton", nil, ed, "UICheckButtonTemplate")
         cb:SetSize(20, 20)
-        cb:SetPoint("TOPLEFT", ed, "TOPLEFT", 14 + col * 176, y - row * 21)
+        cb:SetPoint("TOPLEFT", ed, "TOPLEFT", 4 + col * 184, y - row * 21)
         local icon = ed:CreateTexture(nil, "ARTWORK")
         icon:SetSize(14, 14)
         icon:SetTexture(t.icon)
         icon:SetPoint("LEFT", cb, "RIGHT", 1, 0)
-        local label = Text(ed, "GameFontHighlightSmall")
+        local label = Ink(Text(ed, "GameFontHighlightSmall"))
         label:SetPoint("LEFT", icon, "RIGHT", 3, 0)
         label:SetText(t.label)
         cb.key = t.key
         cb.label = label
         cb:SetScript("OnClick", function(self)
+            if not W.draft then return end
             local list = W.draft.tags
             for k = #list, 1, -1 do if list[k] == self.key then table.remove(list, k) end end
             if self:GetChecked() then
@@ -312,35 +324,35 @@ local function BuildEditor(win)
         end)
         ed.tags[t.key] = cb
     end
-    y = y - math.ceil(#ns.TAGS / 2) * 21 - 6
+    y = y - math.ceil(#ns.TAGS / 2) * 21 - 4
 
     local hoursLabel = Text(ed, "GameFontNormal")
-    hoursLabel:SetPoint("TOPLEFT", ed, "TOPLEFT", 14, y)
+    hoursLabel:SetPoint("TOPLEFT", ed, "TOPLEFT", 4, y)
     hoursLabel:SetText("Active Playtime (server time, click the hours)")
     y = y - 18
     ed.rows = {}
     for i, r in ipairs(CELL_ROWS) do
-        local label = Text(ed, "GameFontHighlightSmall")
-        label:SetPoint("TOPLEFT", ed, "TOPLEFT", 14, y - 2 - (i - 1) * 20)
+        local label = Ink(Text(ed, "GameFontHighlightSmall"))
+        label:SetPoint("TOPLEFT", ed, "TOPLEFT", 4, y - 2 - (i - 1) * 20)
         label:SetText(r.label)
         local cells = {}
         for h = 0, 23 do
-            cells[h] = EditCell(ed, 80 + h * 12, y - (i - 1) * 20, r.key, h)
+            cells[h] = EditCell(ed, 72 + h * 12, y - (i - 1) * 20, r.key, h)
         end
         ed.rows[r.key] = cells
     end
     y = y - 44
 
     local mottoLabel = Text(ed, "GameFontNormal")
-    mottoLabel:SetPoint("TOPLEFT", ed, "TOPLEFT", 14, y)
+    mottoLabel:SetPoint("TOPLEFT", ed, "TOPLEFT", 4, y)
     mottoLabel:SetText("Adventurer Motto")
-    ed.mottoCount = Text(ed, "GameFontDisableSmall")
+    ed.mottoCount = Ink(Text(ed, "GameFontNormalSmall"))
     ed.mottoCount:SetPoint("LEFT", mottoLabel, "RIGHT", 8, 0)
     local box = Frame("Frame", nil, ed, "BackdropTemplate")
-    box:SetPoint("TOPLEFT", ed, "TOPLEFT", 12, y - 18)
-    box:SetPoint("TOPRIGHT", ed, "TOPRIGHT", -12, y - 18)
-    box:SetHeight(58)
-    Backdrop(box, INSET, 0.05, 0.05, 0.06, 0.9)
+    box:SetPoint("TOPLEFT", ed, "TOPLEFT", 2, y - 18)
+    box:SetPoint("TOPRIGHT", ed, "TOPRIGHT", -2, y - 18)
+    box:SetHeight(54)
+    Backdrop(box, INSET, 0.93, 0.87, 0.72, 0.9, 0.6, 0.45, 0.15)
     ed.motto = Frame("EditBox", nil, box)
     ed.motto:SetPoint("TOPLEFT", box, "TOPLEFT", 8, -6)
     ed.motto:SetPoint("BOTTOMRIGHT", box, "BOTTOMRIGHT", -8, 6)
@@ -348,8 +360,10 @@ local function BuildEditor(win)
     ed.motto:SetAutoFocus(false)
     ed.motto:SetMaxLetters(ns.MAX_MOTTO)
     if ed.motto.SetFontObject then ed.motto:SetFontObject("GameFontHighlight") end
+    if ed.motto.SetTextColor then ed.motto:SetTextColor(ns.ERA.ink[1], ns.ERA.ink[2], ns.ERA.ink[3]) end
     ed.motto:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
     ed.motto:SetScript("OnTextChanged", function(self)
+        if not W.draft then return end
         W.draft.motto = self:GetText() or ""
         ed.mottoCount:SetText(("%d/%d"):format(#W.draft.motto, ns.MAX_MOTTO))
     end)
@@ -357,7 +371,7 @@ local function BuildEditor(win)
 
     ed.save = Frame("Button", nil, ed, "UIPanelButtonTemplate")
     ed.save:SetSize(100, 24)
-    ed.save:SetPoint("BOTTOMRIGHT", ed, "BOTTOMRIGHT", -14, 12)
+    ed.save:SetPoint("BOTTOMRIGHT", ed, "BOTTOMRIGHT", -4, 2)
     ed.save:SetText("Save")
     ed.save:SetScript("OnClick", function() ns.SaveDraft() end)
     ed.cancel = Frame("Button", nil, ed, "UIPanelButtonTemplate")
@@ -369,11 +383,88 @@ local function BuildEditor(win)
     return ed
 end
 
+-- the model: drag to turn it, wheel to zoom, or hold Era's rotate buttons
+local function Rotate(win, delta)
+    win.facing = (win.facing or 0) + delta
+    if win.model.SetFacing then pcall(win.model.SetFacing, win.model, win.facing) end
+end
+
+local function Zoom(win, delta)
+    win.zoom = math.max(ZOOM_MIN, math.min(ZOOM_MAX, (win.zoom or 1) + delta))
+    if win.model.SetCamDistanceScale then pcall(win.model.SetCamDistanceScale, win.model, win.zoom) end
+end
+
+local function RotateButton(win, pane, left)
+    local b = Frame("Button", nil, pane)
+    b:SetSize(32, 32)
+    local up = left and ns.ERA.rotateLeftUp or ns.ERA.rotateRightUp
+    local down = left and ns.ERA.rotateLeftDown or ns.ERA.rotateRightDown
+    if ns.HasFile(up) then
+        b:SetNormalTexture(up)
+        b:SetPushedTexture(down)
+        b:SetHighlightTexture(ns.ERA.rotateHighlight, "ADD")
+    else
+        b:SetText(left and "<" or ">")
+    end
+    b.dir = left and 1 or -1
+    b:SetScript("OnMouseDown", function(self)
+        self:SetScript("OnUpdate", function(_, elapsed) Rotate(win, self.dir * ROTATE_SPEED * (elapsed or 0)) end)
+    end)
+    b:SetScript("OnMouseUp", function(self) self:SetScript("OnUpdate", nil) end)
+    b:SetScript("OnHide", function(self) self:SetScript("OnUpdate", nil) end)
+    return b
+end
+
+local function BuildModelPane(win)
+    local pane = Frame("Frame", nil, win, "BackdropTemplate")
+    pane:SetPoint("TOPLEFT", win, "TOPLEFT", 24, TOP)
+    pane:SetSize(WIDTH - CARD_W - 60, HEIGHT + TOP - 60)
+    Backdrop(pane, INSET, 0.04, 0.05, 0.08, 0.95, 0.6, 0.45, 0.15)
+    win.pane = pane
+    win.classIcon = pane:CreateTexture(nil, "ARTWORK")
+    win.classIcon:SetSize(128, 128)
+    win.classIcon:SetPoint("CENTER", pane, "CENTER", 0, 30)
+    win.classIcon:SetTexture(CLASS_SHEET)
+    win.classNote = Text(pane, "GameFontDisableSmall")
+    win.classNote:SetPoint("TOP", win.classIcon, "BOTTOM", 0, -8)
+    win.classNote:SetText("out of range: no model")
+    local model = Frame("PlayerModel", nil, pane)
+    model:SetPoint("TOPLEFT", pane, "TOPLEFT", 4, -4)
+    model:SetPoint("BOTTOMRIGHT", pane, "BOTTOMRIGHT", -4, 4)
+    if model.EnableMouse then model:EnableMouse(true) end
+    if model.EnableMouseWheel then model:EnableMouseWheel(true) end
+    model:SetScript("OnMouseDown", function(self, button)
+        if button ~= "LeftButton" then return end
+        local x = Cursor()
+        if not x then return end
+        self.dragX = x
+        self:SetScript("OnUpdate", function(s)
+            local nx = Cursor()
+            if nx and s.dragX then
+                Rotate(win, (nx - s.dragX) * DRAG_SPEED)
+                s.dragX = nx
+            end
+        end)
+    end)
+    model:SetScript("OnMouseUp", function(self) self.dragX = nil; self:SetScript("OnUpdate", nil) end)
+    model:SetScript("OnHide", function(self) self.dragX = nil; self:SetScript("OnUpdate", nil) end)
+    model:SetScript("OnMouseWheel", function(_, delta) Zoom(win, -(delta or 0) * 0.1) end)
+    win.model = model
+    win.rotateLeft = RotateButton(win, pane, true)
+    win.rotateLeft:SetPoint("BOTTOMLEFT", pane, "BOTTOMLEFT", 8, 6)
+    win.rotateRight = RotateButton(win, pane, false)
+    win.rotateRight:SetPoint("LEFT", win.rotateLeft, "RIGHT", -6, 0)
+    if win.rotateLeft.SetFrameLevel and model.GetFrameLevel then
+        win.rotateLeft:SetFrameLevel(model:GetFrameLevel() + 2)
+        win.rotateRight:SetFrameLevel(model:GetFrameLevel() + 2)
+    end
+    return pane
+end
+
 local function BuildWindow()
-    local win = Frame("Frame", "AdventurePlatesFrame", UIParent, "BackdropTemplate")
+    local win = ns.BuildEraPage("AdventurePlatesFrame", UIParent)
     win:SetSize(WIDTH, HEIGHT)
     win:SetPoint("CENTER", UIParent, "CENTER", 0, 40)
-    Backdrop(win, BACKDROP, 0.05, 0.04, 0.03, 0.95)
     if win.SetFrameStrata then win:SetFrameStrata("HIGH") end
     if win.SetMovable then win:SetMovable(true) end
     if win.EnableMouse then win:EnableMouse(true) end
@@ -383,37 +474,14 @@ local function BuildWindow()
     if win.SetClampedToScreen then win:SetClampedToScreen(true) end
     if UISpecialFrames then table.insert(UISpecialFrames, "AdventurePlatesFrame") end
 
-    win.icon = win:CreateTexture(nil, "ARTWORK")
-    win.icon:SetSize(34, 34)
-    win.icon:SetPoint("TOPLEFT", win, "TOPLEFT", 16, -12)
-    win.icon:SetTexture(TITLE_ICON)
-    win.heading = Text(win, "GameFontNormalLarge")
-    win.heading:SetPoint("TOPLEFT", win.icon, "TOPRIGHT", 8, -2)
+    win.heading = Text(win, "GameFontNormal")
+    win.heading:SetPoint("TOP", win, "TOP", 0, -18)
     win.heading:SetText("Adventure Plates")
     win.sub = Text(win, "GameFontHighlightSmall")
-    win.sub:SetPoint("TOPLEFT", win.heading, "BOTTOMLEFT", 0, -2)
-    win.close = Frame("Button", nil, win, "UIPanelCloseButton")
-    win.close:SetPoint("TOPRIGHT", win, "TOPRIGHT", -4, -4)
-    win.close:SetScript("OnClick", function() win:Hide() end)
+    win.sub:SetPoint("TOP", win.heading, "BOTTOM", 0, -4)
+    win.close = ns.EraCloseButton(win, function() win:Hide() end)
 
-    -- the model down the left, with a class icon behind it for when the
-    -- player is out of range
-    local pane = Frame("Frame", nil, win, "BackdropTemplate")
-    pane:SetPoint("TOPLEFT", win, "TOPLEFT", 18, -58)
-    pane:SetSize(WIDTH - CARD_W - 54, HEIGHT - 90)
-    Backdrop(pane, INSET, 0.02, 0.03, 0.05, 0.9)
-    win.pane = pane
-    win.classIcon = pane:CreateTexture(nil, "ARTWORK")
-    win.classIcon:SetSize(128, 128)
-    win.classIcon:SetPoint("CENTER", pane, "CENTER", 0, 30)
-    win.classIcon:SetTexture(CLASS_SHEET)
-    win.classNote = Text(pane, "GameFontDisableSmall")
-    win.classNote:SetPoint("TOP", win.classIcon, "BOTTOM", 0, -8)
-    win.classNote:SetText("out of range: no model")
-    win.model = Frame("PlayerModel", nil, pane)
-    win.model:SetPoint("TOPLEFT", pane, "TOPLEFT", 4, -4)
-    win.model:SetPoint("BOTTOMRIGHT", pane, "BOTTOMRIGHT", -4, 4)
-
+    BuildModelPane(win)
     win.card = BuildCard(win)
     win.editor = BuildEditor(win)
     win:Hide()
@@ -445,16 +513,23 @@ end
 
 local function ShowModel(win, plate, own, hint)
     local unit = own and "player" or UnitFor(plate, hint)
+    win.facing, win.zoom = 0, 1
     if unit and win.model.SetUnit then
         local ok = pcall(win.model.SetUnit, win.model, unit)
         if ok then
+            Rotate(win, 0)
+            Zoom(win, 0)
             win.model:Show()
+            win.rotateLeft:Show()
+            win.rotateRight:Show()
             win.classIcon:Hide()
             win.classNote:Hide()
             return true
         end
     end
     win.model:Hide()
+    win.rotateLeft:Hide()
+    win.rotateRight:Hide()
     local coords = CLASS_ICON_TCOORDS and CLASS_ICON_TCOORDS[plate.classFile]
     if coords then
         win.classIcon:SetTexCoord(coords[1], coords[2], coords[3], coords[4])
@@ -466,14 +541,34 @@ local function ShowModel(win, plate, own, hint)
     return false
 end
 
+-- the ring on the header band: the player's own face, or the class icon
+local function ShowRing(win, plate, own)
+    local p = win.portrait
+    if own and SetPortraitTexture then
+        if pcall(SetPortraitTexture, p, "player") then
+            p:SetTexCoord(0, 1, 0, 1)
+            p:Show()
+            return
+        end
+    end
+    local coords = CLASS_ICON_TCOORDS and CLASS_ICON_TCOORDS[plate.classFile]
+    if coords then
+        p:SetTexture(CLASS_SHEET)
+        p:SetTexCoord(coords[1], coords[2], coords[3], coords[4])
+        p:Show()
+    else
+        p:Hide()
+    end
+end
+
 local function FillCard(card, plate, own, cachedAt)
     card.name:SetText(plate.name ~= "" and plate.name or "?")
     if plate.title ~= "" then
         card.title:SetText(("« %s »"):format(plate.title))
-        card.title:SetTextColor(GOLD[1], GOLD[2], GOLD[3])
+        card.title:SetTextColor(ns.ERA.gold[1], ns.ERA.gold[2], ns.ERA.gold[3])
     elseif plate.gameTitle ~= "" then
         card.title:SetText(plate.gameTitle)
-        card.title:SetTextColor(0.8, 0.8, 0.8)
+        card.title:SetTextColor(ns.ERA.brown[1], ns.ERA.brown[2], ns.ERA.brown[3])
     else
         card.title:SetText(" ")
     end
@@ -548,6 +643,7 @@ function ns.ShowPlate(plate, opts)
     win.sub:SetText(("%s - %s"):format(plate.name ~= "" and plate.name or "?", plate.realm ~= "" and plate.realm or ns.RealmName()))
     FillCard(win.card, plate, own, opts.cached)
     ShowModel(win, plate, own, opts.unit)
+    ShowRing(win, plate, own)
     win:Show()
     return win
 end
@@ -557,6 +653,10 @@ function ns.ShowOwnPlate(edit)
     ns.ShowPlate(plate, {own = true, key = ns.CharKey()})
     if edit then ns.OpenEditor() end
     return plate
+end
+
+function ns.TogglePlate()
+    if W and W.shown and W:IsShown() and W.own then W:Hide() else ns.ShowOwnPlate() end
 end
 
 --------------------------------------------------------------------------
@@ -619,10 +719,11 @@ function ns.SaveDraft()
 end
 
 --------------------------------------------------------------------------
--- the entry on a player's right-click menu
+-- the entry on a player's right-click menu, and on your own portrait
 --------------------------------------------------------------------------
 
 local MENUS = {"MENU_UNIT_PLAYER", "MENU_UNIT_ENEMY_PLAYER", "MENU_UNIT_PARTY", "MENU_UNIT_RAID_PLAYER", "MENU_UNIT_FRIEND", "MENU_UNIT_GUILD", "MENU_UNIT_COMMUNITIES_GUILD_MEMBER"}
+local SELF_MENUS = {"MENU_UNIT_SELF"}
 
 function ns.InstallMenu()
     if ns.menuInstalled or not ns.db.settings.menu then return end
@@ -639,5 +740,174 @@ function ns.InstallMenu()
             end)
         end)
     end
+    for _, tag in ipairs(SELF_MENUS) do
+        pcall(Menu.ModifyMenu, tag, function(owner, root)
+            if not (ns.db and ns.db.settings.menu) then return end
+            if root.CreateDivider then root:CreateDivider() end
+            root:CreateButton("View My Adventure Plate", function() ns.ShowOwnPlate() end)
+            root:CreateButton("Edit My Adventure Plate", function() ns.ShowOwnPlate(true) end)
+        end)
+    end
     ns.menuInstalled = true
+end
+
+--------------------------------------------------------------------------
+-- the welcome, the first time the addon runs on an account
+--------------------------------------------------------------------------
+
+local WELCOME = {
+    "Thank you for installing Adventure Plates.",
+    "",
+    "An adventurer plate is a card about your character: who you are, what you like doing in Azeroth, when you are usually on, and a line of your own. Anyone with the addon can open yours, and you can open theirs.",
+    "",
+    "|cffffd100/plate|r opens your plate and |cffffd100Edit My Plate|r fills it in. Right-click your own portrait for the same.",
+    "|cffffd100/plate <name>|r, |cffffd100/plate target|r, or |cffffd100View Adventure Plate|r on a player's right-click menu shows someone else's.",
+    "The minimap button opens your plate with a left click and the settings with a right click.",
+    "",
+    "Who may look at your plate is up to you: everyone, only friends, guildmates and your group, or nobody. It is in the settings.",
+    "",
+    "Something wrong, or an idea? |cffffd100/plate report|r opens a report to paste as a comment on the CurseForge page, or to email to |cffffd100classicuiforforever@gmail.com|r. Suggestions are welcome the same way.",
+    "",
+    "Inspired by Final Fantasy XIV's adventurer plates, and by the streamer Shobek (@Shobektv) asking for them in World of Warcraft Forever."
+}
+ns.WELCOME_LINES = WELCOME
+
+local function BuildWelcome()
+    local f = ns.BuildEraPage("AdventurePlatesWelcome", UIParent)
+    f:SetSize(500, 470)
+    f:SetPoint("CENTER", UIParent, "CENTER", 0, 60)
+    if f.SetFrameStrata then f:SetFrameStrata("DIALOG") end
+    if f.SetMovable then f:SetMovable(true) end
+    if f.EnableMouse then f:EnableMouse(true) end
+    if f.RegisterForDrag then f:RegisterForDrag("LeftButton") end
+    f:SetScript("OnDragStart", function(self) if self.StartMoving then self:StartMoving() end end)
+    f:SetScript("OnDragStop", function(self) if self.StopMovingOrSizing then self:StopMovingOrSizing() end end)
+    if UISpecialFrames then table.insert(UISpecialFrames, "AdventurePlatesWelcome") end
+    f.heading = Text(f, "GameFontNormal")
+    f.heading:SetPoint("TOP", f, "TOP", 0, -18)
+    f.heading:SetText("Adventure Plates")
+    if SetPortraitTexture then
+        if pcall(SetPortraitTexture, f.portrait, "player") then f.portrait:Show() else f.portrait:Hide() end
+    end
+    f.body = Ink(Text(f, "GameFontHighlight"))
+    f.body:SetPoint("TOPLEFT", f, "TOPLEFT", 28, TOP)
+    f.body:SetWidth(444)
+    f.body:SetJustifyH("LEFT")
+    f.body:SetJustifyV("TOP")
+    if f.body.SetWordWrap then f.body:SetWordWrap(true) end
+    f.body:SetText(table.concat(WELCOME, "\n"))
+    f.open = Frame("Button", nil, f, "UIPanelButtonTemplate")
+    f.open:SetSize(130, 24)
+    f.open:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 28, 56)
+    f.open:SetText("Open my plate")
+    f.open:SetScript("OnClick", function() ns.ShowOwnPlate(true) end)
+    f.report = Frame("Button", nil, f, "UIPanelButtonTemplate")
+    f.report:SetSize(110, 24)
+    f.report:SetPoint("LEFT", f.open, "RIGHT", 8, 0)
+    f.report:SetText("Report a bug")
+    f.report:SetScript("OnClick", function() ns.ShowReport() end)
+    f.close = Frame("Button", nil, f, "UIPanelButtonTemplate")
+    f.close:SetSize(100, 24)
+    f.close:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -44, 56)
+    f.close:SetText("Got it")
+    f.close:SetScript("OnClick", function()
+        ns.db.settings.welcomed = true
+        f:Hide()
+    end)
+    f.x = ns.EraCloseButton(f, function() ns.db.settings.welcomed = true; f:Hide() end)
+    return f
+end
+
+function ns.ShowWelcome()
+    if not (CreateFrame and UIParent) then return end
+    ns.welcomeFrame = ns.welcomeFrame or BuildWelcome()
+    ns.welcomeFrame:Show()
+    return ns.welcomeFrame
+end
+
+--------------------------------------------------------------------------
+-- the minimap button
+--------------------------------------------------------------------------
+
+local ICON = "Interface\\Icons\\INV_Misc_Map02"
+local RING = "Interface\\Minimap\\MiniMap-TrackingBorder"
+local RING_FALLBACK = "Interface\\Minimap\\UI-Minimap-Border"
+local HIGHLIGHT = "Interface\\Buttons\\ButtonHilight-Square"
+local DEFAULT_ANGLE = 160
+local RADIUS = 80
+
+local function Angle()
+    return tonumber(ns.db and ns.db.settings.minimapAngle) or DEFAULT_ANGLE
+end
+
+local function PlaceButton(button)
+    local a = math.rad(Angle())
+    button:ClearAllPoints()
+    button:SetPoint("CENTER", Minimap, "CENTER", RADIUS * math.cos(a), RADIUS * math.sin(a))
+end
+
+local function DragUpdate(button)
+    if not (GetCursorPosition and Minimap and Minimap.GetCenter) then return end
+    local mx, my = Minimap:GetCenter()
+    local cx, cy = Cursor()
+    if not (mx and cx) then return end
+    ns.db.settings.minimapAngle = math.deg(math.atan2(cy - my, cx - mx))
+    PlaceButton(button)
+end
+
+local function BuildMinimapButton()
+    if not (CreateFrame and Minimap) then return end
+    local b = CreateFrame("Button", "AdventurePlatesMinimapButton", Minimap)
+    b:SetSize(31, 31)
+    b:SetFrameStrata("MEDIUM")
+    if b.SetFrameLevel and Minimap.GetFrameLevel then b:SetFrameLevel(Minimap:GetFrameLevel() + 8) end
+    b:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+    b:RegisterForDrag("LeftButton")
+    b.icon = b:CreateTexture(nil, "ARTWORK")
+    b.icon:SetTexture(ICON)
+    b.icon:SetSize(20, 20)
+    b.icon:SetPoint("CENTER", b, "CENTER", 0, 1)
+    b.ring = b:CreateTexture(nil, "OVERLAY")
+    b.ring:SetTexture(ns.HasFile(RING) and RING or RING_FALLBACK)
+    b.ring:SetSize(53, 53)
+    b.ring:SetPoint("TOPLEFT", b, "TOPLEFT", 0, 0)
+    b:SetHighlightTexture(HIGHLIGHT, "ADD")
+    b:SetScript("OnClick", ns.Guard("minimap click", function(_, mouse)
+        if mouse == "RightButton" then
+            if ns.OpenOptions then ns.OpenOptions() end
+        else
+            ns.TogglePlate()
+        end
+    end))
+    b:SetScript("OnDragStart", function(self)
+        self:SetScript("OnUpdate", ns.Guard("minimap drag", DragUpdate))
+    end)
+    b:SetScript("OnDragStop", function(self) self:SetScript("OnUpdate", nil) end)
+    b:SetScript("OnEnter", function(self)
+        if not GameTooltip then return end
+        GameTooltip:SetOwner(self, "ANCHOR_LEFT")
+        GameTooltip:SetText("Adventure Plates")
+        GameTooltip:AddLine("Left click: your plate")
+        GameTooltip:AddLine("Right click: settings")
+        GameTooltip:AddLine("Drag: move me round the minimap")
+        GameTooltip:Show()
+    end)
+    b:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
+    PlaceButton(b)
+    return b
+end
+
+function ns.SetMinimapButton(on)
+    if ns.db then ns.db.settings.minimap = on and true or false end
+    if ns.optionsPanel and ns.optionsPanel.Refresh then ns.optionsPanel.Refresh() end
+    if on then
+        ns.minimapButton = ns.minimapButton or BuildMinimapButton()
+        if ns.minimapButton then
+            PlaceButton(ns.minimapButton)
+            ns.minimapButton:Show()
+        end
+    elseif ns.minimapButton then
+        ns.minimapButton:Hide()
+    end
+    return ns.minimapButton
 end

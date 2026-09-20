@@ -4,7 +4,11 @@ An adventurer plate for your character, the way Final Fantasy XIV does it:
 a card anyone can open on anyone, with your model, your name and a title
 of your choosing, your guild and rank, your level, race and class, the
 roles you play, up to four playstyle tags, when you are usually on, and a
-motto. Built for World of Warcraft Forever; it also loads on Classic Era.
+motto. Drawn on Classic Era's page (the same spellbook-page cut that
+Classic UI for Forever uses, kept here so nothing else is needed), with
+your face in the ring. Built for World of Warcraft Forever; it also loads
+on Classic Era. Inspired by the streamer Shobek asking for FFXIV's
+adventurer plates in Forever.
 
 ```
 /plate            your plate
@@ -12,11 +16,28 @@ motto. Built for World of Warcraft Forever; it also loads on Classic Era.
 /plate <name>     ask another player for theirs
 /plate target     the player you have targeted (mouseover and focus work too)
 /plate share      who may ask for yours: everyone, friends, off
+/plate button     the minimap button on or off
+/plate report     a report to paste with a bug or an idea
+/plate welcome    the welcome window again
 /plate options    the options panel
 ```
 
-Right-clicking a player also gives you **View Adventure Plate** on their
-menu.
+Right-clicking a player gives you **View Adventure Plate** on their menu,
+and right-clicking your own portrait gives you **View** and **Edit My
+Adventure Plate**. The minimap button opens your plate with a left click
+and the settings with a right click; drag it round the ring.
+
+The model turns like the character screen's: drag it, use the mouse
+wheel to zoom, or hold Era's rotate buttons under it.
+
+## Bugs and ideas
+
+`/plate report` opens a copyable report (versions, settings, what the
+plate holds, what was sent and received, any error the addon caught).
+Paste it, with a screenshot if something looks wrong, as a comment on the
+CurseForge page, or email it to classicuiforforever@gmail.com. Ideas and
+suggestions are welcome the same way. A welcome window says so the first
+time the addon runs.
 
 ## What is on a plate
 
@@ -64,5 +85,6 @@ lua5.1 tests/harness_adventureplates.lua .
 
 A pure-Lua harness with a mock client covers the data, the wire format
 (escaping, chunking, reassembly out of order), asking and answering, the
-sharing modes, the card, the editor, saving and reloading, the menu entry
-and the slash commands.
+sharing modes, the card, the editor, saving and reloading, the menu
+entries, the slash commands, Era's page, the model controls, the minimap
+button, the welcome and the report.
