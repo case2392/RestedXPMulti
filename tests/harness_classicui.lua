@@ -1558,6 +1558,8 @@ do
     -- is written down and carried in the report instead
     check(ab.combatAnchors ~= nil and ab.combatAnchors.MainActionBar == "BOTTOMRIGHT>MicroMenuContainer.BOTTOMLEFT -4.5,-4.0" and ab.combatAnchors.MultiBarBottomLeft ~= nil, "forever: the anchor Blizzard moved the bars to in combat is recorded")
     check(ab:Status():find("moved in combat to", 1, true) and ab:Status():find("MicroMenuContainer", 1, true), "forever: and it goes into the report through the status line")
+    w.slash("probe")
+    check(w.ns.lastProbe:find("moved in combat to", 1, true) and w.ns.lastProbe:find("MicroMenuContainer.BOTTOMLEFT", 1, true), "forever: the report itself carries it, so it can be read off a report taken after the fight")
     -- the micro buttons are protected too: moving, sizing or re-levelling
     -- one in combat is refused and prints "Interface action failed"
     local anchorsBefore = #CharacterMicroButton.anchors

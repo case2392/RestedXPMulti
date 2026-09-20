@@ -249,9 +249,18 @@ function ns.BuildProbe()
     line("settings came from: %s", tostring(ns.dbSource))
     for _, name in ipairs(ns.moduleOrder) do
         local mod = ns.modules[name]
-        line("%s: setting=%s mode=%s", name,
+        -- each part's own status line too: it is where a module says what
+        -- it could not do - art that is missing, a swirl the client will
+        -- not feed, where combat moved the bars - and the report is the
+        -- only place anyone ever sees it
+        local detail = ""
+        if mod and mod.Status then
+            local ok, text = pcall(mod.Status, mod)
+            if ok and type(text) == "string" and text ~= "" then detail = "  " .. text end
+        end
+        line("%s: setting=%s mode=%s%s", name,
              (ns.db and ns.db[name] == false) and "off" or "on",
-             tostring(mod and mod.mode))
+             tostring(mod and mod.mode), detail)
     end
 
     line("")
