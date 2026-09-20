@@ -45,7 +45,8 @@ function ns.BuildReport()
     end
     local learned, samples = ns.LearnedHours()
     line("learned hours: %d samples%s", samples or 0, learned and (" weekdays=" .. learned.weekdays .. " weekends=" .. learned.weekends) or " (not enough yet)")
-    line("chat links: installed=%s  filter=%s  SetItemRef=%s", yn(ns.chatLinksInstalled), yn(ChatFrame_AddMessageEventFilter ~= nil), yn(SetItemRef ~= nil))
+    line("chat links: installed=%s  filter=%s (%s)  SetItemRef=%s", yn(ns.chatLinksInstalled), yn(ns.chatFilterInstalled),
+         (type(ChatFrameUtil) == "table" and ChatFrameUtil.AddMessageEventFilter) and "ChatFrameUtil" or (ChatFrame_AddMessageEventFilter and "old globals" or "none"), yn(SetItemRef ~= nil))
     line("plates kept: %d", ns.db and #ns.db.cache or 0)
     for i, entry in ipairs(ns.db and ns.db.cache or {}) do
         if i > 10 then line("  ..."); break end

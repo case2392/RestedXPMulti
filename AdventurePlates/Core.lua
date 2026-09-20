@@ -70,11 +70,31 @@ local DEFAULT_SETTINGS = {
     learn = true        -- note the hours I am logged in, to fill the playtime rows from
 }
 
--- the primary professions, by name, for a client without GetProfessions
+-- the primary professions, for a client without GetProfessions: their
+-- names in the client's own language come from the profession spells,
+-- with the English names as a fallback
+ns.PRIMARY_PROFESSION_SPELLS = {2259, 2018, 7411, 4036, 2366, 2108, 2575, 8613, 3908, 25229, 45357}
 ns.PRIMARY_PROFESSIONS = {
     Alchemy = true, Blacksmithing = true, Enchanting = true, Engineering = true, Herbalism = true,
     Leatherworking = true, Mining = true, Skinning = true, Tailoring = true, Jewelcrafting = true, Inscription = true
 }
+local function ProfessionNames()
+    if ns.professionNamesLoaded then return ns.PRIMARY_PROFESSIONS end
+    local byName = ns.PRIMARY_PROFESSIONS
+    for _, id in ipairs(ns.PRIMARY_PROFESSION_SPELLS) do
+        local name
+        if C_Spell and C_Spell.GetSpellName then
+            local ok, n = pcall(C_Spell.GetSpellName, id)
+            if ok then name = n end
+        elseif GetSpellInfo then
+            local ok, n = pcall(GetSpellInfo, id)
+            if ok then name = n end
+        end
+        if type(name) == "string" and name ~= "" then byName[name] = true end
+    end
+    ns.professionNamesLoaded = true
+    return byName
+end
 
 ns.errors = {}
 
@@ -200,7 +220,8 @@ function ns.CleanPlate(p)
     out.motto = ns.Sanitize(p.motto, ns.MAX_MOTTO)
     out.looking = ns.Sanitize(p.looking, ns.MAX_LOOKING)
     -- a character name: letters and one realm dash, nothing else
-    out.main = ns.Sanitize(p.main, ns.MAX_MAIN):gsub("%s+", ""):gsub("[%[%]%(%)<>\"'%%~=,:]", "")
+    out.main = ns.Sanitize(p.main, ns.MAX_MAIN):gsub("[^%w%-\128-\255]", "")
+    out.main = out.main:match("^([^%-]+%-?[^%-]*)") or ""
     out.profs = ns.CleanProfs(p.profs)
     out.weekdays = ns.CleanHours(p.weekdays)
     out.weekends = ns.CleanHours(p.weekends)
@@ -231,8 +252,8 @@ end
 
 local function Call(fn, ...)
     if type(fn) ~= "function" then return nil end
-    local ok, a, b, c, d = pcall(fn, ...)
-    if ok then return a, b, c, d end
+    local r = {pcall(fn, ...)}
+    if r[1] then return unpack(r, 2) end
 end
 
 function ns.RealmName()
@@ -263,7 +284,7 @@ function ns.Professions()
     elseif GetNumSkillLines and GetSkillLineInfo then
         for i = 1, Call(GetNumSkillLines) or 0 do
             local name, isHeader, _, rank, _, _, maxRank = Call(GetSkillLineInfo, i)
-            if type(name) == "string" and not isHeader and ns.PRIMARY_PROFESSIONS[name] then
+            if type(name) == "string" and not isHeader and ProfessionNames()[name] then
                 out[#out + 1] = {name = name, skill = rank or 0, max = maxRank or 0}
             end
         end
@@ -321,6 +342,10 @@ function ns.RecordPlaytime()
     local hour, weekend = ns.ServerNow()
     if type(hour) ~= "number" or hour < 0 or hour > 23 then return false end
     local l = LearnedTable()
+    -- a /reload or a character switch is not another ten minutes
+    local now = Call(time) or 0
+    if l.last and now - l.last < ns.LEARN_EVERY * 0.5 then return false end
+    l.last = now
     local row = weekend and l.weekends or l.weekdays
     row[hour + 1] = (tonumber(row[hour + 1]) or 0) + 1
     l.samples = l.samples + 1
@@ -333,17 +358,22 @@ function ns.LearnedHours()
     if not ns.db or type(ns.db.learned) ~= "table" then return nil end
     local l = LearnedTable()
     if l.samples < ns.LEARN_MIN then return nil, l.samples end
-    local peak = 0
+    -- each row has its own floor: weekends are two days to the weekdays' five
+    local out, any = {}, false
     for _, key in ipairs({"weekdays", "weekends"}) do
+        local peak = 0
         for h = 1, 24 do peak = math.max(peak, tonumber(l[key][h]) or 0) end
-    end
-    local floor = math.max(2, peak * 0.25)
-    local out = {}
-    for _, key in ipairs({"weekdays", "weekends"}) do
+        local floor = math.max(2, peak * 0.25)
         local bits = {}
-        for h = 1, 24 do bits[h] = (tonumber(l[key][h]) or 0) >= floor and "1" or "0" end
+        for h = 1, 24 do
+            local lit = (tonumber(l[key][h]) or 0) >= floor
+            bits[h] = lit and "1" or "0"
+            any = any or lit
+        end
         out[key] = table.concat(bits)
     end
+    -- nothing to offer until some hour has been seen more than once
+    if not any then return nil, l.samples end
     return out, l.samples
 end
 
@@ -378,7 +408,9 @@ end
 ns.ChatLink = ChatLink
 
 -- the chat filter: "[Adventure Plate: Name-Realm]" in a message becomes a link
-local TAG_PATTERN = "%[" .. ns.CHAT_TAG .. ": ([%w%-]+)%]"
+-- a name is anything that cannot break the tag or the link: no space, bar, bracket or colon
+local KEY_CLASS = "[^%s%c%[%]|:]+"
+local TAG_PATTERN = "%[" .. ns.CHAT_TAG .. ": (" .. KEY_CLASS .. ")%]"
 function ns.LinkifyChat(self, event, msg, ...)
     if type(msg) ~= "string" or not msg:find(ns.CHAT_TAG, 1, true) then return false, msg, ... end
     local out = msg:gsub(TAG_PATTERN, function(key) return ChatLink(key) end)
@@ -389,15 +421,29 @@ local CHAT_EVENTS = {"CHAT_MSG_SAY", "CHAT_MSG_YELL", "CHAT_MSG_PARTY", "CHAT_MS
                      "CHAT_MSG_GUILD", "CHAT_MSG_OFFICER", "CHAT_MSG_WHISPER", "CHAT_MSG_WHISPER_INFORM", "CHAT_MSG_CHANNEL",
                      "CHAT_MSG_INSTANCE_CHAT", "CHAT_MSG_INSTANCE_CHAT_LEADER", "CHAT_MSG_BN_WHISPER", "CHAT_MSG_BN_WHISPER_INFORM"}
 
+-- the chat API: ChatFrameUtil on current clients, the old globals (the
+-- deprecation fallbacks, gone when loadDeprecationFallbacks is off) before
+function ns.ChatAPI(new, old)
+    local u = ChatFrameUtil
+    if type(u) == "table" and type(u[new]) == "function" then return u[new] end
+    local f = _G[old]
+    if type(f) == "function" then return f end
+end
+
 function ns.InstallChatLinks()
     if ns.chatLinksInstalled then return end
-    if ChatFrame_AddMessageEventFilter then
-        for _, e in ipairs(CHAT_EVENTS) do pcall(ChatFrame_AddMessageEventFilter, e, ns.LinkifyChat) end
+    local addFilter = ns.ChatAPI("AddMessageEventFilter", "ChatFrame_AddMessageEventFilter")
+    if addFilter then
+        for _, e in ipairs(CHAT_EVENTS) do pcall(addFilter, e, ns.LinkifyChat) end
+        ns.chatFilterInstalled = true
     end
     if hooksecurefunc and SetItemRef then
         hooksecurefunc("SetItemRef", function(link)
-            local key = type(link) == "string" and link:match("^addon:AdventurePlates:([%w%-]+)$")
-            if key then Guard("chat link", ns.RequestPlate)(ns.FullName(key)) end
+            local key = type(link) == "string" and link:match("^addon:AdventurePlates:(" .. KEY_CLASS .. ")$")
+            -- a shift-click is the game putting the link in the chat box, not a request
+            if key and not (IsModifiedClick and Call(IsModifiedClick, "CHATLINK")) then
+                Guard("chat link", ns.RequestPlate)(ns.FullName(key))
+            end
         end)
     end
     ns.chatLinksInstalled = true
@@ -406,12 +452,14 @@ end
 -- put the link in the chat box (into the message being typed, or a new one)
 function ns.ShareInChat()
     local text = ns.ChatText()
-    local box = ChatEdit_GetActiveWindow and Call(ChatEdit_GetActiveWindow)
-    if box and ChatEdit_InsertLink then
-        if Call(ChatEdit_InsertLink, text) then return "inserted" end
+    local active = ns.ChatAPI("GetActiveWindow", "ChatEdit_GetActiveWindow")
+    local insert = ns.ChatAPI("InsertLink", "ChatEdit_InsertLink")
+    local open = ns.ChatAPI("OpenChat", "ChatFrame_OpenChat")
+    if active and insert and Call(active) then
+        if Call(insert, text) then return "inserted" end
     end
-    if ChatFrame_OpenChat then
-        Call(ChatFrame_OpenChat, text)
+    if open then
+        Call(open, text)
         return "opened"
     end
     ns.Print("paste this in chat: %s", text)

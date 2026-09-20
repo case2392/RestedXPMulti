@@ -16,7 +16,7 @@
 
 local addonName, ns = ...
 
-local WIDTH, HEIGHT = 740, 600
+local WIDTH, HEIGHT = 740, 620
 local CARD_W = 372
 local TOP = -100                      -- content starts under the header band
 local CELL, GAP = 10, 1
@@ -179,8 +179,9 @@ local function BuildCard(win)
     card.lookingLabel:SetText("Looking for:")
     card.looking = Ink(Text(card, "GameFontHighlightSmall"))
     card.looking:SetPoint("LEFT", card.lookingLabel, "RIGHT", 6, 0)
-    card.looking:SetPoint("RIGHT", card, "RIGHT", -4, 0)
+    card.looking:SetWidth(CARD_W - 84)
     card.looking:SetJustifyH("LEFT")
+    if card.looking.SetWordWrap then card.looking:SetWordWrap(false) end
     Line(card, -194)
 
     card.hoursHeader = Text(card, "GameFontNormal")
@@ -378,15 +379,19 @@ local function BuildEditor(win)
 
     local hoursLabel = Text(ed, "GameFontNormal")
     hoursLabel:SetPoint("TOPLEFT", ed, "TOPLEFT", 4, y)
-    hoursLabel:SetText("Active Playtime (server time, click the hours)")
+    hoursLabel:SetText("Active Playtime (server time)")
     -- fill the rows from the hours the addon has seen this account logged in
     ed.learned = Frame("Button", nil, ed, "UIPanelButtonTemplate")
     ed.learned:SetSize(96, 18)
     ed.learned:SetPoint("TOPRIGHT", ed, "TOPRIGHT", -4, y + 2)
     ed.learned:SetText("Use my hours")
     ed.learned:SetScript("OnClick", function()
-        local learned = ns.LearnedHours()
-        if not (learned and W.draft) then return end
+        local learned, samples = ns.LearnedHours()
+        if not W.draft then return end
+        if not learned then
+            ns.Print("not enough seen yet: %d of %d samples (one every ten minutes logged in)", samples or 0, ns.LEARN_MIN)
+            return
+        end
         W.draft.weekdays, W.draft.weekends = learned.weekdays, learned.weekends
         ns.RefreshEditor()
     end)
@@ -425,7 +430,7 @@ local function BuildEditor(win)
     local box = Frame("Frame", nil, ed, "BackdropTemplate")
     box:SetPoint("TOPLEFT", ed, "TOPLEFT", 2, y - 18)
     box:SetPoint("TOPRIGHT", ed, "TOPRIGHT", -2, y - 18)
-    box:SetHeight(46)
+    box:SetHeight(64)
     Backdrop(box, INSET, 0.93, 0.87, 0.72, 0.9, 0.6, 0.45, 0.15)
     ed.motto = Frame("EditBox", nil, box)
     ed.motto:SetPoint("TOPLEFT", box, "TOPLEFT", 8, -6)
@@ -794,8 +799,9 @@ function ns.RefreshEditor()
         end
     end
     ed.mottoCount:SetText(("%d/%d"):format(ns.Utf8Len(d.motto or ""), ns.MAX_MOTTO))
+    -- the button stays live either way (a disabled button shows no tooltip); it says why when it cannot
     local learned = ns.LearnedHours()
-    if learned then ed.learned:Enable() else ed.learned:Disable() end
+    ed.learned:SetText(learned and "Use my hours" or "Use my hours?")
 end
 
 function ns.OpenEditor()
@@ -886,7 +892,7 @@ ns.WELCOME_LINES = WELCOME
 
 local function BuildWelcome()
     local f = ns.BuildEraPage("AdventurePlatesWelcome", UIParent)
-    f:SetSize(500, 530)
+    f:SetSize(500, 560)
     f:SetPoint("CENTER", UIParent, "CENTER", 0, 60)
     if f.SetFrameStrata then f:SetFrameStrata("DIALOG") end
     if f.SetMovable then f:SetMovable(true) end

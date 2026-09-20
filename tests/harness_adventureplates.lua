@@ -314,19 +314,27 @@ do
     _G.GetTime = function() return 2010 end
     RunTimers()
     check(#sent == 10 and #ns._comm.outbox == 0 and #timers == 0, "flood: the queue drains and the timer stops")
+    -- a crowd of askers cannot hold up this player's own request
+    _G.GetTime = function() return 2015 end
+    for i = 1, 40 do ns.OnEvent("CHAT_MSG_ADDON", "ADVPLATE", "Q1", "WHISPER", "Crowd" .. i .. "-Firemaw") end
+    check(#ns._comm.outbox == 30 and #sent == 16, "flood: replies queue only until the queue is half full, the rest are dropped")
+    ns.slash("Friend")
+    check(ns._comm.outbox[1].text == "Q1" and ns._comm.outbox[1].target == "Friend-Firemaw" and #ns._comm.outbox == 31, "flood: my own request jumps the queue")
+    for i = 1, 8 do _G.GetTime = function() return 2015 + i * 2 end; RunTimers() end
+    check(#ns._comm.outbox == 0 and #sent == 47 and sent[17].target == "Friend-Firemaw", "flood: the queue drains, my request first")
     -- the client says it is throttling: the message waits at the head of the queue
     local realSend = C_ChatInfo.SendAddonMessage
     local throttle = 2
     C_ChatInfo.SendAddonMessage = function(...) if throttle > 0 then throttle = throttle - 1; return 3 end return realSend(...) end
     _G.GetTime = function() return 2020 end
     ns.OnEvent("CHAT_MSG_ADDON", "ADVPLATE", "Q1", "WHISPER", "Late-Firemaw")
-    check(#sent == 10 and #ns._comm.outbox == 1 and #timers == 1, "throttled: the plate stays queued")
+    check(#sent == 47 and #ns._comm.outbox == 1 and #timers == 1, "throttled: the plate stays queued")
     _G.GetTime = function() return 2021 end
     RunTimers()
-    check(#sent == 10 and #ns._comm.outbox == 1 and #timers == 1, "throttled: still refused, still queued")
+    check(#sent == 47 and #ns._comm.outbox == 1 and #timers == 1, "throttled: still refused, still queued")
     _G.GetTime = function() return 2022 end
     RunTimers()
-    check(#sent == 11 and #ns._comm.outbox == 0 and sent[11].target == "Late-Firemaw", "throttled: through once the client lets it")
+    check(#sent == 48 and #ns._comm.outbox == 0 and sent[48].target == "Late-Firemaw", "throttled: through once the client lets it")
     C_ChatInfo.SendAddonMessage = realSend
     check(#ns.errors == 0, "no errors")
 end
@@ -531,11 +539,44 @@ do
     -- Era's skill lines when there is no GetProfessions
     local era = NewWorld({skills = {{"Weapon Skills", true}, {"Herbalism", false, 60, 75}, {"Cooking", false, 20, 75}, {"Mining", false, 5, 75}}})
     local ep = era.MyPlate()
-    check(#ep.profs == 2 and ep.profs[1].name == "Herbalism" and ep.profs[1].skill == 60 and ep.profs[2].name == "Mining", "profs: Era's skill lines, headers and secondaries skipped")
+    check(#ep.profs == 2 and ep.profs[1].name == "Herbalism" and ep.profs[1].skill == 60 and ep.profs[1].max == 75 and ep.profs[2].name == "Mining", "profs: Era's skill lines, headers and secondaries skipped, the max kept")
+    -- a German client names its skills in German: the profession spells say which are professions
+    _G.GetSpellInfo = function(id) return ({[2366] = "Kr\195\164uterkunde", [2575] = "Bergbau"})[id] end
+    local de = NewWorld({skills = {{"Waffenfertigkeiten", true}, {"Kr\195\164uterkunde", false, 60, 75}, {"Kochkunst", false, 20, 75}, {"Bergbau", false, 5, 75}}})
+    local dp = de.MyPlate()
+    check(#dp.profs == 2 and dp.profs[1].name == "Kr\195\164uterkunde" and dp.profs[2].name == "Bergbau", "profs: Era's skill lines in another language")
+    _G.GetSpellInfo = nil
     -- a message being typed: the link goes into it
     local open = NewWorld({chatOpen = true})
     open.slash("chat")
     check(_G.__chat.inserted == "[Adventure Plate: Siggy-Firemaw]" and _G.__chat.opened == nil, "chat: with a message being typed, the link goes into it")
+    -- a client without the old chat globals: ChatFrameUtil is used instead
+    local util = {}
+    _G.ChatFrameUtil = {
+        AddMessageEventFilter = function(e, fn) util[e] = fn end,
+        GetActiveWindow = function() return nil end,
+        InsertLink = function() return true end,
+        OpenChat = function(t) util.opened = t end
+    }
+    local modern = NewWorld()
+    _G.ChatFrame_AddMessageEventFilter, _G.ChatEdit_GetActiveWindow, _G.ChatEdit_InsertLink, _G.ChatFrame_OpenChat = nil, nil, nil, nil
+    modern.InstallChatLinks()
+    modern.slash("chat")
+    check(util.CHAT_MSG_SAY == modern.LinkifyChat and util.opened == "[Adventure Plate: Siggy-Firemaw]" and modern.BuildReport():find("filter=yes (ChatFrameUtil)", 1, true) ~= nil, "chat: ChatFrameUtil is preferred, and works when the old globals are gone")
+    _G.ChatFrameUtil = nil
+    -- six samples in six different hours: nothing stands out, nothing offered
+    local scattered = NewWorld({hour = 1, weekday = 3})
+    local clock = 1700000000
+    _G.time = function() return clock end
+    for h = 2, 6 do _G.GetGameTime = function() return h, 0 end; clock = clock + 600; scattered.RecordPlaytime() end
+    local sl, ss = scattered.LearnedHours()
+    check(sl == nil and ss == 6, "learn: six samples in six hours offer nothing yet")
+    -- a weekend habit is judged against weekend samples, not weekday ones
+    for i = 1, 30 do _G.GetGameTime = function() return 20, 0 end; clock = clock + 600; scattered.RecordPlaytime() end
+    _G.C_DateAndTime = {GetCurrentCalendarTime = function() return {weekday = 7} end}
+    for i = 1, 4 do _G.GetGameTime = function() return 10, 0 end; clock = clock + 600; scattered.RecordPlaytime() end
+    sl = scattered.LearnedHours()
+    check(sl.weekdays:sub(21, 21) == "1" and sl.weekends:sub(11, 11) == "1" and sl.weekends:sub(21, 21) == "0", "learn: four Saturday mornings light the weekend row despite thirty weekday evenings")
     local ns = NewWorld({profs = {{"Herbalism", 75, 150}, {"Alchemy", 40, 150}}, hour = 20, weekday = 3})
     local filters, chat = _G.__filters, _G.__chat
     -- professions from the client, on the wire, on the card
@@ -554,13 +595,16 @@ do
     -- the editor: looking for, a main
     card.edit:Press()
     local ed = win.editor
-    check(ed.looking.text == "" and ed.main.text == "" and ed.learned.enabled == false, "editor: looking-for and main boxes, Use my hours greyed until enough is learned")
+    check(ed.looking.text == "" and ed.main.text == "" and ed.learned.text == "Use my hours?", "editor: looking-for and main boxes, Use my hours marked until enough is learned")
+    ed.learned:Press()
+    check(Printed("not enough seen yet: 1 of 6 samples") and win.draft.weekdays == string.rep("0", 24), "editor: pressing it too early says why and changes nothing")
     ed.looking:Type("  a levelling guild <b>  ")
     ed.main:Type("bob the great")
     ed.rows.weekdays[18]:Press(); ed.rows.weekdays[19]:Press()
     ed.save:Press()
     local mine = ns.db.plates["Siggy-Firemaw"]
     check(mine.looking == "a levelling guild <b>" and mine.main == "bobthegreat", "save: looking-for kept, the main squeezed to a name")
+    check(ns.CleanPlate({main = "Bj\195\182rn-Ge hennas-x'\"[y]"}).main == "Bj\195\182rn-Gehennas", "clean: a main keeps its letters and one dash, nothing after a second dash")
     check(card.looking.text == "a levelling guild <b>" and card.alt.shown == true and card.alt.text.text == "Alt of bobthegreat" and ns.window.mainKey == "Bobthegreat-Firemaw", "card: Looking for and Alt of on the card")
     sent = {}
     card.alt:Press()
@@ -577,18 +621,21 @@ do
     check(ns.db.learned ~= nil and ns.db.learned.samples == 1 and ns.db.learned.weekdays[21] == 1, "learn: a sample at login, Wednesday 20:00")
     local learned, samples = ns.LearnedHours()
     check(learned == nil and samples == 1, "learn: nothing offered after one sample")
-    local before = #timers
+    check(ns.RecordPlaytime() == false and ns.db.learned.samples == 1, "learn: a /reload a moment later is not another sample")
+    local clock = 1700000000
+    local function Tick() clock = clock + 600; _G.time = function() return clock end end
+    Tick()
     RunTimers()
     check(ns.db.learned.samples == 2 and #timers >= 1, "learn: the ten-minute timer samples and re-arms")
-    for i = 1, 4 do ns.RecordPlaytime() end
+    for i = 1, 4 do Tick(); ns.RecordPlaytime() end
     _G.GetGameTime = function() return 21, 0 end
-    ns.RecordPlaytime()
+    Tick(); ns.RecordPlaytime()
     _G.GetGameTime = function() return 3, 0 end
-    ns.RecordPlaytime()
+    Tick(); ns.RecordPlaytime()
     learned, samples = ns.LearnedHours()
     check(learned ~= nil and samples == 8 and learned.weekdays:sub(21, 21) == "1" and learned.weekdays:sub(22, 22) == "0" and learned.weekdays:sub(4, 4) == "0" and learned.weekends == string.rep("0", 24), "learn: eight samples: the hour with six lit, the odd ones not")
     card.edit:Press()
-    check(ed.learned.enabled == true, "editor: Use my hours offered")
+    check(ed.learned.text == "Use my hours", "editor: Use my hours offered")
     ed.learned:Press()
     check(win.draft.weekdays == learned.weekdays and ed.rows.weekdays[20].fill.color[1] == 0.95 and ed.rows.weekdays[18].fill.color[1] == 0.55, "editor: Use my hours fills the rows from what was learned")
     ed.cancel:Press()
@@ -611,11 +658,19 @@ do
     check(out == "look at my plate |cff66ccff|Haddon:AdventurePlates:Bob-Firemaw|h[Adventure Plate: Bob-Firemaw]|h|r please", "chat: the text becomes a clickable addon link")
     local _, same = ns.LinkifyChat(nil, "CHAT_MSG_SAY", "no plate here [Adventure Plate: bad|name]", "Bob")
     check(same == "no plate here [Adventure Plate: bad|name]", "chat: a name with a bar in it is left as text")
+    local _, utf = ns.LinkifyChat(nil, "CHAT_MSG_SAY", "[Adventure Plate: Bj\195\182rn-Firemaw]", "Bob")
+    check(utf == "|cff66ccff|Haddon:AdventurePlates:Bj\195\182rn-Firemaw|h[Adventure Plate: Bj\195\182rn-Firemaw]|h|r", "chat: a name with an accent links too")
     sent = {}
     SetItemRef("addon:AdventurePlates:Bob-Firemaw", "[Adventure Plate: Bob-Firemaw]", "LeftButton")
     check(#sent == 1 and sent[1].target == "Bob-Firemaw" and sent[1].text == "Q1", "chat: clicking the link asks for the plate")
     SetItemRef("item:6948", "[Hearthstone]", "LeftButton")
     check(#sent == 1, "chat: other links are not ours")
+    _G.IsModifiedClick = function(k) return k == "CHATLINK" end
+    SetItemRef("addon:AdventurePlates:Bob-Firemaw", "[Adventure Plate: Bob-Firemaw]", "LeftButton")
+    check(#sent == 1, "chat: a shift-click (the game linking it) does not ask")
+    _G.IsModifiedClick = nil
+    SetItemRef("addon:AdventurePlates:Bj\195\182rn-Firemaw", "x", "LeftButton")
+    check(#sent == 2 and sent[2].target == "Bj\195\182rn-Firemaw", "chat: an accented name is asked for")
     -- the report carries the new bits
     local report = ns.BuildReport()
     check(report:find("professions: Herbalism:75:150,Alchemy:40:150", 1, true) ~= nil and report:find("learn=yes", 1, true) ~= nil and report:find("chat links: installed=yes", 1, true) ~= nil, "report: professions, learning and chat links")

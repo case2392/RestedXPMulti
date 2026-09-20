@@ -187,12 +187,23 @@ Pump = function()
 end
 
 -- false only when the message could not be sent at all; a queued message
--- counts as sent
-local function Send(text, target)
+-- counts as sent. Our own requests go to the head of the queue; a reply
+-- to someone else waits behind them and is dropped when the queue is
+-- already half full of replies, so a crowd of askers cannot hold up
+-- what this player is doing (they can ask again).
+local function Send(text, target, reply)
     if not Api() then return false end
     local m = {text = text, target = target}
-    outbox[#outbox + 1] = m
-    while #outbox > OUTBOX_MAX do table.remove(outbox, 1) end
+    if reply then
+        if #outbox >= OUTBOX_MAX / 2 then return false end
+        outbox[#outbox + 1] = m
+    else
+        local at = 1
+        while outbox[at] and not outbox[at].reply do at = at + 1 end
+        table.insert(outbox, at, m)
+    end
+    m.reply = reply or nil
+    while #outbox > OUTBOX_MAX do table.remove(outbox) end
     Pump()
     return m.result ~= "failed"
 end
@@ -241,7 +252,7 @@ function ns.SendPlate(target)
     local text = ns.Encode(plate)
     local chunks = ns.Chunks(text)
     for _, c in ipairs(chunks) do
-        if not Send(c, target) then return false end
+        if not Send(c, target, true) then return false end
     end
     return #chunks
 end
@@ -310,8 +321,8 @@ function ns.OnAddonMessage(prefix, text, channel, sender)
     if text:sub(1, 1) == "Q" then
         local last = replies[sender]
         if last and Now() - last < REPLY_GAP then return end
-        if not ns.MayShareWith(sender) then return end
         replies[sender] = Now()
+        if not ns.MayShareWith(sender) then return end
         ns.SendPlate(sender)
         if ns.db.settings.greet then ns.Print("%s looked at your plate", sender) end
     elseif text:sub(1, 1) == "P" then
