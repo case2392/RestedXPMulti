@@ -138,6 +138,11 @@ local function Frame(name)
     function f:GetChecked() return self.checked end
     function f:Click() self.checked = not self.checked; self.scripts.OnClick(self) end
     function f:SetWidth(w) self.width = w end
+    function f:GetPoint(i)
+        local a = self.anchors and self.anchors[i or 1]
+        if not a then return nil end
+        return a[1], a[2], a[3], a[4], a[5]
+    end
     function f:GetMinMaxValues() return self.minmax and unpack(self.minmax) or 0, 0 end
     function f:GetValue() return self.value or 0 end
     function f:SetMinMaxValues(a, b) self.minmax = {a, b} end
@@ -1549,6 +1554,10 @@ do
     w.inCombat = true
     EditModeManagerFrame:UpdateBottomActionBarPositions()
     check(MainActionBar.anchors[1][2] == MicroMenuContainer and ab.pending == true and math.abs(c2.scale - 0.8) < 0.001, "forever: in combat Blizzard's bar anchor stands, layout pending")
+    -- nobody can type a command mid-fight, so where Blizzard put the bars
+    -- is written down and carried in the report instead
+    check(ab.combatAnchors ~= nil and ab.combatAnchors.MainActionBar == "BOTTOMRIGHT>MicroMenuContainer.BOTTOMLEFT -4.5,-4.0" and ab.combatAnchors.MultiBarBottomLeft ~= nil, "forever: the anchor Blizzard moved the bars to in combat is recorded")
+    check(ab:Status():find("moved in combat to", 1, true) and ab:Status():find("MicroMenuContainer", 1, true), "forever: and it goes into the report through the status line")
     -- the micro buttons are protected too: moving, sizing or re-levelling
     -- one in combat is refused and prints "Interface action failed"
     local anchorsBefore = #CharacterMicroButton.anchors

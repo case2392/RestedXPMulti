@@ -827,6 +827,34 @@ local function ProtectedLayout(art)
     end
 end
 
+-- When Blizzard's layout moves a bar during a fight there is nothing to be
+-- done about it there and then: a protected frame cannot be anchored from
+-- addon code under lockdown, so the bar sits where Blizzard put it until
+-- combat ends. What can be done is write down where that was. The Era bar
+-- could then be lined up so Blizzard's own layout lands the buttons in the
+-- right place and nothing needs to move mid-fight - but that needs the real
+-- anchor from a real client, and nobody can type a command while fighting.
+-- So it is captured here and carried in the report.
+local COMBAT_WATCH = {"MainActionBar", "MultiBarBottomLeft", "MultiBarBottomRight"}
+
+local function RecordCombatAnchors()
+    M.combatAnchors = M.combatAnchors or {}
+    for _, name in ipairs(COMBAT_WATCH) do
+        local bar = G(name)
+        if bar and bar.GetPoint then
+            local ok, point, rel, relPoint, x, y = pcall(bar.GetPoint, bar, 1)
+            if ok and point then
+                local relName = rel
+                if type(rel) == "table" and rel.GetName then relName = rel:GetName() end
+                local fine, text = pcall(string.format, "%s>%s.%s %+.1f,%+.1f",
+                                         tostring(point), tostring(relName),
+                                         tostring(relPoint), tonumber(x) or 0, tonumber(y) or 0)
+                M.combatAnchors[name] = fine and text or "<unreadable>"
+            end
+        end
+    end
+end
+
 function M.Layout()
     local art = BuildArt()
     if not art then return false end
@@ -853,6 +881,7 @@ function M.Layout()
     -- caught up the moment combat ends.
     if InCombat() then
         M.pending = true
+        RecordCombatAnchors()
     else
         M.pending = nil
         LayoutMicroMenu(art)
@@ -992,6 +1021,16 @@ function M:Status()
             if (M.microStride and M.microStride < MICRO_STRIDE) or (M.microScale and M.microScale < 1) then s = s .. " to fill the room before the bags" end
         end
         if M.pending then s = s .. "; bar anchors wait for combat to end" end
+        -- carried into the report: where Blizzard put the bars mid-fight
+        if M.combatAnchors then
+            local seen = {}
+            for _, name in ipairs(COMBAT_WATCH) do
+                if M.combatAnchors[name] then
+                    seen[#seen + 1] = name .. "=" .. M.combatAnchors[name]
+                end
+            end
+            if #seen > 0 then s = s .. "; moved in combat to " .. table.concat(seen, ", ") end
+        end
         return s .. ")"
     end
     if M.mode == "unavailable" then return "(unavailable on this client)" end

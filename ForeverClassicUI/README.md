@@ -294,7 +294,14 @@ usually enough to rebuild that window in the classic style.
   the moment combat ends. Blizzard's own layout still moves the bars
   during a fight and they cannot be moved back until it is over, so the
   bar can sit shifted for the rest of the fight; that part is the client's
-  lockdown, not something the addon can undo.
+  lockdown, not something the addon can undo. Since 0.7.13 the addon
+  records where Blizzard put each bar when that happens and carries it in
+  the report, so the anchor can be read off a report taken after the fight
+  rather than needing a command typed during one. If Blizzard derives the
+  main bar's position from the micro menu, moving the Era micro row to
+  where Blizzard expects would make both layouts agree and the jump would
+  stop - at the cost of the micro buttons sitting slightly off Era's exact
+  x=552. That trade needs the real numbers first.
   Forever fades a micro button's own icon out under the mouse and
   cross-fades its modern hover art in, so with Era's glow in that art's
   place the icon vanished on hover; the icon is now held at full alpha
