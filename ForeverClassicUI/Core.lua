@@ -15,18 +15,14 @@ ns.modules = {}
 ns.moduleOrder = {}
 ns.errors = {}
 
--- Parts that are built but not finished. Everything after 0.7.0 - the Era
--- framing on the quest list and the map window, the Appearances window and
--- the Guild window - shares one panel that has not come out looking like
--- Era yet, so none of it is worth having on. The code stays exactly where
--- it is: it is the switch that is held, so the work is not lost and can be
--- picked up from here. Taking a name out of this table is all it takes to
--- let it back on, and it comes back on by default. While a name is here
--- the part never enables, whatever the saved settings say, it will not
--- turn on from the slash command, and its options box is greyed out. The
+-- Parts that are built but not finished go here by name, and while a name
+-- is here the part never enables whatever the saved settings say, will not
+-- turn on from the slash command, and has its options box greyed out. The
 -- saved setting itself is left alone, so anyone who had deliberately
--- turned one of these off still has it off when it comes back.
-ns.COMING_SOON = {questlog = true, collections = true, guild = true}
+-- turned one off still has it off when it comes back. 0.7.9 held the
+-- quest log, Appearances and Guild parts here while their shared Era
+-- panel was wrong; 0.7.16 let them back out with the panel rebuilt.
+ns.COMING_SOON = {}
 
 function ns.IsComingSoon(name)
     return ns.COMING_SOON[name] == true
@@ -221,7 +217,9 @@ local function PrintHelp()
     ns.Print("  /cui combo offset <x> <y> - nudge the combo points (no numbers = reset)")
     ns.Print("  /cui combo force - draw the classic combo points now (testing)")
     ns.Print("  /cui unitframes|party|charsheet|spellbook|professions|actionbars|minimap|tracker on|off|force - the other classic parts")
-    ns.Print("  /cui questlog|collections|guild - coming soon: the quest log, Appearances and Guild windows are not finished, so they stay off for now")
+    ns.Print("  /cui questlog on|off|force - Era's page on the map window and its quest list")
+    ns.Print("  /cui collections on|off|force - Era's page on the Appearances window")
+    ns.Print("  /cui guild on|off|force - Era's page on the Guild & Communities window")
     ns.Print("  /cui options - open the settings panel (Options > AddOns > Classic UI for Forever)")
     ns.Print("  /cui report - everything for support in one window: probe, every frame, Lua errors")
     ns.Print("  /cui report all - the same including hidden parts (use this on Classic Era for comparison)")

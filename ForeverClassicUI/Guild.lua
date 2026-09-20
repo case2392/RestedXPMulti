@@ -12,10 +12,10 @@
 --     its top and bottom filigree and the bars and corners of its
 --     FilligreeOverlay, every inset's nine-slice, and the guild finder's
 --     own backdrop and wide background.
---   * an Era panel is drawn behind the lot: the tiling parchment inside
---     Era's gold UI-DialogBox border, which is right at any size. Era's
---     book art is deliberately not used - it is four fixed quarters with
---     the decoration baked in and only works at 384x512.
+--   * an Era panel is drawn behind the lot: Era's spellbook page cut
+--     into a nine-slice (EraPanel.lua), with the header band and the
+--     portrait ring across the top, and the window's own portrait moved
+--     into the ring.
 --   * Forever's own title and close button are left alone: the title is
 --     already Era's gold font and the X is the way out of the window.
 -- The roster, the tabs, the chat and the finder inside are Blizzard's and
@@ -201,6 +201,12 @@ local function Shell(frame, on)
     end
 end
 
+-- the window's own portrait goes in the ring of the page, as Era had it
+local function Portrait(frame)
+    local pc = frame and frame.PortraitContainer
+    return type(pc) == "table" and pc.portrait or nil
+end
+
 function M.Apply()
     if M.mode ~= "restyled" then return end
     local frame = G(FRAME_NAME)
@@ -213,6 +219,7 @@ function M.Apply()
     end
     Shell(frame, true)
     M.panel:Show()
+    if ns.EraPanelRing then ns.EraPanelRing(M.panel, Portrait(frame), true) end
 end
 
 local function ApplyLater()
@@ -223,6 +230,9 @@ end
 local function Undo()
     local frame = G(FRAME_NAME)
     if not frame then return end
+    -- the ring first: it restores the portrait's own anchors, then Shell
+    -- puts the alpha back to what Blizzard had
+    if M.panel and ns.EraPanelRing then ns.EraPanelRing(M.panel, Portrait(frame), false) end
     Shell(frame, false)
     if M.panel then M.panel:Hide() end
 end

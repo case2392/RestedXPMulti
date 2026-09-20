@@ -7,11 +7,11 @@
 --   * retail's nine-slice shell, portrait and flat backdrop are faded,
 --     along with the dark page inside it (the wardrobe's own Bg, tiled
 --     background, corner shadows and inner nine-slice, which hang off a
---     frame of their own), and an Era panel is drawn in their place: the
---     tiling parchment inside Era's gold UI-DialogBox border, which is
---     right at any size. Era's book art is deliberately not used - it is
---     four fixed quarters with the decoration baked in, and stretching it
---     across a 703x606 window is what made this look wrong before;
+--     frame of their own), and an Era panel is drawn in their place:
+--     Era's spellbook page cut into a nine-slice (EraPanel.lua), with
+--     the header band and the portrait ring across the top. The window's
+--     own portrait is moved into the ring, as Era put one in every
+--     window's;
 --   * Forever's own title and close button are left alone: the title is
 --     already Era's gold font over the top edge, and the X is the only
 --     way out of the window.
@@ -166,6 +166,12 @@ local function Shell(frame, on)
     end
 end
 
+-- the window's own portrait goes in the ring of the page, as Era had it
+local function Portrait(frame)
+    local pc = frame and frame.PortraitContainer
+    return type(pc) == "table" and pc.portrait or nil
+end
+
 function M.Apply()
     if M.mode ~= "restyled" then return end
     local frame = G(FRAME_NAME)
@@ -178,6 +184,7 @@ function M.Apply()
     end
     Shell(frame, true)
     M.panel:Show()
+    if ns.EraPanelRing then ns.EraPanelRing(M.panel, Portrait(frame), true) end
 end
 
 local function ApplyLater()
@@ -188,6 +195,9 @@ end
 local function Undo()
     local frame = G(FRAME_NAME)
     if not frame then return end
+    -- the ring first: it restores the portrait's own anchors, then Shell
+    -- puts the alpha back to what Blizzard had
+    if M.panel and ns.EraPanelRing then ns.EraPanelRing(M.panel, Portrait(frame), false) end
     Shell(frame, false)
     if M.panel then M.panel:Hide() end
 end

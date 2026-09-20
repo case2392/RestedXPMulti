@@ -73,8 +73,11 @@ local CLASSIC_TEXTURES = {
     "Interface\\Buttons\\CancelButton-Up",
     "Interface\\Buttons\\UI-CheckBox-SwordCheck",
     "Interface\\DialogFrame\\UI-DialogBox-Corner",
-    -- the two the Era panel is built from, on the quest log, the
-    -- Appearances window and the guild window
+    -- the disc behind the Era panel's portrait ring (the page itself is
+    -- the four UI-SpellbookPanel quarters below), and the two dialog
+    -- files 0.7.4 tried for that panel, kept so a report still shows
+    -- what this client has for them
+    "Interface\\Minimap\\UI-Minimap-Background",
     "Interface\\DialogFrame\\UI-DialogBox-Background",
     "Interface\\DialogFrame\\UI-DialogBox-Border",
     "Interface\\TargetingFrame\\UI-PartyFrame",

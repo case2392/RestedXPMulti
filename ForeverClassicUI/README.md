@@ -191,18 +191,16 @@ usually enough to rebuild that window in the classic style.
   that page gets its classic version. Era had no such window
   (professions were the Skills tab), so this is the closest classic
   layout.
-- **Quest log, Appearances and Guild — coming soon, held back in 0.7.9.**
-  The three parts below all hang off one shared Era panel, and that panel
-  has not come out looking like Era yet (see *The Era panel*). Rather
-  than ship something that looks worse than what it replaces, the switch
-  is held: `ns.COMING_SOON` in `Core.lua` names them, they never enable
-  whatever the saved settings say, `/cui questlog on` answers "coming
-  soon", and their options boxes are greyed out and dead to the mouse.
-  None of the code is deleted — it is all still here, still covered by
-  the harness (the test world lifts the hold), and taking a name out of
-  that one table is all it takes to bring a part back. Anyone who had
-  deliberately turned one of these off keeps that setting for when it
-  returns. What follows describes what they do once they are let back on.
+- **The "coming soon" hold** — a part that is built but not ready can be
+  named in `ns.COMING_SOON` in `Core.lua`. While it is there it never
+  enables whatever the saved settings say, `/cui <part> on` answers
+  "coming soon", and its options box is greyed out and dead to the
+  mouse. The saved setting is left alone, so anyone who deliberately
+  turned the part off still has it off when it comes back. 0.7.9 held
+  the quest log, Appearances and Guild parts this way while their shared
+  Era panel was wrong; 0.7.16 rebuilt the panel and let them out, so the
+  table is empty now. The harness tests the hold by holding a part that
+  is ready (`opts.hold` on its test world).
 - **Quest log** — Forever merges the quest log into the map window
   (`WorldMapFrame` with `QuestMapFrame` down its side) and it stays
   merged: the two cannot be pulled apart without taking the map's own
@@ -210,22 +208,27 @@ usually enough to rebuild that window in the classic style.
   Retail's quest panel — the `QuestLog-frame` border, its filigree and
   its shadow, which hang off `QuestScrollFrame.BorderFrame` rather than
   the scroll frame, plus the flat background behind the list — is faded,
-  and an Era panel is drawn over exactly the rect it filled. Quest titles
-  get Era's font and `UI-QuestLogTitleHighlight` under the mouse, and the
-  "no quests" text is re-coloured to read on parchment. The window round
-  both halves is dressed the same way: its flat dark backdrop, the inset
-  line under the title and retail's metal nine-slice and portrait are
-  faded and a second Era panel is drawn behind the lot, so the map side
-  matches the quest side. The search box and quest count above the list
-  are Forever's and stay put, and so are the title, the close button, the
-  maximise button and the map itself.
+  and an Era panel is drawn over exactly the rect it filled: the
+  headerless kind, a bevelled parchment sheet, since a list inside a
+  window has no portrait ring. Quest titles get Era's font and
+  `UI-QuestLogTitleHighlight` under the mouse, and the "no quests" text
+  is re-coloured to read on parchment. The window round both halves is
+  dressed the same way: its flat dark backdrop, the inset line under the
+  title and retail's metal nine-slice are faded and a second Era panel,
+  this one with the stone header band and the ring, is drawn behind the
+  lot, so the map side matches the quest side. The window's own portrait
+  (Era's quest log book) is moved into the ring and back again. The
+  search box and quest count above the list are Forever's and stay put,
+  and so are the title, the close button, the maximise button and the
+  map itself.
 - **Appearances** — there is no Era original here: transmog did not exist
   in 1.15, so Forever's Appearances window (`CollectionsJournal`) is
   dressed in Era's furniture rather than rebuilt. Retail's nine-slice
   shell, portrait and flat backdrop are faded, along with the dark page
   inside it (the wardrobe's own `Bg`, tiled fill, corner shadows and
   inner nine-slice, which hang off `WardrobeCollectionFrame.activeFrame`
-  rather than the window), and the Era panel is drawn in their place.
+  rather than the window), and the Era panel is drawn in their place,
+  with the window's own portrait moved into its ring.
   Forever's own title and close button are left alone: the title is
   already Era's gold font, and the X is the only way out. The lists, the
   model, the tabs and the filters inside are Blizzard's.
@@ -236,30 +239,42 @@ usually enough to rebuild that window in the classic style.
   is the dark art inside it, which hangs off frames of its own: the
   sidebar's `Bg`, its top and bottom filigree and the bars and corners of
   its `FilligreeOverlay`, every inset's nine-slice, and the guild finder's
-  own backdrop and wide background. The Era panel is drawn behind the lot.
+  own backdrop and wide background. The Era panel is drawn behind the
+  lot, with the window's portrait in its ring.
   Forever's title and close button are left alone, and the roster, tabs,
   chat and finder inside are Blizzard's.
-- **The Era panel** — all three of those use one shared piece, and it
-  has been got wrong four times, which is why they are held back. Era's page art is four fixed quarters of
-  a 384x512 page with the decoration baked into their corners, so
-  stretching a quarter whole across some other rectangle pulls the
-  decoration out of shape: that is what looked mangled in 0.7.1 and
-  0.7.2. Era's dialog frame would scale — tiling `UI-DialogBox-Background`
-  inside the nine-slice `UI-DialogBox-Border` — and that is what 0.7.4
-  and 0.7.5 used, but on Forever both files resolve to file IDs (131071
-  and 131072) and then draw nothing, so those panels were invisible and
-  the windows went see-through. 0.7.6 fell back to flat colour and came
-  out as a black slab; Era has no black window. 0.7.7 cut Era's spellbook
-  page into a nine-slice, which is sound in principle but needs to know
-  where the decoration ends and the plain parchment begins inside each
-  quarter — those numbers were guessed, they were wrong, and the windows
-  came out as swooping curves and checkerboard. So nothing here depends
-  on guessing what is inside a texture any more: since 0.7.8 the panel is
-  drawn from plain colour, Era's parchment brown with a lighter page
-  inside its gold frame and a dark line outside it. That is not Era's own
-  art, but it is Era's colours and it is the same at any size. If a
-  scalable piece of classic art is ever confirmed to draw on this client,
-  `EraPanel.lua` is the one place to swap it in.
+- **The Era panel** (`EraPanel.lua`) — all three of those use one shared
+  piece: Era's spellbook page, the art the professions window already
+  draws on this client, cut into a nine-slice whose numbers were read
+  off the texture files rather than guessed. The page is four quarters
+  (`UI-SpellbookPanel-TopLeft`/`BotLeft` 256x256, `-TopRight`/`-BotRight`
+  128x256) making a 384x512 canvas of which the drawn book is the
+  top-left 352x445. Inside it: a stone header band 88px tall with the
+  round portrait hole centred at 41.5,41.5 and a tab at the top right,
+  a bevelled frame 88px down the left and 48px down the right, a torn
+  lower edge 45px tall, and plain parchment between. The corners are
+  drawn at their own size, the four edges stretch along their run, and
+  the middle is a 168x144 patch of plain parchment from the bottom-left
+  quarter stretched over the inside (stretched parchment reads as
+  parchment; tiling and mirrored tiling were both rendered from the
+  files and looked worse). Every piece comes from one quarter file, so
+  nothing straddles a seam. A panel can be built without the header
+  (`{header = false}`): the bottom pieces are turned over to serve as
+  the top, giving a bevelled sheet with no ring, which is what the quest
+  list uses. A dark disc (`UI-Minimap-Background`) sits behind the
+  portrait hole so it never shows the world, and `ns.EraPanelRing` moves
+  a window's own portrait into the ring and back. A flat fill sits under
+  everything so that if a file ever fails to draw the window is still a
+  window. The history, for anyone tempted to change it: 0.7.1 and 0.7.2
+  stretched the quarters whole and the baked-in decoration pulled out of
+  shape; 0.7.4 and 0.7.5 used Era's dialog backdrop, but Forever's copies
+  of `UI-DialogBox-Background` and `-Border` are retail's 64px black tile
+  at 60% alpha and a hairline, so the panels drew as a faint dark tint
+  with the world showing through (nothing was invisible, it was black);
+  0.7.6 and 0.7.8 fell back to flat colour, which is not a window; 0.7.7
+  cut this same page but guessed the cuts and took the ring and header
+  band as the "plain" patch, hence the swooping curves. 0.7.16 is the
+  first cut made from measurements.
 - **Options panel** — one checkbox per part with Select all / Deselect all,
   the bug-report button, and a status block. It is all on a scroll child:
   the list outgrew the AddOns window and was running off the bottom of the

@@ -9,15 +9,18 @@
 --   * retail's quest panel - the QuestLog-frame border, its filigree and
 --     its shadow, which hang off QuestScrollFrame.BorderFrame rather than
 --     the scroll frame, plus the flat background behind the list - is
---     faded, and an Era panel is drawn over exactly the rect that panel
---     filled. Era's book art is not used here: it is four fixed quarters
---     with the decoration baked in, and stretching it into a tall narrow
---     panel is what made this look wrong before.
+--     faded, and an Era panel (EraPanel.lua: Era's spellbook page cut
+--     into a nine-slice) is drawn over exactly the rect that panel
+--     filled. This one is built without the header band, so it is a
+--     bevelled parchment sheet, which is right for a list that lives
+--     inside another window.
 --   * the window round both halves is dressed the same way: its flat
 --     dark backdrop, the inset line under the title and retail's metal
---     nine-slice and portrait are faded and a second Era panel is drawn
---     behind the lot, so the map side matches the quest side. The title,
---     the close button and the maximise button are left alone.
+--     nine-slice are faded and a second Era panel, this one with the
+--     header band and the portrait ring, is drawn behind the lot, so
+--     the map side matches the quest side. The window's own portrait
+--     (Era's quest log book icon) is moved into the ring. The title, the
+--     close button and the maximise button are left alone.
 --   * every quest title gets Era's font and UI-QuestLogTitleHighlight
 --     under the mouse in place of retail's flat bar, and the "no quests"
 --     text is re-coloured so it reads on parchment.
@@ -183,7 +186,8 @@ end
 --------------------------------------------------------------------------
 
 local function BuildPanel(scroll)
-    local panel = ns.BuildEraPanel("ForeverClassicUIQuestPanel", scroll)
+    -- a list inside another window: the bevelled sheet, no header band
+    local panel = ns.BuildEraPanel("ForeverClassicUIQuestPanel", scroll, {header = false})
     if not panel then return nil end
     panel:SetPoint("TOPLEFT", scroll, "TOPLEFT", -PAD_L, PAD_T)
     panel:SetPoint("BOTTOMRIGHT", scroll, "BOTTOMRIGHT", PAD_R, -PAD_B)
@@ -264,6 +268,25 @@ local function Shell(on)
     end
 end
 
+-- the map window's portrait is Era's quest log book icon; it goes in the
+-- ring of the page, where Era's quest log had it
+local function MapPortrait()
+    local map = MapWindow()
+    local border = map and map.BorderFrame
+    local pc = type(border) == "table" and border.PortraitContainer
+    return type(pc) == "table" and pc.portrait or nil
+end
+
+-- the quest side is closed or collapsed: both pages go, and the portrait
+-- leaves the ring for wherever Blizzard had it
+local function Collapse()
+    if M.panel then M.panel:Hide() end
+    if M.mapPanel then
+        M.mapPanel:Hide()
+        if ns.EraPanelRing then ns.EraPanelRing(M.mapPanel, MapPortrait(), false) end
+    end
+end
+
 function M.Apply()
     if M.mode ~= "restyled" then return end
     local side, scroll = Sidebar(), ScrollFrame()
@@ -275,11 +298,13 @@ function M.Apply()
     if side.IsShown and side:IsShown() then
         Shell(true)
         M.panel:Show()
-        if M.mapPanel then M.mapPanel:Show() end
+        if M.mapPanel then
+            M.mapPanel:Show()
+            if ns.EraPanelRing then ns.EraPanelRing(M.mapPanel, MapPortrait(), true) end
+        end
         Rows(true)
     else
-        M.panel:Hide()
-        if M.mapPanel then M.mapPanel:Hide() end
+        Collapse()
     end
 end
 
@@ -289,6 +314,9 @@ local function ApplyLater()
 end
 
 local function Undo()
+    -- the ring first: it restores the portrait's own anchors, then Shell
+    -- puts the alpha back to what Blizzard had
+    if M.mapPanel and ns.EraPanelRing then ns.EraPanelRing(M.mapPanel, MapPortrait(), false) end
     Shell(false)
     Rows(false)
     if M.panel then M.panel:Hide() end
@@ -307,10 +335,7 @@ local function Hook()
     if not side or not hooksecurefunc then return end
     if side.HookScript then
         side:HookScript("OnShow", Guard("OnShow", ApplyLater))
-        side:HookScript("OnHide", Guard("OnHide", function()
-            if M.panel then M.panel:Hide() end
-            if M.mapPanel then M.mapPanel:Hide() end
-        end))
+        side:HookScript("OnHide", Guard("OnHide", Collapse))
     end
     -- the rows are pooled: Blizzard hands a row to a different quest on
     -- every refresh, so ours runs again after each one

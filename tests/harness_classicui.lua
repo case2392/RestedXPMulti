@@ -1072,8 +1072,10 @@ local function NewWorld(opts)
     end
     w.ns = ns
     lastNs = ns
-    -- the parts held back as "coming soon" still have their code and their
-    -- tests: a world can lift the hold so those tests can drive them
+    -- the "coming soon" hold: nothing is held back right now, but the
+    -- mechanism stays, so a world can hold a part to test it (opts.hold)
+    -- or lift every hold (opts.unhold)
+    if opts.hold then for _, k in ipairs(opts.hold) do ns.COMING_SOON[k] = true end end
     if opts.unhold then for k in pairs(ns.COMING_SOON) do ns.COMING_SOON[k] = nil end end
     -- login
     ns.eventFrame:Fire("ADDON_LOADED", "ForeverClassicUI")
@@ -1607,7 +1609,7 @@ do
     -- options panel
     local panel = w.ns.optionsPanel
     check(panel ~= nil and panel.checks.unitframes ~= nil and panel.checks.minimap ~= nil, "forever: options panel lists every part")
-    -- the held-back parts are left out of both buttons: nothing to turn on
+    -- a held-back part (none right now) is left out of both buttons
     local function Every(value)
         for _, key in ipairs(w.ns.moduleOrder) do
             if not w.ns.IsComingSoon(key) and w.ns.db[key] ~= value then return false end
@@ -1617,7 +1619,7 @@ do
     panel.deselectAll:Click()
     check(Every(false) and w.ns.modules.unitframes.mode == "off" and panel.checks.minimap.checked == false, "forever: Deselect all switches every part off and unticks the boxes")
     panel.selectAll:Click()
-    check(Every(true) and w.ns.modules.unitframes.mode == "restyled" and panel.checks.minimap.checked == true and panel.checks.questlog.checked == false, "forever: Select all switches every part back on, except the ones held back")
+    check(Every(true) and w.ns.modules.unitframes.mode == "restyled" and panel.checks.minimap.checked == true and panel.checks.questlog.checked == true, "forever: Select all switches every part back on")
     panel.Refresh()
     check(panel.checks.nameplates.checked == true, "forever: panel reflects settings")
     panel.checks.minimap:Click()
@@ -2111,25 +2113,48 @@ do
     local side = w.LoadQuestMap()
     ql.watcher:Fire("PLAYER_ENTERING_WORLD")
     check(ql.mode == "restyled" and ql.panel ~= nil and ql.panel.parent == QuestScrollFrame and ql.panel.shown == false, "questlog: panel built once the quest list exists, hidden until it opens")
+    -- a texcoord check: the 4-number form or the 8-number (flipped) form
+    local function Coords(t, ...)
+        local want, got = {...}, t.texcoord
+        if not got or #got ~= #want then return false end
+        for i = 1, #want do if math.abs(got[i] - want[i]) > 1e-9 then return false end end
+        return true
+    end
+    local ART = w.ns.ERA_PANEL
+    -- the map window's portrait, where Blizzard hangs it
+    local portrait = WorldMapFrame.BorderFrame.PortraitContainer.portrait
+    portrait:SetPoint("TOPLEFT", WorldMapFrame.BorderFrame.PortraitContainer, "TOPLEFT", -5, 7); portrait:SetSize(62, 62)
     side:Show()
     local panel, border = ql.panel, QuestScrollFrame.BorderFrame
     check(panel.shown == true and panel.level == 4, "questlog: the Era panel is level with the list so the quest rows draw on top")
-    check(panel.fill ~= nil and panel.fill.color ~= nil and panel.fill.color[4] == 1 and panel.inner ~= nil and panel.inner.color ~= nil, "questlog: a solid Era parchment panel, so the quest list is never see-through")
-    check(#panel.edges == 8 and panel.edges[5].color[1] > panel.edges[1].color[1] and panel.edges[1].height == 1 and panel.edges[5].height == 3, "questlog: a gold band inside a dark outline round every side")
+    check(panel.header == false and panel.disc == nil and panel.ring == nil and #panel.art == 9 and panel.fill ~= nil and panel.fill.color ~= nil and panel.fill.color[4] == 1, "questlog: a headerless Era page over a solid floor, so the quest list is never see-through")
+    local pc = panel.pieces
+    check(pc.topLeft.texture == ART.botLeft and Coords(pc.topLeft, 0, 0.73828125, 0, 0.5625, 0.34375, 0.73828125, 0.34375, 0.5625) and pc.topLeft.width == 88 and pc.topLeft.height == 45, "questlog: its top corners are the page's torn bottom corners turned over, so no ring on a list")
+    check(pc.topRight.texture == ART.botRight and Coords(pc.topRight, 0.375, 0.73828125, 0.375, 0.5625, 0.75, 0.73828125, 0.75, 0.5625) and pc.top.texture == ART.botLeft and Coords(pc.top, 0.34375, 0.73828125, 0.34375, 0.5625, 1, 0.73828125, 1, 0.5625), "questlog: the top edge and right corner turned over the same way")
+    check(pc.bottomLeft.texture == ART.botLeft and Coords(pc.bottomLeft, 0, 0.34375, 0.5625, 0.73828125) and pc.bottomRight.texture == ART.botRight and Coords(pc.bottomRight, 0.375, 0.75, 0.5625, 0.73828125) and pc.bottomRight.width == 48 and pc.bottomRight.height == 45, "questlog: the bottom corners cut from the quarter files at their own size")
+    check(pc.left.texture == ART.botLeft and Coords(pc.left, 0, 0.34375, 0, 0.5625) and pc.right.texture == ART.botRight and Coords(pc.right, 0.375, 0.75, 0, 0.5625) and pc.center.texture == ART.botLeft and Coords(pc.center, 0.34375, 1, 0, 0.5625), "questlog: the bevelled sides and the plain parchment in the middle come from the bottom quarters")
+    check(pc.top.anchors[1][2] == pc.topLeft and pc.top.anchors[1][3] == "TOPRIGHT" and pc.top.anchors[2][2] == pc.topRight and pc.left.anchors[1][2] == pc.topLeft and pc.left.anchors[2][2] == pc.bottomLeft and pc.center.anchors[1][2] == pc.topLeft and pc.center.anchors[1][3] == "BOTTOMRIGHT" and pc.center.anchors[2][2] == pc.bottomRight and pc.center.anchors[2][3] == "TOPLEFT", "questlog: the edges and the middle run between the corners, so they stretch with the panel")
     check(panel.anchors[1][4] == -3 and panel.anchors[1][5] == 7 and panel.anchors[2][4] == 3 and panel.anchors[2][5] == -6, "questlog: the panel takes exactly the rect retail's quest panel filled")
     check(side.Background.alpha == 0 and QuestScrollFrame.Background.alpha == 0 and border.Border.alpha == 0 and border.TopDetail.alpha == 0 and border.Shadow.alpha == 0, "questlog: retail's quest panel, filigree and shadow faded")
     local mapw, mpanel = WorldMapFrame, ql.mapPanel
-    check(mpanel ~= nil and mpanel.shown == true and mpanel.parent == mapw and mpanel.level == 0 and mpanel.fill ~= nil, "questlog: a second Era panel behind the whole map window")
-    check(mapw.WorldMapFrameBg.alpha == 0 and mapw.BorderFrame.InsetBorderTop.alpha == 0 and mapw.BorderFrame.NineSlice.TopEdge.alpha == 0 and mapw.BorderFrame.PortraitContainer.portrait.alpha == 0, "questlog: the map window's dark backdrop, inset line, metal shell and portrait faded")
+    check(mpanel ~= nil and mpanel.shown == true and mpanel.parent == mapw and mpanel.level == 0 and mpanel.header == true and #mpanel.art == 9, "questlog: a second Era panel behind the whole map window, this one with the header band")
+    local mc = mpanel.pieces
+    check(mc.topLeft.texture == ART.topLeft and Coords(mc.topLeft, 0, 0.34375, 0, 0.34375) and mc.topLeft.width == 88 and mc.topLeft.height == 88 and mc.topRight.texture == ART.topRight and Coords(mc.topRight, 0.375, 0.75, 0, 0.34375) and mc.topRight.width == 48 and mc.topRight.height == 88, "questlog: the map page's top corners are the stone header with the ring and the tab")
+    check(mc.top.texture == ART.topLeft and Coords(mc.top, 0.34375, 1, 0, 0.34375) and mc.bottomLeft.texture == ART.botLeft and Coords(mc.bottomLeft, 0, 0.34375, 0.5625, 0.73828125), "questlog: the header band between them, the torn corners below")
+    check(mpanel.disc ~= nil and mpanel.disc.texture == ART.disc and ART.disc == "Interface\\Minimap\\UI-Minimap-Background" and mpanel.disc.width == 64 and mpanel.disc.anchors[1][1] == "CENTER" and mpanel.disc.anchors[1][2] == mpanel and mpanel.disc.anchors[1][3] == "TOPLEFT" and mpanel.disc.anchors[1][4] == 41.5 and mpanel.disc.anchors[1][5] == -41.5, "questlog: a dark disc behind the portrait hole so it never shows the world")
+    check(mapw.WorldMapFrameBg.alpha == 0 and mapw.BorderFrame.InsetBorderTop.alpha == 0 and mapw.BorderFrame.NineSlice.TopEdge.alpha == 0, "questlog: the map window's dark backdrop, inset line and metal shell faded")
+    check(portrait.alpha == 1 and #portrait.anchors == 1 and portrait.anchors[1][1] == "CENTER" and portrait.anchors[1][2] == mpanel and portrait.anchors[1][3] == "TOPLEFT" and portrait.anchors[1][4] == 41.5 and portrait.anchors[1][5] == -41.5 and portrait.width == 58, "questlog: the map window's own portrait moved into the ring")
     check(mapw.BorderFrame.TitleContainer.TitleText.alpha == 1 and mapw.BorderFrame.CloseButton.alpha == 1, "questlog: Forever's title and close button on the map window left alone")
     check(QuestScrollFrame.EmptyText.textColor[1] == 0.85, "questlog: the 'no quests' text re-coloured for parchment")
     local q1 = QuestScrollFrame.Contents.Quest1
     check(q1.Text.font == GameFontNormal and q1.HighlightTexture.texture == "Interface\\QuestFrame\\UI-QuestLogTitleHighlight" and q1.HighlightTexture.blend == "ADD" and ql.rows == 2, "questlog: quest titles in Era's font under Era's highlight")
     side:Hide()
-    check(panel.shown == false and mpanel.shown == false, "questlog: both panels go with the window")
+    check(panel.shown == false and mpanel.shown == false and portrait.alpha == 0 and portrait.anchors[1][1] == "TOPLEFT" and portrait.anchors[1][4] == -5 and portrait.width == 62, "questlog: both panels go with the window, and the portrait leaves the ring for its own corner")
     side:Show()
+    check(mpanel.shown == true and portrait.alpha == 1 and portrait.anchors[1][2] == mpanel and portrait.width == 58, "questlog: and is back in the ring when the window opens again")
     w.slash("questlog off")
     check(ql.mode == "off" and panel.shown == false and mpanel.shown == false and border.Border.alpha == 1 and mapw.WorldMapFrameBg.alpha == 1 and mapw.BorderFrame.NineSlice.TopEdge.alpha == 1 and QuestScrollFrame.EmptyText.textColor[1] == 1 and q1.Text.font == "QuestFont_Enormous", "questlog off: retail's map window, quest panel, fonts and colours back")
+    check(portrait.alpha == 1 and #portrait.anchors == 1 and portrait.anchors[1][1] == "TOPLEFT" and portrait.anchors[1][2] == mapw.BorderFrame.PortraitContainer and portrait.anchors[1][4] == -5 and portrait.anchors[1][5] == 7 and portrait.width == 62, "questlog off: the portrait back where Blizzard had it, at its own size and alpha")
     w.slash("questlog on")
     check(ql.mode == "restyled" and panel.shown == true, "questlog on: the Era panel again")
 
@@ -2139,16 +2164,21 @@ do
     local cj = w.LoadCollections()
     co.watcher:Fire("ADDON_LOADED", "Blizzard_Collections")
     check(co.mode == "restyled" and co.panel ~= nil and co.panel.shown == false, "collections: framed once the window exists, kept hidden until it opens")
+    local cport = cj.PortraitContainer.portrait
+    cport:SetPoint("TOPLEFT", cj.PortraitContainer, "TOPLEFT", -5, 7); cport:SetSize(62, 62)
     cj:Show()
     local cpanel = co.panel
     local page = WardrobeCollectionFrame.activeFrame
-    check(cpanel.shown == true and cpanel.fill ~= nil and cpanel.fill.color ~= nil and cpanel.fill.color[4] == 1, "collections: the Era panel behind the window, solid so the window is never see-through")
-    check(cpanel.inner ~= nil and #cpanel.edges == 8, "collections: Era's gold frame round it, drawn from colour so it is right at any size")
-    check(cj.Bg.alpha == 0 and cj.NineSlice.TopEdge.alpha == 0 and cj.PortraitContainer.portrait.alpha == 0, "collections: retail's shell and portrait faded")
+    check(cpanel.shown == true and cpanel.header == true and #cpanel.art == 9 and cpanel.fill ~= nil and cpanel.fill.color ~= nil and cpanel.fill.color[4] == 1, "collections: the Era page behind the window, header band and all, over a solid floor")
+    check(cpanel.pieces.topLeft.texture == ART.topLeft and Coords(cpanel.pieces.topLeft, 0, 0.34375, 0, 0.34375) and cpanel.pieces.center.texture == ART.botLeft and Coords(cpanel.pieces.center, 0.34375, 1, 0, 0.5625) and cpanel.disc ~= nil and cpanel.disc.texture == ART.disc, "collections: cut from Era's spellbook page, the dark disc behind the ring")
+    check(cpanel.anchors[1][1] == "ALL" and cpanel.anchors[1][2] == cj and cpanel.level == 0, "collections: the page fills the window from just underneath it")
+    check(cj.Bg.alpha == 0 and cj.NineSlice.TopEdge.alpha == 0, "collections: retail's shell faded")
+    check(cport.alpha == 1 and cport.anchors[1][1] == "CENTER" and cport.anchors[1][2] == cpanel and cport.anchors[1][4] == 41.5 and cport.anchors[1][5] == -41.5 and cport.width == 58, "collections: the window's own portrait moved into the ring")
     check(page.Bg.alpha == 0 and page.BackgroundTile.alpha == 0 and page.ShadowCornerTopLeft.alpha == 0 and page.NineSlice.TopEdge.alpha == 0, "collections: the dark page inside the window faded too")
     check(cj.CloseButton.alpha == 1 and cj.CloseButton.mouse ~= false and cj.TitleContainer.TitleText.alpha == 1, "collections: Forever's own title and close button left alone")
     w.slash("collections off")
     check(co.mode == "off" and cpanel.shown == false and cj.Bg.alpha == 1 and cj.NineSlice.TopEdge.alpha == 1 and page.Bg.alpha == 1 and page.NineSlice.TopEdge.alpha == 1, "collections off: retail's window back")
+    check(cport.alpha == 1 and cport.anchors[1][1] == "TOPLEFT" and cport.anchors[1][2] == cj.PortraitContainer and cport.anchors[1][4] == -5 and cport.width == 62, "collections off: the portrait back in its corner")
     w.slash("collections on")
     check(co.mode == "restyled" and cpanel.shown == true, "collections on: Era framing again")
 
@@ -2158,18 +2188,23 @@ do
     local cf = w.LoadGuild()
     gu.watcher:Fire("ADDON_LOADED", "Blizzard_Communities")
     check(gu.mode == "restyled" and gu.panel ~= nil and gu.panel.shown == false, "guild: framed once the window exists, kept hidden until it opens")
+    local gport = cf.PortraitContainer.portrait
+    gport:SetPoint("TOPLEFT", cf.PortraitContainer, "TOPLEFT", -5, 7); gport:SetSize(62, 62)
     cf:Show()
     local gpanel = gu.panel
     local list, finder = CommunitiesList, ClubFinderGuildFinderFrame
-    check(gpanel.shown == true and gpanel.fill ~= nil and gpanel.fill.color ~= nil and gpanel.fill.color[4] == 1 and gpanel.inner ~= nil and #gpanel.edges == 8, "guild: Era's parchment and gold frame behind the window, never see-through")
-    check(cf.Bg.alpha == 0 and cf.TopTileStreaks.alpha == 0 and cf.NineSlice.TopEdge.alpha == 0 and cf.PortraitContainer.portrait.alpha == 0 and cf.PortraitOverlay.Portrait.alpha == 0, "guild: retail's metal shell, streaks and portrait faded")
+    check(gpanel.shown == true and gpanel.header == true and #gpanel.art == 9 and gpanel.fill ~= nil and gpanel.fill.color ~= nil and gpanel.fill.color[4] == 1 and gpanel.pieces.topRight.texture == ART.topRight and Coords(gpanel.pieces.topRight, 0.375, 0.75, 0, 0.34375) and gpanel.disc ~= nil, "guild: Era's page behind the window, header band and ring, over a solid floor")
+    check(gpanel.anchors[1][1] == "ALL" and gpanel.anchors[1][2] == cf and gpanel.level == 0, "guild: the page fills the window from just underneath it")
+    check(cf.Bg.alpha == 0 and cf.TopTileStreaks.alpha == 0 and cf.NineSlice.TopEdge.alpha == 0 and cf.PortraitOverlay.Portrait.alpha == 0, "guild: retail's metal shell, streaks and portrait overlay faded")
+    check(gport.alpha == 1 and gport.anchors[1][1] == "CENTER" and gport.anchors[1][2] == gpanel and gport.anchors[1][4] == 41.5 and gport.anchors[1][5] == -41.5 and gport.width == 58, "guild: the window's own portrait moved into the ring")
     check(list.Bg.alpha == 0 and list.TopFiligree.alpha == 0 and list.BottomFiligree.alpha == 0 and list.FilligreeOverlay.LeftBar.alpha == 0 and list.InsetFrame.NineSlice.TopEdge.alpha == 0, "guild: the sidebar's dark page, filigree and inset faded")
     check(finder.DisabledFrame.Bg.alpha == 0 and finder.DisabledFrame.WideBackground.alpha == 0 and finder.DisabledFrame.NineSlice.TopEdge.alpha == 0, "guild: the guild finder page faded too")
     check(cf.CloseButton.alpha == 1 and cf.TitleContainer.TitleText.alpha == 1 and finder.Title.alpha == 1 and list.ScrollBox.alpha == 1, "guild: Forever's title, close button and the roster itself left alone")
     cf:SetDisplayMode(2)
-    check(gpanel.shown == true and list.Bg.alpha == 0, "guild: the panel survives a tab switch")
+    check(gpanel.shown == true and list.Bg.alpha == 0 and gport.alpha == 1 and gport.anchors[1][2] == gpanel and #gport.anchors == 1, "guild: the panel and the portrait in its ring survive a tab switch")
     w.slash("guild off")
     check(gu.mode == "off" and gpanel.shown == false and cf.Bg.alpha == 1 and cf.NineSlice.TopEdge.alpha == 1 and list.Bg.alpha == 1 and list.TopFiligree.alpha == 1 and finder.DisabledFrame.NineSlice.TopEdge.alpha == 1, "guild off: retail's window back")
+    check(gport.alpha == 1 and gport.anchors[1][1] == "TOPLEFT" and gport.anchors[1][2] == cf.PortraitContainer and gport.anchors[1][4] == -5 and gport.width == 62, "guild off: the portrait back in its corner")
     w.slash("guild on")
     check(gu.mode == "restyled" and gpanel.shown == true, "guild on: Era framing again")
     check(#w.ns.errors == 0 and #w.blizzErrors == 0, "questlog, collections and guild: no errors")
@@ -2201,15 +2236,13 @@ do
     check(w.ns.dbLoaded == true and w.ns.db.logins == 2, "reload: saved file found, login count raised")
     check(w.ns.db.unitframes == false and w.ns.modules.unitframes.mode == "off" and w.ns.modules.minimap.mode == "off", "reload: parts turned off stay off")
     check(w.ns.db.castbar == true and w.ns.modules.castbar.mode == "restyled", "reload: the part turned back on is on")
-    check(Printed("off (saved): nameplates, combo, unitframes, party, charsheet, spellbook, professions, actionbars, minimap, tracker"), "reload: login line names the parts that are off")
-    check(Printed("coming soon, so off for now: questlog, collections, guild"), "reload: login line names the parts held back, apart from the ones turned off")
+    check(Printed("off (saved): nameplates, combo, unitframes, party, charsheet, spellbook, professions, questlog, collections, guild, actionbars, minimap, tracker"), "reload: login line names the parts that are off")
+    check(not Printed("coming soon"), "reload: nothing is held back, so the login line does not say so")
     check(w.ns.optionsPanel.checks.unitframes.checked == false and w.ns.optionsPanel.checks.castbar.checked == true, "reload: options boxes match the saved settings")
     w.slash("probe")
     check(w.ns.lastProbe and w.ns.lastProbe:find("saved file found at login: yes  logins counted in it: 2", 1, true) and w.ns.lastProbe:find("settings came from: saved file", 1, true), "reload: probe reports the saved file and login count")
     -- the same on a client that never writes the SavedVariables file: the CVar copy carries the settings
-    -- the held parts keep whatever was saved for them: the hold is not a
-    -- setting, so it does not overwrite what anyone chose before it
-    check(cvarCopy == "nameplates=0,castbar=1,combo=0,unitframes=0,party=0,charsheet=0,spellbook=0,professions=0,questlog=1,collections=1,guild=1,actionbars=0,minimap=0,tracker=0,bugbutton=1,welcomed=0", "reload: every change is also written to the settings CVar, with the feedback flags")
+    check(cvarCopy == "nameplates=0,castbar=1,combo=0,unitframes=0,party=0,charsheet=0,spellbook=0,professions=0,questlog=0,collections=0,guild=0,actionbars=0,minimap=0,tracker=0,bugbutton=1,welcomed=0", "reload: every change is also written to the settings CVar, with the feedback flags")
     w = NewWorld({style = "6", forever = true, cvars = {ForeverClassicUI_settings = cvarCopy}})
     check(w.ns.dbLoaded == false and w.ns.db.unitframes == false and w.ns.db.castbar == true and w.ns.modules.unitframes.mode == "off" and w.ns.modules.castbar.mode == "restyled", "no saved file: settings restored from the CVar copy")
     check(w.ns.dbSource:find("cvar fallback", 1, true) and w.ns.optionsPanel.checks.minimap.checked == false, "no saved file: probe names the fallback, boxes match")
@@ -2275,33 +2308,41 @@ do
 end
 
 --------------------------------------------------------------------------
--- 8. Parts held back as "coming soon": built, kept, but not switchable
+-- 8. The "coming soon" hold: a part that is built but not ready is kept,
+--    shown, and not switchable. Nothing is held in this version, so the
+--    mechanism is tested by holding a part that is ready.
 --------------------------------------------------------------------------
 do
     local w = NewWorld({style = "6", forever = true})
+    check(next(w.ns.COMING_SOON) == nil and not w.ns.IsComingSoon("questlog") and not w.ns.IsComingSoon("collections") and not w.ns.IsComingSoon("guild"), "coming soon: nothing is held back in this version")
+    check(w.ns.modules.questlog.mode ~= "off" and w.ns.modules.collections.mode ~= "off" and w.ns.modules.guild.mode ~= "off" and not Printed("coming soon"), "coming soon: the three parts held in 0.7.9 are back on, and the login line does not mention a hold")
+    w = NewWorld({style = "6", forever = true, hold = {"minimap"}})
     local ns = w.ns
-    check(ns.IsComingSoon("questlog") and ns.IsComingSoon("collections") and ns.IsComingSoon("guild") and not ns.IsComingSoon("charsheet"), "coming soon: the three parts built after 0.7.0 are held, the rest are not")
-    check(ns.modules.questlog.mode ~= "restyled" and ns.modules.collections.mode ~= "restyled" and ns.modules.guild.mode ~= "restyled", "coming soon: none of them enables at login")
-    check(Printed("coming soon, so off for now: questlog, collections, guild"), "coming soon: login says which parts are held")
-    -- and they stay off however hard they are pushed
-    w.slash("questlog on")
-    check(ns.modules.questlog.mode ~= "restyled" and Printed("questlog: coming soon"), "coming soon: the slash command says so rather than turning it on")
-    check(ns.SetPart("guild", true) == false and ns.modules.guild.mode ~= "restyled", "coming soon: SetPart refuses to turn one on")
-    -- a saved setting from an older version does not let one back in
+    check(ns.IsComingSoon("minimap") and not ns.IsComingSoon("charsheet"), "coming soon: a held part is held, the rest are not")
+    check(ns.modules.minimap.mode ~= "restyled", "coming soon: it does not enable at login")
+    check(Printed("coming soon, so off for now: minimap"), "coming soon: login says which part is held")
+    -- and it stays off however hard it is pushed
+    w.slash("minimap on")
+    check(ns.modules.minimap.mode ~= "restyled" and Printed("minimap: coming soon"), "coming soon: the slash command says so rather than turning it on")
+    check(ns.SetPart("minimap", true) == false and ns.modules.minimap.mode ~= "restyled", "coming soon: SetPart refuses to turn one on")
+    -- a saved 'on' does not let it back in, and is not overwritten either
     local saved = ns.db
-    saved.questlog = true
-    w = NewWorld({style = "6", forever = true, savedDB = saved})
-    check(w.ns.modules.questlog.mode ~= "restyled", "coming soon: a saved 'on' from an older version does not bring it back")
-    check(w.ns.db.questlog == true, "coming soon: but the saved setting is kept, for when the part returns")
-    -- the options panel shows them, greyed and dead
+    saved.minimap = true
+    w = NewWorld({style = "6", forever = true, savedDB = saved, hold = {"minimap"}})
+    check(w.ns.modules.minimap.mode ~= "restyled", "coming soon: a saved 'on' does not bring it back")
+    check(w.ns.db.minimap == true, "coming soon: but the saved setting is kept, for when the part returns")
+    -- the options panel shows it, greyed and dead
     local panel = w.ns.optionsPanel
-    local box = panel.checks.questlog
+    local box = panel.checks.minimap
     check(box ~= nil and box.checked == false and box.enabled == false and box.label.text:find("Coming soon", 1, true), "coming soon: the options box is there, unticked, greyed and disabled")
     box:Click()
-    check(box.checked == false and w.ns.modules.questlog.mode ~= "restyled", "coming soon: clicking the box does nothing")
+    check(box.checked == false and w.ns.modules.minimap.mode ~= "restyled", "coming soon: clicking the box does nothing")
     panel.RefreshStatus()
-    check(panel.status.text:find("questlog: coming soon", 1, true), "coming soon: the options panel status says so too")
+    check(panel.status.text:find("minimap: coming soon", 1, true), "coming soon: the options panel status says so too")
     check(#w.ns.errors == 0 and #w.blizzErrors == 0, "coming soon: no errors")
+    -- lifting the hold brings the part back with the setting it kept
+    w = NewWorld({style = "6", forever = true, savedDB = saved})
+    check(w.ns.modules.minimap.mode == "restyled" and w.ns.optionsPanel.checks.minimap.checked == true and w.ns.optionsPanel.checks.minimap.enabled ~= false, "coming soon: lifting the hold brings the part back on, with its box live")
 end
 
 realPrint(("Forever Classic UI harness: %d passed, %d failed"):format(passed, failed))
