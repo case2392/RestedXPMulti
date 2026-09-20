@@ -23,6 +23,19 @@
 -- their anchors and sizes are only touched out of combat; a change that
 -- lands in combat is applied when combat ends.
 --
+-- Forever lays the bottom bars out again on the way into combat (every
+-- bar's PLAYER_REGEN_DISABLED handler calls its UpdateVisibility, which
+-- calls EditMode's UpdateBottomActionBarPositions) and whenever the pet
+-- or stance bar comes and goes, and that puts the two upper bars at its
+-- own fixed offsets from the main bar (+22 and +606) - mid-fight, when a
+-- protected frame cannot be anchored back by addon code. So a secure
+-- handler frame holds their Era anchors: its snippet runs in Blizzard's
+-- restricted environment, where a protected frame may be anchored in
+-- combat, and state drivers run it just after each of the state changes
+-- that make Blizzard re-lay (combat, pet, form, vehicle). Everything the
+-- snippet needs (the bars, the lift, whether each bar is still in its
+-- default position) is handed to it out of combat.
+--
 -- Rule (shared with the rest of the addon): no Lua field writes into
 -- Blizzard's frames, no calls into Blizzard's layout functions; widget
 -- calls and hooksecurefunc only. Classic clients draw all of this already
@@ -818,6 +831,70 @@ local function LayoutStatusBars(art)
 end
 
 --------------------------------------------------------------------------
+-- the secure handler that holds the bottom bars in combat
+--------------------------------------------------------------------------
+
+-- the snippet: runs in the restricted environment with self = the handler.
+-- "$parent" is the bar's parent, UIParent, so the anchors are the same as
+-- ProtectedLayout's below. A bar the player moved in Edit Mode (not in its
+-- default position) is left alone, as it is there.
+local HOLD_SNIPPET = [=[
+    local gap = self:GetAttribute("cui-gap") or 6
+    local lift = self:GetAttribute("cui-lift") or 52
+    local bl = self:GetFrameRef("cui-bl")
+    if bl and self:GetAttribute("cui-bl") and bl:IsProtected() then
+        bl:ClearAllPoints()
+        bl:SetPoint("BOTTOMRIGHT", "$parent", "BOTTOM", -gap, lift)
+    end
+    local br = self:GetFrameRef("cui-br")
+    if br and self:GetAttribute("cui-br") and br:IsProtected() then
+        br:ClearAllPoints()
+        br:SetPoint("BOTTOMLEFT", "$parent", "BOTTOM", gap, lift)
+    end
+]=]
+
+-- the state changes after which Blizzard lays the bottom bars out again
+local HOLD_STATES = {
+    {"cuicombat", "[combat] 1; 0"},
+    {"cuipet", "[pet] 1; 0"},
+    {"cuiform", "[form:1] 1; [form:2] 2; [form:3] 3; [form:4] 4; [form:5] 5; [form:6] 6; 0"},
+    {"cuivehicle", "[vehicleui] 1; [overridebar] 2; [possessbar] 3; 0"}
+}
+
+local function InstallHoldHandler()
+    if M.holder or not CreateFrame or not RegisterStateDriver then return nil end
+    local ok, h = pcall(CreateFrame, "Frame", "ForeverClassicUIBarHolder", UIParent, "SecureHandlerStateTemplate")
+    if not ok or not h or type(h.SetFrameRef) ~= "function" then return nil end
+    for _, st in ipairs(HOLD_STATES) do
+        h:SetAttribute("_onstate-" .. st[1], HOLD_SNIPPET)
+    end
+    M.holder = h
+    for _, st in ipairs(HOLD_STATES) do
+        pcall(RegisterStateDriver, h, st[1], st[2])
+    end
+    return h
+end
+
+-- out of combat only (attributes on a secure frame are locked in combat):
+-- hands the handler the bars, the lift and which bars are still Blizzard's
+-- to place
+local function ArmHoldHandler(lift, bl, br)
+    local h = M.holder or InstallHoldHandler()
+    if not h then return end
+    h:SetAttribute("cui-gap", BOTTOM_BAR_X)
+    h:SetAttribute("cui-lift", lift)
+    if bl then
+        h:SetFrameRef("cui-bl", bl)
+        h:SetAttribute("cui-bl", (not bl.IsInDefaultPosition or bl:IsInDefaultPosition()) and true or false)
+    end
+    if br then
+        h:SetFrameRef("cui-br", br)
+        h:SetAttribute("cui-br", (not br.IsInDefaultPosition or br:IsInDefaultPosition()) and true or false)
+    end
+    M.holding = true
+end
+
+--------------------------------------------------------------------------
 -- the whole layout
 --------------------------------------------------------------------------
 
@@ -848,6 +925,8 @@ local function ProtectedLayout(art)
         br:ClearAllPoints()
         br:SetPoint("BOTTOMLEFT", UIParent, "BOTTOM", BOTTOM_BAR_X, lift)
     end
+    -- and the same anchors for the secure handler to put back mid-fight
+    ArmHoldHandler(lift, bl, br)
 end
 
 -- When Blizzard's layout moves a bar during a fight there is nothing to be
@@ -1030,6 +1109,13 @@ function M:Disable()
     if M.art then M.art:Hide() end
     M.HideDividers(1)
     M.mode = "off"
+    -- the handler stops placing the bars (an attribute write on a secure
+    -- frame is refused in combat; then it stops at the next chance)
+    if M.holder and not InCombat() then
+        pcall(M.holder.SetAttribute, M.holder, "cui-bl", false)
+        pcall(M.holder.SetAttribute, M.holder, "cui-br", false)
+        M.holding = nil
+    end
     ns.Print("action bars: type /reload to restore Blizzard's bars.")
 end
 
@@ -1044,6 +1130,7 @@ function M:Status()
             if (M.microStride and M.microStride < MICRO_STRIDE) or (M.microScale and M.microScale < 1) then s = s .. " to fill the room before the bags" end
         end
         if M.pending then s = s .. "; bar anchors wait for combat to end" end
+        if M.holding then s = s .. "; a secure handler holds the bottom bars in combat" end
         -- carried into the report: where Blizzard put the bars mid-fight
         if M.combatAnchors then
             local seen = {}

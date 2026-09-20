@@ -362,10 +362,24 @@ usually enough to rebuild that window in the classic style.
   own, and the container is widened leftwards so its right edge still
   marks the end of the row for the bag bar. If those two offsets are ever
   different on another build the cost is nil - the bar would simply jump
-  as it used to. The two bottom bars are a separate case and still move:
-  Blizzard anchors those straight to `UIParent` (`BOTTOM -233.3,+65.7` and
-  `BOTTOM +269.6,+65.7` on the client that reported it), with no frame of
-  ours in the sum to line up, so there is nothing to align them against.
+  as it used to. The two bottom bars are a separate case: Forever's
+  Camelot layout anchors them to the main bar's bottom left at fixed
+  offsets (+22 and +606, `ACTION_BAR_2_BOTTOM_BAR_OFFSET_X` and
+  `ACTION_BAR_3_BOTTOM_BAR_OFFSET_X`), with nothing of ours in the sum,
+  and it does that on the way into every fight: each bar's
+  `PLAYER_REGEN_DISABLED` handler calls `UpdateVisibility`, which calls
+  `UpdateBottomActionBarPositions`, and the same happens whenever the pet
+  bar or the stance bar comes and goes mid-fight. So since 0.7.20 a secure
+  handler frame (`SecureHandlerStateTemplate`) holds their Era anchors:
+  its snippet runs in Blizzard's restricted environment, where a protected
+  frame may be anchored in combat, and state drivers for `[combat]`,
+  `[pet]`, `[form]` and `[vehicleui]` run it right after each of the state
+  changes that make Blizzard re-lay (the state driver manager evaluates on
+  the frame after the event, so it runs after Blizzard's handlers). The
+  bars, the lift and whether each bar is still in its default position are
+  handed to the handler out of combat, in the same layout pass that
+  anchors them from Lua; a bar the player moved in Edit Mode is left alone
+  by both.
   Forever fades a micro button's own icon out under the mouse and
   cross-fades its modern hover art in, so with Era's glow in that art's
   place the icon vanished on hover; the icon is now held at full alpha

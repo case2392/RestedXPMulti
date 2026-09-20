@@ -164,6 +164,7 @@ local function Frame(name)
     function f:SetText(t) self.text = t end
     function f:GetText() return self.text end
     function f:SetAttribute(k, v) self.attributes = self.attributes or {}; self.attributes[k] = v end
+    function f:SetFrameRef(label, ref) self.refs = self.refs or {}; self.refs[label] = ref end
     function f:GetAttribute(k) return self.attributes and self.attributes[k] end
     function f:SetEnabled(on) self.enabled = on and true or false end
     function f:SetDisabledTexture(t) self.DisabledTexture = self.DisabledTexture or Region("Texture"); self.DisabledTexture:SetTexture(t) end
@@ -252,7 +253,7 @@ local function NewWorld(opts)
             k ~= "rawget" and k ~= "rawset" and k ~= "io" and k ~= "os" and
             k ~= "debug" and k ~= "_VERSION" and k ~= "collectgarbage" and
             k ~= "require" and k ~= "package" and k ~= "dofile" and
-            k ~= "load" and k ~= "loadstring" and k ~= "xpcall" and
+            k ~= "load" and k ~= "loadstring" and k ~= "xpcall" and k ~= "setfenv" and k ~= "getfenv" and
             k ~= "gcinfo" and k ~= "newproxy" and k ~= "module" and
             k ~= "coroutine" then
             _G[k] = nil
@@ -320,6 +321,32 @@ local function NewWorld(opts)
         end
     end
     _G.InCombatLockdown = function() return w.inCombat end
+    -- secure handlers: a state driver is remembered, and w.FireState runs the
+    -- handler's snippet the way the restricted environment would, with self
+    -- a handle whose "$parent" is the bar's parent
+    _G.RegisterStateDriver = function(frame, state, cond) frame.drivers = frame.drivers or {}; frame.drivers[state] = cond end
+    _G.UnregisterStateDriver = function(frame, state) if frame.drivers then frame.drivers[state] = nil end end
+    local function Handle(f)
+        return {
+            GetAttribute = function(_, k) return f:GetAttribute(k) end,
+            GetFrameRef = function(_, label) local r = f.refs and f.refs[label]; return r and Handle(r) end,
+            IsProtected = function() return f.protected ~= false end,
+            ClearAllPoints = function() f:ClearAllPoints() end,
+            SetPoint = function(_, point, rel, relPoint, x, y)
+                if rel == "$parent" then rel = f.parent end
+                f:SetPoint(point, rel, relPoint, x, y)
+            end
+        }
+    end
+    function w.FireState(frame, state, value)
+        frame:SetAttribute("state-" .. state, value)
+        local body = frame:GetAttribute("_onstate-" .. state)
+        if not body then return false end
+        local fn = assert(loadstring(body, "snippet"))
+        setfenv(fn, {self = Handle(frame), ipairs = ipairs, tonumber = tonumber, math = math})
+        fn()
+        return true
+    end
     _G.Screenshot = function() w.screenshots = (w.screenshots or 0) + 1 end
     _G.GetCursorPosition = function() return w.cursorX or 0, w.cursorY or 0 end
     _G.YELLOW_FONT_COLOR = {r = 1, g = 0.82, b = 0}
@@ -467,6 +494,7 @@ local function NewWorld(opts)
         -- action bars: Forever's retail layout (45px buttons 47 apart in scaled containers, atlas art)
         local function ActionBar(name, buttonPrefix, horizontal)
             local bar = Frame(name)
+            bar.parent = _G.UIParent
             bar.actionButtons = {}
             for i = 1, 12 do
                 local c = Frame(name .. "ButtonContainer" .. i); c.parent = bar; c:SetSize(45, 45)
@@ -506,7 +534,7 @@ local function NewWorld(opts)
         ActionBar("MultiBarBottomLeft", "MultiBarBottomLeftButton", true)
         ActionBar("MultiBarBottomRight", "MultiBarBottomRightButton", true)
         ActionBar("MultiBarRight", "MultiBarRightButton", false)
-        _G.EditModeManagerFrame = {ExitEditMode = function() end, UpdateBottomActionBarPositions = function() MainActionBar:ClearAllPoints(); MainActionBar:SetPoint("BOTTOMRIGHT", MicroMenuContainer, "BOTTOMLEFT", -4.5, -4); MultiBarBottomLeft:ClearAllPoints(); MultiBarBottomLeft:SetPoint("BOTTOMLEFT", MainActionBar, "BOTTOMLEFT", 22, 49) end}
+        _G.EditModeManagerFrame = {ExitEditMode = function() end, UpdateBottomActionBarPositions = function() MainActionBar:ClearAllPoints(); MainActionBar:SetPoint("BOTTOMRIGHT", MicroMenuContainer, "BOTTOMLEFT", -4.5, -4); MultiBarBottomLeft:ClearAllPoints(); MultiBarBottomLeft:SetPoint("BOTTOMLEFT", MainActionBar, "BOTTOMLEFT", 22, 57); MultiBarBottomRight:ClearAllPoints(); MultiBarBottomRight:SetPoint("BOTTOMLEFT", MainActionBar, "BOTTOMLEFT", 606, 57) end}
         _G.C_Texture = {GetAtlasInfo = function() return nil end}
         -- micro menu and bags, retail style (atlas art, grid layout)
         _G.MicroMenuContainer = Frame("MicroMenuContainer"); function MicroMenuContainer:ApplySystemAnchor() self:ClearAllPoints(); self:SetPoint("BOTTOM", UIParent, "BOTTOM", 116.5, 6) end
@@ -1683,6 +1711,18 @@ do
     w.inCombat = true
     EditModeManagerFrame:UpdateBottomActionBarPositions()
     check(MainActionBar.anchors[1][2] == MicroMenuContainer and ab.pending == true and math.abs(c2.scale - 0.8) < 0.001, "forever: in combat Blizzard's bar anchor stands, layout pending")
+    -- the two upper bars went to Blizzard's +22/+606: the secure handler puts them back on the next state tick
+    check(MultiBarBottomLeft.anchors[1][2] == MainActionBar and MultiBarBottomLeft.anchors[1][4] == 22 and MultiBarBottomRight.anchors[1][4] == 606, "forever: Blizzard's combat layout moved the bottom bars to its own offsets")
+    local holder = ab.holder
+    check(holder ~= nil and holder.template == "SecureHandlerStateTemplate" and holder.drivers.cuicombat == "[combat] 1; 0" and holder.drivers.cuipet == "[pet] 1; 0" and holder.drivers.cuiform ~= nil and holder.drivers.cuivehicle ~= nil, "forever: a secure handler with state drivers for combat, pet, form and vehicle")
+    check(holder.refs["cui-bl"] == MultiBarBottomLeft and holder.refs["cui-br"] == MultiBarBottomRight and holder:GetAttribute("cui-bl") == true and holder:GetAttribute("cui-lift") == 52 and holder:GetAttribute("cui-gap") == 6, "forever: the handler was handed the bars, the lift and the gap out of combat")
+    check(w.FireState(holder, "cuicombat", 1), "forever: entering combat runs the handler's snippet")
+    check(MultiBarBottomLeft.anchors[1][1] == "BOTTOMRIGHT" and MultiBarBottomLeft.anchors[1][2] == UIParent and MultiBarBottomLeft.anchors[1][3] == "BOTTOM" and MultiBarBottomLeft.anchors[1][4] == -6 and MultiBarBottomLeft.anchors[1][5] == 52, "forever: the snippet puts the bottom-left bar back either side of centre, in combat")
+    check(MultiBarBottomRight.anchors[1][1] == "BOTTOMLEFT" and MultiBarBottomRight.anchors[1][2] == UIParent and MultiBarBottomRight.anchors[1][4] == 6 and MultiBarBottomRight.anchors[1][5] == 52, "forever: and the bottom-right bar")
+    EditModeManagerFrame:UpdateBottomActionBarPositions()
+    w.FireState(holder, "cuipet", 0)
+    check(MultiBarBottomLeft.anchors[1][4] == -6 and MultiBarBottomRight.anchors[1][4] == 6, "forever: the pet dying mid-fight moves them again, the pet state tick puts them back")
+    check(ab:Status():find("secure handler holds the bottom bars", 1, true) ~= nil, "forever: the status says so")
     -- and standing is now fine: Blizzard's own anchor puts it on Era's spot
     local bx = MicroMenuContainer.anchors[1][4] + MainActionBar.anchors[1][4] - 498
     local by = MicroMenuContainer.anchors[1][5] + MainActionBar.anchors[1][5]
@@ -1709,6 +1749,16 @@ do
     w.inCombat = false
     ab.waiter:Fire("PLAYER_REGEN_ENABLED")
     check(MainActionBar.anchors[1][2] == art and ab.pending == nil and MultiBarBottomLeft.anchors[1][1] == "BOTTOMRIGHT", "forever: bar anchors back on the art once combat ends")
+    -- a bar the player moved in Edit Mode is nobody's to place: not ours, not the handler's
+    MultiBarBottomRight.moved = true
+    MultiBarBottomRight:ClearAllPoints(); MultiBarBottomRight:SetPoint("CENTER", UIParent, "CENTER", 100, 100)
+    ab.Layout()
+    check(MultiBarBottomRight.anchors[1][1] == "CENTER" and holder:GetAttribute("cui-br") == false and holder:GetAttribute("cui-bl") == true, "forever: a bar moved in Edit Mode keeps its place, and the handler is told to leave it")
+    w.FireState(holder, "cuicombat", 1)
+    check(MultiBarBottomRight.anchors[1][1] == "CENTER" and MultiBarBottomRight.anchors[1][4] == 100, "forever: the snippet leaves a moved bar where the player put it")
+    MultiBarBottomRight.moved = nil
+    ab.Layout()
+    check(MultiBarBottomRight.anchors[1][4] == 6 and holder:GetAttribute("cui-br") == true, "forever: back in its default position, it is placed again")
     local divs = MainActionBar.HorizontalDividersPool.active
     check(divs[1].alpha == 0 and divs[2].alpha == 0, "forever: retail button dividers faded out")
     MainActionBar:UpdateDividers()
