@@ -63,7 +63,7 @@ local function Unescape(s)
     return (s:gsub("%%(%x%x)", function(h) return string.char(tonumber(h, 16)) end))
 end
 
-local FIELDS = {"v", "name", "realm", "level", "race", "class", "classFile", "guild", "rank", "gameTitle", "faction", "updated", "title", "motto", "weekdays", "weekends"}
+local FIELDS = {"v", "name", "realm", "level", "race", "class", "classFile", "guild", "rank", "gameTitle", "faction", "updated", "title", "motto", "weekdays", "weekends", "looking", "main"}
 
 function ns.Encode(plate)
     local parts = {}
@@ -73,6 +73,9 @@ function ns.Encode(plate)
     end
     if type(plate.tags) == "table" and #plate.tags > 0 then
         parts[#parts + 1] = "tags=" .. Escape(table.concat(plate.tags, ","))
+    end
+    if type(plate.profs) == "table" and #plate.profs > 0 then
+        parts[#parts + 1] = "profs=" .. Escape(ns.ProfsText(plate.profs))
     end
     local roles = {}
     if type(plate.roles) == "table" then
@@ -99,6 +102,7 @@ function ns.Decode(text)
         for key in raw.roles:gmatch("[^,]+") do set[key] = true end
         raw.roles = set
     end
+    -- profs stays a string: CleanPlate parses and checks it
     return ns.CleanPlate(raw)
 end
 

@@ -16,6 +16,8 @@ adventurer plates in Forever.
 /plate <name>     ask another player for theirs
 /plate target     the player you have targeted (mouseover and focus work too)
 /plate share      who may ask for yours: everyone, friends, off
+/plate chat       a link to your plate in the chat box
+/plate hours      learning when you play: on, off, forget
 /plate button     the minimap button on or off
 /plate report     a report to paste with a bug or an idea
 /plate welcome    the welcome window again
@@ -55,7 +57,25 @@ time the addon runs.
   weekends, lit for the hours you usually play. The current server hour
   is marked, so a viewer can see at a glance whether now is one of your
   hours.
+- **Looking for**: a line for what you are after, such as "a levelling
+  guild" or "dungeon buddies".
+- **Professions**: your two primary professions and their skill, read
+  from the game.
+- **Alt of**: name your main on an alt's plate. Viewers click it to open
+  the main's plate.
 - **Adventurer Motto**: up to 160 characters.
+
+Two things the card does for you. On someone else's plate, the hours you
+both play are green, so you can see at a glance when you overlap. And
+the addon notes the hours this account is logged in (a sample every ten
+minutes, kept only on your computer, off in the settings if you prefer),
+so after an hour or so **Use my hours** in the editor fills the playtime
+rows for you.
+
+**Share in Chat** puts `[Adventure Plate: Name-Realm]` in your chat box.
+The game only lets its own kinds of link through, so it travels as plain
+text, and anyone with the addon sees it as a clickable link that opens
+your plate.
 
 ## How plates travel
 
@@ -96,4 +116,5 @@ A pure-Lua harness with a mock client covers the data, the wire format
 (escaping, chunking, reassembly out of order), asking and answering, the
 sharing modes, the card, the editor, saving and reloading, the menu
 entries, the slash commands, Era's page, the model controls, the minimap
-button, the welcome and the report.
+button, the welcome, the report, professions, the looking-for line, the
+main link, learned and shared hours, and the chat link.

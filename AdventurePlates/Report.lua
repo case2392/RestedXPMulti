@@ -31,17 +31,21 @@ function ns.BuildReport()
     line("client: version %s build %s (%s) toc %s", tostring(version), tostring(build), tostring(date), tostring(toc))
     line("realm: %s  character: %s", ns.RealmName(), ns.CharKey())
     local s = ns.db and ns.db.settings or {}
-    line("settings: share=%s menu=%s greet=%s minimap=%s welcomed=%s", tostring(s.share), yn(s.menu), yn(s.greet), yn(s.minimap), yn(s.welcomed))
+    line("settings: share=%s menu=%s greet=%s minimap=%s learn=%s welcomed=%s", tostring(s.share), yn(s.menu), yn(s.greet), yn(s.minimap), yn(s.learn), yn(s.welcomed))
     local p = ns.db and ns.db.plates[ns.CharKey()]
     if p then
-        line("my plate: title=%q tags=%s roles=%s motto=%d chars weekdays=%s weekends=%s",
+        line("my plate: title=%q tags=%s roles=%s motto=%d chars looking=%q main=%q weekdays=%s weekends=%s",
              p.title or "", table.concat(p.tags or {}, ","),
              (p.roles and p.roles.tank and "tank " or "") .. (p.roles and p.roles.healer and "healer " or "") .. (p.roles and p.roles.dps and "dps" or ""),
-             #(p.motto or ""), p.weekdays or "?", p.weekends or "?")
+             #(p.motto or ""), p.looking or "", p.main or "", p.weekdays or "?", p.weekends or "?")
+        line("professions: %s", ns.ProfsText(ns.Professions()) ~= "" and ns.ProfsText(ns.Professions()) or "none")
         line("encoded plate: %d bytes, %d message(s)", #ns.Encode(ns.MyPlate()), #ns.Chunks(ns.Encode(ns.MyPlate())))
     else
         line("my plate: none yet")
     end
+    local learned, samples = ns.LearnedHours()
+    line("learned hours: %d samples%s", samples or 0, learned and (" weekdays=" .. learned.weekdays .. " weekends=" .. learned.weekends) or " (not enough yet)")
+    line("chat links: installed=%s  filter=%s  SetItemRef=%s", yn(ns.chatLinksInstalled), yn(ChatFrame_AddMessageEventFilter ~= nil), yn(SetItemRef ~= nil))
     line("plates kept: %d", ns.db and #ns.db.cache or 0)
     for i, entry in ipairs(ns.db and ns.db.cache or {}) do
         if i > 10 then line("  ..."); break end

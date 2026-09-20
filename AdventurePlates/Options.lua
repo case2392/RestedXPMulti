@@ -58,6 +58,10 @@ function ns.BuildOptionsPanel()
     panel.minimap = Check(panel, y, "Show the minimap button (left click: my plate, right click: these settings)",
         function() return ns.db.settings.minimap end,
         function(v) ns.SetMinimapButton(v) end)
+    y = y - 28
+    panel.learn = Check(panel, y, "Note the hours I am logged in, so \"Use my hours\" can fill the playtime rows (kept on this computer only)",
+        function() return ns.db.settings.learn end,
+        function(v) ns.db.settings.learn = v end)
     y = y - 40
     local open = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
     open:SetSize(160, 24)
@@ -88,6 +92,7 @@ function ns.BuildOptionsPanel()
         panel.menu:Refresh()
         panel.greet:Refresh()
         panel.minimap:Refresh()
+        panel.learn:Refresh()
     end
     panel:SetScript("OnShow", panel.Refresh)
     panel.Refresh()

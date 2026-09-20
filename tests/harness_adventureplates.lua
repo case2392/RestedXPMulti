@@ -50,6 +50,9 @@ local function Widget(kind)
     function f:SetPushedTexture(t) local r = rawget(self, "PushedTexture") or Widget("Texture"); r.texture = t; rawset(self, "PushedTexture", r) end
     function f:SetHighlightTexture(t) local r = rawget(self, "HighlightTexture") or Widget("Texture"); r.texture = t; rawset(self, "HighlightTexture", r) end
     function f:SetMaxLetters(n) self.maxLetters = n end
+    function f:Enable() self.enabled = true end
+    function f:Disable() self.enabled = false end
+    function f:IsEnabled() return self.enabled ~= false end
     function f:RegisterEvent(e) self.events = self.events or {}; self.events[e] = true end
     setmetatable(f, {__index = function(_, k)
         if type(k) == "string" and k:match("^[A-Z]") then return function() end end
@@ -130,6 +133,20 @@ local function NewWorld(opts)
         GetNumFriends = function() return opts.friends and #opts.friends or 0 end,
         GetFriendInfoByIndex = function(i) return {name = opts.friends[i]} end
     }
+    -- professions: retail's API when opts.profs is given, Era's skill lines when opts.skills is
+    _G.GetProfessions = opts.profs and function() return opts.profs[1] and 1 or nil, opts.profs[2] and 2 or nil end or nil
+    _G.GetProfessionInfo = opts.profs and function(i) local p = opts.profs[i]; if p then return p[1], "icon", p[2], p[3] end end or nil
+    _G.GetNumSkillLines = opts.skills and function() return #opts.skills end or nil
+    _G.GetSkillLineInfo = opts.skills and function(i) local k = opts.skills[i]; return k[1], k[2] or false, false, k[3] or 0, 0, 0, k[4] or 0 end or nil
+    -- chat: filters, the link handler and the edit box
+    _G.__filters = {}
+    _G.ChatFrame_AddMessageEventFilter = function(e, fn) _G.__filters[e] = fn end
+    _G.SetItemRef = function() end
+    _G.hooksecurefunc = function(name, fn) local orig = _G[name]; _G[name] = function(...) orig(...); fn(...) end end
+    _G.__chat = {}
+    _G.ChatEdit_GetActiveWindow = function() return opts.chatOpen and {} or nil end
+    _G.ChatEdit_InsertLink = function(t) _G.__chat.inserted = t; return true end
+    _G.ChatFrame_OpenChat = function(t) _G.__chat.opened = t end
     _G.__menus = {}
     local menus = _G.__menus
     _G.Menu = opts.noMenu and nil or {
@@ -201,7 +218,7 @@ do
     local ns = NewWorld()
     ns.slash("bob")
     check(#sent == 1 and sent[1].prefix == "ADVPLATE" and sent[1].text == "Q1" and sent[1].kind == "WHISPER" and sent[1].target == "Bob-Firemaw" and Printed("asking Bob-Firemaw"), "ask: /plate bob whispers a request to Bob-Firemaw")
-    check(#timers == 1, "ask: a timer waits for the answer")
+    check(#timers == 2, "ask: a timer waits for the answer (next to the playtime sampler's)")
     -- Bob's answer, in two chunks, out of order
     local bob = ns.CleanPlate({name = "Bob", realm = "Firemaw", level = 60, race = "Orc", class = "Hunter", classFile = "HUNTER", title = "Beast Whisperer", motto = string.rep("m", 200), tags = {"hardcore"}, roles = {dps = true}, weekends = string.rep("1", 24)})
     local text = ns.Encode(bob)
@@ -433,7 +450,7 @@ do
     ns2.slash("welcome")
     check(ns2.welcomeFrame ~= nil and ns2.welcomeFrame.shown == true, "welcome: /plate welcome brings it back")
     ns2.welcomeFrame.report:Press()
-    check(ns2.reportFrame ~= nil and ns2.reportFrame.shown == true and ns2.reportFrame.box.text:find("Adventure Plates 1.1.1 report", 1, true) ~= nil, "welcome: Report a bug opens the report")
+    check(ns2.reportFrame ~= nil and ns2.reportFrame.shown == true and ns2.reportFrame.box.text:find("Adventure Plates 1.2.0 report", 1, true) ~= nil, "welcome: Report a bug opens the report")
     -- the plate window on Era's page
     ns.slash("")
     local win = ns.window
@@ -498,7 +515,7 @@ do
     local rep = ns.reportFrame
     check(rep ~= nil and rep.shown == true and rep.pieces ~= nil, "report: /plate report opens it on Era's page")
     local text = rep.box.text
-    check(text:find("Adventure Plates 1.1.1 report", 1, true) and text:find(ns.FEEDBACK_URL, 1, true) and text:find(ns.FEEDBACK_EMAIL, 1, true) and text:find("suggestions are welcome", 1, true), "report: says where it goes, for bugs and ideas")
+    check(text:find("Adventure Plates 1.2.0 report", 1, true) and text:find(ns.FEEDBACK_URL, 1, true) and text:find(ns.FEEDBACK_EMAIL, 1, true) and text:find("suggestions are welcome", 1, true), "report: says where it goes, for bugs and ideas")
     check(text:find("client: version 1.60.1 build 69913", 1, true) and text:find("character: Siggy-Firemaw", 1, true) and text:find("settings: share=everyone", 1, true) and text:find("my plate: title=\"\"", 1, true) and text:find("era art: all four page files present", 1, true) and text:find("errors caught: 0", 1, true), "report: client, character, settings, plate and art")
     ns.slash("probe")
     check(ns.lastReport == text or ns.lastReport:find("report", 1, true), "report: /plate probe is the same window")
@@ -506,6 +523,103 @@ do
     check(Printed(ns.FEEDBACK_URL) and Printed(ns.FEEDBACK_EMAIL), "link: both places printed")
     check(ns.optionsPanel.report ~= nil and ns.optionsPanel.feedback.text:find(ns.FEEDBACK_EMAIL, 1, true) ~= nil, "options: the report button and the addresses")
     check(#ns.errors == 0 and #ns2.errors == 0 and #ns3.errors == 0, "no errors")
+end
+
+-- 8. professions, looking for, a main, learned hours, shared hours, the chat link
+do
+    -- the side worlds first: a later NewWorld replaces the globals the main world reads
+    -- Era's skill lines when there is no GetProfessions
+    local era = NewWorld({skills = {{"Weapon Skills", true}, {"Herbalism", false, 60, 75}, {"Cooking", false, 20, 75}, {"Mining", false, 5, 75}}})
+    local ep = era.MyPlate()
+    check(#ep.profs == 2 and ep.profs[1].name == "Herbalism" and ep.profs[1].skill == 60 and ep.profs[2].name == "Mining", "profs: Era's skill lines, headers and secondaries skipped")
+    -- a message being typed: the link goes into it
+    local open = NewWorld({chatOpen = true})
+    open.slash("chat")
+    check(_G.__chat.inserted == "[Adventure Plate: Siggy-Firemaw]" and _G.__chat.opened == nil, "chat: with a message being typed, the link goes into it")
+    local ns = NewWorld({profs = {{"Herbalism", 75, 150}, {"Alchemy", 40, 150}}, hour = 20, weekday = 3})
+    local filters, chat = _G.__filters, _G.__chat
+    -- professions from the client, on the wire, on the card
+    local p = ns.MyPlate()
+    check(#p.profs == 2 and p.profs[1].name == "Herbalism" and p.profs[1].skill == 75 and p.profs[2].max == 150, "profs: read from the client")
+    local text = ns.Encode(p)
+    check(text:find("profs=Herbalism:75:150,Alchemy:40:150", 1, true) ~= nil, "profs: on the wire as name:skill:max pairs")
+    local d = ns.Decode(text)
+    check(#d.profs == 2 and d.profs[2].name == "Alchemy" and d.profs[2].skill == 40, "profs: decoded")
+    local bad = ns.CleanPlate({profs = "Herb|cffalism:9999:x,Mining:10:75,Skinning:1:1,"})
+    check(#bad.profs == 2 and bad.profs[1].name == "Herbcffalism" and bad.profs[1].skill == 0 and bad.profs[1].max == 0 and bad.profs[2].name == "Mining" and bad.profs[2].max == 75, "profs: cleaned, capped at two, numbers bounded")
+    ns.slash("")
+    local win, card = ns.window, ns.window.card
+    check(card.profs.text == "Herbalism 75/150  -  Alchemy 40/150", "profs: a line under the class on the card")
+    check(card.share.shown == true and card.edit.shown == true and card.alt.shown == false and card.looking.text == "-", "mine: Share in Chat next to Edit, no main, nothing looked for yet")
+    -- the editor: looking for, a main
+    card.edit:Press()
+    local ed = win.editor
+    check(ed.looking.text == "" and ed.main.text == "" and ed.learned.enabled == false, "editor: looking-for and main boxes, Use my hours greyed until enough is learned")
+    ed.looking:Type("  a levelling guild <b>  ")
+    ed.main:Type("bob the great")
+    ed.rows.weekdays[18]:Press(); ed.rows.weekdays[19]:Press()
+    ed.save:Press()
+    local mine = ns.db.plates["Siggy-Firemaw"]
+    check(mine.looking == "a levelling guild <b>" and mine.main == "bobthegreat", "save: looking-for kept, the main squeezed to a name")
+    check(card.looking.text == "a levelling guild <b>" and card.alt.shown == true and card.alt.text.text == "Alt of bobthegreat" and ns.window.mainKey == "Bobthegreat-Firemaw", "card: Looking for and Alt of on the card")
+    sent = {}
+    card.alt:Press()
+    check(#sent == 1 and sent[1].target == "Bobthegreat-Firemaw" and sent[1].text == "Q1", "card: clicking Alt of asks for the main's plate")
+    -- someone else's plate: their main on their realm, and the hours you share in green
+    local bob = ns.CleanPlate({classFile = "HUNTER", main = "Ann", looking = "raid buddies", weekdays = "000000000000000000111100", weekends = string.rep("1", 24)})
+    ns.slash("Bob-Gehennas")
+    ns.OnEvent("CHAT_MSG_ADDON", "ADVPLATE", ns.Chunks(ns.Encode(bob))[1], "WHISPER", "Bob-Gehennas")
+    check(card.name.text == "Bob" and card.alt.text.text == "Alt of Ann" and ns.window.mainKey == "Ann-Gehennas" and card.looking.text == "raid buddies" and card.share.shown == false, "theirs: the main is on their realm, Share in Chat hidden")
+    check(card.rows.weekdays.cells[18].color[1] == 0.45 and card.rows.weekdays.cells[19].color[1] == 0.45 and card.rows.weekdays.cells[20].color[1] == 0.95 and card.rows.weekends.cells[3].color[1] == 0.95 and card.overlap.shown == true, "theirs: the hours we both play are green, theirs alone gold, the note shown")
+    ns.slash("")
+    check(card.rows.weekdays.cells[18].color[1] == 0.95 and card.overlap.shown == false, "mine: my own hours are plain gold")
+    -- learned hours: a sample at login, one every ten minutes, enough after an hour
+    check(ns.db.learned ~= nil and ns.db.learned.samples == 1 and ns.db.learned.weekdays[21] == 1, "learn: a sample at login, Wednesday 20:00")
+    local learned, samples = ns.LearnedHours()
+    check(learned == nil and samples == 1, "learn: nothing offered after one sample")
+    local before = #timers
+    RunTimers()
+    check(ns.db.learned.samples == 2 and #timers >= 1, "learn: the ten-minute timer samples and re-arms")
+    for i = 1, 4 do ns.RecordPlaytime() end
+    _G.GetGameTime = function() return 21, 0 end
+    ns.RecordPlaytime()
+    _G.GetGameTime = function() return 3, 0 end
+    ns.RecordPlaytime()
+    learned, samples = ns.LearnedHours()
+    check(learned ~= nil and samples == 8 and learned.weekdays:sub(21, 21) == "1" and learned.weekdays:sub(22, 22) == "0" and learned.weekdays:sub(4, 4) == "0" and learned.weekends == string.rep("0", 24), "learn: eight samples: the hour with six lit, the odd ones not")
+    card.edit:Press()
+    check(ed.learned.enabled == true, "editor: Use my hours offered")
+    ed.learned:Press()
+    check(win.draft.weekdays == learned.weekdays and ed.rows.weekdays[20].fill.color[1] == 0.95 and ed.rows.weekdays[18].fill.color[1] == 0.55, "editor: Use my hours fills the rows from what was learned")
+    ed.cancel:Press()
+    ns.slash("hours")
+    check(Printed("learning my hours is on, 8 samples"), "/plate hours reports")
+    ns.slash("hours off")
+    check(ns.db.settings.learn == false and ns.RecordPlaytime() == false and ns.db.learned.samples == 8, "/plate hours off: no more samples")
+    ns.slash("hours forget")
+    check(ns.db.learned == nil and ns.LearnedHours() == nil, "/plate hours forget: wiped")
+    ns.slash("hours on")
+    check(ns.db.settings.learn == true and ns.optionsPanel.learn ~= nil, "/plate hours on again, and the option is on the panel")
+    -- the chat link: plain text out, a link when it comes back in
+    check(filters.CHAT_MSG_SAY ~= nil and filters.CHAT_MSG_GUILD ~= nil and filters.CHAT_MSG_WHISPER ~= nil and ns.chatLinksInstalled == true, "chat: filters on the chat channels")
+    ns.slash("chat")
+    check(chat.opened == "[Adventure Plate: Siggy-Firemaw]" and chat.inserted == nil, "chat: /plate chat opens the chat box with the plain link text")
+    ns.slash("")
+    card.share:Press()
+    check(chat.opened == "[Adventure Plate: Siggy-Firemaw]", "chat: Share in Chat does the same")
+    local _, out = ns.LinkifyChat(nil, "CHAT_MSG_SAY", "look at my plate [Adventure Plate: Bob-Firemaw] please", "Bob", "x")
+    check(out == "look at my plate |cff66ccff|Haddon:AdventurePlates:Bob-Firemaw|h[Adventure Plate: Bob-Firemaw]|h|r please", "chat: the text becomes a clickable addon link")
+    local _, same = ns.LinkifyChat(nil, "CHAT_MSG_SAY", "no plate here [Adventure Plate: bad|name]", "Bob")
+    check(same == "no plate here [Adventure Plate: bad|name]", "chat: a name with a bar in it is left as text")
+    sent = {}
+    SetItemRef("addon:AdventurePlates:Bob-Firemaw", "[Adventure Plate: Bob-Firemaw]", "LeftButton")
+    check(#sent == 1 and sent[1].target == "Bob-Firemaw" and sent[1].text == "Q1", "chat: clicking the link asks for the plate")
+    SetItemRef("item:6948", "[Hearthstone]", "LeftButton")
+    check(#sent == 1, "chat: other links are not ours")
+    -- the report carries the new bits
+    local report = ns.BuildReport()
+    check(report:find("professions: Herbalism:75:150,Alchemy:40:150", 1, true) ~= nil and report:find("learn=yes", 1, true) ~= nil and report:find("chat links: installed=yes", 1, true) ~= nil, "report: professions, learning and chat links")
+    check(#ns.errors == 0 and #era.errors == 0 and #open.errors == 0, "no errors")
 end
 
 realPrint(("Adventure Plates harness: %d passed, %d failed"):format(passed, failed))

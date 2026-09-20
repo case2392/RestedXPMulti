@@ -16,7 +16,7 @@
 
 local addonName, ns = ...
 
-local WIDTH, HEIGHT = 740, 520
+local WIDTH, HEIGHT = 740, 600
 local CARD_W = 372
 local TOP = -100                      -- content starts under the header band
 local CELL, GAP = 10, 1
@@ -24,6 +24,7 @@ local CELL_ROWS = {{key = "weekdays", label = "Weekdays"}, {key = "weekends", la
 local ORANGE = {1, 0.5, 0}
 local LIT = {0.95, 0.75, 0.1}
 local DIM = {0.55, 0.47, 0.34}
+local BOTH = {0.45, 0.8, 0.35}          -- an hour you and they both play
 local ROLE_SIZE = 20
 local CLASS_SHEET = "Interface\\GLUES\\CHARACTERCREATE\\UI-CHARACTERCREATE-CLASSES"
 local ROTATE_SPEED = 2.5              -- radians a second while a rotate button is held
@@ -82,17 +83,6 @@ local function ClassColor(classFile)
     return ns.ERA.brown[1], ns.ERA.brown[2], ns.ERA.brown[3]
 end
 
--- server time: the hour now, and whether today is a weekend
-local function ServerNow()
-    local hour = Call(GetGameTime) or 0
-    local weekend = false
-    if C_DateAndTime and C_DateAndTime.GetCurrentCalendarTime then
-        local t = Call(C_DateAndTime.GetCurrentCalendarTime)
-        if type(t) == "table" and t.weekday then weekend = t.weekday == 1 or t.weekday == 7 end
-    end
-    return hour, weekend
-end
-
 local function Cursor()
     local x, y = Call(GetCursorPosition)
     local scale = UIParent and UIParent.GetEffectiveScale and Call(UIParent.GetEffectiveScale, UIParent) or 1
@@ -140,6 +130,8 @@ local function BuildCard(win)
     card.guild:SetPoint("TOPLEFT", card.title, "BOTTOMLEFT", 0, -3)
     card.line = Text(card, "GameFontNormal")
     card.line:SetPoint("TOPLEFT", card.guild, "BOTTOMLEFT", 0, -3)
+    card.profs = Ink(Text(card, "GameFontHighlightSmall"))
+    card.profs:SetPoint("TOPLEFT", card.line, "BOTTOMLEFT", 0, -3)
     card.roles = {}
     for i, r in ipairs(ns.ROLES) do
         local t = card:CreateTexture(nil, "ARTWORK")
@@ -150,49 +142,78 @@ local function BuildCard(win)
         t:Hide()
         card.roles[r.key] = t
     end
-    Line(card, -84)
+    -- "Alt of Name": click to ask for the main's plate
+    card.alt = Frame("Button", nil, card)
+    card.alt:SetSize(150, 16)
+    card.alt:SetPoint("TOPRIGHT", card, "TOPRIGHT", -4, -30)
+    card.alt.text = Text(card.alt, "GameFontNormalSmall")
+    card.alt.text:SetPoint("RIGHT", card.alt, "RIGHT", 0, 0)
+    card.alt.text:SetTextColor(ns.ERA.gold[1], ns.ERA.gold[2], ns.ERA.gold[3])
+    card.alt:SetScript("OnClick", function() if W.mainKey then ns.RequestPlate(W.mainKey) end end)
+    card.alt:SetScript("OnEnter", function(self)
+        if GameTooltip and W.mainKey then
+            GameTooltip:SetOwner(self, "ANCHOR_TOP")
+            GameTooltip:SetText("Click for " .. W.mainKey .. "'s plate")
+            GameTooltip:Show()
+        end
+    end)
+    card.alt:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
+    card.alt:Hide()
+    Line(card, -98)
 
     card.tagsHeader = Text(card, "GameFontNormal")
-    card.tagsHeader:SetPoint("TOPLEFT", card, "TOPLEFT", 4, -92)
+    card.tagsHeader:SetPoint("TOPLEFT", card, "TOPLEFT", 4, -106)
     card.tagsHeader:SetText("Playstyle & Focus")
     card.tags = {}
     for i = 1, ns.MAX_TAGS do
         local col, row = (i - 1) % 2, math.floor((i - 1) / 2)
         local icon = card:CreateTexture(nil, "ARTWORK")
         icon:SetSize(18, 18)
-        icon:SetPoint("TOPLEFT", card, "TOPLEFT", 4 + col * 184, -112 - row * 24)
+        icon:SetPoint("TOPLEFT", card, "TOPLEFT", 4 + col * 184, -126 - row * 24)
         local label = Ink(Text(card, "GameFontHighlight"))
         label:SetPoint("LEFT", icon, "RIGHT", 6, 0)
         card.tags[i] = {icon = icon, label = label}
     end
-    Line(card, -164)
+    card.lookingLabel = Text(card, "GameFontNormalSmall")
+    card.lookingLabel:SetPoint("TOPLEFT", card, "TOPLEFT", 4, -176)
+    card.lookingLabel:SetText("Looking for:")
+    card.looking = Ink(Text(card, "GameFontHighlightSmall"))
+    card.looking:SetPoint("LEFT", card.lookingLabel, "RIGHT", 6, 0)
+    card.looking:SetPoint("RIGHT", card, "RIGHT", -4, 0)
+    card.looking:SetJustifyH("LEFT")
+    Line(card, -194)
 
     card.hoursHeader = Text(card, "GameFontNormal")
-    card.hoursHeader:SetPoint("TOPLEFT", card, "TOPLEFT", 4, -172)
+    card.hoursHeader:SetPoint("TOPLEFT", card, "TOPLEFT", 4, -202)
     card.hoursHeader:SetText("Active Playtime (Server Time)")
+    card.overlap = Text(card, "GameFontHighlightSmall")
+    card.overlap:SetPoint("TOPRIGHT", card, "TOPRIGHT", -4, -204)
+    card.overlap:SetTextColor(BOTH[1], BOTH[2], BOTH[3])
+    card.overlap:SetText("green: hours you both play")
+    card.overlap:Hide()
     local marks = {{0, "12:00 a.m."}, {12, "12:00 p.m."}, {24, "24:00"}}
     card.marks = {}
     for i, m in ipairs(marks) do
         local t = Ink(Text(card, "GameFontNormalSmall"))
         local x = 72 + m[1] * (CELL + GAP)
-        if m[1] == 0 then t:SetPoint("TOPLEFT", card, "TOPLEFT", x, -190)
-        elseif m[1] == 24 then t:SetPoint("TOPRIGHT", card, "TOPLEFT", x, -190)
-        else t:SetPoint("TOP", card, "TOPLEFT", x, -190) end
+        if m[1] == 0 then t:SetPoint("TOPLEFT", card, "TOPLEFT", x, -220)
+        elseif m[1] == 24 then t:SetPoint("TOPRIGHT", card, "TOPLEFT", x, -220)
+        else t:SetPoint("TOP", card, "TOPLEFT", x, -220) end
         t:SetText(m[2])
         card.marks[i] = t
     end
     card.rows = {}
     for i, r in ipairs(CELL_ROWS) do
-        card.rows[r.key] = HourRow(card, -206 - (i - 1) * 18, r.label)
+        card.rows[r.key] = HourRow(card, -236 - (i - 1) * 18, r.label)
     end
-    Line(card, -250)
+    Line(card, -280)
 
     card.mottoHeader = Text(card, "GameFontNormal")
-    card.mottoHeader:SetPoint("TOPLEFT", card, "TOPLEFT", 4, -258)
+    card.mottoHeader:SetPoint("TOPLEFT", card, "TOPLEFT", 4, -288)
     card.mottoHeader:SetText("Adventurer Motto")
     card.mottoBox = Frame("Frame", nil, card, "BackdropTemplate")
-    card.mottoBox:SetPoint("TOPLEFT", card, "TOPLEFT", 2, -276)
-    card.mottoBox:SetPoint("TOPRIGHT", card, "TOPRIGHT", -2, -276)
+    card.mottoBox:SetPoint("TOPLEFT", card, "TOPLEFT", 2, -306)
+    card.mottoBox:SetPoint("TOPRIGHT", card, "TOPRIGHT", -2, -306)
     card.mottoBox:SetHeight(64)
     Backdrop(card.mottoBox, INSET, 0.93, 0.87, 0.72, 0.9, 0.6, 0.45, 0.15)
     card.motto = Ink(Text(card.mottoBox, "GameFontHighlight"))
@@ -203,13 +224,20 @@ local function BuildCard(win)
     if card.motto.SetWordWrap then card.motto:SetWordWrap(true) end
 
     card.stamp = Ink(Text(card, "GameFontNormalSmall"))
-    card.stamp:SetPoint("BOTTOMLEFT", card, "BOTTOMLEFT", 4, 6)
+    card.stamp:SetPoint("BOTTOMLEFT", card, "BOTTOMLEFT", 4, 32)
 
     card.edit = Frame("Button", nil, card, "UIPanelButtonTemplate")
     card.edit:SetSize(130, 24)
     card.edit:SetPoint("BOTTOMRIGHT", card, "BOTTOMRIGHT", -4, 2)
     card.edit:SetText("Edit My Plate")
     card.edit:SetScript("OnClick", function() ns.ShowOwnPlate(true) end)
+
+    -- a link to the plate, into the chat box
+    card.share = Frame("Button", nil, card, "UIPanelButtonTemplate")
+    card.share:SetSize(120, 24)
+    card.share:SetPoint("RIGHT", card.edit, "LEFT", -6, 0)
+    card.share:SetText("Share in Chat")
+    card.share:SetScript("OnClick", function() ns.ShareInChat() end)
 
     card.ask = Frame("Button", nil, card, "UIPanelButtonTemplate")
     card.ask:SetSize(110, 24)
@@ -261,6 +289,28 @@ local function BuildEditor(win)
     ed.title:SetMaxLetters(ns.MAX_TITLE)
     ed.title:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
     ed.title:SetScript("OnTextChanged", function(self) if W.draft then W.draft.title = self:GetText() or "" end end)
+    y = y - 44
+
+    local lookingLabel = Text(ed, "GameFontNormal")
+    lookingLabel:SetPoint("TOPLEFT", ed, "TOPLEFT", 4, y)
+    lookingLabel:SetText("Looking for")
+    ed.looking = Frame("EditBox", nil, ed, "InputBoxTemplate")
+    ed.looking:SetSize(CARD_W / 2 - 14, 20)
+    ed.looking:SetPoint("TOPLEFT", ed, "TOPLEFT", 10, y - 18)
+    ed.looking:SetAutoFocus(false)
+    ed.looking:SetMaxLetters(ns.MAX_LOOKING)
+    ed.looking:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+    ed.looking:SetScript("OnTextChanged", function(self) if W.draft then W.draft.looking = self:GetText() or "" end end)
+    local mainLabel = Text(ed, "GameFontNormal")
+    mainLabel:SetPoint("TOPLEFT", ed, "TOPLEFT", CARD_W / 2 + 4, y)
+    mainLabel:SetText("My main (if this is an alt)")
+    ed.main = Frame("EditBox", nil, ed, "InputBoxTemplate")
+    ed.main:SetSize(CARD_W / 2 - 20, 20)
+    ed.main:SetPoint("TOPLEFT", ed, "TOPLEFT", CARD_W / 2 + 10, y - 18)
+    ed.main:SetAutoFocus(false)
+    ed.main:SetMaxLetters(ns.MAX_MAIN)
+    ed.main:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+    ed.main:SetScript("OnTextChanged", function(self) if W.draft then W.draft.main = self:GetText() or "" end end)
     y = y - 44
 
     local roleLabel = Text(ed, "GameFontNormal")
@@ -329,6 +379,30 @@ local function BuildEditor(win)
     local hoursLabel = Text(ed, "GameFontNormal")
     hoursLabel:SetPoint("TOPLEFT", ed, "TOPLEFT", 4, y)
     hoursLabel:SetText("Active Playtime (server time, click the hours)")
+    -- fill the rows from the hours the addon has seen this account logged in
+    ed.learned = Frame("Button", nil, ed, "UIPanelButtonTemplate")
+    ed.learned:SetSize(96, 18)
+    ed.learned:SetPoint("TOPRIGHT", ed, "TOPRIGHT", -4, y + 2)
+    ed.learned:SetText("Use my hours")
+    ed.learned:SetScript("OnClick", function()
+        local learned = ns.LearnedHours()
+        if not (learned and W.draft) then return end
+        W.draft.weekdays, W.draft.weekends = learned.weekdays, learned.weekends
+        ns.RefreshEditor()
+    end)
+    ed.learned:SetScript("OnEnter", function(self)
+        if not GameTooltip then return end
+        local learned, samples = ns.LearnedHours()
+        GameTooltip:SetOwner(self, "ANCHOR_TOP")
+        GameTooltip:SetText("Use my hours")
+        if learned then
+            GameTooltip:AddLine(("Lights the hours this account has been logged in, from %d samples (one every ten minutes). You can still click cells afterwards."):format(samples), 1, 1, 1, true)
+        else
+            GameTooltip:AddLine(("Not enough seen yet: %d of %d samples (one every ten minutes logged in)."):format(samples or 0, ns.LEARN_MIN), 1, 1, 1, true)
+        end
+        GameTooltip:Show()
+    end)
+    ed.learned:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
     y = y - 18
     ed.rows = {}
     for i, r in ipairs(CELL_ROWS) do
@@ -351,7 +425,7 @@ local function BuildEditor(win)
     local box = Frame("Frame", nil, ed, "BackdropTemplate")
     box:SetPoint("TOPLEFT", ed, "TOPLEFT", 2, y - 18)
     box:SetPoint("TOPRIGHT", ed, "TOPRIGHT", -2, y - 18)
-    box:SetHeight(54)
+    box:SetHeight(46)
     Backdrop(box, INSET, 0.93, 0.87, 0.72, 0.9, 0.6, 0.45, 0.15)
     ed.motto = Frame("EditBox", nil, box)
     ed.motto:SetPoint("TOPLEFT", box, "TOPLEFT", 8, -6)
@@ -587,6 +661,21 @@ local function FillCard(card, plate, own, cachedAt)
     if plate.class ~= "" then parts[#parts + 1] = plate.class end
     card.line:SetText(table.concat(parts, " "))
     card.line:SetTextColor(ClassColor(plate.classFile))
+    local profs = {}
+    for _, p in ipairs(plate.profs or {}) do
+        profs[#profs + 1] = p.max and p.max > 0 and ("%s %d/%d"):format(p.name, p.skill or 0, p.max) or p.name
+    end
+    card.profs:SetText(#profs > 0 and table.concat(profs, "  -  ") or "")
+    if plate.main and plate.main ~= "" then
+        local main = plate.main
+        if not main:find("-", 1, true) then main = main .. "-" .. (plate.realm ~= "" and plate.realm or ns.RealmName()) end
+        W.mainKey = ns.FullName(main)
+        card.alt.text:SetText("Alt of " .. plate.main)
+        card.alt:Show()
+    else
+        W.mainKey = nil
+        card.alt:Hide()
+    end
     for _, r in ipairs(ns.ROLES) do
         if plate.roles and plate.roles[r.key] then card.roles[r.key]:Show() else card.roles[r.key]:Hide() end
     end
@@ -603,17 +692,24 @@ local function FillCard(card, plate, own, cachedAt)
             slot.label:SetText(i == 1 and "(nothing picked yet)" or "")
         end
     end
-    local hour, weekend = ServerNow()
+    card.looking:SetText(plate.looking ~= "" and plate.looking or "-")
+    local hour, weekend = ns.ServerNow()
+    -- on someone else's plate, the hours you both play are green
+    local mine = not own and ns.db and ns.db.plates[ns.CharKey()]
+    local overlap = false
     for _, r in ipairs(CELL_ROWS) do
         local row = card.rows[r.key]
         local s = ns.CleanHours(plate[r.key])
+        local m = mine and ns.CleanHours(mine[r.key])
         for h = 0, 23 do
             local on = s:sub(h + 1, h + 1) == "1"
-            if on then row.cells[h]:SetColorTexture(LIT[1], LIT[2], LIT[3], 1)
+            local both = on and m and m:sub(h + 1, h + 1) == "1"
+            if both then row.cells[h]:SetColorTexture(BOTH[1], BOTH[2], BOTH[3], 1); overlap = true
+            elseif on then row.cells[h]:SetColorTexture(LIT[1], LIT[2], LIT[3], 1)
             else row.cells[h]:SetColorTexture(DIM[1], DIM[2], DIM[3], 1) end
         end
-        local mine = (r.key == "weekends") == weekend
-        if mine and row.cells[hour] then
+        local today = (r.key == "weekends") == weekend
+        if today and row.cells[hour] then
             row.now:ClearAllPoints()
             row.now:SetPoint("CENTER", row.cells[hour], "CENTER", 0, 0)
             row.now:Show()
@@ -621,10 +717,12 @@ local function FillCard(card, plate, own, cachedAt)
             row.now:Hide()
         end
     end
+    if overlap then card.overlap:Show() else card.overlap:Hide() end
     card.motto:SetText(plate.motto ~= "" and ('"%s"'):format(plate.motto) or "")
     if own then
         card.stamp:SetText("This is what other players see.")
         card.edit:Show()
+        card.share:Show()
         card.ask:Hide()
     else
         if cachedAt and cachedAt > 0 and date then
@@ -633,6 +731,7 @@ local function FillCard(card, plate, own, cachedAt)
             card.stamp:SetText("")
         end
         card.edit:Hide()
+        card.share:Hide()
         card.ask:Show()
     end
 end
@@ -670,6 +769,7 @@ end
 local function CopyPlate(p)
     local d = ns.NewPlate()
     d.title, d.motto = p.title or "", p.motto or ""
+    d.looking, d.main = p.looking or "", p.main or ""
     d.weekdays, d.weekends = ns.CleanHours(p.weekdays), ns.CleanHours(p.weekends)
     for _, k in ipairs(p.tags or {}) do d.tags[#d.tags + 1] = k end
     for k, v in pairs(p.roles or {}) do d.roles[k] = v end
@@ -694,6 +794,8 @@ function ns.RefreshEditor()
         end
     end
     ed.mottoCount:SetText(("%d/%d"):format(ns.Utf8Len(d.motto or ""), ns.MAX_MOTTO))
+    local learned = ns.LearnedHours()
+    if learned then ed.learned:Enable() else ed.learned:Disable() end
 end
 
 function ns.OpenEditor()
@@ -702,6 +804,8 @@ function ns.OpenEditor()
     W.draft = CopyPlate(plate)
     local ed = win.editor
     ed.title:SetText(W.draft.title)
+    ed.looking:SetText(W.draft.looking)
+    ed.main:SetText(W.draft.main)
     ed.motto:SetText(W.draft.motto)
     ns.RefreshEditor()
     win.card:Hide()
@@ -715,6 +819,7 @@ function ns.SaveDraft()
     local plate = ns.MyPlate()
     local clean = ns.CleanPlate(d)
     plate.title, plate.motto = clean.title, clean.motto
+    plate.looking, plate.main = clean.looking, clean.main
     plate.tags, plate.roles = clean.tags, clean.roles
     plate.weekdays, plate.weekends = clean.weekdays, clean.weekends
     W.draft = nil
@@ -768,6 +873,8 @@ local WELCOME = {
     "|cffffd100/plate|r opens your plate and |cffffd100Edit My Plate|r fills it in. Right-click your own portrait for the same.",
     "|cffffd100/plate <name>|r, |cffffd100/plate target|r, or |cffffd100View Adventure Plate|r on a player's right-click menu shows someone else's.",
     "The minimap button opens your plate with a left click and the settings with a right click.",
+    "|cffffd100Share in Chat|r puts a link to your plate in the chat box; anyone with the addon can click it.",
+    "The addon notes the hours you are logged in, so |cffffd100Use my hours|r in the editor can fill the playtime rows for you (off in the settings if you would rather not).",
     "",
     "Who may look at your plate is up to you: everyone, only friends, guildmates and your group, or nobody. It is in the settings.",
     "",
@@ -779,7 +886,7 @@ ns.WELCOME_LINES = WELCOME
 
 local function BuildWelcome()
     local f = ns.BuildEraPage("AdventurePlatesWelcome", UIParent)
-    f:SetSize(500, 470)
+    f:SetSize(500, 530)
     f:SetPoint("CENTER", UIParent, "CENTER", 0, 60)
     if f.SetFrameStrata then f:SetFrameStrata("DIALOG") end
     if f.SetMovable then f:SetMovable(true) end

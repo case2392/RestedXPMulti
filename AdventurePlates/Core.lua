@@ -19,13 +19,18 @@
 
 local addonName, ns = ...
 
-ns.VERSION = "1.1.1"
+ns.VERSION = "1.2.0"
 ns.PREFIX = "ADVPLATE"
 ns.FORMAT = 1
 ns.MAX_TAGS = 4
 ns.MAX_TITLE = 30
 ns.MAX_MOTTO = 160
+ns.MAX_LOOKING = 60     -- "looking for" line
+ns.MAX_MAIN = 24        -- a main character's name
+ns.MAX_PROFS = 2        -- primary professions on the plate
 ns.CACHE_SIZE = 60
+ns.LEARN_EVERY = 600    -- seconds between playtime samples
+ns.LEARN_MIN = 6        -- samples (an hour) before the learned hours are offered
 
 -- playstyle tags: key (what travels), label, icon
 ns.TAGS = {
@@ -61,7 +66,14 @@ local DEFAULT_SETTINGS = {
     greet = false,      -- say in chat when someone looks at your plate
     minimap = true,     -- the button on the minimap
     minimapAngle = 160, -- where round the minimap it sits
-    welcomed = false    -- the welcome has been read
+    welcomed = false,   -- the welcome has been read
+    learn = true        -- note the hours I am logged in, to fill the playtime rows from
+}
+
+-- the primary professions, by name, for a client without GetProfessions
+ns.PRIMARY_PROFESSIONS = {
+    Alchemy = true, Blacksmithing = true, Enchanting = true, Engineering = true, Herbalism = true,
+    Leatherworking = true, Mining = true, Skinning = true, Tailoring = true, Jewelcrafting = true, Inscription = true
 }
 
 ns.errors = {}
@@ -141,8 +153,43 @@ function ns.NewPlate()
         roles = {},
         weekdays = string.rep("0", 24),
         weekends = string.rep("0", 24),
-        motto = ""
+        motto = "",
+        looking = "",   -- what they are looking for
+        main = "",      -- their main character, if this is an alt
+        profs = {}      -- primary professions: {name, skill, max}
     }
+end
+
+-- "Herbalism:75:150,Alchemy:40:150" <-> a list, at most two, each checked
+function ns.CleanProfs(v)
+    local out = {}
+    local list = v
+    if type(v) == "string" then
+        list = {}
+        for entry in v:gmatch("[^,]+") do
+            local f = {}
+            for part in (entry .. ":"):gmatch("([^:]*):") do f[#f + 1] = part end
+            list[#list + 1] = {name = f[1], skill = f[2], max = f[3]}
+        end
+    end
+    if type(list) ~= "table" then return out end
+    for _, p in ipairs(list) do
+        if type(p) == "table" then
+            local name = ns.Sanitize(p.name, 24):gsub("[:,]", "")
+            if name ~= "" and #out < ns.MAX_PROFS then
+                out[#out + 1] = {name = name, skill = ns.CleanNumber(p.skill, 0, 1000), max = ns.CleanNumber(p.max, 0, 1000)}
+            end
+        end
+    end
+    return out
+end
+
+function ns.ProfsText(list)
+    local parts = {}
+    for _, p in ipairs(list or {}) do
+        parts[#parts + 1] = ("%s:%d:%d"):format(p.name, p.skill or 0, p.max or 0)
+    end
+    return table.concat(parts, ",")
 end
 
 -- the fields another player fills in, checked and trimmed
@@ -151,6 +198,10 @@ function ns.CleanPlate(p)
     if type(p) ~= "table" then return out end
     out.title = ns.Sanitize(p.title, ns.MAX_TITLE)
     out.motto = ns.Sanitize(p.motto, ns.MAX_MOTTO)
+    out.looking = ns.Sanitize(p.looking, ns.MAX_LOOKING)
+    -- a character name: letters and one realm dash, nothing else
+    out.main = ns.Sanitize(p.main, ns.MAX_MAIN):gsub("%s+", ""):gsub("[%[%]%(%)<>\"'%%~=,:]", "")
+    out.profs = ns.CleanProfs(p.profs)
     out.weekdays = ns.CleanHours(p.weekdays)
     out.weekends = ns.CleanHours(p.weekends)
     if type(p.tags) == "table" then
@@ -198,6 +249,28 @@ function ns.CharKey()
     return name .. "-" .. ns.RealmName()
 end
 
+-- the character's primary professions, from the client
+function ns.Professions()
+    local out = {}
+    if GetProfessions and GetProfessionInfo then
+        local prof1, prof2 = Call(GetProfessions)
+        for _, index in ipairs({prof1, prof2}) do
+            if type(index) == "number" then
+                local name, _, skill, max = Call(GetProfessionInfo, index)
+                if type(name) == "string" then out[#out + 1] = {name = name, skill = skill or 0, max = max or 0} end
+            end
+        end
+    elseif GetNumSkillLines and GetSkillLineInfo then
+        for i = 1, Call(GetNumSkillLines) or 0 do
+            local name, isHeader, _, rank, _, _, maxRank = Call(GetSkillLineInfo, i)
+            if type(name) == "string" and not isHeader and ns.PRIMARY_PROFESSIONS[name] then
+                out[#out + 1] = {name = name, skill = rank or 0, max = maxRank or 0}
+            end
+        end
+    end
+    return ns.CleanProfs(out)
+end
+
 -- the character's own facts, read from the client every time the plate is shown or sent
 function ns.Snapshot(plate)
     plate.name = Call(UnitName, "player") or ""
@@ -212,8 +285,137 @@ function ns.Snapshot(plate)
     local gameTitle = titleID and titleID > 0 and Call(GetTitleName, titleID) or ""
     plate.gameTitle = type(gameTitle) == "string" and gameTitle:gsub("^%s+", ""):gsub("%s+$", "") or ""
     plate.faction = Call(UnitFactionGroup, "player") or ""
+    plate.profs = ns.Professions()
     plate.updated = Call(time) or 0
     return plate
+end
+
+--------------------------------------------------------------------------
+-- learned playtime: a sample every ten minutes of being logged in
+--------------------------------------------------------------------------
+
+-- server time: the hour now, and whether today is a weekend
+function ns.ServerNow()
+    local hour = Call(GetGameTime) or 0
+    local weekend = false
+    if C_DateAndTime and C_DateAndTime.GetCurrentCalendarTime then
+        local t = Call(C_DateAndTime.GetCurrentCalendarTime)
+        if type(t) == "table" and t.weekday then weekend = t.weekday == 1 or t.weekday == 7 end
+    end
+    return hour, weekend
+end
+
+local function LearnedTable()
+    local db = ns.db
+    if type(db.learned) ~= "table" then db.learned = {} end
+    local l = db.learned
+    l.weekdays = type(l.weekdays) == "table" and l.weekdays or {}
+    l.weekends = type(l.weekends) == "table" and l.weekends or {}
+    l.samples = tonumber(l.samples) or 0
+    l.since = tonumber(l.since) or Call(time) or 0
+    return l
+end
+
+function ns.RecordPlaytime()
+    if not ns.db or not ns.db.settings.learn then return false end
+    local hour, weekend = ns.ServerNow()
+    if type(hour) ~= "number" or hour < 0 or hour > 23 then return false end
+    local l = LearnedTable()
+    local row = weekend and l.weekends or l.weekdays
+    row[hour + 1] = (tonumber(row[hour + 1]) or 0) + 1
+    l.samples = l.samples + 1
+    return true
+end
+
+-- the learned hours as the two 24-character rows, or nil until enough has
+-- been seen: an hour is lit when it has a fair share of the samples
+function ns.LearnedHours()
+    if not ns.db or type(ns.db.learned) ~= "table" then return nil end
+    local l = LearnedTable()
+    if l.samples < ns.LEARN_MIN then return nil, l.samples end
+    local peak = 0
+    for _, key in ipairs({"weekdays", "weekends"}) do
+        for h = 1, 24 do peak = math.max(peak, tonumber(l[key][h]) or 0) end
+    end
+    local floor = math.max(2, peak * 0.25)
+    local out = {}
+    for _, key in ipairs({"weekdays", "weekends"}) do
+        local bits = {}
+        for h = 1, 24 do bits[h] = (tonumber(l[key][h]) or 0) >= floor and "1" or "0" end
+        out[key] = table.concat(bits)
+    end
+    return out, l.samples
+end
+
+function ns.ForgetPlaytime()
+    if ns.db then ns.db.learned = nil end
+end
+
+local function ScheduleSample()
+    if not (C_Timer and C_Timer.After) then return end
+    C_Timer.After(ns.LEARN_EVERY, function()
+        Guard("learn", ns.RecordPlaytime)()
+        ScheduleSample()
+    end)
+end
+ns.ScheduleSample = ScheduleSample
+
+--------------------------------------------------------------------------
+-- a link to the plate in chat
+--------------------------------------------------------------------------
+
+-- what goes over chat is plain text (the game only lets its own link kinds
+-- through); the receiving addon turns it into a clickable link
+ns.CHAT_TAG = "Adventure Plate"
+
+function ns.ChatText(key)
+    return ("[%s: %s]"):format(ns.CHAT_TAG, key or ns.CharKey())
+end
+
+local function ChatLink(key)
+    return ("|cff66ccff|Haddon:AdventurePlates:%s|h[%s: %s]|h|r"):format(key, ns.CHAT_TAG, key)
+end
+ns.ChatLink = ChatLink
+
+-- the chat filter: "[Adventure Plate: Name-Realm]" in a message becomes a link
+local TAG_PATTERN = "%[" .. ns.CHAT_TAG .. ": ([%w%-]+)%]"
+function ns.LinkifyChat(self, event, msg, ...)
+    if type(msg) ~= "string" or not msg:find(ns.CHAT_TAG, 1, true) then return false, msg, ... end
+    local out = msg:gsub(TAG_PATTERN, function(key) return ChatLink(key) end)
+    return false, out, ...
+end
+
+local CHAT_EVENTS = {"CHAT_MSG_SAY", "CHAT_MSG_YELL", "CHAT_MSG_PARTY", "CHAT_MSG_PARTY_LEADER", "CHAT_MSG_RAID", "CHAT_MSG_RAID_LEADER",
+                     "CHAT_MSG_GUILD", "CHAT_MSG_OFFICER", "CHAT_MSG_WHISPER", "CHAT_MSG_WHISPER_INFORM", "CHAT_MSG_CHANNEL",
+                     "CHAT_MSG_INSTANCE_CHAT", "CHAT_MSG_INSTANCE_CHAT_LEADER", "CHAT_MSG_BN_WHISPER", "CHAT_MSG_BN_WHISPER_INFORM"}
+
+function ns.InstallChatLinks()
+    if ns.chatLinksInstalled then return end
+    if ChatFrame_AddMessageEventFilter then
+        for _, e in ipairs(CHAT_EVENTS) do pcall(ChatFrame_AddMessageEventFilter, e, ns.LinkifyChat) end
+    end
+    if hooksecurefunc and SetItemRef then
+        hooksecurefunc("SetItemRef", function(link)
+            local key = type(link) == "string" and link:match("^addon:AdventurePlates:([%w%-]+)$")
+            if key then Guard("chat link", ns.RequestPlate)(ns.FullName(key)) end
+        end)
+    end
+    ns.chatLinksInstalled = true
+end
+
+-- put the link in the chat box (into the message being typed, or a new one)
+function ns.ShareInChat()
+    local text = ns.ChatText()
+    local box = ChatEdit_GetActiveWindow and Call(ChatEdit_GetActiveWindow)
+    if box and ChatEdit_InsertLink then
+        if Call(ChatEdit_InsertLink, text) then return "inserted" end
+    end
+    if ChatFrame_OpenChat then
+        Call(ChatFrame_OpenChat, text)
+        return "opened"
+    end
+    ns.Print("paste this in chat: %s", text)
+    return "printed"
 end
 
 function ns.MyPlate()
@@ -306,6 +508,21 @@ local function Slash(msg)
     elseif cmd == "link" then
         ns.Print("comments: %s", ns.FEEDBACK_URL)
         ns.Print("email: %s", ns.FEEDBACK_EMAIL)
+    elseif cmd == "chat" then
+        ns.ShareInChat()
+    elseif cmd == "hours" then
+        local mode = rest:lower()
+        if mode == "on" or mode == "off" then
+            ns.db.settings.learn = mode == "on"
+            ns.Print("learning my hours: %s", mode)
+        elseif mode == "forget" then
+            ns.ForgetPlaytime()
+            ns.Print("learned hours forgotten")
+        else
+            local learned, samples = ns.LearnedHours()
+            ns.Print("learning my hours is %s, %d samples so far%s. /plate hours on|off|forget", ns.db.settings.learn and "on" or "off", samples or 0,
+                     learned and " (enough to fill the playtime rows: Edit My Plate, Use my hours)" or "")
+        end
     elseif cmd == "button" then
         local mode = rest:lower()
         if mode == "on" or mode == "off" then
@@ -315,7 +532,7 @@ local function Slash(msg)
             ns.Print("the minimap button is %s. /plate button on|off", ns.db.settings.minimap and "on" or "off")
         end
     elseif cmd == "help" then
-        ns.Print("/plate - your plate.  /plate edit - fill it in.  /plate <name> - ask for someone's plate.  /plate target - the player you have targeted.  /plate share everyone|friends|off - who may ask for yours.  /plate button on|off - the minimap button.  /plate report - a report to paste with a bug or an idea.  /plate welcome - the welcome again.  /plate options.")
+        ns.Print("/plate - your plate.  /plate edit - fill it in.  /plate <name> - ask for someone's plate.  /plate target - the player you have targeted.  /plate chat - a link to your plate in the chat box.  /plate share everyone|friends|off - who may ask for yours.  /plate hours on|off|forget - learning when you play.  /plate button on|off - the minimap button.  /plate report - a report to paste with a bug or an idea.  /plate welcome - the welcome again.  /plate options.")
     else
         -- a name, as typed: the realm part keeps its case so the reply's
         -- sender matches it
@@ -333,6 +550,9 @@ function ns.OnEvent(event, arg1, arg2, arg3, arg4)
         if ns.BuildOptionsPanel then Guard("options", ns.BuildOptionsPanel)() end
         if ns.SetMinimapButton and ns.db.settings.minimap then Guard("minimap", ns.SetMinimapButton)(true) end
         if ns.ShowWelcome and not ns.db.settings.welcomed then Guard("welcome", ns.ShowWelcome)() end
+        Guard("chat links", ns.InstallChatLinks)()
+        Guard("learn", ns.RecordPlaytime)()
+        ScheduleSample()
         _G.SLASH_ADVENTUREPLATES1 = "/plate"
         _G.SLASH_ADVENTUREPLATES2 = "/adventureplates"
         _G.SLASH_ADVENTUREPLATES3 = "/aplate"
