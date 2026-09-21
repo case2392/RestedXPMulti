@@ -79,12 +79,20 @@ usually enough to rebuild that window in the classic style.
   (mirrored for the player) drawn *over* 119x12 health and mana bars the
   way Classic does (retail draws the bars over the art, which is why they
   looked flat and stuck out; Forever locks the bar frames to their parent's
-  level, so the art sits on a frame of the addon's one level above them,
-  with a copy of the level text on it), round portraits filling the art's
-  ring, level in the frame corner in the small gold font,
-  elite / rare / rare-elite target art, the classic combat flash and rest
-  icon, and the small classic pet frame. Focus frame too. Every size and
-  anchor comes from a `/cui report all` taken on Classic Era. Blizzard's own
+  level, so the art sits on a frame of the addon's at that same level, on
+  the BORDER layer: the bar fills are on BACKGROUND under it and the
+  health / mana numbers on OVERLAY over it, as Classic drew them, with a
+  copy of the level text on the same frame), round portraits filling the
+  art's ring, level in the frame corner in the small gold font, the name
+  box the full width of the art's strip (Forever's names run longer than
+  Era's), elite / rare / rare-elite target art, the classic combat flash
+  and rest icon, and the small classic pet frame. Focus frame too. Every
+  size and anchor comes from a `/cui report all` taken on Classic Era.
+  The bars are anchored by both corners to the unit frame itself, never
+  to Blizzard's bars container: Blizzard resizes and re-anchors that
+  container on every target change, in combat too (when the protected
+  bars cannot be laid out again), and a bar hanging off it started a few
+  pixels left of the art's recess until the fight ended. Blizzard's own
   redraws (vehicle art, power-type changes, target classification, level
   repaints) are re-skinned as they happen.
 - **Party frames** — each of the four member frames gets Era's
@@ -164,7 +172,16 @@ usually enough to rebuild that window in the classic style.
   384x512, its metal frame, title, buttons and portrait faded, all
   remembered once and put back once), its page moved out of reach; when
   the talents page comes up the talents part takes the claim over, and
-  when neither page is up the retail window comes back. The cooldown
+  when neither page is up the retail window comes back. The window and
+  its page hold the secure spell buttons, so they are protected frames:
+  a book opened in combat stays Blizzard's until the fight ends and is
+  dressed then, and a size or page move asked for in combat waits for
+  `PLAYER_REGEN_ENABLED`. UIParent's panel width for the window is left
+  to Blizzard: set from addon code (`SetUIPanelAttribute`) it taints the
+  panel's layout attributes, and the secure panel manager then refuses to
+  show the window in combat at all ("Interface action failed because of
+  an AddOn"). The same goes for the character sheet and the professions
+  window. The cooldown
   swirls are only redrawn while the book is
   actually open: `SPELL_UPDATE_COOLDOWN` storms in combat — every cast,
   every global cooldown — and sweeping twelve buttons each time was work

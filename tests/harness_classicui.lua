@@ -80,10 +80,23 @@ local function Region(kind, init)
     return r
 end
 
+-- protected frames (unit frames, the spell window and its page): in the
+-- client, sizing or anchoring one in combat is blocked and reported to
+-- the player as an addon fault. Here every such call on a frame marked
+-- protectedFrame while InCombatLockdown() is counted, Blizzard's own
+-- included (the tests reset the count after standing in for Blizzard).
+local blocked = 0
 local function Frame(name)
     local f = Region("Frame")
     f.name = name
     f.events = {}
+    for _, m in ipairs({"SetSize", "SetWidth", "SetHeight", "SetPoint", "ClearAllPoints", "SetAllPoints"}) do
+        local orig = f[m]
+        f[m] = function(self, ...)
+            if self.protectedFrame and _G.InCombatLockdown and _G.InCombatLockdown() then blocked = blocked + 1 end
+            return orig(self, ...)
+        end
+    end
     function f:RegisterEvent(e) self.events[e] = true end
     function f:UnregisterEvent(e) self.events[e] = nil end
     function f:SetScript(k, fn) self.scripts = self.scripts or {}; self.scripts[k] = fn end
@@ -121,7 +134,7 @@ local function Frame(name)
     function f:SetFocus() end
     function f:ClearFocus() end
     function f:HighlightText() end
-    function f:CreateTexture() local r = Region("Texture"); self.created = self.created or {}; table.insert(self.created, r); return r end
+    function f:CreateTexture(_, layer) local r = Region("Texture"); r.layer = layer; self.created = self.created or {}; table.insert(self.created, r); return r end
     function f:SetParent(p) self.parent = p end
     function f:UnregisterAllEvents() self.events = {} end
     function f:RegisterUnitEvent(e) self.events[e] = true end
@@ -270,6 +283,9 @@ local function NewWorld(opts)
     end
 
     local w = {cvars = {}, frames = {}, plateApplies = 0, sizes = {}}
+    blocked = 0
+    function w.Blocked() return blocked end
+    function w.ResetBlocked() blocked = 0 end
     w.cvars.nameplateStyle = opts.style or "0"
     w.cvars.nameplateSize = "1"
     w.cvars.nameplateAuraScale = "1"
@@ -438,20 +454,23 @@ local function NewWorld(opts)
     if opts.forever then
         -- Forever: retail-style player/target frames, main action bar, minimap
         -- frame levels as on Forever: unit frame L, *Container and *Content L+1, *ContentMain and its bars L+2
-        local pf = Frame("PlayerFrame"); pf.level = 10
+        local pf = Frame("PlayerFrame"); pf.level = 10; pf.protectedFrame = true
         pf.PlayerFrameContainer = Frame("container"); pf.PlayerFrameContainer.level = 11
         pf.PlayerFrameContainer.FrameTexture = Region("Texture", {atlas = "UI-HUD-UnitFrame-Player-PortraitOn"})
         pf.PlayerFrameContainer.FrameFlash = Region("Texture", {atlas = "flash"})
         pf.PlayerFrameContainer.AlternatePowerFrameTexture = Region("Texture")
         pf.PlayerFrameContainer.PlayerPortrait = Region("Texture")
         pf.PlayerFrameContainer.PlayerPortraitMask = Region("MaskTexture", {atlas = "UI-HUD-UnitFrame-Player-Portrait-Mask"})
-        local main = Frame("main"); main.level = 12
+        local main = Frame("main"); main.level = 12; main.protectedFrame = true
         -- masks live where Forever puts them: the health one on the bars container, the mana one on the bar
-        main.HealthBarsContainer = Frame("hc"); main.HealthBarsContainer.level = 12; main.HealthBarsContainer.useParentLevel = true
-        main.HealthBarsContainer.HealthBar = Frame("hb"); main.HealthBarsContainer.HealthBar.level = 12; main.HealthBarsContainer.HealthBar.useParentLevel = true
+        main.HealthBarsContainer = Frame("hc"); main.HealthBarsContainer.level = 12; main.HealthBarsContainer.useParentLevel = true; main.HealthBarsContainer.protectedFrame = true
+        main.HealthBarsContainer.HealthBar = Frame("hb"); main.HealthBarsContainer.HealthBar.level = 12; main.HealthBarsContainer.HealthBar.useParentLevel = true; main.HealthBarsContainer.HealthBar.protectedFrame = true
         main.HealthBarsContainer.HealthBarMask = Region("MaskTexture", {atlas = "UI-HUD-UnitFrame-Player-PortraitOn-Bar-Health-Mask"})
+        -- the health numbers live on the container (Forever's XML), anchored to its centre and ends
+        main.HealthBarsContainer.HealthBarText = Region("FontString"); main.HealthBarsContainer.LeftText = Region("FontString"); main.HealthBarsContainer.RightText = Region("FontString")
+        main.HealthBarsContainer.HealthBarText:SetPoint("CENTER", main.HealthBarsContainer, "CENTER", 0, 0)
         main.HealthBarsContainer.PlayerFrameHealthBarAnimatedLoss = Frame("loss"); main.HealthBarsContainer.PlayerFrameTempMaxHealthLoss = Frame("temploss")
-        main.ManaBarArea = Frame("ma"); main.ManaBarArea.level = 12; main.ManaBarArea.useParentLevel = true; main.ManaBarArea.ManaBar = Frame("mb"); main.ManaBarArea.ManaBar.level = 12; main.ManaBarArea.ManaBar.ManaBarMask = Region("MaskTexture")
+        main.ManaBarArea = Frame("ma"); main.ManaBarArea.level = 12; main.ManaBarArea.useParentLevel = true; main.ManaBarArea.ManaBar = Frame("mb"); main.ManaBarArea.ManaBar.level = 12; main.ManaBarArea.ManaBar.ManaBarMask = Region("MaskTexture"); main.ManaBarArea.ManaBar.protectedFrame = true
         main.StatusTexture = Region("Texture", {atlas = "status"}); main.StatusTexture.shown = false; main.LevelBackgroundCircle = Region("Texture")
         pf.PlayerFrameContent = Frame("content"); pf.PlayerFrameContent.level = 11; pf.PlayerFrameContent.PlayerFrameContentMain = main
         pf.PlayerFrameContent.PlayerFrameContentContextual = Frame("ctx"); pf.PlayerFrameContent.PlayerFrameContentContextual.level = 12; pf.PlayerFrameContent.PlayerFrameContentContextual.AttackIcon = Region("Texture"); pf.PlayerFrameContent.PlayerFrameContentContextual.PlayerPortraitCornerIcon = Region("Texture")
@@ -461,14 +480,19 @@ local function NewWorld(opts)
         _G.PlayerFrame_UpdateLevel = function() PlayerLevelText:SetVertexColor(1, 1, 1, 1); PlayerLevelText:SetText("3") end
         _G.IsResting = function() return w.resting end
         local function TargetLike(name, unit)
-            local tf = Frame(name); tf.unit = unit; tf.level = 500
+            local tf = Frame(name); tf.unit = unit; tf.level = 500; tf.protectedFrame = true
             tf.TargetFrameContainer = Frame("tcontainer"); tf.TargetFrameContainer.level = 501
             tf.TargetFrameContainer.FrameTexture = Region("Texture", {atlas = "UI-HUD-UnitFrame-Target-PortraitOn"})
             tf.TargetFrameContainer.Flash = Region("Texture"); tf.TargetFrameContainer.Portrait = Region("Texture"); tf.TargetFrameContainer.PortraitMask = Region("MaskTexture", {atlas = "CircleMask"}); tf.TargetFrameContainer.BossPortraitFrameTexture = Region("Texture")
-            local tmain = Frame("tmain"); tmain.level = 502; tmain.ReputationColor = Region("Texture", {atlas = "type"}); tmain.Name = Region("FontString"); tmain.LevelText = Region("FontString"); tmain.LevelBackgroundCircle = Region("Texture")
-            tmain.HealthBarsContainer = Frame("thc"); tmain.HealthBarsContainer.level = 502; tmain.HealthBarsContainer.useParentLevel = true; tmain.HealthBarsContainer.HealthBar = Frame("thb"); tmain.HealthBarsContainer.HealthBarMask = Region("MaskTexture")
+            local tmain = Frame("tmain"); tmain.level = 502; tmain.protectedFrame = true; tmain.ReputationColor = Region("Texture", {atlas = "type"}); tmain.Name = Region("FontString"); tmain.LevelText = Region("FontString"); tmain.LevelBackgroundCircle = Region("Texture")
+            tmain.HealthBarsContainer = Frame("thc"); tmain.HealthBarsContainer.level = 502; tmain.HealthBarsContainer.useParentLevel = true; tmain.HealthBarsContainer.protectedFrame = true
+            tmain.HealthBarsContainer.HealthBar = Frame("thb"); tmain.HealthBarsContainer.HealthBar.level = 502; tmain.HealthBarsContainer.HealthBar.useParentLevel = true; tmain.HealthBarsContainer.HealthBar.protectedFrame = true
+            tmain.HealthBarsContainer.HealthBarMask = Region("MaskTexture")
+            tmain.HealthBarsContainer.HealthBarText = Region("FontString"); tmain.HealthBarsContainer.LeftText = Region("FontString"); tmain.HealthBarsContainer.RightText = Region("FontString")
+            tmain.HealthBarsContainer.HealthBarText:SetPoint("CENTER", tmain.HealthBarsContainer, "CENTER", 0, 0)
             tmain.HealthBarsContainer.TempMaxHealthLoss = Frame("ttemploss")
-            tmain.ManaBar = Frame("tmb"); tmain.ManaBar.level = 503; tmain.ManaBar.ManaBarMask = Region("MaskTexture")
+            -- Forever's target mana bar is a plain child of the content frame: one level above the rest
+            tmain.ManaBar = Frame("tmb"); tmain.ManaBar.level = 503; tmain.ManaBar.ManaBarMask = Region("MaskTexture"); tmain.ManaBar.protectedFrame = true
             tmain.LevelText.text = "1"; tmain.LevelText.vertex = {1, 0.82, 0, 1}
             tf.TargetFrameContent = Frame("tcontent"); tf.TargetFrameContent.TargetFrameContentMain = tmain
             tf.TargetFrameContent.TargetFrameContentContextual = Frame("tctx"); tf.TargetFrameContent.TargetFrameContentContextual.level = 502; tf.TargetFrameContent.TargetFrameContentContextual.HighLevelTexture = Region("Texture")
@@ -773,14 +797,15 @@ local function NewWorld(opts)
             -- The frame lives in Blizzard_PlayerSpells, loaded on demand when the book is first
             -- opened, so it does not exist at login: w.LoadPlayerSpells() stands in for that load.
             function w.LoadPlayerSpells()
-            local psf = Frame("PlayerSpellsFrame"); psf:SetSize(809, 720); psf.level = 1
+            -- the window holds the secure spell buttons: it and its spellbook page are protected
+            local psf = Frame("PlayerSpellsFrame"); psf:SetSize(809, 720); psf.level = 1; psf.protectedFrame = true
             psf.NineSlice = Frame("NineSlice"); psf.Bg = Region("Texture"); psf.TopTileStreaks = Region("Texture")
             psf.CloseButton = Frame("CloseButton"); psf.TabSystem = Frame("TabSystem")
             psf.MaximizeMinimizeButton = Frame("MaximizeMinimizeButton"); psf.MaximizeMinimizeButton.MaximizeButton = Frame("MaximizeButton"); psf.MaximizeMinimizeButton.MinimizeButton = Frame("MinimizeButton")
             psf.PortraitContainer = Frame("PortraitContainer"); psf.PortraitContainer.portrait = Region("Texture"); psf.PortraitContainer.CircleMask = Region("MaskTexture")
             psf.PortraitContainer.portrait:SetPoint("TOPLEFT", psf.PortraitContainer, "TOPLEFT", -5, 7); psf.PortraitContainer.portrait:SetSize(62, 62)
             psf.TitleContainer = Frame("TitleContainer")
-            psf.SpellBookFrame = Frame("SpellBookFrame"); psf.SpellBookFrame.parent = psf; psf.SpellBookFrame:SetPoint("BOTTOMLEFT", psf, "BOTTOMLEFT", 0, 4); psf.SpellBookFrame:SetSize(806, 702)
+            psf.SpellBookFrame = Frame("SpellBookFrame"); psf.SpellBookFrame.parent = psf; psf.SpellBookFrame:SetPoint("BOTTOMLEFT", psf, "BOTTOMLEFT", 0, 4); psf.SpellBookFrame:SetSize(806, 702); psf.SpellBookFrame.protectedFrame = true
             psf.TalentsFrame = Frame("TalentsFrame"); psf.TalentsFrame:Hide()
             local page = psf.SpellBookFrame
             function page:Show() if not self.shown then self.shown = true; if self.scripts and self.scripts.OnShow then self.scripts.OnShow(self) end end end
@@ -789,7 +814,10 @@ local function NewWorld(opts)
             function psf:Hide() if self.shown then self.shown = false; if self.scripts and self.scripts.OnHide then self.scripts.OnHide(self) end end end
             psf:Hide()
             _G.PlayerSpellsFrame = psf
+            -- UIParent's panel attributes: set from addon code they taint the panel, which then
+            -- cannot be shown in combat, so any call from the addon is a fault
             _G.GetUIPanelAttribute = function(frame, name) if frame == psf and name == "width" then return 809 end end
+            _G.SetUIPanelAttribute = function(frame, name, value) w.panelTainted = (w.panelTainted or 0) + 1 end
             return psf
             end
             -- Forever's talents page: retail's talent frame (TalentFrameBase, C_Traits nodes with
@@ -1520,8 +1548,16 @@ do
     local own = uf.own[PlayerFrame]
     local skin = own and own.skin
     check(skin and skin.art.texture == "Interface\\TargetingFrame\\UI-TargetingFrame" and skin.art.width == 193 and skin.art.height == 77 and skin.art.texcoord[1] == 0.85546875, "forever: player frame uses the classic (mirrored) art, on the skin frame")
-    check(skin.level == 13 and pm.level == 12 and pm.HealthBarsContainer.level == 12 and pc.FrameTexture.alpha == 0, "forever: skin one level above the (locked) bars, Blizzard's art under them transparent")
+    check(skin.level == 12 and pm.level == 12 and pm.HealthBarsContainer.level == 12 and pc.FrameTexture.alpha == 0, "forever: skin at the (locked) bars' own level, Blizzard's art under them transparent")
+    -- draw order at that level: bar fills BACKGROUND < art BORDER < the bars' OVERLAY numbers (Classic had the numbers over the art)
+    check(skin.art.layer == "BORDER" and pm.HealthBarsContainer.HealthBar.fill.layer == "BACKGROUND" and pm.ManaBarArea.ManaBar.fill.layer == "BACKGROUND", "forever: bar fills on BACKGROUND under the art, so the health and mana numbers (OVERLAY) draw over it")
     check(PlayerFrame.PlayerFrameContent.PlayerFrameContentContextual.level == 14, "forever: contextual icons raised above the skin")
+    -- the bars hang off the player frame by both corners, not off Blizzard's container
+    local phb, pmb = pm.HealthBarsContainer.HealthBar, pm.ManaBarArea.ManaBar
+    check(#phb.anchors == 2 and phb.anchors[1][2] == PlayerFrame and phb.anchors[1][4] == 90 and phb.anchors[1][5] == -45 and phb.anchors[2][1] == "BOTTOMRIGHT" and phb.anchors[2][3] == "TOPLEFT" and phb.anchors[2][4] == 209 and phb.anchors[2][5] == -57, "forever: player health bar anchored by both corners to the player frame (119x12 at 90,-45)")
+    check(#pmb.anchors == 2 and pmb.anchors[1][5] == -56 and pmb.anchors[2][4] == 209 and pmb.anchors[2][5] == -68, "forever: player mana bar likewise, under it")
+    check(pm.HealthBarsContainer.HealthBarText.anchors[1][2] == phb and pm.HealthBarsContainer.LeftText.anchors[1][2] == phb and pm.HealthBarsContainer.LeftText.anchors[1][4] == 2, "forever: health numbers (on Blizzard's container) anchored to the bar itself")
+    check(PlayerName.width == 116 and PlayerName.justify == "CENTER" and PlayerName.anchors[1][4] == 34, "forever: name box the width of the art's strip (Forever's longer names), still centred")
     check(pc.FrameFlash.texture == "Interface\\TargetingFrame\\UI-TargetingFrame-Flash" and pc.FrameFlash.texcoord[1] == 0.9453125 and pc.FrameFlash.texcoord[4] == 0.181640625 and pc.FrameFlash.width == 242, "forever: player combat flash cut from the right part of its image, mirrored")
     TargetFrame.TargetFrameContainer.Flash:SetAtlas("UI-HUD-UnitFrame-Target-PortraitOn-InCombat"); TargetFrame:CheckClassification()
     local tfl = TargetFrame.TargetFrameContainer.Flash
@@ -1559,10 +1595,15 @@ do
     check(skin.rest.alpha == 0, "forever: rest icon hides again")
     local tc = TargetFrame.TargetFrameContainer
     local tskin = uf.own[TargetFrame].skin
-    check(tskin and tskin.art.texture == "Interface\\TargetingFrame\\UI-TargetingFrame" and tskin.art.width == 230 and tskin.level == 503 and tc.FrameTexture.alpha == 0 and tc.BossPortraitFrameTexture.shown == false, "forever: target frame classic art on its skin above the bars")
+    check(tskin and tskin.art.texture == "Interface\\TargetingFrame\\UI-TargetingFrame" and tskin.art.width == 230 and tskin.level == 502 and tc.FrameTexture.alpha == 0 and tc.BossPortraitFrameTexture.shown == false, "forever: target frame classic art on its skin at the bars' level")
     check(TargetFrame.TargetFrameContent.TargetFrameContentContextual.level == 504, "forever: target contextual icons (skull, marks, auras) raised above the skin")
     local tm = TargetFrame.TargetFrameContent.TargetFrameContentMain
     check(tm.ReputationColor.texture == "Interface\\TargetingFrame\\UI-TargetingFrame-LevelBackground" and tm.HealthBarsContainer.width == 119, "forever: target name strip and health bar classic")
+    local thb, tmb = tm.HealthBarsContainer.HealthBar, tm.ManaBar
+    check(#thb.anchors == 2 and thb.anchors[1][1] == "TOPLEFT" and thb.anchors[1][2] == TargetFrame and thb.anchors[1][3] == "TOPRIGHT" and thb.anchors[1][4] == -209 and thb.anchors[1][5] == -45 and thb.anchors[2][1] == "BOTTOMRIGHT" and thb.anchors[2][4] == -90 and thb.anchors[2][5] == -57, "forever: target health bar anchored by both corners to the target frame (119x12, right edge at -90)")
+    check(#tmb.anchors == 2 and tmb.anchors[1][5] == -56 and tmb.anchors[2][5] == -68 and tmb.level == 502 and tmb.fill.layer == "BACKGROUND", "forever: target mana bar likewise, brought down to the bars' level with its fill under the art")
+    check(tm.HealthBarsContainer.HealthBarText.anchors[1][2] == thb and tm.HealthBarsContainer.RightText.anchors[1][4] == -2, "forever: target health numbers anchored to the bar")
+    check(tm.Name.width == 116 and tm.Name.anchors[1][4] == -34, "forever: target name box the width of the strip")
     check(tm.HealthBarsContainer.HealthBar.fill.maskRemoved == tm.HealthBarsContainer.HealthBarMask and tm.HealthBarsContainer.HealthBarMask.texture == "Interface\\Buttons\\WHITE8x8" and tc.PortraitMask.atlas == "CircleMask", "forever: target bar mask neutralised, portrait round")
     check(uf.own[TargetFrame].backdrop.height == 25 and uf.own[TargetFrame].backdrop.anchors[1][1] == "TOPRIGHT", "forever: target backdrop is Era's 119x25")
     local tlvl = tskin.levelText
@@ -1574,7 +1615,7 @@ do
     check(uf.own[FocusFrame].skin.art.texture == "Interface\\TargetingFrame\\UI-TargetingFrame", "forever: focus frame too")
     -- pet frame
     local petOwn = uf.own[PetFrame]
-    check(petOwn and petOwn.art and petOwn.art.tex.texture == "Interface\\TargetingFrame\\UI-SmallTargetingFrame" and petOwn.art.tex.width == 128 and petOwn.art.level == 8, "forever: classic small pet frame art on a frame above the pet bars")
+    check(petOwn and petOwn.art and petOwn.art.tex.texture == "Interface\\TargetingFrame\\UI-SmallTargetingFrame" and petOwn.art.tex.width == 128 and petOwn.art.level == 7 and PetFrameManaBar.fill.layer == "BACKGROUND", "forever: classic small pet frame art on a frame at the pet bars' level, fills under it")
     check(PetFrameTexture.alpha == 0 and PetFrame.width == 128 and PetFrame.height == 53, "forever: retail pet art faded, pet frame Era-sized")
     check(PetPortrait.width == 37 and PetPortrait.anchors[1][4] == 7 and PetFrame.PortraitMask.atlas == "CircleMask", "forever: pet portrait 37px, round")
     check(PetFrameHealthBar.width == 69 and PetFrameHealthBar.height == 8 and PetFrameHealthBar.anchors[1][5] == -22 and PetFrameHealthBar.barTexture == "Interface\\TargetingFrame\\UI-StatusBar" and PetFrameHealthBar.fill.maskRemoved == PetFrameHealthBarMask, "forever: pet health bar 69x8 classic, unmasked")
@@ -1592,14 +1633,21 @@ do
     TargetFrame:CheckClassification()
     check(tm.HealthBarsContainer.width == 119 and tm.HealthBarsContainer.height == 12 and tm.HealthBarsContainer.HealthBar.barTexture == "Interface\\TargetingFrame\\UI-StatusBar", "forever: classic bar size and fill restored after Blizzard's classification update")
     w.inCombat = true
-    tm.HealthBarsContainer:SetSize(126, 20); tm.HealthBarsContainer.HealthBar:SetStatusBarTexture("atlas")
+    -- a target change in combat: Blizzard (secure) resizes the container and hangs it off a new
+    -- corner; the bar, anchored to the frame itself, does not move, and nothing of ours touches
+    -- a protected frame (that would be blocked and blamed on the addon)
+    tm.HealthBarsContainer:SetSize(126, 20); tm.HealthBarsContainer:SetPoint("BOTTOMRIGHT", tc, "LEFT", 149, -10); tm.HealthBarsContainer.HealthBar:SetStatusBarTexture("atlas")
+    w.ResetBlocked()
     TargetFrame:CheckClassification()
     check(tm.HealthBarsContainer.width == 126 and tm.HealthBarsContainer.HealthBar.barTexture == "Interface\\TargetingFrame\\UI-StatusBar", "forever: in combat only the fill changes, layout waits")
+    check(w.Blocked() == 0 and #thb.anchors == 2 and thb.anchors[1][2] == TargetFrame and thb.anchors[1][4] == -209 and uf.pendingBars[TargetFrame] == true, "forever: the health bar keeps its own corners on the frame while Blizzard's container moves in combat, no protected call made")
     -- Blizzard's art swap in combat: textures change now, the player's layout waits too
     pm.HealthBarsContainer:SetSize(126, 20); PlayerFrame.PlayerFrameContent.PlayerFrameContentContextual.level = 12
     pc.FrameTexture:SetAtlas("UI-HUD-UnitFrame-Player-PortraitOn"); pc.FrameTexture.alpha = 1
+    w.ResetBlocked()
     PlayerFrame_ToPlayerArt()
     check(pc.FrameTexture.alpha == 0 and pm.HealthBarsContainer.width == 126 and PlayerFrame.PlayerFrameContent.PlayerFrameContentContextual.level == 12 and uf.pendingPlayer == true, "forever: in combat Blizzard's art is faded again at once, bars and frame levels wait")
+    check(w.Blocked() == 0 and #phb.anchors == 2 and phb.anchors[1][2] == PlayerFrame, "forever: no protected call on the player frame in combat, its bars keep their corners")
     w.inCombat = false
     uf.barWaiter:Fire("PLAYER_REGEN_ENABLED")
     check(tm.HealthBarsContainer.width == 119, "forever: layout applied once combat ends")
@@ -1919,7 +1967,9 @@ do
     local cf = CharacterFrame
     check(cs.mode == "restyled", "sheet: re-skinned on Forever")
     check(cf.width == 384 and cf.height == 512, "sheet: frame is Era's 384x512 while the paper doll shows")
-    check(w.panelWidth == 400, "sheet: UIParent told the panel is narrow")
+    -- UIParent's panel width is Blizzard's to set: set from the addon it taints the panel and the
+    -- frame cannot be shown in combat ("Interface action failed because of an AddOn")
+    check(w.panelWidth ~= 400, "sheet: UIParent's panel width left to Blizzard (an addon-set width taints the panel out of combat use)")
     check(cf.NineSlice.alpha == 0 and cf.LeftPaneHost.alpha == 0 and cf.RightPaneHost.alpha == 0, "sheet: retail shell faded")
     check(cf.RightPaneToggleButton.alpha == 0 and cf.RightPaneToggleButton.mouse == false and cf.CloseButton.alpha == 0 and cf.CloseButton.mouse == false, "sheet: collapse and close buttons faded and unclickable")
     check(cf.ModeTabs.alpha == 0 and cf.ModeTabs.Tabs[1].mouse == false and cf.ModeTabs.Tabs[6].mouse == false, "sheet: side tabs faded and unclickable")
@@ -2230,6 +2280,38 @@ do
     check(sb.mode == "off" and psf.width == 809 and psf.NineSlice.alpha == 1 and book.shown == false and page.alpha == 1 and p.anchors[1][4] == -5, "off: everything back")
     w.slash("spellbook on")
     check(sb.mode == "restyled" and psf.width == 384 and book.shown == true, "on: classic book again")
+    check(w.panelTainted == nil, "book: UIParent's panel width never set by the addon (it taints the panel: the book would not open in combat)")
+    -- combat: the window and its retail page hold the secure spell buttons and are protected,
+    -- so neither may be moved or sized in a fight (blocked, and blamed on the addon).
+    -- Opened in combat, the book stays Blizzard's until the fight ends and is dressed then.
+    page:Hide()
+    check(sb.applied == false and psf.width == 809, "book: talents page up out of combat: retail window back")
+    w.inCombat = true
+    w.ResetBlocked()
+    page:Show()
+    check(page.alpha == 1 and page.anchors[1][5] == 4 and psf.width == 809 and book.shown == false and sb.combatPending == true and w.Blocked() == 0, "book: opened in combat, Blizzard's page and window are left alone (no protected call)")
+    w.inCombat = false
+    book:Fire("PLAYER_REGEN_ENABLED")
+    check(psf.width == 384 and page.alpha == 0 and page.anchors[1][5] == -5000 and book.shown == true and sb.combatPending == nil and sb.applied == true, "book: dressed as Era's once combat ends")
+    -- Blizzard sizing the window in combat while the book is up: undone after combat, not during
+    w.inCombat = true
+    w.ResetBlocked()
+    psf:SetSize(809, 720)
+    check(psf.width == 809 and w.ns.PSF.pendingSize == true and w.Blocked() == 1, "book: Blizzard's own combat resize stands (only its call touched the window), ours waits")
+    w.inCombat = false
+    w.ns.PSF.waiter:Fire("PLAYER_REGEN_ENABLED")
+    check(psf.width == 384 and w.ns.PSF.pendingSize == nil, "book: Era's size back once combat ends")
+    -- the page going away in combat: our book goes at once, the protected page and window wait
+    w.inCombat = true
+    w.ResetBlocked()
+    page:Hide()
+    check(book.shown == false and page.anchors[1][5] == -5000 and psf.width == 384 and psf.NineSlice.alpha == 1 and w.ns.PSF.pendingSize == true and sb.combatPending == true and w.Blocked() == 0, "book: page hidden in combat: book gone, shell back, page and size wait")
+    w.inCombat = false
+    w.ns.PSF.waiter:Fire("PLAYER_REGEN_ENABLED")
+    book:Fire("PLAYER_REGEN_ENABLED")
+    check(psf.width == 809 and page.alpha == 1 and page.anchors[1][5] == 4 and sb.applied == false, "book: window and page back after combat")
+    page:Show()
+    check(psf.width == 384 and book.shown == true, "book: classic again")
     check(#w.ns.errors == 0 and #w.blizzErrors == 0, "book: no errors")
 
     -- professions window: Era's book round Blizzard's five cards

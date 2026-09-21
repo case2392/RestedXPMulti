@@ -65,7 +65,10 @@ function M.RegisterPanel(panel)
 end
 
 local FRAME_WIDTH, FRAME_HEIGHT = 384, 512
-local PANEL_WIDTH = 400 -- what UIParent reserves for the panel (Era: frame + tab strip margin)
+-- UIParent's panel width for the frame is Blizzard's business: set from
+-- addon code (SetUIPanelAttribute) it taints the panel's layout
+-- attributes, and the secure panel manager then cannot show the frame in
+-- combat ("Interface action failed because of an AddOn")
 
 -- Era slot positions, relative to PaperDollFrame's TOPLEFT (BOTTOMLEFT for the weapons)
 local SLOT_LEFT = {"CharacterHeadSlot", "CharacterNeckSlot", "CharacterShoulderSlot", "CharacterBackSlot",
@@ -1092,7 +1095,6 @@ function M.Apply()
     end
     if classic then
         cf:SetSize(FRAME_WIDTH, FRAME_HEIGHT)
-        if SetUIPanelAttribute then pcall(SetUIPanelAttribute, cf, "width", PANEL_WIDTH) end
         M.sheet:Show()
         if active == "doll" then
             PaperDollExtras(true)
@@ -1106,7 +1108,6 @@ function M.Apply()
     else
         PaperDollExtras(false)
         M.sheet:Hide()
-        if SetUIPanelAttribute and cf.GetWidth then pcall(SetUIPanelAttribute, cf, "width", cf:GetWidth() + 82) end
     end
     for _, panel in ipairs(M.panels) do
         if panel.built then panel:SetClassic(panel == active) end
@@ -1132,7 +1133,6 @@ local function Undo()
     if M.sheet then M.sheet:Hide() end
     if M.tabs then M.tabs:Hide() end
     if cf.UpdateSize then pcall(cf.UpdateSize, cf) end
-    if cf.SetUIPanelAttribute then pcall(cf.SetUIPanelAttribute, cf) end
     if PaperDollShown() then
         local stats = G("CharacterStatsPaneScrollBox")
         if stats and stats.Show then stats:Show() end
@@ -1151,9 +1151,6 @@ local function Hook()
     if cf.RefreshDisplay then hooksecurefunc(cf, "RefreshDisplay", Guard("RefreshDisplay", M.Apply)) end
     if cf.UpdateSize then hooksecurefunc(cf, "UpdateSize", Guard("UpdateSize", function()
         if M.mode == "restyled" and PaperDollShown() then cf:SetSize(FRAME_WIDTH, FRAME_HEIGHT) end
-    end)) end
-    if cf.SetUIPanelAttribute and SetUIPanelAttribute then hooksecurefunc(cf, "SetUIPanelAttribute", Guard("SetUIPanelAttribute", function()
-        if M.mode == "restyled" and PaperDollShown() then pcall(SetUIPanelAttribute, cf, "width", PANEL_WIDTH) end
     end)) end
     -- Blizzard shows its stats list / sidebar tabs / level banner again here
     if cf.Expand then hooksecurefunc(cf, "Expand", Guard("Expand", function()

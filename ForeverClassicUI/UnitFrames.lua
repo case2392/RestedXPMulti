@@ -13,14 +13,24 @@
 --
 -- Draw order is the part retail got backwards for this art: Classic draws
 -- the frame texture *over* the bars (the bevel around each bar is part of
--- the art, the bar ends vanish under it) and the level text over the art.
--- Forever draws the art on the *Container child under the bars, and the
--- bar frames are locked to their parent's frame level (useParentLevel), so
--- they cannot be moved down. Instead the classic art goes on a "skin"
--- frame of ours one level above the bars, with a copy of the level text on
--- it (the art is opaque where the level sits; the name area is transparent
--- so Blizzard's name shows through), and the contextual icons (combat,
--- skull, raid marks, auras) are raised above that.
+-- the art, the bar ends vanish under it) and the level text and the
+-- health / mana numbers over the art. Forever draws the art on the
+-- *Container child under the bars, and the bar frames are locked to their
+-- parent's frame level (useParentLevel), so they cannot be moved down.
+-- Instead the classic art goes on a "skin" frame of ours at the bars' own
+-- frame level, on the BORDER layer: the bar fills are on BACKGROUND (the
+-- health bars are already, the mana bars are put there), so the art draws
+-- over them, and the bars' text is on OVERLAY, so it draws over the art -
+-- as Classic did. A copy of the level text lives on the skin too (the art
+-- is opaque where the level sits; the name area is transparent so
+-- Blizzard's name shows through), and the contextual icons (combat, skull,
+-- raid marks, auras) are raised above everything.
+--
+-- The bars are anchored by both corners to the unit frame itself, never
+-- to Blizzard's bars container: Blizzard resizes and re-anchors that
+-- container on every target change (also in combat, when the protected
+-- bars cannot be laid out again), and a bar hanging off its corner
+-- would start a few pixels left of the art's recess until combat ended.
 --
 -- Rule (Forever wraps unit health in secret values): no Lua field writes
 -- into Blizzard's frames, no calls into Blizzard's unit frame functions.
@@ -123,6 +133,40 @@ local function RoundPortrait(mask, portrait)
     if mask.Show then mask:Show() end
 end
 
+-- Era's bars: 119x12, both corners on the unit frame (x, y is the top
+-- corner named; the other corner follows from the size)
+local BAR_W, BAR_H = 119, 12
+local function Corners(bar, frame, corner, x, y)
+    bar:ClearAllPoints()
+    bar:SetSize(BAR_W, BAR_H)
+    if corner == "TOPRIGHT" then
+        bar:SetPoint("TOPLEFT", frame, "TOPRIGHT", x, y)
+        bar:SetPoint("BOTTOMRIGHT", frame, "TOPRIGHT", x + BAR_W, y - BAR_H)
+    else
+        bar:SetPoint("TOPLEFT", frame, "TOPLEFT", x, y)
+        bar:SetPoint("BOTTOMRIGHT", frame, "TOPLEFT", x + BAR_W, y - BAR_H)
+    end
+end
+
+-- The health numbers live on Blizzard's bars container, not on the bar:
+-- anchored to the bar instead (regions may move any time), so they stay
+-- over it however Blizzard resizes the container in combat
+local BAR_TEXT = {HealthBarText = {"CENTER", 0}, LeftText = {"LEFT", 2}, RightText = {"RIGHT", -2}}
+local function BarText(hc, hb)
+    if not hc or not hb then return end
+    for key, where in pairs(BAR_TEXT) do
+        local text = hc[key]
+        if text and text.ClearAllPoints and text.SetPoint then
+            text:ClearAllPoints()
+            text:SetPoint(where[1], hb, where[1], where[2], 0)
+        end
+    end
+end
+
+-- Era's name box: the whole transparent strip of the art, 116 of the
+-- strip's 119 (Forever's names run longer than Era's)
+local NAME_WIDTH = 116
+
 -- black 50% box behind the bars, like PlayerFrameBackground /
 -- TargetFrameBackground: on the unit frame itself so it sits under the bars
 local function Backdrop(frame, point, x, y, height)
@@ -139,9 +183,10 @@ local function Backdrop(frame, point, x, y, height)
     return tex
 end
 
--- The skin frame: ours, one frame level above the bars (which are locked to
--- the *ContentMain child's level), carrying the classic art and a copy of
--- the level text. Re-levelled on every restyle in case Blizzard moved.
+-- The skin frame: ours, at the bars' frame level (they are locked to the
+-- *ContentMain child's level), carrying the classic art on BORDER - over
+-- the bar fills on BACKGROUND, under the bars' OVERLAY text - and a copy
+-- of the level text. Re-levelled on every restyle in case Blizzard moved.
 local function Skin(frame, main)
     local own = Own(frame)
     local skin = own.skin
@@ -162,9 +207,19 @@ local function Skin(frame, main)
         own.skin = skin
     end
     if skin.SetFrameLevel and main and main.GetFrameLevel then
-        skin:SetFrameLevel(main:GetFrameLevel() + 1)
+        skin:SetFrameLevel(main:GetFrameLevel())
     end
     return skin
+end
+
+-- the classic fill on a bar, under the art: the health bars' fill is on
+-- BACKGROUND already (Forever's XML), the mana bars' is on ARTWORK and
+-- would draw over the art's bevel at the same frame level
+local function ClassicFill(bar)
+    if not bar then return end
+    bar:SetStatusBarTexture(BAR_TEX)
+    local tex = bar.GetStatusBarTexture and bar:GetStatusBarTexture()
+    if tex and tex.SetDrawLayer then tex:SetDrawLayer("BACKGROUND") end
 end
 
 -- icons that Classic drew over the art (combat icon, skull, raid mark,
@@ -288,11 +343,12 @@ function M.RestylePlayer()
 
     Backdrop(pf, "TOPLEFT", 89.5, -26, 41)
 
-    -- name shows through the art's transparent strip; the level sits on
-    -- the art's opaque corner circle, so a copy of it lives on the skin
+    -- name shows through the art's transparent strip, the whole strip
+    -- (Forever's names run longer than Era's); the level sits on the
+    -- art's opaque corner circle, so a copy of it lives on the skin
     if PlayerName then
         PlayerName:ClearAllPoints()
-        PlayerName:SetSize(100, 12)
+        PlayerName:SetSize(NAME_WIDTH, 12)
         PlayerName:SetPoint("CENTER", pf, "CENTER", 34, 15)
         if PlayerName.SetJustifyH then PlayerName:SetJustifyH("CENTER") end
     end
@@ -311,17 +367,18 @@ function M.RestylePlayer()
     local mb = main.ManaBarArea and main.ManaBarArea.ManaBar
     if hb then
         Unmask(hb, hc.HealthBarMask)
-        hb:SetStatusBarTexture(BAR_TEX)
+        ClassicFill(hb)
         hb:SetStatusBarColor(0, 1, 0)
     end
     if hc then
         -- retail's red "health just lost" trail and temp-max-health bar
         Fade(hc.PlayerFrameHealthBarAnimatedLoss)
         Fade(hc.PlayerFrameTempMaxHealthLoss)
+        BarText(hc, hb)
     end
     if mb then
         Unmask(mb, mb.ManaBarMask)
-        mb:SetStatusBarTexture(BAR_TEX)
+        ClassicFill(mb)
         ColorManaBar(mb, "player")
     end
     local contextual = content.PlayerFrameContentContextual
@@ -331,16 +388,11 @@ function M.RestylePlayer()
             hc:SetSize(119, 12)
             hc:SetPoint("TOPLEFT", pf, "TOPLEFT", 90, -45)
         end
-        if hb then
-            hb:ClearAllPoints()
-            hb:SetSize(119, 12)
-            hb:SetPoint("TOPLEFT", hc, "TOPLEFT", 0, 0)
-        end
-        if mb then
-            mb:ClearAllPoints()
-            mb:SetSize(119, 12)
-            mb:SetPoint("TOPLEFT", pf, "TOPLEFT", 90, -56)
-        end
+        -- both corners on the player frame: Blizzard's art swaps resize
+        -- the container (and the temp-max-health code the bar itself), and
+        -- neither may then move the bar out of the art's recess
+        if hb then Corners(hb, pf, "TOPLEFT", 90, -45) end
+        if mb then Corners(mb, pf, "TOPLEFT", 90, -56) end
         RaiseContextual(contextual, main)
     end
 
@@ -447,7 +499,7 @@ function M.RestyleTarget(frame)
     local name = main.Name
     if name then
         name:ClearAllPoints()
-        name:SetSize(100, 12)
+        name:SetSize(NAME_WIDTH, 12)
         name:SetPoint("CENTER", frame, "CENTER", -34, 15)
         if name.SetJustifyH then name:SetJustifyH("CENTER") end
     end
@@ -475,9 +527,12 @@ function M.RestyleTarget(frame)
 end
 
 -- Blizzard's CheckClassification (every target change) resizes the health
--- container to the retail 126x20 and puts the atlas fill back, so this part
--- is re-applied from that hook. Sizes, anchors and frame levels on the
--- (protected) unit frame wait for combat to end; the fill can change any time.
+-- container to the retail 126x20, hangs it off a new corner and puts the
+-- atlas fill back, so this part is re-applied from that hook. Sizes,
+-- anchors and frame levels on the (protected) unit frame wait for combat
+-- to end; the fill can change any time. The bars themselves are anchored
+-- by both corners to the target frame, so what Blizzard does to the
+-- container in combat does not move them.
 function M.RestyleTargetBars(frame)
     local content = frame and frame.TargetFrameContent
     local main = content and content.TargetFrameContentMain
@@ -487,13 +542,16 @@ function M.RestyleTargetBars(frame)
     local mb = main.ManaBar
     if hb then
         Unmask(hb, hc.HealthBarMask)
-        hb:SetStatusBarTexture(BAR_TEX)
+        ClassicFill(hb)
         hb:SetStatusBarColor(0, 1, 0)
     end
-    if hc then Fade(hc.TempMaxHealthLoss) end
+    if hc then
+        Fade(hc.TempMaxHealthLoss)
+        BarText(hc, hb)
+    end
     if mb then
         Unmask(mb, mb.ManaBarMask)
-        mb:SetStatusBarTexture(BAR_TEX)
+        ClassicFill(mb)
         ColorManaBar(mb, frame.unit)
     end
     if InCombat() then
@@ -506,15 +564,14 @@ function M.RestyleTargetBars(frame)
         hc:SetSize(119, 12)
         hc:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -90, -45)
     end
-    if hb then
-        hb:ClearAllPoints()
-        hb:SetSize(119, 12)
-        hb:SetPoint("TOPLEFT", hc, "TOPLEFT", 0, 0)
-    end
+    if hb then Corners(hb, frame, "TOPRIGHT", -209, -45) end
     if mb then
-        mb:ClearAllPoints()
-        mb:SetSize(119, 12)
-        mb:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -90, -56)
+        Corners(mb, frame, "TOPRIGHT", -209, -56)
+        -- Forever's target mana bar sits one level above the rest: down to
+        -- the bars' level, so the art's bevel draws over its fill too
+        if mb.SetFrameLevel and main.GetFrameLevel and mb:GetFrameLevel() ~= main:GetFrameLevel() then
+            mb:SetFrameLevel(main:GetFrameLevel())
+        end
     end
     RaiseContextual(content.TargetFrameContentContextual, main)
 end
@@ -538,7 +595,6 @@ function M.RestylePet()
     if not own.art and CreateFrame then
         local f = CreateFrame("Frame", nil, pet)
         f:SetAllPoints(pet)
-        if f.SetFrameLevel and pet.GetFrameLevel then f:SetFrameLevel(pet:GetFrameLevel() + 2) end
         local tex = f:CreateTexture(nil, "BORDER")
         SetFile(tex, PET_TEX)
         tex:SetSize(128, 64)
@@ -546,6 +602,9 @@ function M.RestylePet()
         f.tex = tex
         own.art = f
     end
+    -- at the bars' level (pet + 1): art over their BACKGROUND fills, under
+    -- their OVERLAY numbers, like the big frames
+    if own.art.SetFrameLevel and pet.GetFrameLevel then own.art:SetFrameLevel(pet:GetFrameLevel() + 1) end
     Hide(PetFrameTexture)
 
     if PetPortrait then
@@ -576,11 +635,11 @@ function M.RestylePet()
 
     local hb, mb = PetFrameHealthBar, PetFrameManaBar
     Unmask(hb, PetFrameHealthBarMask)
-    hb:SetStatusBarTexture(BAR_TEX)
+    ClassicFill(hb)
     hb:SetStatusBarColor(0, 1, 0)
     if mb then
         Unmask(mb, PetFrameManaBarMask)
-        mb:SetStatusBarTexture(BAR_TEX)
+        ClassicFill(mb)
         ColorManaBar(mb, "pet")
     end
     if layout then
@@ -634,7 +693,7 @@ local function InstallHooks()
             if M.mode ~= "restyled" or M.inRestyle then return end
             local ours, unit = IsOurBar(bar)
             if ours then
-                bar:SetStatusBarTexture(BAR_TEX)
+                ClassicFill(bar)
                 ColorManaBar(bar, unit)
             end
         end)

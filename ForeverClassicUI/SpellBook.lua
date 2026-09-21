@@ -566,6 +566,20 @@ function M.Apply()
     if not psf then return end
     local classic = SpellPageShown()
     if classic ~= M.applied then
+        if InCombat() then
+            -- the retail page holds the secure spell buttons, so it is a
+            -- protected frame: moving it out of the way, or putting it
+            -- back, is blocked in combat and reported as an addon fault.
+            -- A book opened in a fight stays Blizzard's until the fight
+            -- ends and is dressed then; a page that went away keeps its
+            -- place (it is hidden) and is put back then too.
+            M.combatPending = true
+            if not classic then
+                M.book:Hide()
+                ns.PSF.Release("spellbook")
+            end
+            return
+        end
         Shell(psf, classic)
         M.applied = classic
     end
@@ -583,10 +597,32 @@ end
 local function Undo()
     local psf = G("PlayerSpellsFrame")
     if not psf then return end
-    Shell(psf, false)
-    M.applied = false
+    if M.applied then
+        if InCombat() then
+            M.undoPending = true -- the protected page goes back after combat
+        else
+            Shell(psf, false)
+            M.applied = false
+        end
+    end
     if M.book then M.book:Hide() end
     ns.PSF.Release("spellbook")
+end
+
+-- combat over: whatever the protected page was waiting for
+local function AfterCombat()
+    if M.undoPending then
+        M.undoPending = nil
+        if M.mode ~= "restyled" and M.applied then Undo() end
+    end
+    if M.combatPending then
+        M.combatPending = nil
+        M.Apply()
+    end
+    if M.attributesDirty then
+        M.attributesDirty = nil
+        M.Update()
+    end
 end
 
 local function Hook()
@@ -670,7 +706,7 @@ function M:Enable()
                 if M.book.IsShown and not M.book:IsShown() then return end
                 for _, b in ipairs(M.book.buttons) do UpdateCooldown(b) end
             elseif event == "PLAYER_REGEN_ENABLED" then
-                if M.attributesDirty then M.attributesDirty = nil; M.Update() end
+                AfterCombat()
             else
                 M.Update()
             end

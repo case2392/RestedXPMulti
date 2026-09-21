@@ -13,6 +13,18 @@
 -- is undone by a hook for as long as a claim holds, and recorded as the
 -- size to go back to when none does.
 --
+-- The window holds the secure spell buttons, which makes it a protected
+-- frame: sizing it is blocked in combat, and reported to the player as an
+-- addon fault ("Interface action failed because of an AddOn"). So a size
+-- change asked for in combat waits for PLAYER_REGEN_ENABLED.
+--
+-- UIParent's panel width for the window (SetUIPanelAttribute) is left to
+-- Blizzard. Set from addon code it taints the panel's layout attributes,
+-- and the secure panel manager, reading them to show the window, then
+-- cannot show it in combat at all: the book would not open in a fight.
+-- The cost is a gap when a second panel opens beside the book (UIParent
+-- reserves retail's width), which is cosmetic.
+--
 -- Rule as elsewhere: widget calls and hooksecurefunc only, nothing of
 -- ours written into Blizzard's tables, and everything remembered.
 
@@ -21,7 +33,11 @@ local addonName, ns = ...
 local PSF = {owner = nil, applied = false}
 ns.PSF = PSF
 
-PSF.WIDTH, PSF.HEIGHT, PSF.PANEL_WIDTH = 384, 512, 400
+PSF.WIDTH, PSF.HEIGHT = 384, 512
+
+local function InCombat()
+    return InCombatLockdown and InCombatLockdown()
+end
 
 local own = setmetatable({}, {__mode = "k"})
 local function Own(region)
@@ -123,10 +139,42 @@ local function PlacePortrait(psf, where)
     end
 end
 
+-- protected in combat: the size waits for the fight to end
 local function Resize(psf, w, h)
+    if InCombat() then
+        PSF.pendingSize = true
+        return false
+    end
     PSF.resizing = true
     psf:SetSize(w, h)
     PSF.resizing = nil
+    return true
+end
+
+-- a size that had to wait: the owner's while a claim holds, Blizzard's
+-- otherwise (the one recorded while nobody owned the window)
+function PSF.Flush()
+    if not PSF.pendingSize then return false end
+    PSF.pendingSize = nil
+    local psf = PSF.Frame()
+    if not psf then return false end
+    if PSF.owner then
+        return Resize(psf, PSF.WIDTH, PSF.HEIGHT)
+    elseif PSF.savedSize and PSF.savedSize[1] then
+        return Resize(psf, PSF.savedSize[1], PSF.savedSize[2])
+    end
+    return false
+end
+
+local function Waiter()
+    if PSF.waiter or not CreateFrame then return end
+    local f = CreateFrame("Frame")
+    f:RegisterEvent("PLAYER_REGEN_ENABLED")
+    f:SetScript("OnEvent", function()
+        local ok, err = pcall(PSF.Flush)
+        if not ok and ns.errors then ns.errors[#ns.errors + 1] = "spell window: " .. tostring(err) end
+    end)
+    PSF.waiter = f
 end
 
 -- Blizzard sizes the window itself (show, maximize/minimize): while a
@@ -152,16 +200,13 @@ local function Hook(psf)
 end
 
 -- called by each owner as soon as the window exists: records the retail
--- size and panel width once, and installs the size hook
+-- size once, and installs the size hook and the combat waiter
 function PSF.Init(psf)
     psf = psf or PSF.Frame()
     if not psf then return end
     if not PSF.savedSize and psf.GetSize then PSF.savedSize = {psf:GetSize()} end
-    if not PSF.savedPanelWidth and GetUIPanelAttribute then
-        local ok, w = pcall(GetUIPanelAttribute, psf, "width")
-        if ok and type(w) == "number" then PSF.savedPanelWidth = w end
-    end
     Hook(psf)
+    Waiter()
 end
 
 -- the page named takes the window: Era's size and a faded shell. A
@@ -177,7 +222,6 @@ function PSF.Claim(name, opts)
     end
     PlacePortrait(psf, opts and opts.portrait)
     Resize(psf, PSF.WIDTH, PSF.HEIGHT)
-    if SetUIPanelAttribute then pcall(SetUIPanelAttribute, psf, "width", PSF.PANEL_WIDTH) end
     return true
 end
 
@@ -194,7 +238,6 @@ function PSF.Release(name)
         PSF.applied = false
     end
     if PSF.savedSize and PSF.savedSize[1] then Resize(psf, PSF.savedSize[1], PSF.savedSize[2]) end
-    if SetUIPanelAttribute and PSF.savedPanelWidth then pcall(SetUIPanelAttribute, psf, "width", PSF.savedPanelWidth) end
     return true
 end
 

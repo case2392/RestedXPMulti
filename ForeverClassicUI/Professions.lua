@@ -60,7 +60,8 @@ M.ART = ART
 local FRAME_NAME = "ProfessionsFrame"
 local BLIZZARD_ADDON = "Blizzard_Professions"
 local FRAME_WIDTH, FRAME_HEIGHT = 384, 512
-local PANEL_WIDTH = 400
+-- (UIParent's panel width for the frame is left to Blizzard: set from
+-- addon code it taints the panel and the window cannot open in combat)
 -- the rows fill Era's own page band: the spellbook's columns run from
 -- x=34 to x=350 in the same 384 book, so the rows do too and the page
 -- keeps an even margin either side. The skill line tabs sit over the
@@ -552,7 +553,6 @@ function M.Apply()
         M.resizing = true
         psf:SetSize(FRAME_WIDTH, FRAME_HEIGHT)
         M.resizing = nil
-        if SetUIPanelAttribute then pcall(SetUIPanelAttribute, psf, "width", PANEL_WIDTH) end
         M.book:Show()
     else
         M.book:Hide()
@@ -561,7 +561,6 @@ function M.Apply()
             psf:SetSize(M.savedSize[1], M.savedSize[2])
             M.resizing = nil
         end
-        if SetUIPanelAttribute and M.savedPanelWidth then pcall(SetUIPanelAttribute, psf, "width", M.savedPanelWidth) end
     end
 end
 
@@ -583,7 +582,6 @@ local function Undo()
         psf:SetSize(M.savedSize[1], M.savedSize[2])
         M.resizing = nil
     end
-    if SetUIPanelAttribute and M.savedPanelWidth then pcall(SetUIPanelAttribute, psf, "width", M.savedPanelWidth) end
 end
 
 local function HookMethod(frame, name)
@@ -678,10 +676,6 @@ function M:Enable()
     end
     local psf = G(FRAME_NAME)
     if not self.savedSize and psf.GetSize then self.savedSize = {psf:GetSize()} end
-    if not self.savedPanelWidth and GetUIPanelAttribute then
-        local ok, w = pcall(GetUIPanelAttribute, psf, "width")
-        if ok and type(w) == "number" then self.savedPanelWidth = w end
-    end
     if not self.book then self.book = BuildBook(psf) end
     self.mode = "restyled"
     self.applied = nil
