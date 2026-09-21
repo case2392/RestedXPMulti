@@ -295,6 +295,18 @@ function ns.BuildProbe()
          cvar("nameplateShowAll"))
     line("Enum.NamePlateStyle.Classic: %s",
          tostring(Enum and Enum.NamePlateStyle and Enum.NamePlateStyle.Classic))
+    -- whether the client will let the player (or an addon) set the style at all
+    if C_CVar and C_CVar.GetCVarInfo then
+        local ok, value, default, account, character, locked, secure, readOnly = pcall(C_CVar.GetCVarInfo, "nameplateStyle")
+        if ok then
+            line("nameplateStyle cvar info: value=%s default=%s savedPerAccount=%s savedPerCharacter=%s lockedFromUser=%s secure=%s readOnly=%s",
+                 tostring(value), tostring(default), tostring(account), tostring(character), tostring(locked), tostring(secure), tostring(readOnly))
+        end
+    end
+    if GetCVarDefault then
+        local ok, d = pcall(GetCVarDefault, "nameplateStyle")
+        if ok then line("nameplateStyle default: %s", tostring(d)) end
+    end
     line("NamePlateDriverFrame: %s", yn(has("NamePlateDriverFrame")))
     line("NamePlateSetupOptions: %s", yn(has("NamePlateSetupOptions")))
     if NamePlateSetupOptions then

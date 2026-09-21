@@ -55,11 +55,17 @@ usually enough to rebuild that window in the classic style.
   the name centered above the bar, and the small classic cast bar with its
   spark. Blizzard's nameplate code still contains this whole style (it is what
   Classic Era draws); it is selected by the `nameplateStyle` CVar. On Classic
-  Era the addon just sets it. **On Forever you type `/console nameplateStyle 6`
+  Era the addon just sets it. **On Forever you type `/cui nameplates classic`
   once** (the addon tells you at login): Forever protects unit health with
   "secret values", and a CVar set by an addon taints Blizzard's nameplate
-  code so every plate errors out half-built. The value is saved with your
-  character. The addon then hides Forever's extra level badge next to each
+  code so every plate errors out half-built - so the command sets the
+  style and reloads the UI in one go, and after the reload the style is
+  read clean at load. (`/console nameplateStyle 6` and a `/reload` is the
+  same thing by hand; on one build the console would not take the value
+  at all, the CVar stayed at 1.) If the client refuses the value from the
+  addon too, the setting is locked on that build and the addon says so;
+  `/cui probe` now reports the CVar's default and lock flags. The value
+  is saved with your character. The addon then hides Forever's extra level badge next to each
   plate with a plain alpha change (the classic border has its own level
   slot) and warns you if Forever's Options > Nameplates page overwrites the
   style.
@@ -464,6 +470,7 @@ takes the other parts down.
 |---|---|
 | `/cui` | Status of each part and how it was applied |
 | `/cui nameplates on\|off` | Classic-look nameplates (off restores your previous style) |
+| `/cui nameplates classic` | Forever: set the classic nameplate style and reload the UI |
 | `/cui nameplates size small\|medium\|large\|xl\|huge` | Nameplate size (Blizzard's `nameplateSize`; on Forever it prints the `/console` command for you to type) |
 | `/cui nameplates force` | Force the Lua fallback even if the option exists (testing) |
 | `/cui castbar on\|off` | Classic-look cast bars (`/reload` after off) |

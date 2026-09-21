@@ -32,6 +32,7 @@ local CLASSIC_STYLE = (Enum and Enum.NamePlateStyle and
 local MEDIUM_SIZE = (Enum and Enum.NamePlateSize and Enum.NamePlateSize.Medium) or
                         1
 M.CONSOLE_COMMAND = "/console nameplateStyle " .. CLASSIC_STYLE
+M.CLASSIC_COMMAND = "/cui nameplates classic"
 
 local function GetCVarSafe(name)
     if C_CVar and C_CVar.GetCVar then return C_CVar.GetCVar(name) end
@@ -224,7 +225,7 @@ local function InstallWatcher()
                     M.mode = "console"
                     ForAllPlates(function(plate) SetBadgeAlpha(plate, 1) end)
                     ns.Print("nameplates: the style was changed. Type  %s  to get the classic plates back.",
-                             M.CONSOLE_COMMAND)
+                             M.CLASSIC_COMMAND)
                 else
                     local function reapply()
                         if M.enabled and M.mode == "cvar" then TryCVar() end
@@ -397,8 +398,8 @@ function M:Enable()
     M.cvarReason = why
     if HasSecrets() then
         M.mode = "console"
-        ns.Print("nameplates: type  %s  once to switch to the classic plates (this client only lets you change it, not an addon).",
-                 M.CONSOLE_COMMAND)
+        ns.Print("nameplates: type  %s  once to switch to the classic plates (it sets the style and reloads the UI, so Blizzard's plates start clean), or  %s  and /reload.",
+                 M.CLASSIC_COMMAND, M.CONSOLE_COMMAND)
         return
     end
     local installed, why2 = InstallOverride()
@@ -443,8 +444,41 @@ local SIZES = {
     small = "Small", medium = "Medium", large = "Large",
     xl = "ExtraLarge", extralarge = "ExtraLarge", huge = "Huge"
 }
+-- /cui nameplates classic: set the style and reload. A CVar set from addon
+-- code runs Blizzard's nameplate callback under our taint, which on a
+-- secret-value client breaks every plate - until the UI reloads, when the
+-- style is read clean at load. So the two go together. It is also the
+-- way in when /console will not take the value (a report: typing it did
+-- nothing, the CVar stayed at 1); if the client refuses it here too, the
+-- style is locked and it says so.
+local function SetClassicAndReload()
+    if OnClassicStyle() then
+        ns.Print("nameplates: the classic style is already on.")
+        return
+    end
+    if InCombatLockdown and InCombatLockdown() then
+        ns.Print("nameplates: not in combat - the UI has to reload.")
+        return
+    end
+    local before = tostring(GetCVarSafe("nameplateStyle"))
+    if ns.db and ns.db.savedNameplateStyle == nil then ns.db.savedNameplateStyle = before end
+    pcall(SetCVarSafe, "nameplateStyle", CLASSIC_STYLE)
+    if OnClassicStyle() then
+        ns.Print("nameplates: classic style set, reloading the UI.")
+        if C_UI and C_UI.Reload then C_UI.Reload() elseif ReloadUI then ReloadUI() end
+    else
+        M.refused = ("client refused nameplateStyle=%d (still %s)"):format(CLASSIC_STYLE, tostring(GetCVarSafe("nameplateStyle")))
+        ns.Print("nameplates: this client refused nameplateStyle=%d (it is still %s). Blizzard's code for the classic plates is all there, but the setting is locked on this build; nothing an addon can do. Run /cui probe and send me the report.",
+                 CLASSIC_STYLE, tostring(GetCVarSafe("nameplateStyle")))
+    end
+end
+
 function M:Command(arg)
     local what, value = arg:match("^(%S+)%s*(%S*)$")
+    if what == "classic" then
+        SetClassicAndReload()
+        return true
+    end
     if what ~= "size" then return false end
     local key = SIZES[value]
     local enum = Enum and Enum.NamePlateSize
@@ -475,7 +509,9 @@ function M:Status()
         end
         return "(using Blizzard's built-in Classic style)"
     elseif M.mode == "console" then
-        return "(waiting: type  " .. M.CONSOLE_COMMAND .. "  once)"
+        local s = "(waiting: type  " .. M.CLASSIC_COMMAND .. "  once, or  " .. M.CONSOLE_COMMAND .. "  and /reload"
+        if M.refused then s = s .. "; " .. M.refused end
+        return s .. ")"
     elseif M.mode == "override" then
         return "(Lua fallback: " .. tostring(M.cvarReason) .. ")"
     elseif M.mode == "unavailable" then

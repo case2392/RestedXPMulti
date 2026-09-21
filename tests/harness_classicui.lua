@@ -1493,11 +1493,19 @@ do
     w.cvars.nameplateStyle = "1"
     np.watcher:Fire("CVAR_UPDATE", "nameplateStyle", "1")
     check(np.mode == "console" and w.cvars.nameplateStyle == "1", "forever: style change accepted, back to waiting")
-    check(Printed("/console nameplateStyle 6"), "forever: console command printed again")
+    check(Printed("/cui nameplates classic"), "forever: the classic command printed again")
+    -- /cui nameplates classic on a build whose CVar will not take 6 (this world clamps at 5): it says so
+    printed = {}
+    w.slash("nameplates classic")
+    check(w.cvars.nameplateStyle == "1" and w.reloaded == nil and Printed("refused nameplateStyle=6") and np:Status():find("client refused nameplateStyle=6", 1, true) ~= nil, "forever: a locked style is reported, no reload")
     check(badge.alpha == 1 and w.plates[1].UnitFrame.PlayerLevelDiffFrame.alpha == 1, "forever: badges restored while waiting")
     w.cvars.nameplateStyle = "6"
     np.watcher:Fire("CVAR_UPDATE", "nameplateStyle", "6")
     check(np.mode == "cvar" and badge.alpha == 0, "forever: back on when the player types it again")
+    -- already classic: the command just says so
+    printed = {}
+    w.slash("nameplates classic")
+    check(Printed("already on") and w.reloaded == nil, "forever: classic command on a classic style does nothing")
     -- size: same rule, tell the player the console command
     _G.Enum.NamePlateSize.ExtraLarge = 3; _G.Enum.NamePlateSize.Huge = 4
     printed = {}
@@ -1512,6 +1520,28 @@ do
     check(np.mode == "off" and badge.alpha == 1 and w.cvars.nameplateStyle == "6", "forever: off restores badges, leaves the CVar")
     w.slash("nameplates on")
     check(np.mode == "cvar" and badge.alpha == 0, "forever: on again")
+
+    -- a build that takes the value from Lua (the report: /console did nothing, the CVar stayed at 1):
+    -- /cui nameplates classic sets it and reloads, so after the reload the style is read clean
+    do
+        local w2 = NewWorld({style = "1", noClassicEnum = true, forever = true})
+        local np2 = w2.ns.modules.nameplates
+        check(np2.mode == "console" and Printed("/cui nameplates classic") and Printed("/console nameplateStyle 6"), "forever: login names both ways in")
+        printed = {}
+        w2.inCombat = true
+        w2.slash("nameplates classic")
+        check(w2.cvars.nameplateStyle == "1" and w2.reloaded == nil and Printed("not in combat"), "forever: no CVar write and no reload in combat")
+        w2.inCombat = false
+        w2.slash("nameplates classic")
+        check(w2.cvars.nameplateStyle == "6" and w2.reloaded == true and Printed("reloading the UI") and w2.ns.db.savedNameplateStyle == "1", "forever: the style is set, the old one remembered and the UI reloaded")
+        -- next login: the style is there from the start, the addon goes straight to the CVar mode
+        local w3 = NewWorld({style = "6", noClassicEnum = true, forever = true, savedDB = w2.ns.db})
+        check(w3.ns.modules.nameplates.mode == "cvar" and w3.plates[1].UnitFrame.PlayerLevelDiffFrame.alpha == 0, "forever: after the reload the classic plates are on and the badge hidden")
+    end
+    -- back to the clamped world for the rest
+    w = NewWorld({style = "1", maxStyle = 5, noClassicEnum = true, forever = true})
+    np = w.ns.modules.nameplates
+    w.cvars.nameplateStyle = "6"; np.watcher:Fire("CVAR_UPDATE", "nameplateStyle", "6")
 
     local combo = w.ns.modules.combo
     check(combo.mode == "native" and combo.enabledBlizzard == true, "forever: Blizzard's classic combo frame used, switched on")
