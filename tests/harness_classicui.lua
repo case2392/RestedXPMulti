@@ -62,7 +62,8 @@ local function Region(kind, init)
     function r:GetTextColor() if self.textColor then return unpack(self.textColor) end return 1, 1, 1, 1 end
     function r:SetJustifyV(j) self.justifyV = j end
     function r:SetWordWrap() end
-    function r:GetStringWidth() return self.text and (#tostring(self.text) * 6) or 0 end
+    function r:GetStringWidth() return self.text and (#tostring(self.text) * 6 * ((self.fontSize or 10) / 10)) or 0 end
+    function r:SetFont(path, size, flags) self.fontPath, self.fontSize, self.fontFlags = path, size, flags end
     function r:RemoveMaskTexture(m) self.maskRemoved = m end
     function r:SetShown(v) self.shown = v and true or false end
     -- read-back API used by /cui dump
@@ -76,7 +77,7 @@ local function Region(kind, init)
     function r:GetDrawLayer() return self.layer or "ARTWORK", 0 end
     function r:GetTexCoord() local c = self.texcoord; if c then return c[1], c[3], c[1], c[4], c[2], c[3], c[2], c[4] end return 0, 0, 0, 1, 1, 0, 1, 1 end
     function r:GetBlendMode() return self.blend or "BLEND" end
-    function r:GetFont() return "Fonts\\FRIZQT__.TTF", 12, "" end
+    function r:GetFont() return self.fontPath or "Fonts\\FRIZQT__.TTF", self.fontSize or 10, self.fontFlags or "" end
     return r
 end
 
@@ -337,6 +338,7 @@ local function NewWorld(opts)
         end
     end
     _G.InCombatLockdown = function() return w.inCombat end
+    _G.SetPortraitTexture = function(tex, unit) tex.portraitUnit = unit; tex.atlas = nil end
     -- the loader the restricted environment compiles snippets with (Forever's client lacks it)
     _G.loadstring_untainted = opts.noSnippets and nil or loadstring
     _G.UIParent.GetTop = function() return w.screenTop or 1080 end
@@ -477,6 +479,7 @@ local function NewWorld(opts)
         main.StatusTexture = Region("Texture", {atlas = "status"}); main.StatusTexture.shown = false; main.LevelBackgroundCircle = Region("Texture")
         pf.PlayerFrameContent = Frame("content"); pf.PlayerFrameContent.level = 11; pf.PlayerFrameContent.PlayerFrameContentMain = main
         pf.PlayerFrameContent.PlayerFrameContentContextual = Frame("ctx"); pf.PlayerFrameContent.PlayerFrameContentContextual.level = 12; pf.PlayerFrameContent.PlayerFrameContentContextual.AttackIcon = Region("Texture"); pf.PlayerFrameContent.PlayerFrameContentContextual.PlayerPortraitCornerIcon = Region("Texture")
+        pf.PlayerFrameContent.PlayerFrameContentContextual.AttackIcon.shown = false -- Blizzard shows it in combat only
         pf.PlayerFrameContent.PlayerFrameContentContextual.PlayerRestLoop = Frame("restloop")
         _G.PlayerFrame = pf; _G.PlayerName = Region("FontString"); _G.PlayerLevelText = Region("FontString"); _G.GameNormalNumberFont = {}; _G.GameFontNormalSmall = {}; _G.GameFontGreenSmall = {}; _G.GameFontHighlightSmall = {}
         _G.PlayerLevelText.vertex = {1, 1, 1, 1}; _G.PlayerLevelText.text = "2"
@@ -587,6 +590,8 @@ local function NewWorld(opts)
         function BagsBar:Layout() MainMenuBarBackpackButton:ClearAllPoints(); MainMenuBarBackpackButton:SetPoint("RIGHT", self, "RIGHT"); CharacterBag0Slot:ClearAllPoints(); CharacterBag0Slot:SetPoint("RIGHT", MainMenuBarBackpackButton, "LEFT", -2, 0); self.div1:Show(); self.div1.alpha = 1 end
         for _, n in ipairs({"MainMenuBarBackpackButton", "CharacterBag0Slot", "CharacterBag1Slot", "CharacterBag2Slot", "CharacterBag3Slot", "CharacterReagentBag0Slot", "KeyRingButton"}) do
             local b = Frame(n); b:SetSize(n == "MainMenuBarBackpackButton" and 50 or 30, n == "MainMenuBarBackpackButton" and 50 or 30); b.icon = Region("Texture"); b.IconBorder = Region("Texture"); b.SquareMask = Region("MaskTexture", {atlas = "UI-HUD-ActionBar-IconFrame-Mask"}); b:SetNormalAtlas("bag-border"); _G[n] = b
+            -- Forever's gold frame while the bag is open, sized for its 48px slot
+            b.SlotHighlightTexture = Region("Texture", {atlas = "bag-border-highlight"}); b.SlotHighlightTexture:SetSize(48, 48); b.SlotHighlightTexture:SetPoint("TOPLEFT", b, "TOPLEFT", -5, 5); b.SlotHighlightTexture.shown = false
         end
         -- the divider strips between the slots (pooled frames)
         BagsBar.div1 = Frame("div"); BagsBar.div1.TopEdge = Region("Texture"); BagsBar.div1.BottomEdge = Region("Texture"); BagsBar.div1.Center = Region("Texture")
@@ -1152,6 +1157,7 @@ local function NewWorld(opts)
             _G.PaperDollFrame_ShowSidebar = function(frame) w.sidebarShown = frame end
             _G.PaperDollFrame_SetSidebar = function(tabs, index) CharacterStatsPaneScrollBox:Show(); PaperDollFrame_ShowSidebar(CharacterStatsPaneScrollBox) end
             local model = Frame("CharacterModelScene"); model:SetPoint("TOPLEFT", cf.LeftPaneHost, "TOPLEFT", 0, 0); model:SetPoint("BOTTOMRIGHT", cf.LeftPaneHost, "BOTTOMRIGHT", 0, 0); model:SetSize(398, 464)
+            model.ControlFrame = Frame("ControlFrame"); model.ControlFrame:SetSize(32, 32); model.ControlFrame:SetPoint("TOP", model, "TOP", 0, -10); model.ControlFrame.parent = model
             for _, k in ipairs({"BackgroundTopLeft", "BackgroundTopRight", "BackgroundBotLeft", "BackgroundBotRight", "BackgroundOverlay"}) do model[k] = Region("Texture") end
             _G.CharacterModelScene = model
             local function Slot(name, point, rel, relPoint, x, y)
@@ -1562,7 +1568,14 @@ do
     check(#phb.anchors == 2 and phb.anchors[1][2] == PlayerFrame and phb.anchors[1][4] == 90 and phb.anchors[1][5] == -45 and phb.anchors[2][1] == "BOTTOMRIGHT" and phb.anchors[2][3] == "TOPLEFT" and phb.anchors[2][4] == 209 and phb.anchors[2][5] == -57, "forever: player health bar anchored by both corners to the player frame (119x12 at 90,-45)")
     check(#pmb.anchors == 2 and pmb.anchors[1][5] == -56 and pmb.anchors[2][4] == 209 and pmb.anchors[2][5] == -68, "forever: player mana bar likewise, under it")
     check(pm.HealthBarsContainer.HealthBarText.anchors[1][2] == phb and pm.HealthBarsContainer.LeftText.anchors[1][2] == phb and pm.HealthBarsContainer.LeftText.anchors[1][4] == 2, "forever: health numbers (on Blizzard's container) anchored to the bar itself")
-    check(PlayerName.width == 116 and PlayerName.justify == "CENTER" and PlayerName.anchors[1][4] == 34, "forever: name box the width of the art's strip (Forever's longer names), still centred")
+    check(PlayerName.width == 119 and PlayerName.justify == "CENTER" and PlayerName.anchors[1][4] == 34, "forever: name box the whole width of the art's strip (Forever's longer names), still centred")
+    -- a 24-character name still overruns 119px: it steps down a point size or two instead of losing letters
+    PlayerName:SetText("Mithrilsilvermaneofdo")
+    check(PlayerName.fontSize == 9 and PlayerName:GetStringWidth() <= 119, "forever: a name too long for the strip is fitted with a smaller font")
+    PlayerName:SetText("Mithril")
+    check(PlayerName.fontSize == 10, "forever: a short name gets Blizzard's size back")
+    PlayerName:SetText("Mithrilsilvermaneofdoomxx")
+    check(PlayerName.fontSize == 8, "forever: two points down at most")
     check(pc.FrameFlash.texture == "Interface\\TargetingFrame\\UI-TargetingFrame-Flash" and pc.FrameFlash.texcoord[1] == 0.9453125 and pc.FrameFlash.texcoord[4] == 0.181640625 and pc.FrameFlash.width == 242, "forever: player combat flash cut from the right part of its image, mirrored")
     TargetFrame.TargetFrameContainer.Flash:SetAtlas("UI-HUD-UnitFrame-Target-PortraitOn-InCombat"); TargetFrame:CheckClassification()
     local tfl = TargetFrame.TargetFrameContainer.Flash
@@ -1600,8 +1613,17 @@ do
     check(PlayerFrame.PlayerFrameContent.PlayerFrameContentContextual.PlayerRestLoop.alpha == 0 and skin.rest and skin.rest.texture == "Interface\\CharacterFrame\\UI-StateIcon" and skin.rest.alpha == 0, "forever: retail rest flipbook faded, classic rest icon added (hidden while not resting)")
     w.resting = true; skin:Fire("PLAYER_UPDATE_RESTING")
     check(skin.rest.alpha == 1, "forever: rest icon shows when resting")
+    -- Era's badges sit on the level circle and cover the number: the copy goes while one shows
+    check(lvl.shown == false and skin.rest.layer == "OVERLAY", "forever: the level copy is hidden under the rest badge")
+    PlayerFrame_UpdateLevel()
+    check(lvl.shown == false and lvl.text == "3", "forever: Blizzard's level repaint keeps it hidden while the badge shows")
     w.resting = false; skin:Fire("PLAYER_UPDATE_RESTING")
-    check(skin.rest.alpha == 0, "forever: rest icon hides again")
+    check(skin.rest.alpha == 0 and lvl.shown == true, "forever: rest icon hides again, the level comes back")
+    local attackIcon = PlayerFrame.PlayerFrameContent.PlayerFrameContentContextual.AttackIcon
+    attackIcon:Show()
+    check(lvl.shown == false, "forever: Blizzard's attack badge covers the level too")
+    attackIcon:Hide()
+    check(lvl.shown == true, "forever: ...until the fight ends")
     local tc = TargetFrame.TargetFrameContainer
     local tskin = uf.own[TargetFrame].skin
     check(tskin and tskin.art.texture == "Interface\\TargetingFrame\\UI-TargetingFrame" and tskin.art.width == 230 and tskin.level == 502 and tc.FrameTexture.alpha == 0 and tc.BossPortraitFrameTexture.shown == false, "forever: target frame classic art on its skin at the bars' level")
@@ -1612,7 +1634,9 @@ do
     check(#thb.anchors == 2 and thb.anchors[1][1] == "TOPLEFT" and thb.anchors[1][2] == TargetFrame and thb.anchors[1][3] == "TOPRIGHT" and thb.anchors[1][4] == -209 and thb.anchors[1][5] == -45 and thb.anchors[2][1] == "BOTTOMRIGHT" and thb.anchors[2][4] == -90 and thb.anchors[2][5] == -57, "forever: target health bar anchored by both corners to the target frame (119x12, right edge at -90)")
     check(#tmb.anchors == 2 and tmb.anchors[1][5] == -56 and tmb.anchors[2][5] == -68 and tmb.level == 502 and tmb.fill.layer == "BACKGROUND", "forever: target mana bar likewise, brought down to the bars' level with its fill under the art")
     check(tm.HealthBarsContainer.HealthBarText.anchors[1][2] == thb and tm.HealthBarsContainer.RightText.anchors[1][4] == -2, "forever: target health numbers anchored to the bar")
-    check(tm.Name.width == 116 and tm.Name.anchors[1][4] == -34, "forever: target name box the width of the strip")
+    check(tm.Name.width == 119 and tm.Name.anchors[1][4] == -34, "forever: target name box the width of the strip")
+    tm.Name:SetText("Mithrilsilvermaneofdo")
+    check(tm.Name.fontSize == 9, "forever: a long target name is fitted too")
     check(tm.HealthBarsContainer.HealthBar.fill.maskRemoved == tm.HealthBarsContainer.HealthBarMask and tm.HealthBarsContainer.HealthBarMask.texture == "Interface\\Buttons\\WHITE8x8" and tc.PortraitMask.atlas == "CircleMask", "forever: target bar mask neutralised, portrait round")
     check(uf.own[TargetFrame].backdrop.height == 25 and uf.own[TargetFrame].backdrop.anchors[1][1] == "TOPRIGHT", "forever: target backdrop is Era's 119x25")
     local tlvl = tskin.levelText
@@ -1707,7 +1731,11 @@ do
     check(pn.anchors[1][2] == art and pn.anchors[1][4] == 506 and pn.anchors[1][5] == 3 and pn.Text.anchors[1][4] == 15 and pn.UpButton.NormalTexture.texture == "Interface\\MainMenuBar\\UI-MainMenu-ScrollUpButton-Up" and pn.UpButton.anchors[1][5] == 10, "forever: page number and classic arrows right of the buttons")
     -- the buttons sit at Era's 552 on the art; the container is placed to
     -- suit Blizzard's arithmetic, not to be looked at
-    check(MicroMenu.anchors[1][2] == art and MicroMenu.anchors[1][4] == 552 and MicroMenu.anchors[1][5] == 2 and MicroMenu.BorderArt.alpha == 0, "forever: micro buttons on the bar's floor at 552, retail border gone")
+    -- room left of the bag cluster: 1024-6-261-4-552 = 201; ten buttons at
+    -- Era's 26 need 265 and at the 24 floor 247, so the row is scaled to fit
+    -- (anchors on a scaled frame are in its own units: 552 becomes 552/scale)
+    local microScale = 201 / 247
+    check(MicroMenu.anchors[1][2] == art and math.abs(MicroMenu.anchors[1][4] - 552 / microScale) < 0.01 and math.abs(MicroMenu.anchors[1][5] - 2 / microScale) < 0.01 and MicroMenu.BorderArt.alpha == 0, "forever: micro buttons on the bar's floor at 552, retail border gone")
     -- Forever sets MainActionBar.BOTTOMRIGHT = MicroMenuContainer.BOTTOMLEFT -4.5,-4.
     -- Put the container where that sum lands the bar on Era's 8,4 and the
     -- two layouts agree, so nothing has to move when combat forbids it.
@@ -1722,12 +1750,11 @@ do
     check(LFDMicroButton.NormalTexture.alpha == 1, "forever: the micro button icon is held visible when Forever fades it on hover")
     SpellbookMicroButton:SetSize(32, 40); SpellbookMicroButton.scripts.OnSizeChanged(SpellbookMicroButton)
     check(SpellbookMicroButton.width == 31 and SpellbookMicroButton.height == 37, "forever: micro button re-skinned when Blizzard's layout resizes it")
-    -- room left of the bag cluster: 1024-6-261-4-552 = 201; ten buttons at
-    -- Era's 26 need 265, so they pack to (201-31)/9 = 18.89 apart and stay
-    -- full size - above the 16 floor, so nothing is scaled down
-    local packed = (201 - 31) / 9
-    check(StoreMicroButton.shown == false and ab.microShown == 10 and ProfessionMicroButton.anchors[1][2] == MicroMenu and math.abs(ProfessionMicroButton.anchors[1][4] - packed) < 0.001 and math.abs(MainMenuMicroButton.anchors[1][4] - 9 * packed) < 0.001, "forever: disabled Store button hidden, the ten others packed to fit the room")
-    check(math.abs(MicroMenu.width - 201) < 0.01 and MicroMenu.height == 37 and MicroMenu.scale == 1 and MicroMenuContainer.height == 37, "forever: the row fills the room at Era's full height rather than being scaled down")
+    -- ten buttons pack to the 24px floor (a report of them at 19 showed them
+    -- piled on each other), and the row is scaled down to fit the room
+    local packed = 24
+    check(StoreMicroButton.shown == false and ab.microShown == 10 and ProfessionMicroButton.anchors[1][2] == MicroMenu and math.abs(ProfessionMicroButton.anchors[1][4] - packed) < 0.001 and math.abs(MainMenuMicroButton.anchors[1][4] - 9 * packed) < 0.001, "forever: disabled Store button hidden, the ten others no closer than 24 apart")
+    check(math.abs(MicroMenu.width - 247) < 0.01 and MicroMenu.height == 37 and math.abs(MicroMenu.scale - microScale) < 0.001 and math.abs(MicroMenuContainer.height - 37 * microScale) < 0.01, "forever: the row is scaled to fit the room rather than packed tighter")
     -- the container is widened leftwards, so its right edge is still where
     -- the row really ends and the bag bar hangs off the same place as before
     check(math.abs((MicroMenuContainer.anchors[1][4] + MicroMenuContainer.width) - (552 + 201)) < 0.01, "forever: the container still ends where the micro row ends, so the bags are no worse off")
@@ -1741,6 +1768,9 @@ do
     check(BagsBar.anchors[1][1] == "BOTTOMRIGHT" and BagsBar.anchors[1][2] == art and BagsBar.anchors[1][4] == -6 and BagsBar.anchors[1][5] == 2, "forever: bag bar at the bar's right end")
     check(MainMenuBarBackpackButton.width == 37 and MainMenuBarBackpackButton.NormalTexture.texture == "Interface\\Buttons\\UI-Quickslot2" and MainMenuBarBackpackButton.NormalTexture.width == 64 and CharacterBag0Slot.anchors[1][2] == MainMenuBarBackpackButton and CharacterBag0Slot.anchors[1][4] == -5, "forever: 37px bag slots 5 apart with the quickslot ring")
     check(MainMenuBarBackpackButton.icon.maskRemoved == MainMenuBarBackpackButton.SquareMask and BagsBar.BorderArt.alpha == 0 and BagsBar.div1.alpha == 0, "forever: retail icon mask, bag border and slot dividers gone")
+    -- Forever's gold frame while a bag is open was sized for its 48px slot and hung off the top left of ours
+    local hl = CharacterBag0Slot.SlotHighlightTexture
+    check(hl.anchors[1][1] == "ALL" and hl.anchors[1][2] == CharacterBag0Slot, "forever: the open-bag frame fits the 37px slot")
     local reagent, keyring = CharacterReagentBag0Slot, KeyRingButton
     check(reagent.width == 30 and reagent.anchors[1][2] == CharacterBag3Slot and reagent.anchors[1][4] == -4 and reagent.NormalTexture.texture == "Interface\\Buttons\\UI-Quickslot2" and reagent.NormalTexture.width == 52, "forever: reagent bag 30px beside the bags with a smaller ring")
     check(keyring.width == 18 and keyring.height == 39 and keyring.NormalTexture.texture == "Interface\\Buttons\\UI-Button-KeyRing" and keyring.NormalTexture.texcoord[2] == 0.5625 and keyring.NormalTexture.texcoord[4] == 0.609375 and keyring.anchors[1][2] == reagent and keyring.icon.alpha == 0, "forever: Era's 18x39 keyring left of the reagent bag, retail slot art faded")
@@ -1919,7 +1949,7 @@ do
     check(rep and rep:find("probe", 1, true) and rep:find("dump of PlayerFrame", 1, true) and rep:find("dump of TargetFrame", 1, true) and rep:find("dump of NamePlate7 (target)", 1, true), "beta: report bundles the probe and the frame dumps")
     check(rep:find("dump of MinimapCluster", 1, true) and rep:find("dump of ObjectiveTrackerFrame", 1, true), "beta: report covers every frame it should")
     check(rep:find("x2 Interface/AddOns/Blizzard_NamePlates/x.lua:1", 1, true) and rep:find("stack line 1", 1, true) and rep:find("something else broke", 1, true), "beta: report includes the Lua error log with stacks")
-    check(rep:find("coord=0.1016,1.0000,0.0078,0.781", 1, true) and rep:find("font=FRIZQT__.TTF/12", 1, true) and rep:find("lvl=MEDIUM/", 1, true), "beta: dumps carry texture crops, fonts and frame levels")
+    check(rep:find("coord=0.1016,1.0000,0.0078,0.781", 1, true) and rep:find("font=FRIZQT__.TTF/10", 1, true) and rep:find("lvl=MEDIUM/", 1, true), "beta: dumps carry texture crops, fonts and frame levels")
     check(rep:find("(hidden)", 1, true) == nil, "beta: plain report lists visible pieces only")
     w.slash("report all")
     check(w.ns.lastReport:find("all parts, hidden ones marked", 1, true) and w.ns.lastReport:find("LevelBackgroundCircle  Texture", 1, true) and w.ns.lastReport:find("(hidden)", 1, true), "beta: report all includes hidden pieces, marked")
@@ -2009,6 +2039,16 @@ do
     check(sheet.levelText.text == "Level 39 Human Priest" and sheet.guildText.text == "Member of Guild Name", "sheet: level and guild lines")
     local p = cf.PortraitContainer.portrait
     check(p.anchors[1][1] == "TOPLEFT" and p.anchors[1][2] == cf and p.anchors[1][4] == 7 and p.anchors[1][5] == -6 and p.width == 60, "sheet: portrait in Era's corner")
+    -- Era showed the character's face there; Forever puts the spec icon on the Character tab
+    check(p.portraitUnit == "player", "sheet: the player's own portrait in the corner, not Forever's spec icon")
+    p.portraitUnit = nil; p:SetAtlas("spec-icon")
+    cf:UpdatePortrait()
+    check(p.portraitUnit == "player" and p.atlas == nil, "sheet: ...and again after Blizzard's refresh")
+    PlayerFrame.PlayerFrameContainer.PlayerPortrait:SetAtlas("classicon-priest")
+    cf:UpdatePortrait()
+    check(p.atlas == "classicon-priest", "sheet: with Forever's replace-my-portrait option on, the frame's class icon is copied instead")
+    PlayerFrame.PlayerFrameContainer.PlayerPortrait:SetTexture("RTPortrait1")
+    check(CharacterModelScene.ControlFrame.anchors[1][1] == "TOP" and CharacterModelScene.ControlFrame.anchors[1][2] == CharacterModelScene and CharacterModelScene.ControlFrame.anchors[1][5] == 8, "sheet: the zoom / rotate strip on the top edge of Era's window, centred")
     check(cf.TitleContainer.anchors[1][1] == "TOP" and cf.TitleContainer.anchors[1][4] == 7 and cf.TitleContainer.anchors[1][5] == -14 and cf.TitleContainer.width == 300, "sheet: name centred at the top")
     local head, wrist, hands = CharacterHeadSlot.anchors[1], CharacterWristSlot.anchors[1], CharacterHandsSlot.anchors[1]
     check(head[2] == PaperDollFrame and head[4] == 21 and head[5] == -74 and wrist[5] == -74 - 7 * 41 and hands[4] == 306 and hands[5] == -74, "sheet: slot columns at Era's positions")
@@ -2156,6 +2196,17 @@ do
     check(r1.shown == false and r1.header.shown == true and r1.header.Text.text == "Weapon Skills" and r1.header.index == 3, "skills: class skills hidden like Forever, weapon header first")
     check(r2.shown == true and r2.Name.text == "Daggers" and r2.Rank.text == "1/195" and r2.minmax[2] == 195 and r2.value == 1 and r2.barColor[3] == 1, "skills: skill bar with rank text, blue")
     check(r3.Name.text == "Defense" and r3.Rank.text == "187 (|cff20ff20+3|r)/195", "skills: defense modifier from UnitDefenseSkill")
+    -- in combat Forever hands the defense modifier back as a secret value (a report: "attempt to
+    -- compare local 'modifier' (a secret number value)"): it counts as nothing rather than erroring
+    local secretMod = setmetatable({__secret = true}, {__index = function() error("secret value used") end})
+    local realDefense = _G.UnitDefenseSkill
+    _G.UnitDefenseSkill = function() return 187, secretMod end
+    local errsBefore = #w.ns.errors
+    sk:Update()
+    check(#w.ns.errors == errsBefore and r3.Rank.text == "187/195" and (cs.secretReads or 0) >= 1, "skills: a secret modifier in combat leaves the rank shown plain, no error")
+    _G.UnitDefenseSkill = realDefense
+    sk:Update()
+    check(r3.Rank.text == "187 (|cff20ff20+3|r)/195", "skills: modifier back after combat")
     check(r4.shown == false and r4.header.shown == true and r4.header.NormalTexture.texture == "Interface\\Buttons\\UI-PlusButton-Up", "skills: collapsed secondary header")
     check(r1.anchors[1][4] == 38 and r1.anchors[1][5] == -79 and r2.anchors[1][5] == -97 and r1.header.anchors[1][4] == 22 and r1.header.anchors[1][5] == -86, "skills: Era row positions")
     check(r2.Border.NormalTexture.texture == "Interface\\PaperDollInfoFrame\\UI-Character-Skills-BarBorder" and r2.Border.width == 281, "skills: bevel border around each bar")
@@ -2297,6 +2348,7 @@ do
     -- second skill line: 14 spells, two pages
     t2.scripts.OnClick(t2)
     check(sb.currentLine == 2 and b[1].item.name == "Holy 1" and b[2].item.name == "Holy 7" and b[12].item.name == "Holy 12" and book.pageText.text == "Page 1" and book.next.enabled == true and book.prev.enabled == false, "book: Holy page 1, next page available")
+    check(book.pageText.anchors[1][1] == "BOTTOM" and book.pageText.anchors[1][4] == -14 and book.pageText.anchors[1][5] == 96 and book.pageText.justify == "CENTER" and book.pageText.textColor == nil, "book: \"Page N\" gold and centred between the arrows, where Era drew it (not low on the right)")
     book.next.scripts.OnClick(book.next)
     check(sb.page == 2 and b[1].item.name == "Holy 13" and b[3].item.name == "Holy 14" and b[5].item == nil and book.pageText.text == "Page 2" and book.next.enabled == false, "book: page 2 holds the last two spells")
     book.next.scripts.OnClick(book.next)
@@ -2569,7 +2621,7 @@ do
     check(tf.Background.alpha == 0 and tf.ClassBackground.alpha == 0 and tf.BackgroundBorder.alpha == 0 and tf.UnspentText.alpha == 0 and tf.Header1.alpha == 0, "talents: Forever's backgrounds, borders, labels and tree headers faded")
     check(tf.SearchBox.alpha == 0 and tf.SearchBox.mouse == false and tf.SpecTabs.alpha == 1 and tf.AnimationHolder.alpha == 1, "talents: the search box faded and unclickable, the tab strip and animation holder left alone")
     local ab = tf.ApplyButton
-    check(ab.alpha == 1 and ab.anchors[1][1] == "RIGHT" and ab.anchors[1][2] == controls and ab.anchors[1][3] == "BOTTOMRIGHT" and ab.anchors[1][4] == -120 and ab.anchors[1][5] == 94 and ab.width == 110 and ab.height == 22, "talents: Apply Changes moved into Era's points bar and sized to fit")
+    check(ab.alpha == 1 and ab.anchors[1][1] == "CENTER" and ab.anchors[1][2] == controls and ab.anchors[1][3] == "TOPLEFT" and ab.anchors[1][4] == 305 and ab.anchors[1][5] == -420 and ab.width == 96 and ab.height == 22, "talents: Apply Changes in the box at the right of Era's points bar (Era's Close button's spot)")
     check(controls.points.anchors[1][2] == ab and controls.points.anchors[1][3] == "LEFT" and controls.points.anchors[1][4] == -8, "talents: the points text to its left")
     local pri, sec = tf.SpecTabs.Primary, tf.SpecTabs.Secondary
     check(pri.anchors[1][2] == controls and pri.anchors[1][3] == "TOPRIGHT" and pri.anchors[1][4] == -32 and (pri.anchors[1][5] == -65 or pri.anchors[1][5] == -95) and sec.anchors[1][3] == "TOPRIGHT" and sec.anchors[1][5] ~= pri.anchors[1][5], "talents: Forever's Primary/Secondary buttons at the right edge, where Era 1.15 kept its spec tabs")

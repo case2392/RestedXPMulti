@@ -163,9 +163,10 @@ local function BarText(hc, hb)
     end
 end
 
--- Era's name box: the whole transparent strip of the art, 116 of the
--- strip's 119 (Forever's names run longer than Era's)
-local NAME_WIDTH = 116
+-- Era's name box: the whole transparent strip of the art, all 119 of it
+-- (Forever's names run longer than Era's; a name that still overruns is
+-- fitted by FitName below)
+local NAME_WIDTH = 119
 
 -- black 50% box behind the bars, like PlayerFrameBackground /
 -- TargetFrameBackground: on the unit frame itself so it sits under the bars
@@ -263,7 +264,7 @@ local function Sync(src)
         if ok and a and a ~= 0 then src:SetAlpha(0) end
     end
     if src.IsShown then
-        if src:IsShown() then dst:Show() else dst:Hide() end
+        if src:IsShown() and not dst.covered then dst:Show() else dst:Hide() end
     end
 end
 
@@ -293,21 +294,80 @@ end
 -- player
 --------------------------------------------------------------------------
 
+-- Era's "Zzz" and crossed swords sit right on the level circle, and their
+-- badges cover the number: while one shows, the level copy is hidden (a
+-- report showed the number drawn through the badge). The rest icon is on
+-- a higher sublevel than the number for the same reason; the attack icon
+-- is Blizzard's, on the contextual frame above the skin.
+local function CoverLevel(skin)
+    local resting = skin.rest and skin.rest.GetAlpha and skin.rest:GetAlpha() > 0
+    local fighting = skin.attack and skin.attack.IsShown and skin.attack:IsShown()
+    local covered = (resting or fighting) and true or false
+    if skin.levelText.covered == covered then return end
+    skin.levelText.covered = covered
+    if skin.levelSource then Sync(skin.levelSource) else skin.levelText:SetShown(not covered) end
+end
+
 -- the classic "Zzz" rest icon on the skin (Forever plays a flipbook there)
 local function RestIcon(pf, skin)
     if skin.rest then return end
-    local tex = skin:CreateTexture(nil, "OVERLAY")
+    local tex = skin:CreateTexture(nil, "OVERLAY", nil, 2)
     tex:SetSize(31, 33)
     tex:SetPoint("TOPLEFT", pf, "TOPLEFT", 19.5, -52)
     SetFile(tex, STATE_ICON_TEX, 0, 0.5, 0, 0.421875)
     skin.rest = tex
     local function Update()
         tex:SetAlpha((IsResting and IsResting()) and 1 or 0)
+        CoverLevel(skin)
     end
     skin:RegisterEvent("PLAYER_UPDATE_RESTING")
     skin:RegisterEvent("PLAYER_ENTERING_WORLD")
     skin:SetScript("OnEvent", Update)
     Update()
+end
+
+-- Blizzard shows and hides its attack icon from PlayerFrame_UpdateStatus
+local function WatchAttackIcon(skin, attack)
+    if not attack or skin.attack == attack then return end
+    skin.attack = attack
+    if hooksecurefunc then
+        for _, m in ipairs({"Show", "Hide", "SetShown"}) do
+            if attack[m] then hooksecurefunc(attack, m, function() CoverLevel(skin) end) end
+        end
+    end
+    CoverLevel(skin)
+end
+
+-- Forever's names run to 24 characters where Era's stopped at 12, and the
+-- art's strip is 119px: a name that overruns it steps down a point size
+-- or two rather than losing its last letters. Re-fitted after every
+-- SetText, since Blizzard rewrites the name on every unit update.
+local function FitName(fs)
+    if not fs or not fs.GetStringWidth or not fs.GetFont or not fs.SetFont then return end
+    local ok, path, size, flags = pcall(fs.GetFont, fs)
+    if not ok or not path or not size then return end
+    local own = Own(fs)
+    own.fontSize = own.fontSize or size
+    if size ~= own.fontSize then fs:SetFont(path, own.fontSize, flags) end
+    local width = fs.GetWidth and fs:GetWidth() or NAME_WIDTH
+    if not width or width <= 0 then width = NAME_WIDTH end
+    local s = own.fontSize
+    while s > own.fontSize - 2 and fs:GetStringWidth() > width do
+        s = s - 1
+        fs:SetFont(path, s, flags)
+    end
+end
+
+local function FitNameAlways(fs)
+    if not fs then return end
+    local own = Own(fs)
+    if not own.fitHooked and hooksecurefunc then
+        own.fitHooked = true
+        for _, m in ipairs({"SetText", "SetFormattedText"}) do
+            if fs[m] then hooksecurefunc(fs, m, function(f) if M.mode == "restyled" then FitName(f) end end) end
+        end
+    end
+    FitName(fs)
 end
 
 function M.RestylePlayer()
@@ -359,12 +419,14 @@ function M.RestylePlayer()
         PlayerName:SetSize(NAME_WIDTH, 12)
         PlayerName:SetPoint("CENTER", pf, "CENTER", 34, 15)
         if PlayerName.SetJustifyH then PlayerName:SetJustifyH("CENTER") end
+        FitNameAlways(PlayerName)
     end
     Hide(main.LevelBackgroundCircle)
     skin.levelText:ClearAllPoints()
     -- whole pixels: the quarter pixel put the digit left of the circle
     skin.levelText:SetPoint("CENTER", pf, "BOTTOMLEFT", 36, 31)
     if PlayerLevelText then
+        skin.levelSource = PlayerLevelText
         Mirror(PlayerLevelText, skin.levelText)
         Fade(PlayerLevelText)
     end
@@ -424,6 +486,7 @@ function M.RestylePlayer()
             attack:ClearAllPoints()
             attack:SetSize(32, 32)
             attack:SetPoint("TOPLEFT", pf, "TOPLEFT", 20.5, -52)
+            WatchAttackIcon(skin, attack)
         end
         Hide(contextual.PlayerPortraitCornerIcon)
         Fade(contextual.PlayerRestLoop)
@@ -510,6 +573,7 @@ function M.RestyleTarget(frame)
         name:SetSize(NAME_WIDTH, 12)
         name:SetPoint("CENTER", frame, "CENTER", -34, 15)
         if name.SetJustifyH then name:SetJustifyH("CENTER") end
+        FitNameAlways(name)
     end
     Hide(main.LevelBackgroundCircle)
     skin.levelText:ClearAllPoints()

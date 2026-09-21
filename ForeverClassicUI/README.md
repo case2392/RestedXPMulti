@@ -84,9 +84,13 @@ usually enough to rebuild that window in the classic style.
   health / mana numbers on OVERLAY over it, as Classic drew them, with a
   copy of the level text on the same frame), round portraits filling the
   art's ring, level in the frame corner in the small gold font, the name
-  box the full width of the art's strip (Forever's names run longer than
-  Era's), elite / rare / rare-elite target art, the classic combat flash
-  and rest icon, and the small classic pet frame. Focus frame too. Every
+  box the full width of the art's strip (Forever's names run to 24
+  characters where Era's stopped at 12; a name that still overruns the
+  119px steps down a point size or two rather than losing its last
+  letters, re-fitted after every SetText), elite / rare / rare-elite
+  target art, the classic combat flash and rest icon (Era's badges sit
+  right on the level circle and cover the number, so the level copy is
+  hidden while one shows), and the small classic pet frame. Focus frame too. Every
   size and anchor comes from a `/cui report all` taken on Classic Era.
   The bars are anchored by both corners to the unit frame itself, never
   to Blizzard's bars container: Blizzard resizes and re-anchors that
@@ -107,7 +111,10 @@ usually enough to rebuild that window in the classic style.
   anchors waiting for combat to end.
 - **Character sheet** — on the Character tab the window becomes Era's
   384x512 sheet: the four-piece `UI-Character-CharacterTab` art, portrait
-  and name in the top corners, "Level 39 Human Priest" and guild lines
+  and name in the top corners (the portrait is the character's own face
+  as Era showed it, copied from the player frame - so Forever's
+  "replace my frame portrait" class icon is honoured - where Forever
+  puts the spec icon on the Character tab), "Level 39 Human Priest" and guild lines
   under the name, Blizzard's equipment slots moved into the two Era columns
   with the weapon row along the bottom (and the classic ammo plate), the
   model in the 233x224 window between them, the small attribute box
@@ -158,7 +165,8 @@ usually enough to rebuild that window in the classic style.
   `UI-SpellbookPanel` art, the book icon in the corner, "Spellbook" over
   the top edge, twelve spell buttons in Era's two columns (icon in the
   quickslot ring, gold name, brown rank line, black ring and dim name for
-  passives), the skill line tabs down the right edge, "Page N" and the
+  passives), the skill line tabs down the right edge, "Page N" (gold,
+  centred between the arrows, where Era drew it) and the
   two page arrows along the bottom, the Spellbook / Pet tabs. Those
   bottom tabs are built from the character sheet's tab art, three-sliced
   so each one fits its label: Forever's copy of the Era spellbook tab
@@ -227,7 +235,8 @@ usually enough to rebuild that window in the classic style.
   `visibleEdges` (straight down, across, or round a corner the way Era
   went; gold where the edge is active, grey where not); retail's arrows
   are faded and kept faded through their own redraws. Forever's Apply
-  Changes button is kept and moved into Era's points bar; its search box
+  Changes button is kept and moved into the box at the right of Era's
+  points bar, where Era kept its redundant Close button; its search box
   is faded and made unclickable; its Primary/Secondary buttons go to the
   right edge where Era 1.15 kept its spec tabs; the rest of its furniture
   (headers, dividers, labels) is faded. The window round it is the shared
@@ -357,14 +366,19 @@ usually enough to rebuild that window in the classic style.
   segment dividers. Forever has more micro buttons than Era's nine
   (professions, legacy, group finder, collections): ten of them at Era's
   26px stride need 265px and only about 201 are free between the page
-  arrows and the bag cluster, so the row has to give somewhere. Scaling
-  it down left it shorter than the bag slots beside it with a band of
-  empty bar along the top, so instead the buttons keep Era's full 37px
-  height and pack closer, about 19px apart. Packed that close they
-  overlap, and they are stacked left over right — descending frame levels
-  — so it is each button's trailing edge that goes under its neighbour,
-  the way Era's own art interlocks, rather than the icon's middle. The
-  disabled Store button is hidden so it takes no slot. Micro buttons are
+  arrows and the bag cluster, so the row has to give somewhere. The
+  buttons pack no closer than 24px (the 29px art has a few transparent
+  pixels each side, so 24 still reads as separate buttons; a report of
+  them at 19 showed them piled on each other) and past that the row is
+  scaled down to fit. Packed at all they overlap a little, and they are
+  stacked left over right — descending frame levels — so it is each
+  button's trailing edge that goes under its neighbour, the way Era's
+  own art interlocks, rather than the icon's middle. The
+  disabled Store button is hidden so it takes no slot. Forever's own
+  overlays on a bag slot (the gold frame while that bag's window is
+  open, the search and context dimmers, the keybind glow) are sized for
+  its 48px slot and hung off the top left of the 37px one; they are
+  anchored to the button. Micro buttons are
   protected frames, so their size, anchor and frame level are only touched
   out of combat: the re-skin runs from the hover and pushed hooks, which
   fire mid-fight, and a resize there is refused by the client with

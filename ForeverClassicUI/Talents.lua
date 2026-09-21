@@ -1094,11 +1094,12 @@ local function Furniture(tf, on)
     local controls = M.frame.controls
     if apply then
         if on then
+            -- in the box at the right of Era's points bar, where Era kept
+            -- its (redundant) Close button: 80x22 centred at 305,-420
             Remember(apply)
             apply:ClearAllPoints()
-            apply:SetPoint("RIGHT", controls, "BOTTOMRIGHT", -120, 94)
-            local w = Own(apply).saved.width
-            if apply.SetSize then apply:SetSize((w and w <= 120) and w or 110, 22) end
+            apply:SetPoint("CENTER", controls, "TOPLEFT", 305, -420)
+            if apply.SetSize then apply:SetSize(96, 22) end
         else
             Restore(apply)
         end

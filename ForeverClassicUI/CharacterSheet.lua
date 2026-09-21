@@ -981,6 +981,22 @@ local function SideTabs(cf, hidden)
     end
 end
 
+-- Era's corner showed the character's own face, the same render as the
+-- player frame. Forever puts the spec icon there on the Character tab
+-- (CharacterFrameMixin:UpdatePortrait, not a setting). The player frame's
+-- portrait is copied instead: a render normally, or the class icon atlas
+-- when the player has Forever's "replace my frame portrait" option on.
+local function PlayerPortrait(tex)
+    if not tex then return end
+    local src = PlayerFrame and PlayerFrame.PlayerFrameContainer and PlayerFrame.PlayerFrameContainer.PlayerPortrait
+    local atlas = src and src.GetAtlas and src:GetAtlas()
+    if atlas and tex.SetAtlas then
+        tex:SetAtlas(atlas)
+    elseif SetPortraitTexture then
+        pcall(SetPortraitTexture, tex, "player")
+    end
+end
+
 -- portrait and title into the Era corners (Era: portrait 60x60 at 7,-6, name centred at TOP 7,-19)
 local function Header(cf, classic)
     local portrait = cf.PortraitContainer and cf.PortraitContainer.portrait
@@ -995,10 +1011,12 @@ local function Header(cf, classic)
             mask:SetPoint("BOTTOMRIGHT", portrait, "BOTTOMRIGHT", 0, 0)
         end
         Anchor(title, "TOP", cf, "TOP", 7, -14, 300, 20)
+        PlayerPortrait(portrait)
     else
         Restore(portrait)
         Restore(mask)
         Restore(title)
+        if cf.UpdatePortrait then pcall(cf.UpdatePortrait, cf) end
     end
 end
 
@@ -1058,8 +1076,14 @@ local function PaperDoll(classic)
     if model then
         if classic then
             Anchor(model, "TOPLEFT", pd, "TOPLEFT", 65, -78, 233, 224)
+            -- Forever's zoom / rotate / reset strip hangs 10px into the
+            -- model, which in Era's window put it a line below the
+            -- window's top edge (over the character's head): up to the
+            -- edge, centred, since there are five buttons now
+            if model.ControlFrame then Anchor(model.ControlFrame, "TOP", model, "TOP", 0, 8) end
         else
             Restore(model)
+            if model.ControlFrame then Restore(model.ControlFrame) end
         end
         for _, key in ipairs({"BackgroundTopLeft", "BackgroundTopRight", "BackgroundBotLeft", "BackgroundBotRight", "BackgroundOverlay"}) do
             Fade(model[key], classic)
@@ -1149,6 +1173,12 @@ local function Hook()
     if not cf or not hooksecurefunc then return end
     -- size and shell after every refresh (tab switch, show, pane toggle)
     if cf.RefreshDisplay then hooksecurefunc(cf, "RefreshDisplay", Guard("RefreshDisplay", M.Apply)) end
+    -- Blizzard puts the spec icon back in the corner on every refresh
+    for _, m in ipairs({"UpdatePortrait", "SetPortraitToSpecIcon"}) do
+        if type(cf[m]) == "function" then hooksecurefunc(cf, m, Guard(m, function()
+            if M.mode == "restyled" and M.applied then PlayerPortrait(cf.PortraitContainer and cf.PortraitContainer.portrait) end
+        end)) end
+    end
     if cf.UpdateSize then hooksecurefunc(cf, "UpdateSize", Guard("UpdateSize", function()
         if M.mode == "restyled" and PaperDollShown() then cf:SetSize(FRAME_WIDTH, FRAME_HEIGHT) end
     end)) end

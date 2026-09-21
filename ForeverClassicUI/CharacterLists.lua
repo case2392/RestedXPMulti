@@ -559,8 +559,18 @@ local function ColorSkillBar(bar, info)
     else
         bar:SetStatusBarColor(0, 0, 1, 0.5); bar.Background:SetVertexColor(0, 0, 0.75, 0.5)
     end
-    local rank, maxRank, modifier = info.rank or 0, info.maxRank or 0, info.modifier or 0
-    local temp = info.tempPoints or 0
+    -- Forever hands some of these back as secret values in combat (the
+    -- defense modifier from UnitDefenseSkill, for one): a secret number
+    -- cannot be compared or printed from addon code, so it counts as 0
+    local function Plain(v)
+        if type(v) ~= "number" then return 0 end
+        local ok = pcall(function() return v == 0 end)
+        if ok then return v end
+        M.secretReads = (M.secretReads or 0) + 1
+        return 0
+    end
+    local rank, maxRank, modifier = Plain(info.rank), Plain(info.maxRank), Plain(info.modifier)
+    local temp = Plain(info.tempPoints)
     bar.Fill:Hide()
     if maxRank == 1 then
         bar:SetMinMaxValues(0, 1)

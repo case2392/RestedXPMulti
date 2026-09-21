@@ -3,7 +3,7 @@
 ## Title: Classic UI for Forever
 ## Notes: Brings the classic look back on World of Warcraft Forever: nameplates, cast bars, combo points, player/target/pet/party frames, character sheet, spellbook, talents, professions window, quest log and map, appearances, guild, the classic bottom bar with its micro buttons, bags and XP bar, minimap, quest tracker. Each part can be switched off.
 ## Author: case2392
-## Version: 0.7.22
+## Version: 0.7.23
 ## SavedVariables: ForeverClassicUIDB
 ## X-Forever: 16001 is the guess for Forever 1.60.1; /cui probe prints the real "toc" number.
 

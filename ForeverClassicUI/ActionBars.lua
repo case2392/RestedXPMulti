@@ -85,9 +85,11 @@ local REAGENT_BUTTON, KEYRING_BUTTON = "CharacterReagentBag0Slot", "KeyRingButto
 -- Era's full 37px height and packs closer: the buttons overlap. They are
 -- stacked left over right (see LayoutMicroMenu) so it is each one's right
 -- edge that goes under its neighbour, the way Era's own art interlocks.
--- The floor is how close they may get before the faces are unreadable;
--- past that - far more buttons than Forever has - the row scales instead.
-local MICRO_MIN_STRIDE = 16
+-- The floor is how close they may get before the faces overlap: the 29px
+-- art has two or three transparent pixels each side, so 24 still reads
+-- as separate buttons (a report of ten at 19 showed them piled on each
+-- other); past that the row scales down instead.
+local MICRO_MIN_STRIDE = 24
 -- Forever positions the main action bar off the micro menu's container:
 --   MainActionBar.BOTTOMRIGHT = MicroMenuContainer.BOTTOMLEFT -4.5,-4
 -- (read straight off a live client - the report records it). It re-applies
@@ -618,6 +620,17 @@ local function SkinBagButton(btn, size)
     Hide(btn.SlotBackground)
     Hide(btn.SlotArt)
     Fade(btn.IconBorder)
+    -- Forever's own overlays on the slot (the gold frame while that bag's
+    -- window is open, the search and context dimmers, keybind glow) are
+    -- sized for its 48px slot: a report showed them hanging off the top
+    -- left of the 37px one. They fit the button.
+    for _, key in ipairs({"SlotHighlightTexture", "ItemContextOverlay", "SearchOverlay", "QuickKeybindHighlightTexture", "IconOverlay", "IconOverlay2"}) do
+        local t = btn[key]
+        if t and t.ClearAllPoints and t.SetAllPoints then
+            t:ClearAllPoints()
+            t:SetAllPoints(btn)
+        end
+    end
     M.inSkin = nil
     if not own.hooked and hooksecurefunc then
         own.hooked = true
