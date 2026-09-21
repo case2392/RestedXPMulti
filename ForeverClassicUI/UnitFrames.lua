@@ -253,6 +253,14 @@ local function Sync(src)
     if src.GetAlpha and dst.SetAlpha and not isText then
         local ok, a = pcall(src.GetAlpha, src)
         if ok and a then dst:SetAlpha(a) end
+    elseif isText and src.GetAlpha and src.SetAlpha then
+        -- a mirrored text is Blizzard's copy, faded because ours stands in
+        -- for it: whatever brings it back (a report showed the player's
+        -- level shining through at the frame's centre, a second "17"),
+        -- it goes again. SetAlpha is hooked, so the nested call sees 0
+        -- and stops.
+        local ok, a = pcall(src.GetAlpha, src)
+        if ok and a and a ~= 0 then src:SetAlpha(0) end
     end
     if src.IsShown then
         if src:IsShown() then dst:Show() else dst:Hide() end

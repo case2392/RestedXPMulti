@@ -151,6 +151,40 @@ local function Resize(psf, w, h)
     return true
 end
 
+-- UIParent's panel manager places the window before it shrinks, for
+-- retail's 720px height: on a screen where that does not fit above the
+-- manager's bottom clamp the top is pushed up, and Era's book then sat
+-- higher than the character sheet beside it. This is the manager's own
+-- rule (UIParentPanelManager.lua, a "left" panel) with Era's height, so
+-- the book lands exactly where the character sheet does. Only the
+-- manager's placement is corrected; a window anchored elsewhere (an
+-- addon that moves panels) is left alone.
+local PANEL = {TOP_OFFSET = -116, LEFT_OFFSET = 16, BOTTOM_CLAMP = 140, MIN_Y = -10}
+local function LayoutAttribute(name)
+    if GetUIPanelLayoutAttribute then
+        local ok, v = pcall(GetUIPanelLayoutAttribute, name)
+        if ok and type(v) == "number" then return v end
+    end
+    return PANEL[name]
+end
+
+local function Place(psf)
+    if InCombat() or not UIParent or not UIParent.GetTop or not psf.GetPoint then return false end
+    local point, rel, relPoint, x = psf:GetPoint(1)
+    if point ~= "TOPLEFT" or rel ~= UIParent or relPoint ~= "TOPLEFT" then return false end
+    local scale = psf.GetScale and psf:GetScale() or 1
+    local y = LayoutAttribute("TOP_OFFSET")
+    local bottom = UIParent:GetTop() + y - PSF.HEIGHT * scale
+    if bottom < PANEL.BOTTOM_CLAMP then y = y + (PANEL.BOTTOM_CLAMP - bottom) end
+    if y > PANEL.MIN_Y then y = PANEL.MIN_Y end
+    local left = LayoutAttribute("LEFT_OFFSET") / scale
+    y = y / scale
+    if math.abs((x or 0) - left) < 0.5 and math.abs((select(5, psf:GetPoint(1)) or 0) - y) < 0.5 then return true end
+    psf:ClearAllPoints()
+    psf:SetPoint("TOPLEFT", UIParent, "TOPLEFT", left, y)
+    return true
+end
+
 -- a size that had to wait: the owner's while a claim holds, Blizzard's
 -- otherwise (the one recorded while nobody owned the window)
 function PSF.Flush()
@@ -159,7 +193,9 @@ function PSF.Flush()
     local psf = PSF.Frame()
     if not psf then return false end
     if PSF.owner then
-        return Resize(psf, PSF.WIDTH, PSF.HEIGHT)
+        local done = Resize(psf, PSF.WIDTH, PSF.HEIGHT)
+        if done then Place(psf) end
+        return done
     elseif PSF.savedSize and PSF.savedSize[1] then
         return Resize(psf, PSF.savedSize[1], PSF.savedSize[2])
     end
@@ -221,7 +257,7 @@ function PSF.Claim(name, opts)
         PSF.applied = true
     end
     PlacePortrait(psf, opts and opts.portrait)
-    Resize(psf, PSF.WIDTH, PSF.HEIGHT)
+    if Resize(psf, PSF.WIDTH, PSF.HEIGHT) then Place(psf) end
     return true
 end
 

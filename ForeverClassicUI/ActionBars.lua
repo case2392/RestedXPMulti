@@ -861,8 +861,20 @@ local HOLD_STATES = {
     {"cuivehicle", "[vehicleui] 1; [overridebar] 2; [possessbar] 3; 0"}
 }
 
+-- Forever's client builds no restricted snippets at all: the loader the
+-- restricted environment compiles them with (loadstring_untainted) is
+-- gone, so every state tick of a handler threw "attempt to call a nil
+-- value" from RestrictedExecution.lua and placed nothing. Without the
+-- loader there is no handler; the bars are laid out again after combat.
+local function SnippetsAvailable()
+    if type(loadstring_untainted) == "function" then return true end
+    M.holdUnavailable = "this client has no restricted snippets (loadstring_untainted is missing)"
+    return false
+end
+
 local function InstallHoldHandler()
     if M.holder or not CreateFrame or not RegisterStateDriver then return nil end
+    if not SnippetsAvailable() then return nil end
     local ok, h = pcall(CreateFrame, "Frame", "ForeverClassicUIBarHolder", UIParent, "SecureHandlerStateTemplate")
     if not ok or not h or type(h.SetFrameRef) ~= "function" then return nil end
     for _, st in ipairs(HOLD_STATES) do
@@ -1019,8 +1031,18 @@ end
 -- keep it classic when Blizzard re-lays out
 --------------------------------------------------------------------------
 
+-- Our hooks run inside Blizzard's own calls - Edit Mode applies a layout
+-- under a pcall and asserts on any failure, so an error of ours there
+-- surfaced as "EditMode: Error updating layout info" with the real
+-- message swallowed, and left Edit Mode half applied. Errors stay ours:
+-- caught here, recorded for the report, never handed up.
 local function Again()
-    if M.mode == "restyled" and not M.inLayout then M.Layout() end
+    if M.mode ~= "restyled" or M.inLayout then return end
+    local ok, err = pcall(M.Layout)
+    if not ok then
+        M.inLayout = nil
+        ns.errors[#ns.errors + 1] = "actionbars layout: " .. tostring(err)
+    end
 end
 
 local function HookMethod(frame, method)
@@ -1131,6 +1153,7 @@ function M:Status()
         end
         if M.pending then s = s .. "; bar anchors wait for combat to end" end
         if M.holding then s = s .. "; a secure handler holds the bottom bars in combat" end
+        if M.holdUnavailable then s = s .. "; the bottom bars are laid out again after combat (" .. M.holdUnavailable .. ")" end
         -- carried into the report: where Blizzard put the bars mid-fight
         if M.combatAnchors then
             local seen = {}

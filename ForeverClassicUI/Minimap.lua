@@ -64,6 +64,14 @@ function M.Apply()
     -- classic had no day/night dial
     if cluster.DielFrame then Hide(cluster.DielFrame) end
 
+    -- The cluster is a ResizeLayoutFrame: Blizzard sizes it round its
+    -- children when Edit Mode applies its settings, which at login is
+    -- before this runs, so it stayed sized for the 198px map and hung the
+    -- smaller one low and left of where the player had put it (Edit Mode
+    -- anchors the cluster, the map hangs off the cluster's edge). Sized
+    -- again round the 140px map, the way a rescale in Edit Mode did.
+    if cluster.Layout then pcall(cluster.Layout, cluster) end
+
     M.inApply = false
     return true
 end

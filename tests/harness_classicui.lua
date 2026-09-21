@@ -337,6 +337,9 @@ local function NewWorld(opts)
         end
     end
     _G.InCombatLockdown = function() return w.inCombat end
+    -- the loader the restricted environment compiles snippets with (Forever's client lacks it)
+    _G.loadstring_untainted = opts.noSnippets and nil or loadstring
+    _G.UIParent.GetTop = function() return w.screenTop or 1080 end
     -- secure handlers: a state driver is remembered, and w.FireState runs the
     -- handler's snippet the way the restricted environment would, with self
     -- a handle whose "$parent" is the bar's parent
@@ -635,6 +638,8 @@ local function NewWorld(opts)
         _G.ObjectiveTrackerFrame = tracker
         -- minimap
         _G.Minimap = Frame("Minimap"); _G.MinimapCluster = Frame("MinimapCluster"); _G.MinimapCluster.MinimapContainer = Frame("mc"); _G.MinimapCluster.BorderTop = Frame("BorderTop"); _G.MinimapCluster.DielFrame = Frame("Diel")
+        -- the cluster is a ResizeLayoutFrame: Blizzard sizes it round its children in Layout()
+        function _G.MinimapCluster:Layout() self.layouts = (self.layouts or 0) + 1; self:SetSize(self.MinimapContainer.width + 40, self.MinimapContainer.height + 60) end
         _G.MinimapBackdrop = Frame("MinimapBackdrop"); _G.MinimapCompassTexture = Region("Texture", {atlas = "ui-hud-minimap-frame"}); _G.MinimapCompassTextureUnderlay = Region("Texture")
         -- Forever: level badge on every plate, Forever's constant names
         _G.NamePlateConstants.CLASSIC_NAMEPLATE_WIDTH = nil
@@ -1582,6 +1587,10 @@ do
     check(lvl.shown == false, "forever: level copy hides with Blizzard's")
     PlayerLevelText:Show()
     check(lvl.shown == true, "forever: ...and shows again")
+    -- a report showed Blizzard's level text back at alpha 1 in the frame's centre (a second "17"):
+    -- whatever brings it back, it goes again
+    PlayerLevelText:SetAlpha(1)
+    check(PlayerLevelText.alpha == 0 and lvl.shown == true, "forever: Blizzard's level text stays faded whatever sets its alpha back")
     -- status glow: ours on the skin follows Blizzard's shown/colour/pulse, Blizzard's loses its image
     check(skin.glow.texture == "Interface\\CharacterFrame\\UI-Player-Status" and skin.glow.texcoord[2] == 0.74609375 and skin.glow.texcoord[4] == 0.53125 and skin.glow.blend == "ADD" and skin.glow.shown == false and pm.StatusTexture.texture == nil, "forever: rest/combat glow on the skin, cut like Era, hidden like Blizzard's")
     pm.StatusTexture:SetVertexColor(1, 0, 0, 1); pm.StatusTexture:Show(); pm.StatusTexture:SetAlpha(0.6)
@@ -1807,6 +1816,24 @@ do
     MultiBarBottomRight.moved = nil
     ab.Layout()
     check(MultiBarBottomRight.anchors[1][4] == 6 and holder:GetAttribute("cui-br") == true, "forever: back in its default position, it is placed again")
+    -- Forever's client has no loader for restricted snippets: every state tick of the handler
+    -- threw "attempt to call a nil value" from RestrictedExecution.lua. No loader, no handler.
+    ab.holder = nil; ab.holding = nil; _G.loadstring_untainted = nil
+    ab.Layout()
+    check(ab.holder == nil and ab.holdUnavailable ~= nil and ab:Status():find("laid out again after combat", 1, true) ~= nil and ab:Status():find("loadstring_untainted", 1, true) ~= nil, "forever: without the snippet loader no handler is made, and the status says the bars wait for combat to end")
+    _G.loadstring_untainted = loadstring; ab.holdUnavailable = nil
+    ab.Layout()
+    check(ab.holder ~= nil and ab.holding == true, "forever: with the loader the handler is back")
+    -- an error in the layout must never reach Blizzard: Edit Mode applies its layout under a
+    -- pcall and asserts "Error updating layout info", with the real message swallowed
+    local realLayout = ab.Layout
+    ab.Layout = function() error("boom") end
+    local okHook = pcall(EditModeManagerFrame.UpdateBottomActionBarPositions, EditModeManagerFrame)
+    ab.Layout = realLayout
+    local lastErr = w.ns.errors[#w.ns.errors]
+    check(okHook and lastErr ~= nil and lastErr:find("actionbars layout: ", 1, true) and lastErr:find("boom", 1, true), "forever: a layout error inside Blizzard's hook is caught and recorded for the report, not thrown at Edit Mode")
+    w.ns.errors[#w.ns.errors] = nil
+    ab.Layout()
     local divs = MainActionBar.HorizontalDividersPool.active
     check(divs[1].alpha == 0 and divs[2].alpha == 0, "forever: retail button dividers faded out")
     MainActionBar:UpdateDividers()
@@ -1820,6 +1847,9 @@ do
     w.slash("tracker on")
     check(w.ns.modules.minimap.mode == "restyled" and Minimap.width == 140 and MinimapCompassTexture.texture == "Interface\\Minimap\\UI-Minimap-Border", "forever: minimap 140px with the classic ring")
     check(w.ns.modules.minimap.header ~= nil and MinimapCluster.DielFrame.shown == false, "forever: classic header strip added, day/night dial hidden")
+    -- Edit Mode sized the cluster round the 198px map before the addon shrank it, and hung the
+    -- map low and left of the player's spot until a rescale in Edit Mode re-laid it out
+    check((MinimapCluster.layouts or 0) >= 1 and MinimapCluster.width == 180 and MinimapCluster.height == 200, "forever: the cluster is laid out again round the 140px map, so it sits where Edit Mode put it")
 
     -- options panel
     local panel = w.ns.optionsPanel
@@ -2196,8 +2226,21 @@ do
     local psf = w.LoadPlayerSpells()
     sb.watcher:Fire("ADDON_LOADED", "Blizzard_PlayerSpells")
     check(sb.mode == "restyled" and sb.book ~= nil and sb.book.parent == psf, "book: re-skinned once Blizzard's window loads, book built on it")
+    -- UIParent's panel manager placed the window for retail's 720px height on a 768px-tall
+    -- UIParent: pushed up to keep 720 above the 140px bottom clamp (top at -8 instead of -116)
+    w.screenTop = 768
+    psf:ClearAllPoints(); psf:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 16, -8)
     psf:Show()
     check(psf.width == 384 and psf.height == 512, "book: window is Era's 384x512 once open")
+    check(#psf.anchors == 1 and psf.anchors[1][1] == "TOPLEFT" and psf.anchors[1][2] == UIParent and psf.anchors[1][4] == 16 and psf.anchors[1][5] == -116, "book: the window is put back where the character sheet goes (the manager's rule with Era's height), not where it fitted retail's")
+    w.screenTop = 700
+    w.ns.PSF.Claim("spellbook", {portrait = {10, -8, 58}})
+    check(psf.anchors[1][5] == -48, "book: on a shorter screen the manager's bottom clamp still applies, with Era's height")
+    w.screenTop = 768
+    psf:ClearAllPoints(); psf:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+    w.ns.PSF.Claim("spellbook", {portrait = {10, -8, 58}})
+    check(psf.anchors[1][1] == "CENTER", "book: a window anchored by something else (an addon moving panels) is left alone")
+    psf:ClearAllPoints(); psf:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 16, -116)
     check(psf.NineSlice.alpha == 0 and psf.Bg.alpha == 0 and psf.TopTileStreaks.alpha == 0 and psf.CloseButton.alpha == 0 and psf.CloseButton.mouse == false and psf.MaximizeMinimizeButton.alpha == 0, "book: retail shell faded, close and maximize unclickable")
     local page = psf.SpellBookFrame
     check(page.alpha == 0 and page.anchors[1][3] == "BOTTOMLEFT" and page.anchors[1][5] == -5000, "book: retail page transparent and moved out of reach")

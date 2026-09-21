@@ -181,7 +181,12 @@ usually enough to rebuild that window in the classic style.
   panel's layout attributes, and the secure panel manager then refuses to
   show the window in combat at all ("Interface action failed because of
   an AddOn"). The same goes for the character sheet and the professions
-  window. The cooldown
+  window. The manager also places the window before it shrinks, for
+  retail's 720px height, and on a screen where that does not fit above
+  its bottom clamp the top is pushed up, so Era's book sat higher than
+  the character sheet; once claimed, the window is put where the
+  manager's own rule puts a 512px "left" panel, which is where the
+  character sheet goes. The cooldown
   swirls are only redrawn while the book is
   actually open: `SPELL_UPDATE_COOLDOWN` storms in combat — every cast,
   every global cooldown — and sweeping twelve buttons each time was work
@@ -396,7 +401,18 @@ usually enough to rebuild that window in the classic style.
   bars, the lift and whether each bar is still in its default position are
   handed to the handler out of combat, in the same layout pass that
   anchors them from Lua; a bar the player moved in Edit Mode is left alone
-  by both.
+  by both. Forever's client, it turned out, builds no restricted snippets
+  at all: the loader the restricted environment compiles them with
+  (`loadstring_untainted`) is missing, so every state tick of the handler
+  threw "attempt to call a nil value" from `RestrictedExecution.lua` and
+  placed nothing (Forever's own UI uses no secure handlers, so nothing of
+  Blizzard's notices). Without that loader no handler is made, the status
+  line says so, and the bars are laid out again when combat ends. Our
+  layout hooks run inside Blizzard's own calls, and Edit Mode applies its
+  layout under a `pcall` that asserts on any failure, so an error of ours
+  there came out as "EditMode: Error updating layout info" with the real
+  message swallowed and Edit Mode half applied; the hooks now catch their
+  own errors and record them for the report.
   Forever fades a micro button's own icon out under the mouse and
   cross-fades its modern hover art in, so with Era's glow in that art's
   place the icon vanished on hover; the icon is now held at full alpha
@@ -410,7 +426,12 @@ usually enough to rebuild that window in the classic style.
   and the classic layout put back; bar anchors are protected and wait
   for combat to end.
 - **Minimap** — the 140px round map with the classic ring border and the
-  zone-name strip; the day/night dial is hidden.
+  zone-name strip; the day/night dial is hidden. The cluster round the map
+  is a `ResizeLayoutFrame` that Blizzard sizes round its children when
+  Edit Mode applies its settings, which at login is before the map
+  shrinks; it stayed sized for the 198px map and hung the smaller one low
+  and left of where the player had put it until a rescale in Edit Mode
+  laid it out again. It is laid out again here after the resize.
 - **Quest tracker** — the retail header boxes ("All Objectives", "Quests")
   are faded out so the tracker reads as plain text like the classic quest
   watch. Layout and text stay Blizzard's.
