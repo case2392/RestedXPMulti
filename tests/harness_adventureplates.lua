@@ -143,6 +143,12 @@ local function NewWorld(opts)
     _G.ChatFrame_AddMessageEventFilter = function(e, fn) _G.__filters[e] = fn end
     _G.SetItemRef = function() end
     _G.hooksecurefunc = function(name, fn) local orig = _G[name]; _G[name] = function(...) orig(...); fn(...) end end
+    -- current clients send "addon:" links through LinkUtil, which fires this event and never calls SetItemRef
+    _G.EventRegistry = {callbacks = {}}
+    function _G.EventRegistry:RegisterCallback(event, fn, owner) self.callbacks[event] = fn end
+    function _G.EventRegistry:TriggerEvent(event, ...) local fn = self.callbacks[event]; if fn then fn(nil, ...) end end
+    _G.__clock = 0
+    _G.GetTime = function() return _G.__clock end
     _G.__chat = {}
     _G.ChatEdit_GetActiveWindow = function() return opts.chatOpen and {} or nil end
     _G.ChatEdit_InsertLink = function(t) _G.__chat.inserted = t; return true end
@@ -458,11 +464,14 @@ do
     ns2.slash("welcome")
     check(ns2.welcomeFrame ~= nil and ns2.welcomeFrame.shown == true, "welcome: /plate welcome brings it back")
     ns2.welcomeFrame.report:Press()
-    check(ns2.reportFrame ~= nil and ns2.reportFrame.shown == true and ns2.reportFrame.box.text:find("Adventure Plates 1.2.0 report", 1, true) ~= nil, "welcome: Report a bug opens the report")
+    check(ns2.reportFrame ~= nil and ns2.reportFrame.shown == true and ns2.reportFrame.box.text:find("Adventure Plates 1.2.1 report", 1, true) ~= nil, "welcome: Report a bug opens the report")
     -- the plate window on Era's page
     ns.slash("")
     local win = ns.window
-    check(win.pieces ~= nil and win.pieces.bottomRight.texture == "Interface\\Spellbook\\UI-SpellbookPanel-BotRight" and win.heading.text == "Adventure Plates" and win.heading.anchors[1][5] == -18 and win.close.anchors[1][4] == -44 and win.portrait.portraitUnit == "player", "window: Era's page, the title over the header band, Era's X, my face in the ring")
+    check(win.pieces ~= nil and win.pieces.bottomRight.texture == "Interface\\Spellbook\\UI-SpellbookPanel-BotRight" and win.heading.text == "Adventure Plates" and win.heading.anchors[1][5] == -18 and win.close.anchors[1][4] == -12 and win.close.anchors[1][5] == -25 and win.portrait.portraitUnit == "player", "window: Era's page, the title over the header band, Era's X on the drawn corner (12 in, not 44 - this page has no canvas margin), my face in the ring")
+    -- the brown floor under the parchment stops short of the edges: the art's outer pixels are
+    -- see-through and it showed as a brown rim outside the page
+    check(win.fill ~= nil and #win.fill.anchors == 2 and win.fill.anchors[1][1] == "TOPLEFT" and win.fill.anchors[1][4] == 10 and win.fill.anchors[1][5] == -10 and win.fill.anchors[2][1] == "BOTTOMRIGHT" and win.fill.anchors[2][4] == -10, "window: the floor is kept 10px in from the page's edges")
     check(win.card.guild.color[1] == 0.35 and win.card.tags[1].label.color[1] == 0.35, "window: body text in Era's parchment brown")
     -- turning the model
     check(win.rotateLeft.shown == true and win.rotateLeft.NormalTexture.texture == "Interface\\Buttons\\UI-RotationLeft-Button-Up" and win.rotateRight.NormalTexture.texture == "Interface\\Buttons\\UI-RotationRight-Button-Up" and win.model.facing == 0, "model: Era's rotate buttons under it, facing front")
@@ -523,7 +532,7 @@ do
     local rep = ns.reportFrame
     check(rep ~= nil and rep.shown == true and rep.pieces ~= nil, "report: /plate report opens it on Era's page")
     local text = rep.box.text
-    check(text:find("Adventure Plates 1.2.0 report", 1, true) and text:find(ns.FEEDBACK_URL, 1, true) and text:find(ns.FEEDBACK_EMAIL, 1, true) and text:find("suggestions are welcome", 1, true), "report: says where it goes, for bugs and ideas")
+    check(text:find("Adventure Plates 1.2.1 report", 1, true) and text:find(ns.FEEDBACK_URL, 1, true) and text:find(ns.FEEDBACK_EMAIL, 1, true) and text:find("suggestions are welcome", 1, true), "report: says where it goes, for bugs and ideas")
     check(text:find("client: version 1.60.1 build 69913", 1, true) and text:find("character: Siggy-Firemaw", 1, true) and text:find("settings: share=everyone", 1, true) and text:find("my plate: title=\"\"", 1, true) and text:find("era art: all four page files present", 1, true) and text:find("errors caught: 0", 1, true), "report: client, character, settings, plate and art")
     ns.slash("probe")
     check(ns.lastReport == text or ns.lastReport:find("report", 1, true), "report: /plate probe is the same window")
@@ -669,8 +678,22 @@ do
     SetItemRef("addon:AdventurePlates:Bob-Firemaw", "[Adventure Plate: Bob-Firemaw]", "LeftButton")
     check(#sent == 1, "chat: a shift-click (the game linking it) does not ask")
     _G.IsModifiedClick = nil
+    _G.__clock = 10
     SetItemRef("addon:AdventurePlates:Bj\195\182rn-Firemaw", "x", "LeftButton")
     check(#sent == 2 and sent[2].target == "Bj\195\182rn-Firemaw", "chat: an accented name is asked for")
+    -- Forever (and every current client) never calls SetItemRef for an addon link: LinkUtil's
+    -- handler fires the "SetItemRef" EventRegistry event instead. A report: clicking did nothing.
+    _G.__clock = 20
+    EventRegistry:TriggerEvent("SetItemRef", "addon:AdventurePlates:Bob-Firemaw", "[Adventure Plate: Bob-Firemaw]", "LeftButton", {})
+    check(#sent == 3 and sent[3].target == "Bob-Firemaw", "chat: a click that comes through the EventRegistry event asks too")
+    SetItemRef("addon:AdventurePlates:Bob-Firemaw", "[Adventure Plate: Bob-Firemaw]", "LeftButton")
+    check(#sent == 3, "chat: the same click arriving through both doors is one click")
+    _G.__clock = 21
+    SetItemRef("addon:AdventurePlates:Bob-Firemaw", "[Adventure Plate: Bob-Firemaw]", "LeftButton")
+    check(#sent == 4, "chat: a second click a second later asks again")
+    EventRegistry:TriggerEvent("SetItemRef", "item:6948", "[Hearthstone]", "LeftButton", {})
+    check(#sent == 4, "chat: other link kinds through the event are not ours")
+    check(ns.BuildReport():find("click=SetItemRef+EventRegistry", 1, true) ~= nil, "report: names both link doors")
     -- the report carries the new bits
     local report = ns.BuildReport()
     check(report:find("professions: Herbalism:75:150,Alchemy:40:150", 1, true) ~= nil and report:find("learn=yes", 1, true) ~= nil and report:find("chat links: installed=yes", 1, true) ~= nil, "report: professions, learning and chat links")

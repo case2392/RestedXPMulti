@@ -3,7 +3,7 @@
 ## Title: Adventure Plates
 ## Notes: An adventurer plate for your character, like Final Fantasy XIV's: your model, title, guild, level, class and professions, the roles you play, your playstyle, what you are looking for, when you are usually on, and a motto, on a Classic Era page. /plate opens yours, /plate <name> shows another player's (they need the addon too).
 ## Author: case2392
-## Version: 1.2.0
+## Version: 1.2.1
 ## SavedVariables: AdventurePlatesDB
 
 Core.lua

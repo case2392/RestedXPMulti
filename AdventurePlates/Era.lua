@@ -40,6 +40,7 @@ ns.ERA_PAGE = P
 local LEFT_W, RIGHT_W = P.X1, P.XEND - P.X2
 local HEAD_H, FOOT_H = P.Y1, P.YEND - P.Y2
 local FLOOR = {0.25, 0.20, 0.13, 1}
+local FLOOR_INSET = 10
 
 function ns.HasFile(path)
     if not GetFileIDFromPath then return true end
@@ -72,8 +73,13 @@ end
 -- a frame dressed as Era's page, with the header band and the ring
 function ns.BuildEraPage(name, parent)
     local panel = CreateFrame("Frame", name, parent)
+    -- a brown floor under the parchment, so nothing shows through it;
+    -- kept in from the edges, since the art's outer pixels and its rounded
+    -- corners are see-through and the floor showed there as a brown rim
+    -- outside the page (a report: "a brown border on the left and top left")
     local fill = panel:CreateTexture(nil, "BACKGROUND", nil, -3)
-    fill:SetAllPoints(panel)
+    fill:SetPoint("TOPLEFT", panel, "TOPLEFT", FLOOR_INSET, -FLOOR_INSET)
+    fill:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -FLOOR_INSET, FLOOR_INSET)
     fill:SetColorTexture(FLOOR[1], FLOOR[2], FLOOR[3], FLOOR[4])
     panel.fill = fill
     local pc = {}
@@ -121,11 +127,15 @@ function ns.BuildEraPage(name, parent)
     return panel
 end
 
--- Era's X, in the corner where every Era window had it
+-- Era's X, in the corner where every Era window had it. Era anchored it
+-- 44 in from its 384px canvas, whose drawn book stopped 32px short of the
+-- right edge: 12 in from the drawn corner. This page is drawn to its
+-- frame's edge, so 12 is the number here (at 44 it sat a button's width
+-- left of the corner).
 function ns.EraCloseButton(parent, onClick)
     local close = CreateFrame("Button", nil, parent)
     close:SetSize(32, 32)
-    close:SetPoint("CENTER", parent, "TOPRIGHT", -44, -25)
+    close:SetPoint("CENTER", parent, "TOPRIGHT", -12, -25)
     close:SetNormalTexture(ns.ERA.closeUp)
     close:SetPushedTexture(ns.ERA.closeDown)
     close:SetHighlightTexture(ns.ERA.closeHighlight, "ADD")

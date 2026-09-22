@@ -43,7 +43,7 @@ time the addon runs.
 
 ## What is on a plate
 
-- **Name and title.** The flavour title is yours to type, shown as
+- **Name and title.** The title is a nickname you type, shown as
   « The Explorer » under your name; if you leave it blank, the title your
   character wears in game is shown instead.
 - **Guild and rank, level, race and class** in the class colour, read

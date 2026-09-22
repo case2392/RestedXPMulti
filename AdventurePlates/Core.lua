@@ -19,7 +19,7 @@
 
 local addonName, ns = ...
 
-ns.VERSION = "1.2.0"
+ns.VERSION = "1.2.1"
 ns.PREFIX = "ADVPLATE"
 ns.FORMAT = 1
 ns.MAX_TAGS = 4
@@ -437,14 +437,29 @@ function ns.InstallChatLinks()
         for _, e in ipairs(CHAT_EVENTS) do pcall(addFilter, e, ns.LinkifyChat) end
         ns.chatFilterInstalled = true
     end
+    -- Two doors a click on an "addon:" link can come through. Older clients
+    -- call the global SetItemRef; current ones (Forever included) send the
+    -- link kind through LinkUtil, whose addon handler fires the EventRegistry
+    -- event "SetItemRef" and never calls the function - so with only the
+    -- hook, a click on Forever did nothing. Both are listened to; a click
+    -- that arrives through both within a moment is one click.
+    local function OnLinkClick(link)
+        local key = type(link) == "string" and link:match("^addon:AdventurePlates:(" .. KEY_CLASS .. ")$")
+        if not key then return end
+        -- a shift-click is the game putting the link in the chat box, not a request
+        if IsModifiedClick and Call(IsModifiedClick, "CHATLINK") then return end
+        local now = (GetTime and GetTime()) or 0
+        if ns.lastLinkKey == key and ns.lastLinkTime and now - ns.lastLinkTime < 0.5 then return end
+        ns.lastLinkKey, ns.lastLinkTime = key, now
+        Guard("chat link", ns.RequestPlate)(ns.FullName(key))
+    end
     if hooksecurefunc and SetItemRef then
-        hooksecurefunc("SetItemRef", function(link)
-            local key = type(link) == "string" and link:match("^addon:AdventurePlates:(" .. KEY_CLASS .. ")$")
-            -- a shift-click is the game putting the link in the chat box, not a request
-            if key and not (IsModifiedClick and Call(IsModifiedClick, "CHATLINK")) then
-                Guard("chat link", ns.RequestPlate)(ns.FullName(key))
-            end
-        end)
+        hooksecurefunc("SetItemRef", OnLinkClick)
+        ns.linkHook = "SetItemRef"
+    end
+    if EventRegistry and EventRegistry.RegisterCallback then
+        local ok = pcall(EventRegistry.RegisterCallback, EventRegistry, "SetItemRef", function(_, link) OnLinkClick(link) end, ns)
+        if ok then ns.linkEvent = "EventRegistry" end
     end
     ns.chatLinksInstalled = true
 end
