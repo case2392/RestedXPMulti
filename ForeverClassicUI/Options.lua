@@ -176,10 +176,19 @@ function ns.BuildOptionsPanel()
     reload:SetText("Reload UI")
     reload:SetScript("OnClick", function() if ReloadUI then ReloadUI() end end)
 
+    -- the other add-ons, under the buttons; the status text above grows,
+    -- so this block hangs off the probe button rather than a fixed y
+    local linksHolder = CreateFrame("Frame", nil, body)
+    linksHolder:SetPoint("TOPLEFT", probe, "BOTTOMLEFT", -4, -16)
+    linksHolder:SetSize(600, 90)
+    local linksBottom
+    if ns.BuildAddonLinks then linksBottom, panel.links = ns.BuildAddonLinks(linksHolder, 0) end
+    panel.linksHolder = linksHolder
+
     -- the child has to be as tall as what is on it or there is nothing to
     -- scroll; the status text grows as parts are added, so it is measured
     -- again whenever that text is rebuilt
-    panel.contentBottom = y - 70
+    panel.contentBottom = y - 70 - (linksBottom and -linksBottom or 0) - 16
     function panel.FitContent()
         if body == panel or not body.SetHeight then return end
         local extra = panel.status and panel.status.GetStringHeight and panel.status:GetStringHeight() or 0

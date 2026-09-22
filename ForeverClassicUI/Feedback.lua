@@ -104,6 +104,40 @@ local function LinkBox(parent, width, text)
     return box
 end
 
+ns.LinkBox = LinkBox
+
+-- the author's other add-ons, with their pages in a box the player can
+-- copy from (the game opens no browser, so a copyable address is the link)
+ns.OTHER_ADDONS = {
+    {name = "Classic UI for Forever", url = ns.FEEDBACK_URL, mine = true},
+    {name = "Adventure Plates", url = "https://www.curseforge.com/wow/addons/adventure-plates", blurb = "an adventurer card for your character, like FFXIV's"}
+}
+
+-- "More add-ons by RealJustinCase": a heading, then a name and a copyable
+-- address per add-on. Returns the y below it.
+function ns.BuildAddonLinks(parent, y)
+    local head = parent:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    head:SetPoint("TOPLEFT", 16, y)
+    head:SetText("More add-ons by RealJustinCase")
+    local hint = parent:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+    hint:SetPoint("LEFT", head, "RIGHT", 8, 0)
+    hint:SetText("(click an address and press Ctrl+C to copy it)")
+    y = y - 26
+    local links = {}
+    for _, a in ipairs(ns.OTHER_ADDONS) do
+        local label = parent:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+        label:SetPoint("TOPLEFT", 20, y - 2)
+        label:SetWidth(180)
+        label:SetJustifyH("LEFT")
+        label:SetText(a.mine and (a.name .. " (this one)") or a.name)
+        local box = LinkBox(parent, 360, a.url)
+        box:SetPoint("TOPLEFT", 210, y)
+        links[#links + 1] = {name = a.name, url = a.url, box = box, label = label}
+        y = y - 26
+    end
+    return y, links
+end
+
 local function Button(parent, text, width, onClick)
     local b = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
     b:SetSize(width, 22)

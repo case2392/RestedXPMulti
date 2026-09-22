@@ -282,7 +282,7 @@ local function BuildEditor(win)
     local y = -2
     local titleLabel = Text(ed, "GameFontNormal")
     titleLabel:SetPoint("TOPLEFT", ed, "TOPLEFT", 4, y)
-    titleLabel:SetText("Title - a nickname under your name, like « The Explorer »")
+    titleLabel:SetText("Nickname (shown under your name)")
     ed.title = Frame("EditBox", nil, ed, "InputBoxTemplate")
     ed.title:SetSize(CARD_W - 20, 20)
     ed.title:SetPoint("TOPLEFT", ed, "TOPLEFT", 10, y - 18)

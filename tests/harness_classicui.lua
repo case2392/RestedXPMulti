@@ -1914,6 +1914,7 @@ do
     -- options panel
     local panel = w.ns.optionsPanel
     check(panel ~= nil and panel.checks.unitframes ~= nil and panel.checks.minimap ~= nil, "forever: options panel lists every part")
+    check(panel.links ~= nil and #panel.links == 2 and panel.links[1].label.text:find("this one", 1, true) ~= nil and panel.links[2].name == "Adventure Plates" and panel.links[2].box.text == "https://www.curseforge.com/wow/addons/adventure-plates" and panel.links[1].box.text == w.ns.FEEDBACK_URL, "forever: the other add-ons by RealJustinCase on the panel, with copyable addresses")
     -- a held-back part (none right now) is left out of both buttons
     local function Every(value)
         for _, key in ipairs(w.ns.moduleOrder) do

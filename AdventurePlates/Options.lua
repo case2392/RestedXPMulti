@@ -10,6 +10,57 @@ local SHARE = {
     {key = "off", label = "Nobody (my plate stays on this computer)"}
 }
 
+-- the other add-ons, with their pages in a box the player can copy from
+-- (the game opens no browser, so a copyable address is the link)
+ns.OTHER_ADDONS = {
+    {name = "Classic UI for Forever", url = "https://www.curseforge.com/wow/addons/classic-ui-for-forever", blurb = "the Classic Era look on WoW Forever"},
+    {name = "Adventure Plates", url = "https://www.curseforge.com/wow/addons/adventure-plates", blurb = "this one", mine = true}
+}
+
+local function LinkBox(parent, width, text)
+    local box = CreateFrame("EditBox", nil, parent, "InputBoxTemplate")
+    box:SetSize(width, 20)
+    box:SetAutoFocus(false)
+    if box.SetFontObject then box:SetFontObject("ChatFontNormal") end
+    box:SetText(text)
+    box:SetCursorPosition(0)
+    box:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+    -- a link nobody can edit away: any change puts it back
+    box:SetScript("OnTextChanged", function(self, user)
+        if user then
+            self:SetText(text)
+            self:HighlightText()
+        end
+    end)
+    box:SetScript("OnEditFocusGained", function(self) self:HighlightText() end)
+    return box
+end
+
+-- "More add-ons by RealJustinCase": a heading, then a name and a copyable
+-- address per add-on. Returns the y below it.
+function ns.BuildAddonLinks(parent, y)
+    local head = parent:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    head:SetPoint("TOPLEFT", 16, y)
+    head:SetText("More add-ons by RealJustinCase")
+    local hint = parent:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+    hint:SetPoint("LEFT", head, "RIGHT", 8, 0)
+    hint:SetText("(click an address and press Ctrl+C to copy it)")
+    y = y - 26
+    local links = {}
+    for _, a in ipairs(ns.OTHER_ADDONS) do
+        local label = parent:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+        label:SetPoint("TOPLEFT", 20, y - 2)
+        label:SetWidth(180)
+        label:SetJustifyH("LEFT")
+        label:SetText(a.mine and (a.name .. " (this one)") or a.name)
+        local box = LinkBox(parent, 360, a.url)
+        box:SetPoint("TOPLEFT", 210, y)
+        links[#links + 1] = {name = a.name, url = a.url, box = box, label = label}
+        y = y - 26
+    end
+    return y, links
+end
+
 local function Check(parent, y, label, get, set)
     local cb = CreateFrame("CheckButton", nil, parent, "UICheckButtonTemplate")
     cb:SetPoint("TOPLEFT", 16, y)
@@ -86,6 +137,8 @@ function ns.BuildOptionsPanel()
     feedback:SetJustifyH("LEFT")
     feedback:SetText("Bugs and suggestions: post a comment at " .. ns.FEEDBACK_URL .. " or email " .. ns.FEEDBACK_EMAIL .. ". /plate report gives you the details to paste.")
     panel.feedback = feedback
+    y = y - 40
+    y, panel.links = ns.BuildAddonLinks(panel, y)
 
     function panel.Refresh()
         for _, cb in pairs(panel.share) do cb:Refresh() end
