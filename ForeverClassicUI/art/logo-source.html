@@ -277,6 +277,81 @@
           fill="#f7e7b6" stroke="#2a0605" stroke-width="2" paint-order="stroke" letter-spacing="7">FOREVER</text>
   </g>
 </svg>
+<!-- D: C tuned for the 70px list view: B with more Warcraft in it: stone ring with runes and gems, crossed swords and a shield behind the UI, curved CLASSIC -->
+<svg id="d" width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+  
+
+  <rect width="512" height="512" rx="28" fill="#07080c"/>
+  <!-- inner disc -->
+  <circle cx="256" cy="256" r="230" fill="url(#bg3)"/>
+  <circle cx="256" cy="256" r="230" fill="url(#stone)"/>
+  <!-- light burst behind the centre -->
+  <circle cx="256" cy="250" r="120" fill="#4d7fc4" opacity="0.25" filter="url(#glow3)"/>
+
+  <!-- crossed swords -->
+  <g filter="url(#shadow3)">
+    <g transform="translate(256 300) rotate(-56)">
+      <path d="M0,-190 L12,-168 L12,46 L-12,46 L-12,-168 Z" fill="url(#steel3)" stroke="#2b2f36" stroke-width="2"/>
+      <line x1="0" y1="-150" x2="0" y2="30" stroke="#6f747c" stroke-width="2" opacity="0.7"/>
+      <rect x="-38" y="44" width="76" height="14" rx="4" fill="url(#goldFlat3)" stroke="#3b2607" stroke-width="2"/>
+      <rect x="-8" y="58" width="16" height="44" fill="#3a2314" stroke="#1d1108" stroke-width="2"/>
+      <circle cx="0" cy="112" r="12" fill="url(#goldFlat3)" stroke="#3b2607" stroke-width="2"/>
+    </g>
+    <g transform="translate(256 300) rotate(56)">
+      <path d="M0,-190 L12,-168 L12,46 L-12,46 L-12,-168 Z" fill="url(#steel3)" stroke="#2b2f36" stroke-width="2"/>
+      <line x1="0" y1="-150" x2="0" y2="30" stroke="#6f747c" stroke-width="2" opacity="0.7"/>
+      <rect x="-38" y="44" width="76" height="14" rx="4" fill="url(#goldFlat3)" stroke="#3b2607" stroke-width="2"/>
+      <rect x="-8" y="58" width="16" height="44" fill="#3a2314" stroke="#1d1108" stroke-width="2"/>
+      <circle cx="0" cy="112" r="12" fill="url(#goldFlat3)" stroke="#3b2607" stroke-width="2"/>
+    </g>
+  </g>
+
+  <!-- heraldic shield behind the UI -->
+  <g filter="url(#shadow3)">
+    <path d="M256,150 C300,170 330,172 352,170 L352,286 C352,342 300,378 256,398 C212,378 160,342 160,286 L160,170 C182,172 212,170 256,150 Z"
+          fill="url(#shield3)" stroke="url(#gold3)" stroke-width="8"/>
+    <path d="M256,163 C296,181 322,183 340,182 L340,284 C340,332 296,364 256,382 C216,364 172,332 172,284 L172,182 C190,183 216,181 256,163 Z"
+          fill="none" stroke="#f1d27a" stroke-width="1.5" opacity="0.45"/>
+  </g>
+
+  <!-- UI -->
+  <text x="256" y="336" text-anchor="middle" font-family="Cinzel, 'Liberation Serif', serif" font-weight="900" font-size="168"
+        fill="url(#steelText)" stroke="#0b0d12" stroke-width="7" paint-order="stroke" filter="url(#shadow3)" letter-spacing="6">UI</text>
+
+  <!-- the ring: gold, with an inner bead, rune notches and four gems -->
+  <circle cx="256" cy="256" r="234" fill="none" stroke="#2a1a05" stroke-width="22"/>
+  <circle cx="256" cy="256" r="234" fill="none" stroke="url(#gold3)" stroke-width="16"/>
+  <circle cx="256" cy="256" r="224" fill="none" stroke="#3b2607" stroke-width="3"/>
+  <circle cx="256" cy="256" r="244" fill="none" stroke="#3b2607" stroke-width="3"/>
+  
+  <g stroke="#3b2607" stroke-width="3" stroke-linecap="round">
+    <g id="notch"><line x1="256" y1="16" x2="256" y2="28"/></g>
+    <use href="#notch" transform="rotate(30 256 256)"/><use href="#notch" transform="rotate(60 256 256)"/>
+    <use href="#notch" transform="rotate(120 256 256)"/><use href="#notch" transform="rotate(150 256 256)"/>
+    <use href="#notch" transform="rotate(210 256 256)"/><use href="#notch" transform="rotate(240 256 256)"/>
+    <use href="#notch" transform="rotate(300 256 256)"/><use href="#notch" transform="rotate(330 256 256)"/>
+  </g>
+  <g stroke="#3b2607" stroke-width="2.5">
+    <g id="gemN"><circle cx="256" cy="22" r="9" fill="url(#gem)"/></g>
+    <use href="#gemN" transform="rotate(90 256 256)"/>
+    <use href="#gemN" transform="rotate(180 256 256)"/>
+    <use href="#gemN" transform="rotate(270 256 256)"/>
+  </g>
+
+  <!-- CLASSIC along the top of the disc -->
+  <text x="256" y="128" text-anchor="middle" font-family="Cinzel, 'Liberation Serif', serif" font-weight="900" font-size="82" fill="url(#gold3)"
+        stroke="#2a1a05" stroke-width="4" paint-order="stroke" filter="url(#shadow3)" letter-spacing="1">CLASSIC</text>
+
+  <!-- FOREVER ribbon -->
+  <g filter="url(#shadow3)">
+    <polygon points="64,394 120,394 120,462 64,462 86,428" fill="url(#ribbonDark3)" stroke="#2a0605" stroke-width="2"/>
+    <polygon points="448,394 392,394 392,462 448,462 426,428" fill="url(#ribbonDark3)" stroke="#2a0605" stroke-width="2"/>
+    <rect x="100" y="386" width="312" height="72" rx="6" fill="url(#ribbon3)" stroke="#2a0605" stroke-width="3"/>
+    <rect x="106" y="392" width="300" height="60" rx="4" fill="none" stroke="#e8b95a" stroke-width="1.5" opacity="0.7"/>
+    <text x="256" y="440" text-anchor="middle" font-family="Cinzel, 'Liberation Serif', serif" font-weight="900" font-size="52"
+          fill="#fff3cf" stroke="#2a0605" stroke-width="3" paint-order="stroke" letter-spacing="2">FOREVER</text>
+  </g>
+</svg>
 
 </div>
 </body>
