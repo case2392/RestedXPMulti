@@ -139,6 +139,145 @@
   </g>
 </svg>
 
+
+<!-- C: B with more Warcraft in it: stone ring with runes and gems, crossed swords and a shield behind the UI, curved CLASSIC -->
+<svg id="c" width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <radialGradient id="bg3" cx="50%" cy="42%" r="62%">
+      <stop offset="0" stop-color="#3b5a8a"/>
+      <stop offset="0.45" stop-color="#1b2c4c"/>
+      <stop offset="0.85" stop-color="#0b1220"/>
+      <stop offset="1" stop-color="#05080f"/>
+    </radialGradient>
+    <linearGradient id="gold3" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fff2b0"/>
+      <stop offset="0.35" stop-color="#e2b64a"/>
+      <stop offset="0.6" stop-color="#a8761c"/>
+      <stop offset="1" stop-color="#f3d77a"/>
+    </linearGradient>
+    <linearGradient id="goldFlat3" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f6dc86"/>
+      <stop offset="0.5" stop-color="#c99a34"/>
+      <stop offset="1" stop-color="#8a6116"/>
+    </linearGradient>
+    <linearGradient id="steel3" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#cfd3d9"/>
+      <stop offset="0.5" stop-color="#f4f6f8"/>
+      <stop offset="0.52" stop-color="#8d929b"/>
+      <stop offset="1" stop-color="#b9bec6"/>
+    </linearGradient>
+    <linearGradient id="steelText" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="0.45" stop-color="#d9dde3"/>
+      <stop offset="0.55" stop-color="#8f949c"/>
+      <stop offset="1" stop-color="#eef0f3"/>
+    </linearGradient>
+    <linearGradient id="ribbon3" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#a5221f"/>
+      <stop offset="0.5" stop-color="#7a1412"/>
+      <stop offset="1" stop-color="#4e0b0a"/>
+    </linearGradient>
+    <linearGradient id="ribbonDark3" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#5a0f0e"/>
+      <stop offset="1" stop-color="#360706"/>
+    </linearGradient>
+    <linearGradient id="shield3" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2a3550"/>
+      <stop offset="1" stop-color="#0d1322"/>
+    </linearGradient>
+    <radialGradient id="gem" cx="35%" cy="30%" r="70%">
+      <stop offset="0" stop-color="#bfe6ff"/>
+      <stop offset="0.4" stop-color="#2f8de0"/>
+      <stop offset="1" stop-color="#0b2d63"/>
+    </radialGradient>
+    <filter id="shadow3" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="5" stdDeviation="4" flood-color="#000" flood-opacity="0.85"/>
+    </filter>
+    <filter id="glow3" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="10" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <pattern id="stone" width="10" height="10" patternUnits="userSpaceOnUse">
+      <circle cx="2" cy="3" r="0.9" fill="#fff" opacity="0.05"/>
+      <circle cx="7" cy="8" r="0.7" fill="#000" opacity="0.35"/>
+    </pattern>
+    <path id="arcTop" d="M 91 256 A 165 165 0 0 1 421 256"/>
+  </defs>
+
+  <rect width="512" height="512" rx="28" fill="#07080c"/>
+  <!-- inner disc -->
+  <circle cx="256" cy="256" r="230" fill="url(#bg3)"/>
+  <circle cx="256" cy="256" r="230" fill="url(#stone)"/>
+  <!-- light burst behind the centre -->
+  <circle cx="256" cy="250" r="120" fill="#4d7fc4" opacity="0.25" filter="url(#glow3)"/>
+
+  <!-- crossed swords -->
+  <g filter="url(#shadow3)">
+    <g transform="translate(256 286) rotate(-52)">
+      <path d="M0,-206 L12,-184 L12,46 L-12,46 L-12,-184 Z" fill="url(#steel3)" stroke="#2b2f36" stroke-width="2"/>
+      <line x1="0" y1="-150" x2="0" y2="30" stroke="#6f747c" stroke-width="2" opacity="0.7"/>
+      <rect x="-38" y="44" width="76" height="14" rx="4" fill="url(#goldFlat3)" stroke="#3b2607" stroke-width="2"/>
+      <rect x="-8" y="58" width="16" height="44" fill="#3a2314" stroke="#1d1108" stroke-width="2"/>
+      <circle cx="0" cy="112" r="12" fill="url(#goldFlat3)" stroke="#3b2607" stroke-width="2"/>
+    </g>
+    <g transform="translate(256 286) rotate(52)">
+      <path d="M0,-206 L12,-184 L12,46 L-12,46 L-12,-184 Z" fill="url(#steel3)" stroke="#2b2f36" stroke-width="2"/>
+      <line x1="0" y1="-150" x2="0" y2="30" stroke="#6f747c" stroke-width="2" opacity="0.7"/>
+      <rect x="-38" y="44" width="76" height="14" rx="4" fill="url(#goldFlat3)" stroke="#3b2607" stroke-width="2"/>
+      <rect x="-8" y="58" width="16" height="44" fill="#3a2314" stroke="#1d1108" stroke-width="2"/>
+      <circle cx="0" cy="112" r="12" fill="url(#goldFlat3)" stroke="#3b2607" stroke-width="2"/>
+    </g>
+  </g>
+
+  <!-- heraldic shield behind the UI -->
+  <g filter="url(#shadow3)">
+    <path d="M256,158 C296,178 322,180 342,178 L342,280 C342,336 296,372 256,392 C216,372 170,336 170,280 L170,178 C190,180 216,178 256,158 Z"
+          fill="url(#shield3)" stroke="url(#gold3)" stroke-width="8"/>
+    <path d="M256,171 C292,189 316,191 331,190 L331,278 C331,326 292,358 256,376 C220,358 181,326 181,278 L181,190 C196,191 220,189 256,171 Z"
+          fill="none" stroke="#f1d27a" stroke-width="1.5" opacity="0.45"/>
+  </g>
+
+  <!-- UI -->
+  <text x="256" y="330" text-anchor="middle" font-family="Cinzel, 'Liberation Serif', serif" font-weight="900" font-size="150"
+        fill="url(#steelText)" stroke="#0b0d12" stroke-width="7" paint-order="stroke" filter="url(#shadow3)" letter-spacing="6">UI</text>
+
+  <!-- the ring: gold, with an inner bead, rune notches and four gems -->
+  <circle cx="256" cy="256" r="228" fill="none" stroke="#2a1a05" stroke-width="30"/>
+  <circle cx="256" cy="256" r="228" fill="none" stroke="url(#gold3)" stroke-width="24"/>
+  <circle cx="256" cy="256" r="214" fill="none" stroke="#3b2607" stroke-width="3"/>
+  <circle cx="256" cy="256" r="242" fill="none" stroke="#3b2607" stroke-width="3"/>
+  <circle cx="256" cy="256" r="218" fill="none" stroke="#f7e3a0" stroke-width="1.5" opacity="0.5"/>
+  <g stroke="#3b2607" stroke-width="3" stroke-linecap="round">
+    <g id="notch"><line x1="256" y1="18" x2="256" y2="34"/></g>
+    <use href="#notch" transform="rotate(30 256 256)"/><use href="#notch" transform="rotate(60 256 256)"/>
+    <use href="#notch" transform="rotate(120 256 256)"/><use href="#notch" transform="rotate(150 256 256)"/>
+    <use href="#notch" transform="rotate(210 256 256)"/><use href="#notch" transform="rotate(240 256 256)"/>
+    <use href="#notch" transform="rotate(300 256 256)"/><use href="#notch" transform="rotate(330 256 256)"/>
+  </g>
+  <g stroke="#3b2607" stroke-width="2.5">
+    <g id="gemN"><circle cx="256" cy="28" r="11" fill="url(#gem)"/></g>
+    <use href="#gemN" transform="rotate(90 256 256)"/>
+    <use href="#gemN" transform="rotate(180 256 256)"/>
+    <use href="#gemN" transform="rotate(270 256 256)"/>
+  </g>
+
+  <!-- CLASSIC along the top of the disc -->
+  <text font-family="Cinzel, 'Liberation Serif', serif" font-weight="900" font-size="50" fill="url(#gold3)"
+        stroke="#2a1a05" stroke-width="3" paint-order="stroke" filter="url(#shadow3)" letter-spacing="6">
+    <textPath href="#arcTop" startOffset="50%" text-anchor="middle">CLASSIC</textPath>
+  </text>
+
+  <!-- FOREVER ribbon -->
+  <g filter="url(#shadow3)">
+    <polygon points="84,398 136,398 136,452 84,452 104,425" fill="url(#ribbonDark3)" stroke="#2a0605" stroke-width="2"/>
+    <polygon points="428,398 376,398 376,452 428,452 408,425" fill="url(#ribbonDark3)" stroke="#2a0605" stroke-width="2"/>
+    <rect x="116" y="390" width="280" height="60" rx="6" fill="url(#ribbon3)" stroke="#2a0605" stroke-width="3"/>
+    <rect x="122" y="396" width="268" height="48" rx="4" fill="none" stroke="#e8b95a" stroke-width="1.5" opacity="0.7"/>
+    <text x="256" y="434" text-anchor="middle" font-family="Cinzel, 'Liberation Serif', serif" font-weight="700" font-size="38"
+          fill="#f7e7b6" stroke="#2a0605" stroke-width="2" paint-order="stroke" letter-spacing="7">FOREVER</text>
+  </g>
+</svg>
+
 </div>
 </body>
 </html>
