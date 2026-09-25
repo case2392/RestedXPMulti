@@ -52,7 +52,7 @@ local DEFAULTS = {
 function ns.Print(fmt, ...)
     local msg = fmt
     if select("#", ...) > 0 then msg = fmt:format(...) end
-    print("|cFF66CCFFClassic UI for Forever|r: " .. msg)
+    print("|cFF66CCFFClassic UI (Forever)|r: " .. msg)
 end
 
 function ns.RegisterModule(name, mod)
@@ -163,8 +163,107 @@ function ns.SetPart(key, on)
     return true
 end
 
+--------------------------------------------------------------------------
+-- a second copy of the addon (an old folder left beside a new one, or a
+-- renamed folder next to the original) loads too, and both draw their
+-- frames: a 0.7.25 report had every skin frame twice, one at the old
+-- offsets. The newest copy runs; any other copy is switched off in the
+-- AddOns list and named, so the folder can be deleted.
+--------------------------------------------------------------------------
+
+ns.NAME = "Classic UI (Forever)"
+-- the titles this addon has shipped under, so an older copy is recognised
+local OUR_TITLES = {["classic ui (forever)"] = true, ["classic ui for forever"] = true}
+
+local function VersionParts(v)
+    local t = {}
+    for n in tostring(v or ""):gmatch("%d+") do t[#t + 1] = tonumber(n) end
+    return t
+end
+
+-- 1 when a is newer than b, -1 when older, 0 when the same
+function ns.CompareVersions(a, b)
+    local pa, pb = VersionParts(a), VersionParts(b)
+    for i = 1, math.max(#pa, #pb) do
+        local x, y = pa[i] or 0, pb[i] or 0
+        if x ~= y then return x > y and 1 or -1 end
+    end
+    return 0
+end
+
+local function AddOnAPI()
+    local num = (C_AddOns and C_AddOns.GetNumAddOns) or GetNumAddOns
+    local info = (C_AddOns and C_AddOns.GetAddOnInfo) or GetAddOnInfo
+    local meta = (C_AddOns and C_AddOns.GetAddOnMetadata) or GetAddOnMetadata
+    local loaded = (C_AddOns and C_AddOns.IsAddOnLoaded) or IsAddOnLoaded
+    local disable = (C_AddOns and C_AddOns.DisableAddOn) or DisableAddOn
+    if not num or not info or not meta then return nil end
+    return {num = num, info = info, meta = meta, loaded = loaded, disable = disable}
+end
+
+-- every other loaded addon that is this addon under another folder name:
+-- {folder, version, newer} for each, newest first
+function ns.FindOtherCopies()
+    local api = AddOnAPI()
+    local found = {}
+    if not api then return found end
+    local ok, count = pcall(api.num)
+    if not ok or type(count) ~= "number" then return found end
+    for i = 1, count do
+        local okI, folder = pcall(api.info, i)
+        if okI and type(folder) == "string" and folder ~= addonName then
+            local okT, title = pcall(api.meta, folder, "Title")
+            local lowerFolder = folder:lower()
+            local isCopy = (okT and type(title) == "string" and OUR_TITLES[title:lower():gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")])
+                or lowerFolder:find("foreverclassicui", 1, true) ~= nil
+            if isCopy then
+                local okL, isLoaded = pcall(function() return api.loaded and api.loaded(folder) end)
+                if not api.loaded or (okL and isLoaded) then
+                    local okV, version = pcall(api.meta, folder, "Version")
+                    version = (okV and type(version) == "string" and version ~= "" and version) or "?"
+                    local cmp = ns.CompareVersions(version, ns.VERSION)
+                    -- the same version twice: the folder that sorts first runs
+                    local newer = cmp > 0 or (cmp == 0 and folder < addonName)
+                    found[#found + 1] = {folder = folder, version = version, newer = newer}
+                end
+            end
+        end
+    end
+    table.sort(found, function(a, b) return ns.CompareVersions(a.version, b.version) > 0 end)
+    return found
+end
+
+-- returns true when this copy should run
+local function ClaimSingleCopy()
+    local ok, others = pcall(ns.FindOtherCopies)
+    if not ok then return true end
+    ns.otherCopies = others
+    if #others == 0 then return true end
+    for _, o in ipairs(others) do
+        if o.newer then
+            ns.yieldedTo = o.folder
+            ns.Print("another copy of this addon is installed in Interface\\AddOns\\%s (version %s), newer than this one (%s, version %s). This copy stays off; delete one of the two folders.",
+                     o.folder, o.version, addonName, ns.VERSION)
+            return false
+        end
+    end
+    local api = AddOnAPI()
+    local names = {}
+    for _, o in ipairs(others) do
+        names[#names + 1] = ("%s (version %s)"):format(o.folder, o.version)
+        if api and api.disable then pcall(api.disable, o.folder) end
+    end
+    ns.Print("a second copy of this addon was found: %s. Two copies draw everything twice, so the other one has been switched off in the AddOns list; delete its folder from Interface\\AddOns and type /reload.",
+             table.concat(names, ", "))
+    -- this copy owns the slash command and the global, whichever loaded last
+    if SlashCmdList then SlashCmdList["CLASSICUI"] = ns.HandleSlash end
+    _G.ForeverClassicUI = ns
+    return true
+end
+
 function ns.OnLogin()
     if not ns.db then ns.InitDB() end
+    if not ClaimSingleCopy() then return end
     local off, soon = {}, {}
     for _, name in ipairs(ns.moduleOrder) do
         if ns.IsComingSoon(name) then
@@ -222,7 +321,7 @@ local function PrintHelp()
     ns.Print("  /cui questlog on|off|force - Era's page on the map window and its quest list")
     ns.Print("  /cui collections on|off|force - Era's page on the Appearances window")
     ns.Print("  /cui guild on|off|force - Era's page on the Guild & Communities window")
-    ns.Print("  /cui options - open the settings panel (Options > AddOns > Classic UI for Forever)")
+    ns.Print("  /cui options - open the settings panel (Options > AddOns > Classic UI (Forever))")
     ns.Print("  /cui report - everything for support in one window: probe, every frame, Lua errors")
     ns.Print("  /cui report all - the same including hidden parts (use this on Classic Era for comparison)")
     ns.Print("  /cui probe - client report only")

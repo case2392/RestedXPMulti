@@ -229,7 +229,7 @@ function ns.BuildProbe()
         out[#out + 1] = fmt
     end
 
-    line("Classic UI for Forever %s probe", ns.VERSION)
+    line("Classic UI (Forever) %s probe", ns.VERSION)
     if GetBuildInfo then
         local version, build, date, toc = GetBuildInfo()
         line("client: version %s build %s (%s) toc %s", tostring(version),
@@ -254,6 +254,16 @@ function ns.BuildProbe()
     line("")
     line("-- settings (saved) and module state")
     line("addon folder: %s", tostring(addonName))
+    -- a second copy under another folder draws everything twice
+    local copies = ns.otherCopies or {}
+    if #copies == 0 then
+        line("other copies installed: none")
+    else
+        local parts = {}
+        for _, o in ipairs(copies) do parts[#parts + 1] = ("%s (version %s)"):format(o.folder, o.version) end
+        line("other copies installed: %s%s", table.concat(parts, ", "),
+             ns.yieldedTo and ("  - this copy stayed off, " .. ns.yieldedTo .. " is newer") or "  - switched off, delete the folder")
+    end
     line("saved file found at login: %s  logins counted in it: %s  (a /reload should raise the count; if not, the client is not writing ForeverClassicUI.lua)",
          yn(ns.dbLoaded), tostring(ns.db and ns.db.logins))
     line("settings came from: %s", tostring(ns.dbSource))
@@ -529,7 +539,7 @@ local function CreateProbeFrame()
 
     local title = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     title:SetPoint("TOP", 0, -16)
-    title:SetText("Classic UI for Forever probe - Ctrl+A, Ctrl+C, then paste it to me")
+    title:SetText("Classic UI (Forever) probe - Ctrl+A, Ctrl+C, then paste it to me")
 
     local close = CreateFrame("Button", nil, f, "UIPanelCloseButton")
     close:SetPoint("TOPRIGHT", -6, -6)
@@ -742,7 +752,7 @@ function ns.BuildDump(name, includeHidden)
     if type(frame) ~= "table" then
         return nil, ("no frame called %s"):format(tostring(name))
     end
-    local out = {("Classic UI for Forever %s - dump of %s (%s)"):format(ns.VERSION, name, includeHidden and "all parts, hidden ones marked" or "visible parts only")}
+    local out = {("Classic UI (Forever) %s - dump of %s (%s)"):format(ns.VERSION, name, includeHidden and "all parts, hidden ones marked" or "visible parts only")}
     Walk(frame, name, 0, out, {}, includeHidden)
     return table.concat(out, "\n")
 end
@@ -781,7 +791,7 @@ local REPORT_FRAMES_OPEN = {"CharacterFrame", "PlayerSpellsFrame", "SpellBookFra
 -- the report is meant to be pasted somewhere public, so it says what it
 -- is and where it goes on its own first two lines
 local function ReportHeader()
-    return ("-- Classic UI for Forever bug report\n-- Paste this, and a screenshot of what looks wrong, as a comment on:\n--   %s\n-- A comment has a length limit and this report can run past it. If it\n-- will not fit, email it instead - either one reaches me:\n--   %s")
+    return ("-- Classic UI (Forever) bug report\n-- Paste this, and a screenshot of what looks wrong, as a comment on:\n--   %s\n-- A comment has a length limit and this report can run past it. If it\n-- will not fit, email it instead - either one reaches me:\n--   %s")
         :format(tostring(ns.FEEDBACK_URL or "the addon's page"),
                 tostring(ns.FEEDBACK_EMAIL or "the address on the addon's page"))
 end

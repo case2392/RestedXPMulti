@@ -55,6 +55,15 @@ local function OnClassicStyle()
     return tonumber(GetCVarSafe("nameplateStyle")) == CLASSIC_STYLE
 end
 
+-- the style CVar's flags: secure (only the player's own typing may set it)
+-- and lockedFromUser (nobody may). Both nil where the client cannot say.
+function M.CVarFlags()
+    if not (C_CVar and C_CVar.GetCVarInfo) then return nil, nil end
+    local ok, _, _, _, _, locked, secure = pcall(C_CVar.GetCVarInfo, "nameplateStyle")
+    if not ok then return nil, nil end
+    return secure == true, locked == true
+end
+
 --------------------------------------------------------------------------
 -- path 1: the built-in classic style (set the CVar - non-secret clients only)
 --------------------------------------------------------------------------
@@ -467,9 +476,22 @@ local function SetClassicAndReload()
         ns.Print("nameplates: classic style set, reloading the UI.")
         if C_UI and C_UI.Reload then C_UI.Reload() elseif ReloadUI then ReloadUI() end
     else
-        M.refused = ("client refused nameplateStyle=%d (still %s)"):format(CLASSIC_STYLE, tostring(GetCVarSafe("nameplateStyle")))
-        ns.Print("nameplates: this client refused nameplateStyle=%d (it is still %s). Blizzard's code for the classic plates is all there, but the setting is locked on this build; nothing an addon can do. Run /cui probe and send me the report.",
-                 CLASSIC_STYLE, tostring(GetCVarSafe("nameplateStyle")))
+        local after = tostring(GetCVarSafe("nameplateStyle"))
+        local secure, locked = M.CVarFlags()
+        if secure then
+            -- a "secure" CVar takes its value only from the player's own
+            -- typing (the console line), never from addon code
+            M.refused = ("nameplateStyle is a secure CVar on this build: only  %s  (typed by you) can set it, then /reload"):format(M.CONSOLE_COMMAND)
+            ns.Print("nameplates: this build marks nameplateStyle as secure, so an addon cannot set it (it is still %s). Type  %s  yourself, then /reload. If the plates still do not change, run /cui probe after and send me the report.",
+                     after, M.CONSOLE_COMMAND)
+        elseif locked then
+            M.refused = "nameplateStyle is locked from the player on this build"
+            ns.Print("nameplates: this build locks nameplateStyle (it is still %s); neither the console nor an addon can change it. Run /cui probe and send me the report.", after)
+        else
+            M.refused = ("client refused nameplateStyle=%d (still %s)"):format(CLASSIC_STYLE, after)
+            ns.Print("nameplates: this client refused nameplateStyle=%d (it is still %s). Blizzard's code for the classic plates is all there, but the setting is locked on this build; nothing an addon can do. Run /cui probe and send me the report.",
+                     CLASSIC_STYLE, after)
+        end
     end
 end
 

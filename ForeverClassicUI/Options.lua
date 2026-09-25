@@ -106,14 +106,14 @@ end
 function ns.BuildOptionsPanel()
     if panel or not CreateFrame then return panel end
     panel = CreateFrame("Frame", "ForeverClassicUIOptionsPanel")
-    panel.name = "Classic UI for Forever"
+    panel.name = "Classic UI (Forever)"
 
     local scroll, body = BuildScroll(panel)
     panel.scroll, panel.body = scroll, body
 
     local title = body:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
     title:SetPoint("TOPLEFT", 16, -16)
-    title:SetText("Classic UI for Forever")
+    title:SetText("Classic UI (Forever)")
     local sub = body:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
     sub:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -6)
     sub:SetText("Tick what should look classic. Turning something off takes effect after /reload. Slash: /cui")

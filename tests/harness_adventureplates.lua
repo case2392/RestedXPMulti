@@ -540,7 +540,7 @@ do
     check(Printed(ns.FEEDBACK_URL) and Printed(ns.FEEDBACK_EMAIL), "link: both places printed")
     check(ns.optionsPanel.report ~= nil and ns.optionsPanel.feedback.text:find(ns.FEEDBACK_EMAIL, 1, true) ~= nil, "options: the report button and the addresses")
     local links = ns.optionsPanel.links
-    check(links ~= nil and #links == 2 and links[1].name == "Classic UI for Forever" and links[1].box.text == "https://www.curseforge.com/wow/addons/classic-ui-for-forever" and links[2].box.text == ns.FEEDBACK_URL and links[2].label.text:find("this one", 1, true) ~= nil, "options: the other add-ons by RealJustinCase, with copyable addresses")
+    check(links ~= nil and #links == 2 and links[1].name == "Classic UI (Forever)" and links[1].box.text == "https://www.curseforge.com/wow/addons/classic-ui-for-forever" and links[2].box.text == ns.FEEDBACK_URL and links[2].label.text:find("this one", 1, true) ~= nil, "options: the other add-ons by RealJustinCase, with copyable addresses")
     check(#ns.errors == 0 and #ns2.errors == 0 and #ns3.errors == 0, "no errors")
 end
 

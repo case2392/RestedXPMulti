@@ -1,9 +1,9 @@
-# Classic UI for Forever
+# Classic UI (Forever)
 
 Brings the classic look back on *World of Warcraft Forever*: nameplates,
 cast bars, combo points, player, target, pet and party frames, the character sheet,
 the spellbook, the whole classic bottom bar and the minimap. Every part has its own switch under Options > AddOns >
-Classic UI for Forever, with Select all / Deselect all buttons. On Classic Era it recognises the classic look is already
+Classic UI (Forever), with Select all / Deselect all buttons. On Classic Era it recognises the classic look is already
 there and does nothing, which makes it safe to test today.
 
 Forever runs the retail UI engine with a "Camelot" flavor on top (that is
@@ -479,7 +479,7 @@ takes the other parts down.
 | `/cui combo offset <x> <y>` | Nudge the dots if the target frame art differs (no numbers = reset) |
 | `/cui combo force` | Draw the classic combo points right now, replacing Blizzard's (testing) |
 | `/cui unitframes\|party\|charsheet\|spellbook\|actionbars\|minimap\|tracker on\|off\|force` | The other parts |
-| `/cui options` | Open the settings panel (Options > AddOns > Classic UI for Forever) |
+| `/cui options` | Open the settings panel (Options > AddOns > Classic UI (Forever)) |
 | `/cui report` | Everything for support in one copyable window: the probe, a dump of every frame the addon touches (plus your target's nameplate), and the last Lua errors the client raised |
 | `/cui report all` | The same including hidden pieces (marked). Run it on Classic Era with a mob targeted to capture the exact classic layout for comparison |
 | `/cui probe` | The client report on its own |
@@ -511,6 +511,21 @@ was tuned from a 0.6.0 report (bag border, keyring and reagent bag, micro
 row, XP dividers); the party frames are built from Era's layout files and
 Forever's frame dumps and still need a look on Forever: `/cui report all`
 while grouped, with a screenshot, is what tunes them.
+
+A build 70009 probe (0.7.25) showed `nameplateStyle` flagged `secure`:
+the client takes that value only from the player's own typing, never from
+addon code, so `/cui nameplates classic` on such a build says so and names
+the console line to type (`/console nameplateStyle 6`, then `/reload`)
+instead of claiming the style is locked. The same probe listed every skin
+frame twice, one set at the offsets of an older release: two copies of the
+addon were installed under two folder names. Since 0.7.26 the newest copy
+runs, switches the other off in the AddOns list, says which folder to
+delete, and `/cui probe` lists the other copies it found.
+
+The target's name string is a secret on this client (its width cannot be
+read from addon code), so the long-name fit measures under `pcall` and
+leaves Blizzard's size when it cannot measure; the unitframes status line
+says so.
 
 Settings are kept in the usual SavedVariables file and, because the beta
 was seen never writing that file, also in a CVar of the addon's own

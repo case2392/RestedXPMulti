@@ -9,7 +9,7 @@
 -- own size, edges stretch along their run, and the middle is a patch of
 -- plain parchment stretched over the inside. A dark disc sits behind the
 -- portrait hole and the plate puts a portrait in it. This is the same
--- cut Classic UI for Forever uses; it lives here too so this addon needs
+-- cut Classic UI (Forever) uses; it lives here too so this addon needs
 -- nothing else installed.
 
 local addonName, ns = ...

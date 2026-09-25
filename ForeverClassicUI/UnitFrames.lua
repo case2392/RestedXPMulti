@@ -342,6 +342,16 @@ end
 -- art's strip is 119px: a name that overruns it steps down a point size
 -- or two rather than losing its last letters. Re-fitted after every
 -- SetText, since Blizzard rewrites the name on every unit update.
+-- On Forever the target's name string is a secret (its width and text
+-- cannot be read by an addon, a 0.7.25 report: "attempt to compare local
+-- 'width' (a secret number value)"), so the measuring runs under pcall:
+-- a name that cannot be measured keeps Blizzard's size.
+M.secretReads = 0
+local function Measure(fs)
+    local width = fs.GetWidth and fs:GetWidth() or NAME_WIDTH
+    if not width or width <= 0 then width = NAME_WIDTH end
+    return fs:GetStringWidth() > width
+end
 local function FitName(fs)
     if not fs or not fs.GetStringWidth or not fs.GetFont or not fs.SetFont then return end
     local ok, path, size, flags = pcall(fs.GetFont, fs)
@@ -349,10 +359,16 @@ local function FitName(fs)
     local own = Own(fs)
     own.fontSize = own.fontSize or size
     if size ~= own.fontSize then fs:SetFont(path, own.fontSize, flags) end
-    local width = fs.GetWidth and fs:GetWidth() or NAME_WIDTH
-    if not width or width <= 0 then width = NAME_WIDTH end
+    if own.secret then return end
     local s = own.fontSize
-    while s > own.fontSize - 2 and fs:GetStringWidth() > width do
+    while s > own.fontSize - 2 do
+        local okM, over = pcall(Measure, fs)
+        if not okM then
+            own.secret = true
+            M.secretReads = M.secretReads + 1
+            return
+        end
+        if not over then return end
         s = s - 1
         fs:SetFont(path, s, flags)
     end
@@ -874,7 +890,11 @@ end
 
 function M:Status()
     if M.mode == "native" then return "(client already draws the classic frames)" end
-    if M.mode == "restyled" then return "(player/target/pet re-skinned to classic art)" end
+    if M.mode == "restyled" then
+        local s = "(player/target/pet re-skinned to classic art"
+        if M.secretReads > 0 then s = s .. "; a name's width is secret on this client, so it keeps Blizzard's size" end
+        return s .. ")"
+    end
     if M.mode == "deferred" then return "(waiting for combat to end)" end
     if M.mode == "unavailable" then return "(unavailable on this client)" end
     return ""

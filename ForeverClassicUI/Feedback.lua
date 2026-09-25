@@ -40,7 +40,7 @@ local function Guard(label, fn)
 end
 
 local WELCOME_LINES = {
-    "Thank you for installing Classic UI for Forever.",
+    "Thank you for installing Classic UI (Forever).",
     "",
     "Forever is in beta and so is this addon. Two things are worth a report, and both take the same minute:",
     "",
@@ -109,7 +109,7 @@ ns.LinkBox = LinkBox
 -- the author's other add-ons, with their pages in a box the player can
 -- copy from (the game opens no browser, so a copyable address is the link)
 ns.OTHER_ADDONS = {
-    {name = "Classic UI for Forever", url = ns.FEEDBACK_URL, mine = true},
+    {name = "Classic UI (Forever)", url = ns.FEEDBACK_URL, mine = true},
     {name = "Adventure Plates", url = "https://www.curseforge.com/wow/addons/adventure-plates", blurb = "an adventurer card for your character, like FFXIV's"}
 }
 
@@ -166,7 +166,7 @@ local function BuildWelcome()
     end
     f.title = f:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     f.title:SetPoint("TOP", f, "TOP", 0, -18)
-    f.title:SetText("Classic UI for Forever")
+    f.title:SetText("Classic UI (Forever)")
 
     f.body = f:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
     f.body:SetPoint("TOPLEFT", f, "TOPLEFT", 22, -48)
@@ -289,7 +289,7 @@ local function BuildMinimapButton()
     b:SetScript("OnEnter", function(self)
         if not GameTooltip then return end
         GameTooltip:SetOwner(self, "ANCHOR_LEFT")
-        GameTooltip:SetText("Classic UI for Forever")
+        GameTooltip:SetText("Classic UI (Forever)")
         GameTooltip:AddLine("Left click: the bug report window")
         GameTooltip:AddLine("Right click: settings")
         GameTooltip:AddLine("Drag: move me round the minimap")
@@ -344,7 +344,7 @@ local function BuildNotice()
     f.text:SetWidth(344)
     f.text:SetJustifyH("LEFT")
     if f.text.SetWordWrap then f.text:SetWordWrap(true) end
-    f.text:SetText("Classic UI for Forever hit an error. Open the report and paste it on the addon page, or email it to " .. tostring(ns.FEEDBACK_EMAIL) .. " if it is too long for a comment: that is how it gets fixed.")
+    f.text:SetText("Classic UI (Forever) hit an error. Open the report and paste it on the addon page, or email it to " .. tostring(ns.FEEDBACK_EMAIL) .. " if it is too long for a comment: that is how it gets fixed.")
     f.report = Button(f, "Open the report", 130, Guard("notice report", function()
         OpenReport()
         f:Hide()

@@ -5,7 +5,7 @@ a card anyone can open on anyone, with your model, your name and a title
 of your choosing, your guild and rank, your level, race and class, the
 roles you play, up to four playstyle tags, when you are usually on, and a
 motto. Drawn on Classic Era's page (the same spellbook-page cut that
-Classic UI for Forever uses, kept here so nothing else is needed), with
+Classic UI (Forever) uses, kept here so nothing else is needed), with
 your face in the ring. Built for World of Warcraft Forever; it also loads
 on Classic Era. Inspired by the streamer Shobek asking for FFXIV's
 adventurer plates in Forever.

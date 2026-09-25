@@ -13,7 +13,7 @@ local SHARE = {
 -- the other add-ons, with their pages in a box the player can copy from
 -- (the game opens no browser, so a copyable address is the link)
 ns.OTHER_ADDONS = {
-    {name = "Classic UI for Forever", url = "https://www.curseforge.com/wow/addons/classic-ui-for-forever", blurb = "the Classic Era look on WoW Forever"},
+    {name = "Classic UI (Forever)", url = "https://www.curseforge.com/wow/addons/classic-ui-for-forever", blurb = "the Classic Era look on WoW Forever"},
     {name = "Adventure Plates", url = "https://www.curseforge.com/wow/addons/adventure-plates", blurb = "this one", mine = true}
 }
 

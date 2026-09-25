@@ -375,7 +375,26 @@ local function NewWorld(opts)
     _G.WOW_PROJECT_ID = 2
     _G.WOW_PROJECT_CLASSIC = 2
     _G.WOW_PROJECT_MAINLINE = 1
-    _G.C_AddOns = {IsAddOnLoaded = function(n) return n == "Blizzard_NamePlates" end}
+    -- the AddOns list: this addon plus whatever a world installs beside it
+    -- (opts.addons = {{name, title, version}}: another copy under another folder)
+    w.addons = {{name = "ForeverClassicUI", title = "Classic UI (Forever)", version = "0.7.26"}}
+    for _, a in ipairs(opts.addons or {}) do w.addons[#w.addons + 1] = a end
+    w.disabledAddons = {}
+    _G.C_AddOns = {
+        IsAddOnLoaded = function(n)
+            if n == "Blizzard_NamePlates" then return true end
+            for _, a in ipairs(w.addons) do if a.name == n then return true end end
+            return false
+        end,
+        GetNumAddOns = function() return #w.addons end,
+        GetAddOnInfo = function(i) local a = w.addons[i]; return a.name, a.title, "", true, nil, "INSECURE" end,
+        GetAddOnMetadata = function(n, field)
+            for _, a in ipairs(w.addons) do
+                if a.name == n then return field == "Title" and a.title or field == "Version" and a.version or nil end
+            end
+        end,
+        DisableAddOn = function(n) w.disabledAddons[n] = true end
+    }
     _G.GetFileIDFromPath = function(p) if p:find("Nameplate") then return 130000 end if p:find("MainMenuBar") or p:find("Interface\\Buttons\\UI%-") then return 136407 end end
 
     -- Blizzard nameplate globals (same shape on every client)
@@ -1538,6 +1557,20 @@ do
         local w3 = NewWorld({style = "6", noClassicEnum = true, forever = true, savedDB = w2.ns.db})
         check(w3.ns.modules.nameplates.mode == "cvar" and w3.plates[1].UnitFrame.PlayerLevelDiffFrame.alpha == 0, "forever: after the reload the classic plates are on and the badge hidden")
     end
+    -- the 0.7.25 probe: nameplateStyle is a secure CVar (secure=true, lockedFromUser=false), so an addon's
+    -- SetCVar is refused while the player's own /console line is not: the command says exactly that
+    do
+        local w4 = NewWorld({style = "1", maxStyle = 5, noClassicEnum = true, forever = true})
+        _G.C_CVar.GetCVarInfo = function(n) return w4.cvars[n], "1", true, false, false, true, false end
+        printed = {}
+        w4.slash("nameplates classic")
+        local np4 = w4.ns.modules.nameplates
+        check(w4.cvars.nameplateStyle == "1" and w4.reloaded == nil and Printed("marks nameplateStyle as secure") and Printed("/console nameplateStyle 6") and np4:Status():find("secure CVar", 1, true) ~= nil, "forever: a secure style CVar is named as such, with the console line to type")
+        _G.C_CVar.GetCVarInfo = function(n) return w4.cvars[n], "1", true, false, true, false, false end
+        printed = {}
+        w4.slash("nameplates classic")
+        check(Printed("locks nameplateStyle") and np4:Status():find("locked from the player", 1, true) ~= nil, "forever: a locked style CVar is named as such")
+    end
     -- back to the clamped world for the rest
     w = NewWorld({style = "1", maxStyle = 5, noClassicEnum = true, forever = true})
     np = w.ns.modules.nameplates
@@ -1667,6 +1700,14 @@ do
     check(tm.Name.width == 119 and tm.Name.anchors[1][4] == -34, "forever: target name box the width of the strip")
     tm.Name:SetText("Mithrilsilvermaneofdo")
     check(tm.Name.fontSize == 9, "forever: a long target name is fitted too")
+    -- 0.7.25 report: the target's name width is a secret on Forever ("attempt to compare local 'width'
+    -- (a secret number value)"): the fit gives up and leaves Blizzard's size, no error
+    tm.Name:SetText("Mithril")
+    local realGetWidth = tm.Name.GetWidth
+    function tm.Name:GetWidth() return setmetatable({__secret = true}, {__lt = function() error("attempt to compare a secret number value") end, __le = function() error("attempt to compare a secret number value") end}) end
+    local okFit = pcall(tm.Name.SetText, tm.Name, "Mithrilsilvermaneofdoomxx")
+    check(okFit and tm.Name.fontSize == 10 and uf.secretReads == 1 and uf:Status():find("width is secret", 1, true) ~= nil, "forever: a secret name width leaves Blizzard's size, counted for the report")
+    tm.Name.GetWidth = realGetWidth
     check(tm.HealthBarsContainer.HealthBar.fill.maskRemoved == tm.HealthBarsContainer.HealthBarMask and tm.HealthBarsContainer.HealthBarMask.texture == "Interface\\Buttons\\WHITE8x8" and tc.PortraitMask.atlas == "CircleMask", "forever: target bar mask neutralised, portrait round")
     check(uf.own[TargetFrame].backdrop.height == 25 and uf.own[TargetFrame].backdrop.anchors[1][1] == "TOPRIGHT", "forever: target backdrop is Era's 119x25")
     local tlvl = tskin.levelText
@@ -1931,7 +1972,7 @@ do
     panel.checks.minimap:Click()
     check(w.ns.db.minimap == false and w.ns.modules.minimap.mode == "off", "forever: unticking a part turns it off")
     w.slash("options")
-    check(_G.__openedCategory == "cat_Classic UI for Forever", "forever: /cui options opens the panel")
+    check(_G.__openedCategory == "cat_Classic UI (Forever)", "forever: /cui options opens the panel")
     check(#w.ns.errors == 0, "forever: no errors")
 end
 
@@ -2002,7 +2043,7 @@ do
     w.slash("dump TargetFrame")
     check(w.ns.lastDump:find("TargetFrame", 1, true) and w.ns.lastDump:find("Name  FontString", 1, true) and not Printed("dump hit an error"), "beta: a frame whose shown state is secret is still listed, not dropped and not fatal")
     w.slash("report")
-    check(w.ns.lastReport ~= nil and w.ns.lastReport:find("Classic UI for Forever bug report", 1, true) and not Printed("report hit an error"), "beta: the whole report survives a secret shown state")
+    check(w.ns.lastReport ~= nil and w.ns.lastReport:find("Classic UI (Forever) bug report", 1, true) and not Printed("report hit an error"), "beta: the whole report survives a secret shown state")
     secretRegion.IsShown, TargetFrame.IsShown = nil, nil
     check(#w.ns.errors == 0, "beta: no errors")
 end
@@ -2812,10 +2853,10 @@ do
     check(button ~= nil and button.shown ~= false and button.parent == Minimap and button.icon.texture == "Interface\\Spellbook\\Spellbook-Icon", "feedback: a minimap button with the book icon")
     check(button.anchors[1][2] == Minimap and button.anchors[1][1] == "CENTER", "feedback: it sits on the minimap ring")
     button.scripts.OnEnter(button)
-    check(GameTooltip.lines[1] == "Classic UI for Forever" and GameTooltip.lines[2]:find("bug report", 1, true), "feedback: its tooltip says what it does")
+    check(GameTooltip.lines[1] == "Classic UI (Forever)" and GameTooltip.lines[2]:find("bug report", 1, true), "feedback: its tooltip says what it does")
     ns.lastProbe = nil
     button.scripts.OnClick(button, "LeftButton")
-    check(ns.lastProbe ~= nil and ns.lastProbe:find("Classic UI for Forever bug report", 1, true), "feedback: left click opens the report")
+    check(ns.lastProbe ~= nil and ns.lastProbe:find("Classic UI (Forever) bug report", 1, true), "feedback: left click opens the report")
     -- dragging round the ring keeps the angle
     button.scripts.OnDragStart(button)
     w.cursorX, w.cursorY = 70, 150
@@ -2877,6 +2918,34 @@ do
     -- lifting the hold brings the part back with the setting it kept
     w = NewWorld({style = "6", forever = true, savedDB = saved})
     check(w.ns.modules.minimap.mode == "restyled" and w.ns.optionsPanel.checks.minimap.checked == true and w.ns.optionsPanel.checks.minimap.enabled ~= false, "coming soon: lifting the hold brings the part back on, with its box live")
+end
+
+--------------------------------------------------------------------------
+-- 9. Two copies of the addon installed (a 0.7.25 probe: every skin frame
+-- twice, one set at the old offsets): the newest runs, the other is
+-- switched off and named
+--------------------------------------------------------------------------
+do
+    local w = NewWorld({style = "6", forever = true, addons = {{name = "ForeverClassicUI-0.7.20", title = "Classic UI for Forever", version = "0.7.20"}}})
+    check(w.ns.modules.unitframes.mode == "restyled" and w.ns.modules.charsheet.mode ~= nil, "copies: the newer copy runs")
+    check(w.disabledAddons["ForeverClassicUI-0.7.20"] == true and Printed("second copy") and Printed("ForeverClassicUI-0.7.20 (version 0.7.20)") and Printed("/reload"), "copies: the older copy is switched off in the AddOns list and named")
+    w.slash("probe")
+    check(w.ns.lastProbe:find("other copies installed: ForeverClassicUI-0.7.20 (version 0.7.20)  - switched off", 1, true) ~= nil, "copies: the probe lists it")
+    -- the same version under two folder names: the folder that sorts first runs
+    local w2 = NewWorld({style = "6", forever = true, addons = {{name = "ClassicUI", title = "Classic UI (Forever)", version = "0.7.26"}}})
+    check(w2.ns.modules.unitframes.mode ~= "restyled" and w2.ns.yieldedTo == "ClassicUI" and Printed("This copy stays off") and w2.disabledAddons["ClassicUI"] == nil, "copies: with the same version twice, this folder yields to the one that sorts first")
+    w2.slash("probe")
+    check(w2.ns.lastProbe:find("this copy stayed off, ClassicUI is newer", 1, true) ~= nil, "copies: the probe says it yielded")
+    -- a newer copy elsewhere (recognised by its folder name, whatever its title): this one yields
+    local w3 = NewWorld({style = "6", forever = true, addons = {{name = "ForeverClassicUI_new", title = "Something Else", version = "0.8.0"}}})
+    check(w3.ns.modules.unitframes.mode ~= "restyled" and w3.ns.yieldedTo == "ForeverClassicUI_new" and Printed("newer than this one"), "copies: a newer copy wins")
+    -- another addon with a similar title is not a copy
+    local w4 = NewWorld({style = "6", forever = true, addons = {{name = "Bartender", title = "Classic Bars", version = "9.0"}}})
+    check(w4.ns.modules.unitframes.mode == "restyled" and #w4.ns.otherCopies == 0 and not Printed("second copy"), "copies: an unrelated addon is left alone")
+    w4.slash("probe")
+    check(w4.ns.lastProbe:find("other copies installed: none", 1, true) ~= nil, "copies: probe says none")
+    check(w.ns.CompareVersions("0.7.26", "0.7.9") == 1 and w.ns.CompareVersions("1.0", "0.9.99") == 1 and w.ns.CompareVersions("0.7.26", "0.7.26") == 0, "copies: versions compare by number, not text")
+    check(#w.ns.errors == 0 and #w2.ns.errors == 0 and #w3.ns.errors == 0, "copies: no errors")
 end
 
 realPrint(("Forever Classic UI harness: %d passed, %d failed"):format(passed, failed))
