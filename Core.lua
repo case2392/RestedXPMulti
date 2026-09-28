@@ -230,20 +230,30 @@ end
 -- finds it (their class step, a step we do not have).
 function ns.FindMyStep(p)
     if not p then return end
-    local idx = ns.FindMyStepByStepId(p.stepId)
-    if idx then return idx, "id" end
+    local byId = ns.FindMyStepByStepId(p.stepId)
     local sig = p.contentSig
-    if not sig or sig == 0 then return end
-    local map = ns.ContentIndex()
+    local map = sig and sig ~= 0 and ns.ContentIndex()
     local list = map and map[sig]
-    if not list then return end
-    -- of several identical steps, the one nearest to where we are
-    local here = (RXPCData and RXPCData.currentStep) or 1
-    local best
-    for _, i in ipairs(list) do
-        if not best or math.abs(i - here) < math.abs(best - here) then best = i end
+    if list then
+        -- the content decides: when the files differ, their id can land on
+        -- a different step of ours by coincidence (a second report: the
+        -- same step, "(behind)", because their line number was one of our
+        -- earlier steps' line numbers). An id that agrees with the content
+        -- is exact; otherwise, of several identical steps, the one nearest
+        -- to where we are.
+        for _, i in ipairs(list) do
+            if i == byId then return i, "id" end
+        end
+        local here = (RXPCData and RXPCData.currentStep) or 1
+        local best
+        for _, i in ipairs(list) do
+            if not best or math.abs(i - here) < math.abs(best - here) then best = i end
+        end
+        return best, "content"
     end
-    return best, "content"
+    -- a step whose content we do not have (their class step), or a partner
+    -- on an older Party Sync that sends no fingerprint: the id is all there is
+    if byId then return byId, "id" end
 end
 
 --------------------------------------------------------------------------

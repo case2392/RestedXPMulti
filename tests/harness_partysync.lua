@@ -507,12 +507,14 @@ check(true, "party bonus section + stats/duo commands render without error")
 print("\n=== same guide, files that differ by a few lines (stepIds off) ===")
 -- the report: two players on the very same step, one shown "(behind)" with
 -- "(their class/race step - not in your guide)". RestedXP's stepId is the
--- step's line number in the guide file, and Dana's copy has three lines
--- fewer before every step than Carl's
+-- step's line number in the guide file, and Dana's copy has ten lines
+-- fewer before every step than Carl's: so each of Dana's ids from step 2
+-- on is the id of the step BEFORE it in Carl's guide (the second report:
+-- the same step, still "(behind)", by that coincidence)
 Pam.inGroup = false
 Quinn.inGroup = false
 local Carl = makePlayer("Carl", {10, 20, 30, 40, 50}, "7", "TANARIS")
-local Dana = makePlayer("Dana", {10, 20, 30, 40, 50}, "7", "TANARIS", -3)
+local Dana = makePlayer("Dana", {10, 20, 30, 40, 50}, "7", "TANARIS", -10)
 Carl.events["PLAYER_ENTERING_WORLD"]("PLAYER_ENTERING_WORLD")
 Dana.events["PLAYER_ENTERING_WORLD"]("PLAYER_ENTERING_WORLD")
 advanceTime(10)
@@ -541,6 +543,15 @@ Carl.ns.UpdateUI()
 text = Carl.windowText()
 check(text:find("Dana  -  step 2/5", 1, true) ~= nil and not text:find("(behind)", 1, true),
       "still no (behind) once both are on step 2")
+-- Dana's step-2 id IS Carl's step-1 id: the content places her, not the id
+check(danaAsCarlSees.stepId == Carl.guide.steps[1].stepId, "her id collides with Carl's step 1")
+idx, how = Carl.ns.FindMyStep(danaAsCarlSees)
+check(idx == 2 and how == "content", "and Carl still places her on step 2 by content")
+-- a partner on an older Party Sync sends no fingerprint: the id is used as before
+local sigWas = danaAsCarlSees.contentSig
+danaAsCarlSees.contentSig = 0
+check(Carl.ns.FindMyStep(danaAsCarlSees) == 1, "without a fingerprint the id is all there is")
+danaAsCarlSees.contentSig = sigWas
 -- Dana ahead for real: the marker says so, by position not by id
 Dana.RXP.SetStep(3)
 advanceTime(2)

@@ -106,8 +106,13 @@ both players' guide files match line for line. Two copies of the same guide
 can differ (a guide edited without its version bumped, one side on a cached
 copy), and then every id is off by a few lines: a partner on the very same
 step showed as "(behind)" with "their class/race step - not in your guide"
-(1.7.1). So when a partner's id matches none of your steps, the step's
-content (its text with numbers masked, plus quest ids) places them instead.
+(1.7.1). Worse, an id from the other file can be the id of a *different*
+step of yours by coincidence, which read as "(behind)" on the same step,
+held you on a step your partner had finished, and let them walk on
+without you (1.7.2). So the step's content (its text with numbers masked,
+plus quest ids) places a partner first; the id is used when it agrees with
+the content, or when the content is a step you do not have (their class
+step) or the partner runs an older Party Sync that sends none.
 When RestedXP tries to advance you to a step, the addon checks every synced
 partner (same guide, same guide version, seen in the last 90 seconds). You
 advance when each of them either:

@@ -13,6 +13,9 @@ local WIDTH = 230
 local LINE_GAP = 3
 local PADDING = 10
 local TITLE_HEIGHT = 21
+local CHECK_SIZE = 20
+-- a checkbox label runs from the box's right edge to the window's padding
+local LABEL_WIDTH = WIDTH - PADDING * 2 - CHECK_SIZE + 2
 
 -- First readable line of text from step `index` of OUR loaded guide
 function ns.GetStepText(index)
@@ -142,6 +145,10 @@ local function CreateWindow()
                                              "GameFontHighlightSmall")
     frame.lockLabel:SetPoint("LEFT", lockBox, "RIGHT", 1, 0)
     frame.lockLabel:SetText("step lock")
+    -- the label wraps inside the window (a report: it ran off the edge)
+    frame.lockLabel:SetWidth(LABEL_WIDTH)
+    frame.lockLabel:SetJustifyH("LEFT")
+    frame.lockLabel:SetWordWrap(true)
     lockBox:SetScript("OnClick", function(self)
         ns.db.lock = self:GetChecked() and true or false
         if ns.db.lock then
@@ -163,6 +170,9 @@ local function CreateWindow()
     frame.autoSkipLabel = frame:CreateFontString(nil, "OVERLAY",
                                                  "GameFontHighlightSmall")
     frame.autoSkipLabel:SetPoint("LEFT", auto, "RIGHT", 1, 0)
+    frame.autoSkipLabel:SetWidth(LABEL_WIDTH)
+    frame.autoSkipLabel:SetJustifyH("LEFT")
+    frame.autoSkipLabel:SetWordWrap(true)
     auto:SetScript("OnClick", function(self)
         ns.db.autoSkip = self:GetChecked() and true or false
         if ns.db.autoSkip then
@@ -445,23 +455,30 @@ function ns.UpdateUI()
     -- click does, so the box is found by anyone used to that line.
     frame.lockCheck:SetChecked(ns.db.lock and true or false)
     if ns.db.lock then
-        frame.lockLabel:SetText("step lock: |cFF66FF66on|r  (holds your steps for the party)")
+        frame.lockLabel:SetText("step lock: |cFF66FF66on|r - holds your steps for the party")
     else
-        frame.lockLabel:SetText("step lock: |cFFFF6666off|r  (click to hold your steps)")
+        frame.lockLabel:SetText("step lock: |cFFFF6666off|r - click to hold your steps")
     end
+    -- a row is as tall as its label when the label wraps
+    local function RowHeight(label)
+        local h = label.GetStringHeight and label:GetStringHeight() or 0
+        return math.max(CHECK_SIZE, h + 6)
+    end
+    local rowH = RowHeight(frame.lockLabel)
     frame.lockCheck:ClearAllPoints()
-    frame.lockCheck:SetPoint("TOPLEFT", PADDING - 4, -y + 2)
+    frame.lockCheck:SetPoint("TOPLEFT", PADDING - 4, -y - (rowH - CHECK_SIZE) / 2 + 2)
     frame.lockCheck:Show()
-    y = y + 20
+    y = y + rowH
     if ns.db.lock then
         frame.autoSkipCheck:SetChecked(ns.db.autoSkip and true or false)
-        frame.autoSkipCheck:ClearAllPoints()
-        frame.autoSkipCheck:SetPoint("TOPLEFT", PADDING - 4, -y + 2)
         frame.autoSkipLabel:SetText(string.format("auto-skip waits (%ds)",
                                                   ns.db.autoSkipDelay or 60))
+        rowH = RowHeight(frame.autoSkipLabel)
+        frame.autoSkipCheck:ClearAllPoints()
+        frame.autoSkipCheck:SetPoint("TOPLEFT", PADDING - 4, -y - (rowH - CHECK_SIZE) / 2 + 2)
         frame.autoSkipCheck:Show()
         frame.autoSkipLabel:Show()
-        y = y + 20
+        y = y + rowH
     else
         frame.autoSkipCheck:Hide()
         frame.autoSkipLabel:Hide()
