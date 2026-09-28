@@ -522,6 +522,25 @@ addon were installed under two folder names. Since 0.7.26 the newest copy
 runs, switches the other off in the AddOns list, says which folder to
 delete, and `/cui probe` lists the other copies it found.
 
+Killing a mob re-lays the bars mid-fight (the pet bar hides, Edit Mode
+stacks the bottom bars again) and our hooks run inside that. A 0.7.26
+report showed the cost: "ADDON BLOCKED" printed for every button
+container's SetScale, ClearAllPoints and SetPoint, and for Show() on the
+stone art itself, which is protected by anchor because the main bar hangs
+off it. Since 0.7.27 the in-combat pass touches textures and alpha only;
+every size, anchor, scale and level waits for the end of the fight. The
+gryphons moved to their own frame at level 100, where Era and Forever
+both keep theirs, so they draw over the bars instead of under them.
+
+Action Bar 2 sliding sideways in combat and back afterwards is Blizzard's
+stacking: Edit Mode puts the bottom bars at its own offsets from the main
+bar (+22 and +606 on this client) during the fight, and a protected frame
+cannot be anchored back from addon code until it ends. The secure handler
+that would hold them is dead on Forever (no `loadstring_untainted`). The
+way round it on the player's side: drag Action Bar 2 (and 3) in Edit Mode,
+even a little. A bar that is not in its default position is skipped by
+Blizzard's stacking and by this addon alike, so it stays put.
+
 The target's name string is a secret on this client (its width cannot be
 read from addon code), so the long-name fit measures under `pcall` and
 leaves Blizzard's size when it cannot measure; the unitframes status line

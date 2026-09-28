@@ -105,6 +105,8 @@ local MICRO_MIN_STRIDE = 24
 -- being wrong on some other build costs nothing visible - the bar would
 -- simply jump as it used to.
 local BLIZZ_MAIN_GAP_X, BLIZZ_MAIN_GAP_Y = -4.5, -4
+-- the gryphons' frame level: Era's and Forever's own EndCaps frames
+local CAPS_LEVEL = 100
 local XP_H, XP_TOP_H = 13, 8
 local BOTTOM_BAR_X, BOTTOM_BAR_Y = 6, 52
 -- the four stone strips: rows of the 256x256 image (Era's MainMenuBarTexture0..3)
@@ -230,11 +232,20 @@ local function BuildArt()
         art.strips[i] = t
     end
     if HasFile(END_CAP) then
-        art.leftCap = art:CreateTexture(nil, "OVERLAY", nil, 5)
+        -- Era and Forever both keep the gryphons on a frame at level 100,
+        -- over the bars and their buttons (MainActionBar.xml: EndCaps
+        -- frameLevel="100"); on the art at level 1 they went under every
+        -- bar that crossed them (a report: "gryphons behind the action bar")
+        local caps = CreateFrame("Frame", nil, art)
+        caps:SetAllPoints(art)
+        if caps.SetFrameStrata then caps:SetFrameStrata("MEDIUM") end
+        if caps.SetFrameLevel then caps:SetFrameLevel(CAPS_LEVEL) end
+        art.caps = caps
+        art.leftCap = caps:CreateTexture(nil, "OVERLAY", nil, 5)
         art.leftCap:SetTexture(END_CAP)
         art.leftCap:SetSize(128, 128)
         art.leftCap:SetPoint("BOTTOM", art, "BOTTOM", -544, 0)
-        art.rightCap = art:CreateTexture(nil, "OVERLAY", nil, 5)
+        art.rightCap = caps:CreateTexture(nil, "OVERLAY", nil, 5)
         art.rightCap:SetTexture(END_CAP)
         art.rightCap:SetTexCoord(1, 0, 0, 1)
         art.rightCap:SetSize(128, 128)
@@ -308,20 +319,26 @@ end
 
 -- 36px buttons 42px apart: the containers (plain frames Blizzard lays
 -- out) are scaled and re-anchored; hidden ones are skipped so the shown
--- buttons stay packed the way Era packs them
-local function LayoutBar(bar, horizontal)
+-- buttons stay packed the way Era packs them. The containers hold the
+-- action buttons and are protected with them: scaling or anchoring one
+-- in combat is refused and printed as "ADDON BLOCKED" (a report, dozens
+-- of lines per kill), so with combat on only the art is touched and the
+-- geometry waits for the end of the fight.
+local function LayoutBar(bar, horizontal, combat)
     if not bar or type(bar.actionButtons) ~= "table" then return 0 end
     local shown = 0
     for _, btn in ipairs(bar.actionButtons) do
         SkinButton(btn)
         local c = btn.container
         if c and c.SetPoint then
-            if c.SetScale then c:SetScale(BUTTON_SCALE) end
+            if not combat and c.SetScale then c:SetScale(BUTTON_SCALE) end
             if not c.IsShown or c:IsShown() then
-                if horizontal then
-                    Anchor(c, "BOTTOMLEFT", bar, "BOTTOMLEFT", shown * STRIDE, 0)
-                else
-                    Anchor(c, "TOPLEFT", bar, "TOPLEFT", 0, -shown * STRIDE)
+                if not combat then
+                    if horizontal then
+                        Anchor(c, "BOTTOMLEFT", bar, "BOTTOMLEFT", shown * STRIDE, 0)
+                    else
+                        Anchor(c, "TOPLEFT", bar, "TOPLEFT", 0, -shown * STRIDE)
+                    end
                 end
                 shown = shown + 1
             end
@@ -982,11 +999,22 @@ local function RecordCombatAnchors()
     end
 end
 
+-- Blizzard lays the bars out again mid-fight (the pet bar hiding when the
+-- pet dies, every bar's own combat handler), and our hooks run inside
+-- that. Nearly everything on the bar is protected then: the action
+-- buttons and their containers, the bag and micro buttons, the page
+-- number on the main bar - and the stone art itself, since the main bar
+-- is anchored to it (even Show() on it is refused, a report). So in
+-- combat the pass is textures and alpha only: button art, faded
+-- dividers, the experience bar's fill. Everything with a size, anchor,
+-- scale or level waits, and the regen waiter runs the full pass the
+-- moment the fight ends.
 function M.Layout()
     local art = BuildArt()
     if not art then return false end
     M.inLayout = true
-    art:Show()
+    local combat = InCombat()
+    if not combat and not (art.IsShown and art:IsShown()) then art:Show() end
     local main = G("MainActionBar")
     if main then
         Hide(main.BorderArt)
@@ -995,22 +1023,17 @@ function M.Layout()
     M.counts = {}
     for _, spec in ipairs(BARS) do
         local bar = G(spec.name)
-        if bar then M.counts[spec.name] = LayoutBar(bar, spec.horizontal) end
+        if bar then M.counts[spec.name] = LayoutBar(bar, spec.horizontal, combat) end
     end
     M.HideDividers()
-    LayoutPageNumber(art)
-    LayoutBags(art)        -- first: the micro menu is scaled to the room left of the bags
-    LayoutStatusBars(art)
-    -- The micro buttons and the menu they sit in are protected frames, so
-    -- moving, resizing or re-levelling them in combat is refused by the
-    -- client and prints "Interface action failed because of an AddOn".
-    -- They go with the rest of the protected work: skipped while fighting,
-    -- caught up the moment combat ends.
-    if InCombat() then
+    if combat then
         M.pending = true
         RecordCombatAnchors()
     else
         M.pending = nil
+        LayoutPageNumber(art)
+        LayoutBags(art)        -- first: the micro menu is scaled to the room left of the bags
+        LayoutStatusBars(art)
         LayoutMicroMenu(art)
         ProtectedLayout(art)
     end

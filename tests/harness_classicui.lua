@@ -91,7 +91,7 @@ local function Frame(name)
     local f = Region("Frame")
     f.name = name
     f.events = {}
-    for _, m in ipairs({"SetSize", "SetWidth", "SetHeight", "SetPoint", "ClearAllPoints", "SetAllPoints"}) do
+    for _, m in ipairs({"SetSize", "SetWidth", "SetHeight", "SetPoint", "ClearAllPoints", "SetAllPoints", "SetScale", "SetFrameLevel", "Show", "Hide"}) do
         local orig = f[m]
         f[m] = function(self, ...)
             if self.protectedFrame and _G.InCombatLockdown and _G.InCombatLockdown() then blocked = blocked + 1 end
@@ -135,7 +135,7 @@ local function Frame(name)
     function f:SetFocus() end
     function f:ClearFocus() end
     function f:HighlightText() end
-    function f:CreateTexture(_, layer) local r = Region("Texture"); r.layer = layer; self.created = self.created or {}; table.insert(self.created, r); return r end
+    function f:CreateTexture(_, layer) local r = Region("Texture"); r.layer = layer; r.parent = self; self.created = self.created or {}; table.insert(self.created, r); return r end
     function f:SetParent(p) self.parent = p end
     function f:UnregisterAllEvents() self.events = {} end
     function f:RegisterUnitEvent(e) self.events[e] = true end
@@ -377,7 +377,7 @@ local function NewWorld(opts)
     _G.WOW_PROJECT_MAINLINE = 1
     -- the AddOns list: this addon plus whatever a world installs beside it
     -- (opts.addons = {{name, title, version}}: another copy under another folder)
-    w.addons = {{name = "ForeverClassicUI", title = "Classic UI (Forever)", version = "0.7.26"}}
+    w.addons = {{name = "ForeverClassicUI", title = "Classic UI (Forever)", version = "0.7.27"}}
     for _, a in ipairs(opts.addons or {}) do w.addons[#w.addons + 1] = a end
     w.disabledAddons = {}
     _G.C_AddOns = {
@@ -542,12 +542,14 @@ local function NewWorld(opts)
         _G.PlayerFrame_ToPlayerArt = function() pf.PlayerFrameContainer.FrameTexture:SetAtlas("UI-HUD-UnitFrame-Player-PortraitOn") end
         -- action bars: Forever's retail layout (45px buttons 47 apart in scaled containers, atlas art)
         local function ActionBar(name, buttonPrefix, horizontal)
-            local bar = Frame(name)
+            -- the bars, the buttons and their containers are all protected
+            -- (the live client printed "ADDON BLOCKED: MainActionBarButtonContainer1:SetScale()")
+            local bar = Frame(name); bar.protectedFrame = true
             bar.parent = _G.UIParent
             bar.actionButtons = {}
             for i = 1, 12 do
-                local c = Frame(name .. "ButtonContainer" .. i); c.parent = bar; c:SetSize(45, 45)
-                local b = Frame(buttonPrefix .. i); b.parent = c; b.container = c; b:SetSize(45, 45)
+                local c = Frame(name .. "ButtonContainer" .. i); c.parent = bar; c:SetSize(45, 45); c.protectedFrame = true
+                local b = Frame(buttonPrefix .. i); b.parent = c; b.container = c; b:SetSize(45, 45); b.protectedFrame = true
                 b.icon = Region("Texture"); b.IconMask = Region("MaskTexture", {atlas = "UI-HUD-ActionBar-IconFrame-Mask"})
                 b.SlotArt = Region("Texture", {atlas = "ui-hud-actionbar-iconframe-slot"}); b.SlotBackground = Region("Texture", {atlas = "UI-HUD-ActionBar-IconFrame-Background"})
                 b:SetNormalAtlas("UI-HUD-ActionBar-IconFrame"); b:SetPushedAtlas("UI-HUD-ActionBar-IconFrame-Down"); b:SetHighlightAtlas("UI-HUD-ActionBar-IconFrame-Mouseover")
@@ -589,7 +591,7 @@ local function NewWorld(opts)
         _G.MicroMenuContainer = Frame("MicroMenuContainer"); function MicroMenuContainer:ApplySystemAnchor() self:ClearAllPoints(); self:SetPoint("BOTTOM", UIParent, "BOTTOM", 116.5, 6) end
         _G.MicroMenu = Frame("MicroMenu"); MicroMenu.BorderArt = Region("Texture", {atlas = "UI-HUD-ActionBar-Frame"}); MicroMenu.BackgroundArt = Region("Texture"); function MicroMenu:Layout() end
         local function Micro(name)
-            local b = Frame(name); b:SetSize(32, 40); b.Background = Region("Texture", {atlas = "UI-HUD-MicroMenu-ButtonBG-Up"}); b.PushedBackground = Region("Texture", {atlas = "UI-HUD-MicroMenu-ButtonBG-Down"})
+            local b = Frame(name); b:SetSize(32, 40); b.protectedFrame = true; b.Background = Region("Texture", {atlas = "UI-HUD-MicroMenu-ButtonBG-Up"}); b.PushedBackground = Region("Texture", {atlas = "UI-HUD-MicroMenu-ButtonBG-Down"})
             b:SetNormalAtlas("UI-HUD-MicroMenu-" .. name .. "-Up"); b:SetPushedAtlas("UI-HUD-MicroMenu-" .. name .. "-Down"); b:SetDisabledAtlas("UI-HUD-MicroMenu-" .. name .. "-Disabled"); b:SetHighlightAtlas("UI-HUD-MicroMenu-" .. name .. "-Mouseover")
             function b:SetPushed() self.Background:Hide(); self.PushedBackground:Show(); self.PushedBackground.alpha = 1 end
             function b:SetNormal() self.Background:Show(); self.PushedBackground:Hide() end
@@ -1788,6 +1790,10 @@ do
     check(ab.mode == "restyled" and art ~= nil and art.width == 1024 and art.height == 53 and art.anchors[1][1] == "BOTTOM", "forever: 1024x53 stone bar at the bottom of the screen")
     check(art.strips[1].texcoord[3] == 0.83203125 and art.strips[1].anchors[1][4] == -384 and art.strips[4].texcoord[3] == 0.08203125 and art.strips[4].anchors[1][4] == 384, "forever: the four Dwarf strips in Era's order")
     check(art.leftCap and art.leftCap.texture == "Interface\\MainMenuBar\\UI-MainMenuBar-EndCap-Dwarf" and art.rightCap.anchors[1][4] == 544 and art.rightCap.texcoord[1] == 1 and MainActionBar.EndCaps.alpha == 0, "forever: classic gryphons on the art, Forever's faded")
+    -- a report: the gryphons went under the bars; Era keeps them on a frame at level 100, over everything on the bar
+    check(art.caps ~= nil and art.caps.parent == art and art.caps.level == 100 and art.leftCap.parent == art.caps and art.rightCap.parent == art.caps, "forever: the gryphons on their own frame at Era's level 100, over the bars")
+    -- the main bar hangs off the art, so the art is protected by anchor in combat (the client refused even Show() on it)
+    art.protectedFrame = true
     check(MainActionBar.BorderArt.shown == false, "forever: retail bar border hidden")
     check(MainActionBar.anchors[1][1] == "BOTTOMLEFT" and MainActionBar.anchors[1][2] == art and MainActionBar.anchors[1][4] == 8 and MainActionBar.anchors[1][5] == 4 and MainActionBar.width == 498 and MainActionBar.height == 36, "forever: main bar 498x36 at 8,4 on the art")
     local c2 = ActionButton2.container
@@ -1897,13 +1903,23 @@ do
     local xBefore, levelBefore = CharacterMicroButton.anchors[1][4], CharacterMicroButton.level
     CharacterMicroButton:SetSize(99, 99)
     MicroMenuContainer:ClearAllPoints()
+    -- the report: killing a mob (the pet bar hiding re-lays the bars) printed "ADDON BLOCKED" for
+    -- every button container's SetScale/ClearAllPoints/SetPoint and for the art's Show(): in
+    -- combat the pass is textures and alpha only, not one protected call
+    MainActionBar:UpdateGridLayout()   -- Blizzard's own combat re-layout: containers back to scale 1, 47 apart
+    ActionButton1.SlotArt:Show(); ActionButton1.SlotArt.alpha = 1
+    art.shown = false
+    w.ResetBlocked()
     ab.Layout()
+    check(w.Blocked() == 0 and c2.scale == 1 and c2.anchors[1][4] == 47 and art.shown == false and ab.pending == true, "forever: in combat no container is scaled or moved and the art is not shown again: not one protected call")
+    check(ActionButton1.SlotArt.alpha == 0 and ActionButton1.NormalTexture.texture == "Interface\\Buttons\\UI-Quickslot2", "forever: the button art is still re-skinned in combat (textures are not protected)")
     check(CharacterMicroButton.width == 99 and #MicroMenuContainer.anchors == 0, "forever: in combat the micro row is left alone, not resized or re-anchored")
     CharacterMicroButton.scripts.OnEnter(CharacterMicroButton)
     check(CharacterMicroButton.width == 99 and ab.pending == true, "forever: hovering a micro button in combat does not resize it either")
     w.inCombat = false
     ab.Layout()
     check(CharacterMicroButton.width == 31 and math.abs(CharacterMicroButton.anchors[1][4] - xBefore) < 0.001 and #MicroMenuContainer.anchors > 0, "forever: the micro row is put back the moment combat ends")
+    check(math.abs(c2.scale - 0.8) < 0.001 and math.abs(c2.anchors[1][4] - 42 / 0.8) < 0.001 and art.shown == true, "forever: and so are the button containers and the art")
     w.inCombat = false
     ab.waiter:Fire("PLAYER_REGEN_ENABLED")
     check(MainActionBar.anchors[1][2] == art and ab.pending == nil and MultiBarBottomLeft.anchors[1][1] == "BOTTOMRIGHT", "forever: bar anchors back on the art once combat ends")
@@ -2932,7 +2948,7 @@ do
     w.slash("probe")
     check(w.ns.lastProbe:find("other copies installed: ForeverClassicUI-0.7.20 (version 0.7.20)  - switched off", 1, true) ~= nil, "copies: the probe lists it")
     -- the same version under two folder names: the folder that sorts first runs
-    local w2 = NewWorld({style = "6", forever = true, addons = {{name = "ClassicUI", title = "Classic UI (Forever)", version = "0.7.26"}}})
+    local w2 = NewWorld({style = "6", forever = true, addons = {{name = "ClassicUI", title = "Classic UI (Forever)", version = "0.7.27"}}})
     check(w2.ns.modules.unitframes.mode ~= "restyled" and w2.ns.yieldedTo == "ClassicUI" and Printed("This copy stays off") and w2.disabledAddons["ClassicUI"] == nil, "copies: with the same version twice, this folder yields to the one that sorts first")
     w2.slash("probe")
     check(w2.ns.lastProbe:find("this copy stayed off, ClassicUI is newer", 1, true) ~= nil, "copies: the probe says it yielded")
