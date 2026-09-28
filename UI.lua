@@ -141,7 +141,7 @@ local function CreateWindow()
     frame.lockLabel = frame:CreateFontString(nil, "OVERLAY",
                                              "GameFontHighlightSmall")
     frame.lockLabel:SetPoint("LEFT", lockBox, "RIGHT", 1, 0)
-    frame.lockLabel:SetText("hold my steps for the party")
+    frame.lockLabel:SetText("step lock")
     lockBox:SetScript("OnClick", function(self)
         ns.db.lock = self:GetChecked() and true or false
         if ns.db.lock then
@@ -440,8 +440,15 @@ function ns.UpdateUI()
         frame.skipButton:Hide()
     end
 
-    -- checkbox rows: step lock, then auto-skip (only relevant while locked)
+    -- checkbox rows: step lock, then auto-skip (only relevant while locked).
+    -- The label reads like the old "lock: off" footer, and says what a
+    -- click does, so the box is found by anyone used to that line.
     frame.lockCheck:SetChecked(ns.db.lock and true or false)
+    if ns.db.lock then
+        frame.lockLabel:SetText("step lock: |cFF66FF66on|r  (holds your steps for the party)")
+    else
+        frame.lockLabel:SetText("step lock: |cFFFF6666off|r  (click to hold your steps)")
+    end
     frame.lockCheck:ClearAllPoints()
     frame.lockCheck:SetPoint("TOPLEFT", PADDING - 4, -y + 2)
     frame.lockCheck:Show()
