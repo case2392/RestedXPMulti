@@ -101,6 +101,13 @@ measures and surfaces:
 
 Steps are compared by their position in the guide source (RestedXP's internal
 `stepId`), which is identical for every class even when step numbering isn't.
+That id is the step's line number in the guide file, so it only agrees when
+both players' guide files match line for line. Two copies of the same guide
+can differ (a guide edited without its version bumped, one side on a cached
+copy), and then every id is off by a few lines: a partner on the very same
+step showed as "(behind)" with "their class/race step - not in your guide"
+(1.7.1). So when a partner's id matches none of your steps, the step's
+content (its text with numbers masked, plus quest ids) places them instead.
 When RestedXP tries to advance you to a step, the addon checks every synced
 partner (same guide, same guide version, seen in the last 90 seconds). You
 advance when each of them either:

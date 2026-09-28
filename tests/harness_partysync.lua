@@ -92,8 +92,11 @@ local function makeFrame()
 end
 
 -- stepLines: guide-source line numbers, one per step this player's parse has
-local function makePlayer(name, stepLines, guideVersion, guideKey)
-    local P = {name = name, sent = {}, printed = {}, popups = {}}
+-- idShift: this player's copy of the guide file has that many extra lines
+-- before every step (same content, different stepIds), as when a guide is
+-- edited without its version bumped
+local function makePlayer(name, stepLines, guideVersion, guideKey, idShift)
+    local P = {name = name, sent = {}, printed = {}, popups = {}, fontStrings = {}}
     players[name] = P
 
     local env = {}
@@ -147,7 +150,24 @@ local function makePlayer(name, stepLines, guideVersion, guideKey)
         After = function(d, fn) schedule(d, fn) end,
         NewTicker = function(period, fn) schedule(period, fn, period) end
     }
-    env.CreateFrame = function() return makeFrame() end
+    env.CreateFrame = function()
+        local f = makeFrame()
+        -- every line the window draws, so a test can read the window
+        local orig = f.CreateFontString
+        f.CreateFontString = function(self)
+            local fs = orig(self)
+            table.insert(P.fontStrings, fs)
+            return fs
+        end
+        return f
+    end
+    P.windowText = function()
+        local parts = {}
+        for _, fs in ipairs(P.fontStrings) do
+            if fs.shown and fs.text ~= "" then table.insert(parts, fs.text) end
+        end
+        return table.concat(parts, "\n")
+    end
     env.BackdropTemplateMixin = {}
     env.UIParent = makeFrame()
     env.SlashCmdList = {}
@@ -180,7 +200,7 @@ local function makePlayer(name, stepLines, guideVersion, guideKey)
     for i, lineNum in ipairs(stepLines) do
         guide.steps[i] = {
             index = i,
-            stepId = GUIDE_ID + lineNum,
+            stepId = GUIDE_ID + lineNum + (idShift or 0),
             elements = {{text = "Do the thing at line " .. lineNum .. " " ..
                              string.rep("z", lineNum % 97)}}
         }
@@ -483,6 +503,58 @@ Pam.ns.UpdateUI()
 Pam.env.SlashCmdList["RXPMULTI"]("stats")
 Pam.env.SlashCmdList["RXPMULTI"]("duo")
 check(true, "party bonus section + stats/duo commands render without error")
+
+print("\n=== same guide, files that differ by a few lines (stepIds off) ===")
+-- the report: two players on the very same step, one shown "(behind)" with
+-- "(their class/race step - not in your guide)". RestedXP's stepId is the
+-- step's line number in the guide file, and Dana's copy has three lines
+-- fewer before every step than Carl's
+Pam.inGroup = false
+Quinn.inGroup = false
+local Carl = makePlayer("Carl", {10, 20, 30, 40, 50}, "7", "TANARIS")
+local Dana = makePlayer("Dana", {10, 20, 30, 40, 50}, "7", "TANARIS", -3)
+Carl.events["PLAYER_ENTERING_WORLD"]("PLAYER_ENTERING_WORLD")
+Dana.events["PLAYER_ENTERING_WORLD"]("PLAYER_ENTERING_WORLD")
+advanceTime(10)
+while #Carl.popups > 0 do Carl.answerPopup(true) end
+while #Dana.popups > 0 do Dana.answerPopup(true) end
+advanceTime(10)
+local danaAsCarlSees = Carl.ns.partners["Dana"]
+check(danaAsCarlSees.stepId ~= Carl.ns.my.stepId,
+      "the two copies disagree on the step's id")
+local idx, how = Carl.ns.FindMyStep(danaAsCarlSees)
+check(idx == 1 and how == "content", "Carl places Dana on his own step 1 by its content")
+Carl.ns.UpdateUI()
+local text = Carl.windowText()
+check(text:find("Dana  -  step 1/5", 1, true) ~= nil and not text:find("(behind)", 1, true) and
+      not text:find("(ahead)", 1, true) and not text:find("not in your guide", 1, true),
+      "the window shows Dana on the same step, no (behind), no 'not in your guide'")
+-- the lock: Carl finishes first and must be released when Dana finishes
+Carl.RXP.SetStep(2)
+check(Carl.env.RXPCData.currentStep == 1, "Carl held on step 1 (Dana not done)")
+advanceTime(1)
+Dana.RXP.SetStep(2)
+check(Dana.env.RXPCData.currentStep == 2, "Dana advances (Carl was ready)")
+advanceTime(2)
+check(Carl.env.RXPCData.currentStep == 2, "Carl released when Dana reached the step, ids or no ids")
+Carl.ns.UpdateUI()
+text = Carl.windowText()
+check(text:find("Dana  -  step 2/5", 1, true) ~= nil and not text:find("(behind)", 1, true),
+      "still no (behind) once both are on step 2")
+-- Dana ahead for real: the marker says so, by position not by id
+Dana.RXP.SetStep(3)
+advanceTime(2)
+Carl.ns.UpdateUI()
+text = Carl.windowText()
+check(Dana.env.RXPCData.currentStep == 2 and text:find("Dana  -  step 2/5 |cFF66FF66(ready)", 1, true) ~= nil,
+      "Dana finishing ahead reads as (ready), not (ahead) by a stale id")
+Carl.RXP.SetStep(3)
+advanceTime(2)
+check(Carl.env.RXPCData.currentStep == 3 and Dana.env.RXPCData.currentStep == 3, "both on step 3")
+Dana.inGroup = false
+Carl.inGroup = false
+Pam.inGroup = true
+Quinn.inGroup = true
 
 print("\n=== slash commands run clean ===")
 Pam.env.SlashCmdList["RXPMULTI"]("status")

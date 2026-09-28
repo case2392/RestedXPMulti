@@ -339,12 +339,22 @@ function ns.UpdateUI()
                      0.55, 0.55, 0.55)
             end
         else
-            -- fully synced, same guide: compare positions via stepId so
-            -- class-specific steps don't skew the picture
+            -- fully synced, same guide: compare positions by where their
+            -- step falls in OUR guide (stepId, or the step's content when
+            -- the two guide files do not match line for line), so
+            -- class-specific steps and differing files don't skew the picture
             local marker = ""
             local myId, theirId = my.stepId or 0, p.stepId or 0
+            local myIdx = (RXPCData and RXPCData.currentStep) or 0
+            local theirIdx = ns.FindMyStep(p)
             if p.done then
                 marker = " |cFF66FF66(ready)|r"
+            elseif theirIdx and myIdx > 0 then
+                if theirIdx < myIdx then
+                    marker = " |cFFFF9933(behind)|r"
+                elseif theirIdx > myIdx then
+                    marker = " |cFF66CCFF(ahead)|r"
+                end
             elseif theirId > 0 and myId > 0 and theirId < myId then
                 marker = " |cFFFF9933(behind)|r"
             elseif theirId > 0 and myId > 0 and theirId > myId then
@@ -363,8 +373,7 @@ function ns.UpdateUI()
                 for _, stepLine in ipairs(p.stepLines) do
                     Line("    " .. stepLine, 0.8, 0.8, 0.8)
                 end
-                local myIdx = ns.FindMyStepByStepId(theirId)
-                if not myIdx and theirId > 0 then
+                if not theirIdx and theirId > 0 then
                     if p.dungeonTag then
                         Line("    |cFFFFAA00(they're on a dungeon step - not in your route)|r",
                              1, 0.7, 0.2)
@@ -376,9 +385,8 @@ function ns.UpdateUI()
             else
                 -- partner on an older RXP Multi that doesn't broadcast step
                 -- text: fall back to looking the step up in our own guide
-                local myIdx = ns.FindMyStepByStepId(theirId)
-                if myIdx then
-                    local stepText = ns.GetStepText(myIdx)
+                if theirIdx then
+                    local stepText = ns.GetStepText(theirIdx)
                     if stepText then
                         Line("    " .. stepText, 0.6, 0.6, 0.6)
                     end

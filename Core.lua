@@ -116,29 +116,38 @@ local function HashString(s)
     return h
 end
 
+-- content fingerprint of one step: its text with numbers masked (progress
+-- counts change as you play) plus quest ids - identical for the same step
+-- even across differently-compiled guide routes, and across two copies of
+-- the same guide whose lines do not match (see FindMyStep). 0 for an
+-- empty step.
+local function StepContentSig(step)
+    local content = {}
+    -- RestedXP keeps a step's tasks in step.elements
+    for _, element in ipairs(step.elements or step) do
+        if type(element.text) == "string" then
+            local norm = element.text:gsub("|T.-|t", "")
+                             :gsub("|A.-|a", "")
+                             :gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
+                             :gsub("%d+", "#"):gsub("%s+", " ")
+            table.insert(content, norm)
+        end
+        if element.questId then
+            table.insert(content, "q" .. tostring(element.questId))
+        end
+    end
+    return #content > 0 and HashString(table.concat(content, ";")) or 0
+end
+ns.StepContentSig = StepContentSig
+
 function ns.CollectMyStepLines()
     local guide = ns.RXP.currentGuide
     local stepIdx = RXPCData and RXPCData.currentStep
     local step = guide and guide.steps and stepIdx and guide.steps[stepIdx]
     local lines, sig = {}, ""
-    -- content fingerprint: step text with numbers masked (progress counts
-    -- change as you play) plus quest ids - identical for the same step even
-    -- across differently-compiled guide routes
-    local content = {}
+    local contentSig = 0
     if step then
-        -- RestedXP keeps a step's tasks in step.elements
-        for _, element in ipairs(step.elements or step) do
-            if type(element.text) == "string" then
-                local norm = element.text:gsub("|T.-|t", "")
-                                 :gsub("|A.-|a", "")
-                                 :gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
-                                 :gsub("%d+", "#"):gsub("%s+", " ")
-                table.insert(content, norm)
-            end
-            if element.questId then
-                table.insert(content, "q" .. tostring(element.questId))
-            end
-        end
+        contentSig = StepContentSig(step)
         for _, element in ipairs(step.elements or step) do
             if #lines >= MAX_LINES then break end
             local text = element.text
@@ -161,8 +170,6 @@ function ns.CollectMyStepLines()
         end
     end
     for _, l in ipairs(lines) do sig = sig .. l .. "\001" end
-    local contentSig = #content > 0 and
-                           HashString(table.concat(content, ";")) or 0
     return lines, sig, contentSig
 end
 
@@ -188,6 +195,55 @@ function ns.FindMyStepByStepId(stepId)
         if s.stepId == stepId then return i end
         if s.stepId and s.stepId > stepId then return nil end
     end
+end
+
+-- content fingerprint -> the indices of my steps that carry it (the same
+-- text can occur more than once in a guide), rebuilt when the guide changes
+function ns.ContentIndex()
+    local guide = ns.RXP and ns.RXP.currentGuide
+    if not (guide and guide.steps) then return end
+    local cache = ns.contentIndex
+    if cache and cache.guide == guide and cache.count == #guide.steps then
+        return cache.map
+    end
+    local map = {}
+    for i, s in ipairs(guide.steps) do
+        local sig = StepContentSig(s)
+        if sig ~= 0 then
+            map[sig] = map[sig] or {}
+            table.insert(map[sig], i)
+        end
+    end
+    ns.contentIndex = {guide = guide, count = #guide.steps, map = map}
+    return map
+end
+
+-- Which of MY steps is this partner on? RestedXP's stepId is the step's
+-- line number in the guide file plus a hash of the guide key, so it only
+-- agrees between two players when their guide files match line for line.
+-- The same guide key and version can still come from files that differ (a
+-- guide edited without its version bumped, one side on a cached copy), and
+-- then every stepId is off by some lines: a partner on the very same step
+-- read as "behind" and "not in your guide" (a report, Tanaris 43-44). So
+-- the stepId is tried first, exact when it hits, and the step's content
+-- fingerprint second. Returns index, "id"|"content"; nil when neither
+-- finds it (their class step, a step we do not have).
+function ns.FindMyStep(p)
+    if not p then return end
+    local idx = ns.FindMyStepByStepId(p.stepId)
+    if idx then return idx, "id" end
+    local sig = p.contentSig
+    if not sig or sig == 0 then return end
+    local map = ns.ContentIndex()
+    local list = map and map[sig]
+    if not list then return end
+    -- of several identical steps, the one nearest to where we are
+    local here = (RXPCData and RXPCData.currentStep) or 1
+    local best
+    for _, i in ipairs(list) do
+        if not best or math.abs(i - here) < math.abs(best - here) then best = i end
+    end
+    return best, "content"
 end
 
 --------------------------------------------------------------------------
@@ -266,6 +322,23 @@ end
 -- line up correctly: everyone waits while one player does a step the others
 -- don't have, then advances together.
 local function PartnerReady(p, targetIdx, targetId)
+    -- their stepIds do not line up with ours (same guide, files that differ
+    -- by some lines) but their step's content is one of ours: position them
+    -- by that, or they could hold us for ever on a step they have finished
+    local idx, how = ns.FindMyStep(p)
+    if idx and how == "content" then
+        if idx >= targetIdx then return true end
+        if not (p.done and idx == targetIdx - 1) then return false end
+        -- finished the step before ours: ready unless their next step is
+        -- one we do not have (their class step), which their ids show once
+        -- corrected for the line offset between the two files
+        local guide = ns.RXP.currentGuide
+        local mine = guide.steps[idx] and guide.steps[idx].stepId
+        if mine and targetId and (p.stepId or 0) > 0 and (p.nextStepId or 0) > 0 then
+            return p.nextStepId - (p.stepId - mine) >= targetId
+        end
+        return true
+    end
     if targetId and (p.stepId or 0) > 0 then
         return p.stepId >= targetId or
                    (p.done and (p.nextStepId or 0) >= targetId)
