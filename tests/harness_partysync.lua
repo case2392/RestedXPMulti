@@ -284,7 +284,7 @@ local function makePlayer(name, stepLines, guideVersion, guideKey, idShift)
     local ns = {}
     P.ns = ns
     for _, file in ipairs({"Core.lua", "Sync.lua", "Duo.lua", "UI.lua"}) do
-        local chunk, err = loadfile(ADDON_DIR .. "/" .. file)
+        local chunk, err = loadfile(ADDON_DIR .. "/RestedXPMulti/" .. file)
         assert(chunk, err)
         setfenv(chunk, env)
         chunk("RestedXPMulti", ns)

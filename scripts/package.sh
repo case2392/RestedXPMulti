@@ -2,10 +2,9 @@
 # Build the CurseForge zips for every addon in this repo.
 #
 # CurseForge wants one folder per addon at the top of the zip, named the
-# same as the .toc inside it, and nothing else. Party Sync's files live in
-# the repo root (RestedXPMulti.toc beside Core.lua ...), so zipping the
-# checkout as-is gives a zip full of other addons and no RestedXPMulti
-# folder, which CurseForge rejects. This puts each addon in its folder.
+# same as the .toc inside it, and nothing else. Zipping the checkout gives
+# one zip with every addon in it (and the tests), which CurseForge
+# rejects; this makes one zip per addon.
 #
 #   scripts/package.sh            # every addon -> dist/<Folder>-<version>.zip
 #   scripts/package.sh RestedXPMulti ForeverClassicUI
@@ -42,9 +41,7 @@ wanted() {
 }
 
 cd "$root"
-wanted RestedXPMulti && build RestedXPMulti RestedXPMulti.toc \
-    RestedXPMulti.toc Core.lua Sync.lua Duo.lua UI.lua LICENSE
-for addon in ForeverClassicUI AdventurePlates RXPProfessions RIPBozo; do
+for addon in RestedXPMulti ForeverClassicUI AdventurePlates RXPProfessions RIPBozo; do
     if wanted "$addon" && [ -f "$addon/$addon.toc" ]; then
         # everything in the folder except art sources and screenshots
         files=()
