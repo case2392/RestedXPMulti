@@ -128,6 +128,9 @@ turning the lock off, or by jumping to a step from RestedXP's own step menu.
 
 ## Notes & limitations
 
+- Runs on World of Warcraft Forever (toc 16001 since 1.7.2). Forever's
+  engine has no `GetQuestLogTitle`, so the party-bonus quest list is read
+  through `C_QuestLog` there (1.7.3).
 - Addon messages require being in the same party/raid; you can't sync while
   ungrouped.
 - Declining the popup lasts for the current session; the popup returns next

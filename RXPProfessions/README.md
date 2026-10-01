@@ -39,6 +39,22 @@ present).
 
 - Skill data targets Classic Era / Anniversary (works in TBC; Outland
   content not yet covered).
+- Runs on World of Warcraft Forever too (0.6.0). Forever's engine has a
+  different skill API (`C_SkillInfo`), keeps recipes behind
+  `C_TradeSkillUI`, and lacks the `TRADE_SKILL_UPDATE` / `CRAFT_*` events:
+  a report had the addon never start there ("Attempt to register unknown
+  event"). Each event is now registered on its own and the missing ones
+  skipped; `/rxpp status` says which skill API the client gave us and
+  which events it lacks.
+
+## Offline tests
+
+```
+lua5.1 tests/harness_rxpprofessions.lua .
+```
+
+drives the addon on a Classic Era client, a Forever client (its API
+tables, a secret rank, its trade skill window) and a retail-style one.
 - English-language clients only for now (professions are matched by name).
 - Craft routes are the standard approximate ones; skill-up RNG means brackets
   can shift by a few points.

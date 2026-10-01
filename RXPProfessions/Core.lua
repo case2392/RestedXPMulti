@@ -15,18 +15,54 @@ end
 -- Skill scanning
 --------------------------------------------------------------------------
 
+-- A number the addon may use. Forever hands some values back "secret":
+-- type() still says number, but comparing one from addon code throws.
+-- Such a value counts as unknown rather than taking the scan down.
+local function Plain(v)
+    if type(v) ~= "number" then return nil end
+    local ok = pcall(function() return v == 0 end)
+    if ok then return v end
+end
+
+-- Three clients, three skill APIs:
+--   Classic Era / TBC / Mists: GetNumSkillLines + GetSkillLineInfo
+--   Forever (Camelot engine): C_SkillInfo.GetSkillLineInfo(i) -> a table
+--   retail-style:            GetProfessions() ids + GetProfessionInfo(id)
+-- The first one present wins; a client with none of them tracks nothing.
+local function Record(found, name, rank, maxRank)
+    if name and ns.TRACKED[name] then
+        found[name] = {
+            rank = Plain(rank) or 0,
+            maxRank = Plain(maxRank) or 0,
+            kind = ns.TRACKED[name]
+        }
+    end
+end
+
 function ns.ScanSkills()
     local found = {}
-    if not GetNumSkillLines then return found end
-    for i = 1, GetNumSkillLines() do
-        local name, isHeader, _, rank, _, _, maxRank = GetSkillLineInfo(i)
-        if name and not isHeader and ns.TRACKED[name] then
-            found[name] = {
-                rank = rank or 0,
-                maxRank = maxRank or 0,
-                kind = ns.TRACKED[name]
-            }
+    if GetNumSkillLines and GetSkillLineInfo then
+        for i = 1, GetNumSkillLines() or 0 do
+            local name, isHeader, _, rank, _, _, maxRank = GetSkillLineInfo(i)
+            if not isHeader then Record(found, name, rank, maxRank) end
         end
+        ns.skillAPI = "skill lines"
+    elseif C_SkillInfo and C_SkillInfo.GetNumSkillLines and C_SkillInfo.GetSkillLineInfo then
+        for i = 1, C_SkillInfo.GetNumSkillLines() or 0 do
+            local ok, info = pcall(C_SkillInfo.GetSkillLineInfo, i)
+            if ok and type(info) == "table" and not info.isHeader then
+                Record(found, info.name, info.rank, info.maxRank)
+            end
+        end
+        ns.skillAPI = "C_SkillInfo"
+    elseif GetProfessions and GetProfessionInfo then
+        for _, id in ipairs({GetProfessions()}) do
+            local ok, name, _, rank, maxRank = pcall(GetProfessionInfo, id)
+            if ok then Record(found, name, rank, maxRank) end
+        end
+        ns.skillAPI = "GetProfessions"
+    else
+        ns.skillAPI = "none"
     end
     return found
 end
@@ -36,8 +72,42 @@ end
 -- profession window is open, so we scan and remember it whenever one is.
 --------------------------------------------------------------------------
 
+-- Forever (and retail) keep recipes behind C_TradeSkillUI: the open
+-- profession's name from GetChildProfessionInfo, every recipe id the
+-- window knows, and a learned flag on each
+local function ScanTradeSkillUI()
+    local api = C_TradeSkillUI
+    if not (api and api.GetAllRecipeIDs and api.GetRecipeInfo) then return end
+    local okP, info = pcall(function()
+        return (api.GetChildProfessionInfo and api.GetChildProfessionInfo()) or
+                   (api.GetBaseProfessionInfo and api.GetBaseProfessionInfo())
+    end)
+    local prof = okP and type(info) == "table" and info.professionName
+    if type(prof) ~= "string" or not ns.TRACKED[prof] then return end
+    local okIds, ids = pcall(api.GetAllRecipeIDs)
+    if not okIds or type(ids) ~= "table" then return end
+    local known, any = {}, false
+    for _, id in ipairs(ids) do
+        local okR, r = pcall(api.GetRecipeInfo, id)
+        if okR and type(r) == "table" and r.name and r.learned then
+            known[r.name] = true
+            any = true
+        end
+    end
+    -- the list arrives empty on the first event of an opening window;
+    -- nothing known is not the same as nothing learned, so wait for the
+    -- next one rather than wipe what was remembered
+    if not any then return end
+    ns.db.knownRecipes = ns.db.knownRecipes or {}
+    ns.db.knownRecipes[prof] = known
+    ns.UpdateUI()
+    return true
+end
+
 function ns.ScanOpenTradeSkill()
-    if not (GetTradeSkillLine and GetNumTradeSkills) then return end
+    if not (GetTradeSkillLine and GetNumTradeSkills) then
+        return ScanTradeSkillUI()
+    end
     local prof = GetTradeSkillLine()
     if not prof or prof == "UNKNOWN" or not ns.TRACKED[prof] then return end
     local known = {}
@@ -435,16 +505,26 @@ end
 -- Events + slash command
 --------------------------------------------------------------------------
 
-eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
-eventFrame:RegisterEvent("SKILL_LINES_CHANGED")
-eventFrame:RegisterEvent("CHAT_MSG_SKILL")
-eventFrame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
-eventFrame:RegisterEvent("TRADE_SKILL_SHOW")
-eventFrame:RegisterEvent("TRADE_SKILL_UPDATE")
-eventFrame:RegisterEvent("CRAFT_SHOW")
-eventFrame:RegisterEvent("CRAFT_UPDATE")
+-- Not every client has every event: Forever's engine has no
+-- TRADE_SKILL_UPDATE or CRAFT_* (its profession window raises
+-- TRADE_SKILL_LIST_UPDATE instead), and registering an unknown event
+-- throws - a report: "Attempt to register unknown event
+-- TRADE_SKILL_UPDATE" at every login, and the addon never started. Each
+-- one is tried on its own; the ones the client lacks are skipped and
+-- listed for /rxpp status.
+local EVENTS = {
+    "PLAYER_ENTERING_WORLD", "SKILL_LINES_CHANGED", "CHAT_MSG_SKILL",
+    "ZONE_CHANGED_NEW_AREA", "TRADE_SKILL_SHOW", "TRADE_SKILL_UPDATE",
+    "TRADE_SKILL_LIST_UPDATE", "CRAFT_SHOW", "CRAFT_UPDATE"
+}
+ns.missingEvents = {}
+for _, event in ipairs(EVENTS) do
+    local ok = pcall(eventFrame.RegisterEvent, eventFrame, event)
+    if not ok then table.insert(ns.missingEvents, event) end
+end
+local TRADE_EVENTS = {TRADE_SKILL_SHOW = true, TRADE_SKILL_UPDATE = true, TRADE_SKILL_LIST_UPDATE = true}
 eventFrame:SetScript("OnEvent", function(_, event)
-    if event == "TRADE_SKILL_SHOW" or event == "TRADE_SKILL_UPDATE" then
+    if TRADE_EVENTS[event] then
         if ns.db then ns.ScanOpenTradeSkill() end
         return
     elseif event == "CRAFT_SHOW" or event == "CRAFT_UPDATE" then
@@ -480,7 +560,18 @@ SlashCmdList["RXPPROFESSIONS"] = function(input)
         ns.ToggleUI(input)
     elseif input == "setup" then
         ns.ShowSetup()
+    elseif input == "status" then
+        local names = {}
+        for name, p in pairs(ns.profs) do
+            table.insert(names, string.format("%s %d/%d", name, p.rank, p.maxRank))
+        end
+        table.sort(names)
+        ns.Print("skills read through %s: %s", tostring(ns.skillAPI),
+                 #names > 0 and table.concat(names, ", ") or "none tracked")
+        if #ns.missingEvents > 0 then
+            ns.Print("events this client lacks (skipped): %s", table.concat(ns.missingEvents, ", "))
+        end
     else
-        ns.Print("commands: |cFFFFCC00/rxpp|r toggle the window, |cFFFFCC00/rxpp setup|r choose professions")
+        ns.Print("commands: |cFFFFCC00/rxpp|r toggle the window, |cFFFFCC00/rxpp setup|r choose professions, |cFFFFCC00/rxpp status|r what the client gives us")
     end
 end

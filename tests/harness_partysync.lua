@@ -497,6 +497,28 @@ check(found["Deadmines"] and found["Deadmines"].complete,
       "dungeon quest surfaced, flagged ready to turn in")
 check(found["Route Elite"] == nil, "group quest the route turns in is not listed")
 check(found["Solo Errand"] == nil, "ordinary quests are not listed")
+-- Forever's engine has no GetQuestLogTitle: the same log read through C_QuestLog
+do
+    local env = Pam.env
+    local oldN, oldT, oldTag = env.GetNumQuestLogEntries, env.GetQuestLogTitle, env.GetQuestTagInfo
+    env.GetNumQuestLogEntries, env.GetQuestLogTitle, env.GetQuestTagInfo = nil, nil, nil
+    env.C_QuestLog = {
+        GetNumQuestLogEntries = function() return #Pam.questLog, 4 end,
+        GetInfo = function(i)
+            local q = Pam.questLog[i]
+            return {title = q.title, level = q.level or 0, questID = q.id, isHeader = q.header or false, suggestedGroup = q.tag or 0}
+        end,
+        IsComplete = function(id) for _, q in ipairs(Pam.questLog) do if q.id == id then return q.complete or false end end end,
+        GetQuestTagInfo = function(id) for _, q in ipairs(Pam.questLog) do if q.id == id and q.tagID then return {tagID = q.tagID, tagName = q.tagName} end end end
+    }
+    Pam.ns.ScanGroupQuests()
+    local f2 = {}
+    for _, q in ipairs(Pam.ns.duoQuests) do f2[q.title] = q end
+    check(f2["Elite Beast"] and f2["Elite Beast"].kind == "Group" and f2["Deadmines"] and f2["Deadmines"].complete and f2["Route Elite"] == nil and f2["Solo Errand"] == nil,
+          "forever: the party-bonus quests are read through C_QuestLog with the same result")
+    env.GetNumQuestLogEntries, env.GetQuestLogTitle, env.GetQuestTagInfo, env.C_QuestLog = oldN, oldT, oldTag, nil
+    Pam.ns.ScanGroupQuests()
+end
 Pam.guide.steps[Pam.env.RXPCData.currentStep].elements[2] = {tag = "xp"}
 check(Pam.ns.CurrentStepIsGrind(), "grind step detected")
 Pam.ns.UpdateUI()

@@ -116,15 +116,40 @@ end
 
 -- Group/elite/dungeon quests sitting in the quest log that the solo route
 -- never turns in: exactly the ones a party can cash in.
+-- One quest log entry: title, level, group tag, header flag, complete
+-- flag, quest id. Classic clients have GetQuestLogTitle; Forever's engine
+-- (like retail) has C_QuestLog.GetInfo and no global at all, which left
+-- the party-bonus section empty there.
+local function QuestLogReader()
+    if GetNumQuestLogEntries and GetQuestLogTitle then
+        return GetNumQuestLogEntries() or 0, function(i)
+            local title, level, tag, isHeader, _, isComplete, _, questID =
+                GetQuestLogTitle(i)
+            return title, level, tag, isHeader, isComplete, questID
+        end
+    end
+    local api = C_QuestLog
+    if api and api.GetNumQuestLogEntries and api.GetInfo then
+        return api.GetNumQuestLogEntries() or 0, function(i)
+            local ok, info = pcall(api.GetInfo, i)
+            if not ok or type(info) ~= "table" then return end
+            local complete = api.IsComplete and info.questID and
+                                 api.IsComplete(info.questID)
+            return info.title, info.level, info.suggestedGroup, info.isHeader,
+                   complete, info.questID
+        end
+    end
+    return 0
+end
+
 function ns.ScanGroupQuests()
     ns.duoQuests = {}
-    if not (GetNumQuestLogEntries and GetQuestLogTitle) then return end
-    local n = GetNumQuestLogEntries() or 0
-    if n == 0 then return end
+    local n, read = QuestLogReader()
+    if n == 0 or not read then return end
     local turnins = RouteTurnins()
+    local tagInfo = (C_QuestLog and C_QuestLog.GetQuestTagInfo) or GetQuestTagInfo
     for i = 1, n do
-        local title, level, tag, isHeader, _, isComplete, _, questID =
-            GetQuestLogTitle(i)
+        local title, level, tag, isHeader, isComplete, questID = read(i)
         if title and not isHeader then
             local kind
             if type(tag) == "string" and tag ~= "" then
@@ -132,12 +157,14 @@ function ns.ScanGroupQuests()
             elseif type(tag) == "number" and tag > 0 then
                 kind = "Group"
             end
-            if GetQuestTagInfo and questID then
-                local tid, tname = GetQuestTagInfo(questID)
-                if type(tid) == "table" then
-                    tname, tid = tid.tagName, tid.tagID
+            if tagInfo and questID then
+                local ok, tid, tname = pcall(tagInfo, questID)
+                if ok then
+                    if type(tid) == "table" then
+                        tname, tid = tid.tagName, tid.tagID
+                    end
+                    if tid then kind = tname or kind or "Group" end
                 end
-                if tid then kind = tname or kind or "Group" end
             end
             if kind and not (questID and turnins[questID]) then
                 table.insert(ns.duoQuests, {
