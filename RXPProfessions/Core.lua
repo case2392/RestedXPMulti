@@ -127,6 +127,18 @@ end
 -- profession window is open, so we scan and remember it whenever one is.
 --------------------------------------------------------------------------
 
+-- a recipe's skill-up colour as one word: optimal (orange), medium
+-- (yellow), easy (green), trivial (grey). Classic hands the word back from
+-- GetTradeSkillInfo; Forever an Enum.TradeskillRelativeDifficulty number.
+local DIFFICULTY_BY_NUMBER = {[0] = "optimal", [1] = "medium", [2] = "easy", [3] = "trivial"}
+local function Difficulty(v)
+    if type(v) == "string" then return v end
+    if type(v) == "number" then return DIFFICULTY_BY_NUMBER[v] or "unknown" end
+    return "unknown"
+end
+-- does a known recipe still give skill-ups (orange or yellow; green most of the time)
+local SKILLS_UP = {optimal = true, medium = true, easy = true}
+
 -- Forever (and retail) keep recipes behind C_TradeSkillUI: the open
 -- profession's name from GetChildProfessionInfo, every recipe id the
 -- window knows, and a learned flag on each
@@ -145,7 +157,7 @@ local function ScanTradeSkillUI()
     for _, id in ipairs(ids) do
         local okR, r = pcall(api.GetRecipeInfo, id)
         if okR and type(r) == "table" and r.name and r.learned then
-            known[r.name] = true
+            known[r.name] = Difficulty(r.relativeDifficulty)
             any = true
         end
     end
@@ -168,11 +180,45 @@ function ns.ScanOpenTradeSkill()
     local known = {}
     for i = 1, GetNumTradeSkills() do
         local rname, rtype = GetTradeSkillInfo(i)
-        if rname and rtype ~= "header" then known[rname] = true end
+        if rname and rtype ~= "header" then known[rname] = Difficulty(rtype) end
     end
     ns.db.knownRecipes = ns.db.knownRecipes or {}
     ns.db.knownRecipes[prof] = known
     ns.UpdateUI()
+end
+
+-- The trainer window is the one place the game states what skill a
+-- recipe needs, learned or not: GetTrainerServiceSkillReq(i) gives the
+-- skill line and the level. Every tracked profession's services are
+-- remembered, so a route row that is wrong by a tier (a report: told to
+-- craft gloves the trainer sells at 55 while at 30, and the next row
+-- was a tier ahead too) is corrected from what the trainer said.
+function ns.ScanTrainer()
+    if not (GetNumTrainerServices and GetTrainerServiceInfo and GetTrainerServiceSkillReq) then return end
+    local okN, n = pcall(GetNumTrainerServices)
+    if not okN or type(n) ~= "number" then return end
+    local reqs = ns.db.recipeReq or {}
+    local seen = 0
+    for i = 1, n do
+        local okI, name, _, category = pcall(GetTrainerServiceInfo, i)
+        local okR, skill, level = pcall(GetTrainerServiceSkillReq, i)
+        if okI and okR and type(name) == "string" and category ~= "header" and
+            type(skill) == "string" and ns.TRACKED[skill] and type(level) == "number" then
+            reqs[skill] = reqs[skill] or {}
+            reqs[skill][name] = level
+            seen = seen + 1
+        end
+    end
+    if seen == 0 then return end
+    ns.db.recipeReq = reqs
+    ns.UpdateUI()
+    return seen
+end
+
+-- what the trainer said a recipe needs, if a trainer has been visited
+function ns.RecipeRequirement(prof, recipe)
+    local reqs = ns.db and ns.db.recipeReq and ns.db.recipeReq[prof]
+    return reqs and reqs[recipe]
 end
 
 function ns.ScanOpenCraft() -- Enchanting uses the separate Craft API
@@ -191,6 +237,34 @@ end
 
 function ns.GetKnownRecipes(prof)
     return ns.db and ns.db.knownRecipes and ns.db.knownRecipes[prof]
+end
+
+-- the skill a route row really needs: the trainer's word for its recipe
+-- (any of the alternatives) when there is one, else the row's own number
+function ns.RouteRowNeeds(prof, row)
+    local need = row[1]
+    for alt in tostring(row[2]):gmatch("[^/]+") do
+        alt = alt:gsub("^%s+", ""):gsub("%s+$", "")
+        local said = ns.RecipeRequirement(prof, alt)
+        if said and said > need then need = said end
+    end
+    return need
+end
+
+-- of the recipes the player knows, the one most likely to skill up: the
+-- orange ones first, then yellow, then green; nil when none would
+function ns.BestKnownRecipe(prof)
+    local known = ns.GetKnownRecipes(prof)
+    if not known then return end
+    local order = {optimal = 1, medium = 2, easy = 3}
+    local best, bestRank
+    for recipe, diff in pairs(known) do
+        local r = order[diff]
+        if r and (not bestRank or r < bestRank or (r == bestRank and recipe < best)) then
+            best, bestRank = recipe, r
+        end
+    end
+    return best
 end
 
 --------------------------------------------------------------------------
@@ -385,6 +459,21 @@ function ns.BuildProfLines(name, p)
             if fishCombo then
                 add("Combo: cooking your Fishing catches", "good")
             end
+            -- a row whose recipe the trainer sells only at a higher skill
+            -- than the row claims is a tier early: step back to the last
+            -- row the player can actually have learned
+            local tooEarly
+            while current and ns.RouteRowNeeds(name, current) > p.rank do
+                tooEarly = tooEarly or current
+                local prev
+                for _, tier in ipairs(route) do
+                    if tier == current then break end
+                    prev = tier
+                end
+                if not prev then break end
+                nextUp = current
+                current = prev
+            end
             if current then
                 -- prefer an alternative the player actually knows; warn
                 -- with the recipe source when none of them are known
@@ -401,6 +490,16 @@ function ns.BuildProfLines(name, p)
                     end
                 end
                 add(string.format("Craft: %s", display), "normal")
+                if tooEarly then
+                    add(string.format("(%s needs %d - your trainer said so)", tooEarly[2],
+                                      ns.RouteRowNeeds(name, tooEarly)), "dim")
+                end
+                -- the route's recipe is not known, but one that is still
+                -- gives skill-ups: say so rather than send them shopping
+                if knownMap and not anyKnown then
+                    local best = ns.BestKnownRecipe(name)
+                    if best then add(string.format("Meanwhile: %s (still skills up)", best), "good") end
+                end
                 if fishCombo then
                     add(string.format("Mats: %s", current.fish), "dim")
                     local spot = ns.ZoneWaterSpot(current)
@@ -419,10 +518,15 @@ function ns.BuildProfLines(name, p)
                     source = faction == "Horde" and source.H or source.A
                 end
                 if knownMap and not anyKnown then
-                    add("You don't know this recipe yet!", "warn")
-                    add("Get it: " ..
-                            (source or "check your trainer / recipe vendors"),
-                        "warn")
+                    local need = ns.RecipeRequirement(name, display)
+                    if need and need > p.rank then
+                        add(string.format("Learn it at %d from your trainer", need), "warn")
+                    else
+                        add("You don't know this recipe yet!", "warn")
+                        add("Get it: " ..
+                                (source or "check your trainer / recipe vendors"),
+                            "warn")
+                    end
                 elseif not knownMap then
                     if source then
                         add("Recipe: " .. source, "dim")
@@ -570,7 +674,8 @@ end
 local EVENTS = {
     "PLAYER_ENTERING_WORLD", "SKILL_LINES_CHANGED", "CHAT_MSG_SKILL",
     "ZONE_CHANGED_NEW_AREA", "TRADE_SKILL_SHOW", "TRADE_SKILL_UPDATE",
-    "TRADE_SKILL_LIST_UPDATE", "CRAFT_SHOW", "CRAFT_UPDATE"
+    "TRADE_SKILL_LIST_UPDATE", "CRAFT_SHOW", "CRAFT_UPDATE",
+    "TRAINER_SHOW", "TRAINER_UPDATE"
 }
 ns.missingEvents = {}
 for _, event in ipairs(EVENTS) do
@@ -581,6 +686,9 @@ local TRADE_EVENTS = {TRADE_SKILL_SHOW = true, TRADE_SKILL_UPDATE = true, TRADE_
 eventFrame:SetScript("OnEvent", function(_, event)
     if TRADE_EVENTS[event] then
         if ns.db then ns.ScanOpenTradeSkill() end
+        return
+    elseif event == "TRAINER_SHOW" or event == "TRAINER_UPDATE" then
+        if ns.db then ns.ScanTrainer() end
         return
     elseif event == "CRAFT_SHOW" or event == "CRAFT_UPDATE" then
         if ns.db then ns.ScanOpenCraft() end

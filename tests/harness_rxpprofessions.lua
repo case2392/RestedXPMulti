@@ -80,6 +80,7 @@ local function NewWorld(opts)
         {name = "Professions", header = true, folded = opts.folded or false, children = {{name = "Mining", rank = 45, maxRank = 75}}},
         {name = "Secondary Skills", header = true, folded = false, children = {{name = "Cooking", rank = opts.secretRank and secret or 20, maxRank = 75}}}
     }
+    if opts.leatherworking then table.insert(tree[2].children, {name = "Leatherworking", rank = opts.leatherworking, maxRank = 75}) end
     local function visible()
         local out = {}
         for _, h in ipairs(tree) do
@@ -93,7 +94,16 @@ local function NewWorld(opts)
     w.expands, w.collapses = 0, 0
     local function expand(i) local l = visible()[i]; assert(l and l.header, "expand on a non-header"); l.folded = false; w.expands = w.expands + 1 end
     local function collapse(i) local l = visible()[i]; assert(l and l.header, "collapse on a non-header"); l.folded = true; w.collapses = w.collapses + 1 end
+    -- the classic profession window (w.trade = {prof, {{name, difficulty}, ...}})
+    -- and trainer window (w.trainer = {{name, category, skill, level}, ...})
+    w.trade, w.trainer = nil, {}
+    _G.GetNumTrainerServices = function() return #w.trainer end
+    _G.GetTrainerServiceInfo = function(i) local t = w.trainer[i]; return t[1], "", t[2], false end
+    _G.GetTrainerServiceSkillReq = function(i) local t = w.trainer[i]; return t[3], t[4] end
     if opts.client == "classic" then
+        _G.GetTradeSkillLine = function() return w.trade and w.trade[1] or "UNKNOWN" end
+        _G.GetNumTradeSkills = function() return w.trade and #w.trade[2] or 0 end
+        _G.GetTradeSkillInfo = function(i) local r = w.trade[2][i]; return r[1], r[2] end
         _G.GetNumSkillLines = function() return #visible() end
         _G.GetSkillLineInfo = function(i) local l = visible()[i]; return l.name, l.header or false, l.header and not l.folded or nil, l.rank, nil, nil, l.maxRank end
         _G.ExpandSkillHeader, _G.CollapseSkillHeader = expand, collapse
@@ -143,10 +153,10 @@ local function NewWorld(opts)
 end
 
 local CLASSIC_EVENTS = {"PLAYER_ENTERING_WORLD", "SKILL_LINES_CHANGED", "CHAT_MSG_SKILL", "ZONE_CHANGED_NEW_AREA",
-                        "TRADE_SKILL_SHOW", "TRADE_SKILL_UPDATE", "CRAFT_SHOW", "CRAFT_UPDATE"}
+                        "TRADE_SKILL_SHOW", "TRADE_SKILL_UPDATE", "CRAFT_SHOW", "CRAFT_UPDATE", "TRAINER_SHOW", "TRAINER_UPDATE"}
 -- Forever: retail's trade skill events, no TRADE_SKILL_UPDATE, no CRAFT_*
 local FOREVER_EVENTS = {"PLAYER_ENTERING_WORLD", "SKILL_LINES_CHANGED", "CHAT_MSG_SKILL", "ZONE_CHANGED_NEW_AREA",
-                        "TRADE_SKILL_SHOW", "TRADE_SKILL_LIST_UPDATE", "TRADE_SKILL_CLOSE"}
+                        "TRADE_SKILL_SHOW", "TRADE_SKILL_LIST_UPDATE", "TRADE_SKILL_CLOSE", "TRAINER_SHOW", "TRAINER_UPDATE"}
 
 --------------------------------------------------------------------------
 -- Classic Era: as before
@@ -217,6 +227,58 @@ do
     local wp = NewWorld({client = "forever", events = FOREVER_EVENTS, folded = true, professions = true, db = {setupDone = true, chosen = {Mining = true, Cooking = true}, show = true}})
     wp.Fire("PLAYER_ENTERING_WORLD")
     check(wp.ns.profs.Mining.rank == 45 and wp.ns.profs.Cooking.rank == 20 and wp.ns.skillAPI == "GetProfessions + C_SkillInfo", "forever: GetProfessions and C_SkillInfo both read, results merged")
+end
+
+--------------------------------------------------------------------------
+-- The TBC leatherworking report: "wanted me to craft skill 55 gloves
+-- while at 30, once I got to 55 it shifted to the next tier - as if it
+-- was 1 ahead at all times"
+--------------------------------------------------------------------------
+do
+    local function craftLines(w)
+        local out = {}
+        for _, l in ipairs(w.ns.BuildProfLines("Leatherworking", w.ns.GetTracked().Leatherworking)) do out[#out + 1] = l.text end
+        return table.concat(out, "\n")
+    end
+    -- the data itself: at 30 the boots, the gloves from 55, the belt from 85
+    local w = NewWorld({client = "classic", events = CLASSIC_EVENTS, leatherworking = 30, level = 12, db = {setupDone = true, chosen = {Leatherworking = true}, show = true}})
+    w.Fire("PLAYER_ENTERING_WORLD")
+    local text = craftLines(w)
+    check(text:find("Craft: Handstitched Leather Boots", 1, true) and text:find("At 55: Embossed Leather Gloves", 1, true), "leatherworking: at 30 the boots, gloves promised at 55")
+    w.tree[2].children[2].rank = 55; w.Fire("SKILL_LINES_CHANGED")
+    text = craftLines(w)
+    check(text:find("Craft: Embossed Leather Gloves", 1, true) and text:find("At 85: Fine Leather Belt", 1, true), "leatherworking: at 55 the gloves, the belt promised at 85")
+    -- a wrong row corrected live: put the old mistake back (gloves at 30) and let the trainer speak
+    w.ns.CRAFT.Leatherworking.route[3][1] = 30
+    w.tree[2].children[2].rank = 30; w.Fire("SKILL_LINES_CHANGED")
+    check(craftLines(w):find("Craft: Embossed Leather Gloves", 1, true), "leatherworking: the old row shows the gloves at 30 again")
+    w.trainer = {{"Leatherworking", "header", nil, nil}, {"Embossed Leather Gloves", "unavailable", "Leatherworking", 55}, {"Fine Leather Belt", "unavailable", "Leatherworking", 85}, {"Handstitched Leather Boots", "used", "Leatherworking", 20}, {"Cooking Fire", "available", "Cooking", 1}}
+    w.Fire("TRAINER_SHOW")
+    check(w.ns.RecipeRequirement("Leatherworking", "Embossed Leather Gloves") == 55 and w.ns.RecipeRequirement("Leatherworking", "Fine Leather Belt") == 85, "leatherworking: the trainer's requirements remembered")
+    text = craftLines(w)
+    check(text:find("Craft: Handstitched Leather Boots", 1, true) and text:find("(Embossed Leather Gloves needs 55 - your trainer said so)", 1, true), "leatherworking: the row the trainer contradicts is stepped back, and says why")
+    w.ns.CRAFT.Leatherworking.route[3][1] = 55
+    -- the profession window: the route's recipe unknown, but a known one still orange
+    w.trade = {"Leatherworking", {{"Light Armor Kit", "easy"}, {"Handstitched Leather Boots", "optimal"}, {"Handstitched Leather Bracers", "medium"}}}
+    w.tree[2].children[2].rank = 56; w.Fire("SKILL_LINES_CHANGED")
+    w.Fire("TRADE_SKILL_SHOW")
+    text = craftLines(w)
+    check(w.ns.GetKnownRecipes("Leatherworking")["Handstitched Leather Boots"] == "optimal", "leatherworking: known recipes carry their skill-up colour")
+    check(text:find("Craft: Embossed Leather Gloves", 1, true) and text:find("Learn it at 55 from your trainer", 1, true) == nil and text:find("You don't know this recipe yet!", 1, true) and text:find("Meanwhile: Handstitched Leather Boots (still skills up)", 1, true), "leatherworking: at 56 the gloves are due, unknown, and the orange boots offered meanwhile")
+    w.tree[2].children[2].rank = 40; w.Fire("SKILL_LINES_CHANGED")
+    w.ns.CRAFT.Leatherworking.route[3][1] = 30   -- the old row again, trainer known: 55 > 40
+    text = craftLines(w)
+    check(text:find("Craft: Handstitched Leather Boots", 1, true) and not text:find("You don't know", 1, true), "leatherworking: with the trainer's word the known boots are the craft line at 40, no shopping trip")
+    w.ns.CRAFT.Leatherworking.route[3][1] = 55
+    w.ns.db.recipeReq = nil
+    w.tree[2].children[2].rank = 56; w.Fire("SKILL_LINES_CHANGED")
+    w.trainer = {{"Embossed Leather Gloves", "available", "Leatherworking", 55}}
+    w.Fire("TRAINER_SHOW")
+    w.tree[2].children[2].rank = 50; w.Fire("SKILL_LINES_CHANGED")
+    w.ns.CRAFT.Leatherworking.route[3][1] = 45
+    text = craftLines(w)
+    check(text:find("Craft: Handstitched Leather Boots", 1, true), "leatherworking: trainer says 55, rank 50, row says 45: stepped back")
+    w.ns.CRAFT.Leatherworking.route[3][1] = 55
 end
 
 -- a secret rank (Forever hides some numbers from addon code) counts as unknown, not an error

@@ -156,10 +156,11 @@ ns.CRAFT = {
         route = {
             {1, "Light Armor Kit", "1 Light Leather"},
             {20, "Handstitched Leather Boots", "2 Light Leather + Coarse Thread"},
-            {30, "Embossed Leather Gloves", "3 Light Leather + Coarse Thread"},
-            {55, "Fine Leather Belt", "6 Light Leather + Coarse Thread"},
-            {85, "Cured Medium Hide", "1 Medium Hide + 1 Salt"},
-            {100, "Dark Leather Boots", "4 Medium Leather + Fine Thread + Gray Dye"},
+            -- a report (TBC): the gloves are trained at 55 and the belt
+            -- at 85, not 30 and 55 as this once said; the boots carry to 55
+            {55, "Embossed Leather Gloves", "3 Light Leather + Coarse Thread"},
+            {85, "Fine Leather Belt", "6 Light Leather + Coarse Thread"},
+            {100, "Dark Leather Boots", "4 Medium Leather + Fine Thread + Gray Dye (cure a few Medium Hides with Salt for the belts next)"},
             {120, "Dark Leather Belt", "6 Medium Leather + Cured Medium Hide + Fine Thread"},
             {150, "Heavy Armor Kit", "5 Heavy Leather"},
             {170, "Barbaric Shoulders", "8 Heavy Leather + Fine Thread"},

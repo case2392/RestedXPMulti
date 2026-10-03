@@ -39,6 +39,14 @@ present).
 
 - Skill data targets Classic Era / Anniversary (works in TBC; Outland
   content not yet covered).
+- The craft routes are static tables, so a row can be wrong: a TBC report
+  had Leatherworking "a tier ahead at all times" (the gloves the row put at
+  30 are trained at 55, the belt at 85). Those rows are fixed (0.6.2), and
+  the addon now learns from the game as you play: every trainer window you
+  open records what skill each recipe needs, a row the trainer contradicts
+  is stepped back to the last recipe you can have, and your profession
+  window's skill-up colours are remembered so "Meanwhile: X (still skills
+  up)" names a recipe you know when the route's is out of reach.
 - A profession under a folded header in the skills tab (a "Professions"
   heading clicked shut) is not in the game's skill list at all, and a
   trained one read as never learned (a report). Since 0.6.1 folded headers
