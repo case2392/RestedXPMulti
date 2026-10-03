@@ -39,6 +39,11 @@ present).
 
 - Skill data targets Classic Era / Anniversary (works in TBC; Outland
   content not yet covered).
+- A profession under a folded header in the skills tab (a "Professions"
+  heading clicked shut) is not in the game's skill list at all, and a
+  trained one read as never learned (a report). Since 0.6.1 folded headers
+  are opened for the scan and folded back after, and the profession list
+  (`GetProfessions`, where the client has it) is read as well.
 - Runs on World of Warcraft Forever too (0.6.0). Forever's engine has a
   different skill API (`C_SkillInfo`), keeps recipes behind
   `C_TradeSkillUI`, and lacks the `TRADE_SKILL_UPDATE` / `CRAFT_*` events:

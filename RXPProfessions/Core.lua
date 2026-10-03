@@ -28,9 +28,10 @@ end
 --   Classic Era / TBC / Mists: GetNumSkillLines + GetSkillLineInfo
 --   Forever (Camelot engine): C_SkillInfo.GetSkillLineInfo(i) -> a table
 --   retail-style:            GetProfessions() ids + GetProfessionInfo(id)
--- The first one present wins; a client with none of them tracks nothing.
+-- Every one the client has is read and the results merged, so a
+-- profession one of them misses is still found by another.
 local function Record(found, name, rank, maxRank)
-    if name and ns.TRACKED[name] then
+    if name and ns.TRACKED[name] and not found[name] then
         found[name] = {
             rank = Plain(rank) or 0,
             maxRank = Plain(maxRank) or 0,
@@ -39,31 +40,85 @@ local function Record(found, name, rank, maxRank)
     end
 end
 
+-- The skill-line lists only hold what the skills tab shows: a skill under
+-- a folded header (the player clicked "Professions" shut once) is not
+-- listed at all, and a trained profession read as never learned - a
+-- report: "even by talking to the trainers addon doesn't seem to see I'm
+-- already trained". Folded headers are opened for the pass and folded
+-- back after, bottom up so the indexes above stay put.
+--   src.count() -> n;  src.line(i) -> name, isHeader, isFolded, rank, maxRank
+--   src.expand(i), src.collapse(i)
+local function ScanSkillLines(src, found)
+    local folded = {}
+    for i = src.count() or 0, 1, -1 do
+        local name, isHeader, isFolded = src.line(i)
+        if isHeader and isFolded and name then
+            folded[name] = true
+            if src.expand then pcall(src.expand, i) end
+        end
+    end
+    for i = 1, src.count() or 0 do
+        local name, isHeader, _, rank, maxRank = src.line(i)
+        if not isHeader then Record(found, name, rank, maxRank) end
+    end
+    if next(folded) and src.collapse then
+        for i = src.count() or 0, 1, -1 do
+            local name, isHeader = src.line(i)
+            if isHeader and name and folded[name] then pcall(src.collapse, i) end
+        end
+    end
+end
+
+local function ClassicSkillLines()
+    if not (GetNumSkillLines and GetSkillLineInfo) then return end
+    return {
+        count = GetNumSkillLines,
+        line = function(i)
+            local name, isHeader, isExpanded, rank, _, _, maxRank = GetSkillLineInfo(i)
+            return name, isHeader, isHeader and not isExpanded, rank, maxRank
+        end,
+        expand = ExpandSkillHeader,
+        collapse = CollapseSkillHeader
+    }
+end
+
+local function ForeverSkillLines()
+    local api = C_SkillInfo
+    if not (api and api.GetNumSkillLines and api.GetSkillLineInfo) then return end
+    return {
+        count = api.GetNumSkillLines,
+        line = function(i)
+            local ok, info = pcall(api.GetSkillLineInfo, i)
+            if not ok or type(info) ~= "table" then return end
+            return info.name, info.isHeader, info.isCollapsed, info.rank, info.maxRank
+        end,
+        expand = api.ExpandSkillHeader,
+        collapse = api.CollapseSkillHeader
+    }
+end
+
 function ns.ScanSkills()
     local found = {}
-    if GetNumSkillLines and GetSkillLineInfo then
-        for i = 1, GetNumSkillLines() or 0 do
-            local name, isHeader, _, rank, _, _, maxRank = GetSkillLineInfo(i)
-            if not isHeader then Record(found, name, rank, maxRank) end
-        end
-        ns.skillAPI = "skill lines"
-    elseif C_SkillInfo and C_SkillInfo.GetNumSkillLines and C_SkillInfo.GetSkillLineInfo then
-        for i = 1, C_SkillInfo.GetNumSkillLines() or 0 do
-            local ok, info = pcall(C_SkillInfo.GetSkillLineInfo, i)
-            if ok and type(info) == "table" and not info.isHeader then
-                Record(found, info.name, info.rank, info.maxRank)
-            end
-        end
-        ns.skillAPI = "C_SkillInfo"
-    elseif GetProfessions and GetProfessionInfo then
+    local used = {}
+    -- the profession list first: it does not depend on the skills tab
+    if GetProfessions and GetProfessionInfo then
         for _, id in ipairs({GetProfessions()}) do
             local ok, name, _, rank, maxRank = pcall(GetProfessionInfo, id)
             if ok then Record(found, name, rank, maxRank) end
         end
-        ns.skillAPI = "GetProfessions"
-    else
-        ns.skillAPI = "none"
+        used[#used + 1] = "GetProfessions"
     end
+    local classic = ClassicSkillLines()
+    if classic then
+        ScanSkillLines(classic, found)
+        used[#used + 1] = "skill lines"
+    end
+    local forever = ForeverSkillLines()
+    if forever then
+        ScanSkillLines(forever, found)
+        used[#used + 1] = "C_SkillInfo"
+    end
+    ns.skillAPI = #used > 0 and table.concat(used, " + ") or "none"
     return found
 end
 

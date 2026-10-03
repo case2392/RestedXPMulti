@@ -72,22 +72,48 @@ local function NewWorld(opts)
     _G.GetRealZoneText = function() return opts.zone or "Elwynn Forest" end
     _G.RXPProfessionsDB = opts.db
 
+    -- the skills tab's list: headers with children that vanish from the
+    -- list while the header is folded (opts.folded folds "Professions")
+    local secret = setmetatable({}, {__eq = function() error("attempt to compare a secret number value") end})
+    local tree = {
+        {name = "Class Skills", header = true, folded = false, children = {{name = "Defense", rank = 100, maxRank = 100}}},
+        {name = "Professions", header = true, folded = opts.folded or false, children = {{name = "Mining", rank = 45, maxRank = 75}}},
+        {name = "Secondary Skills", header = true, folded = false, children = {{name = "Cooking", rank = opts.secretRank and secret or 20, maxRank = 75}}}
+    }
+    local function visible()
+        local out = {}
+        for _, h in ipairs(tree) do
+            out[#out + 1] = h
+            if not h.folded then for _, c in ipairs(h.children) do out[#out + 1] = c end end
+        end
+        return out
+    end
+    w.visible = visible
+    w.tree = tree
+    w.expands, w.collapses = 0, 0
+    local function expand(i) local l = visible()[i]; assert(l and l.header, "expand on a non-header"); l.folded = false; w.expands = w.expands + 1 end
+    local function collapse(i) local l = visible()[i]; assert(l and l.header, "collapse on a non-header"); l.folded = true; w.collapses = w.collapses + 1 end
     if opts.client == "classic" then
-        local lines = {{"Class Skills", true}, {"Mining", false, 45, 75}, {"Weapon Skills", true}, {"Cooking", false, 20, 75}}
-        _G.GetNumSkillLines = function() return #lines end
-        _G.GetSkillLineInfo = function(i) local l = lines[i]; return l[1], l[2], nil, l[3], nil, nil, l[4] end
+        _G.GetNumSkillLines = function() return #visible() end
+        _G.GetSkillLineInfo = function(i) local l = visible()[i]; return l.name, l.header or false, l.header and not l.folded or nil, l.rank, nil, nil, l.maxRank end
+        _G.ExpandSkillHeader, _G.CollapseSkillHeader = expand, collapse
     elseif opts.client == "forever" then
         -- C_SkillInfo hands tables back; rank may be a secret value
-        local secret = setmetatable({}, {__eq = function() error("attempt to compare a secret number value") end})
-        local lines = {
-            {name = "Class Skills", isHeader = true},
-            {name = "Mining", isHeader = false, rank = 45, maxRank = 75, parentSkillLineID = 0},
-            {name = "Cooking", isHeader = false, rank = opts.secretRank and secret or 20, maxRank = 75, parentSkillLineID = 0}
-        }
         _G.C_SkillInfo = {
-            GetNumSkillLines = function() return #lines end,
-            GetSkillLineInfo = function(i) return lines[i] end
+            GetNumSkillLines = function() return #visible() end,
+            GetSkillLineInfo = function(i)
+                local l = visible()[i]
+                return {name = l.name, isHeader = l.header or false, isCollapsed = l.header and l.folded or false, rank = l.rank, maxRank = l.maxRank, parentSkillLineID = 0}
+            end,
+            ExpandSkillHeader = expand, CollapseSkillHeader = collapse
         }
+        if opts.professions then
+            _G.GetProfessions = function() return 7, nil, nil, nil, 12, nil end
+            _G.GetProfessionInfo = function(id)
+                if id == 7 then return "Mining", 1, 45, 75 end
+                if id == 12 then return "Cooking", 1, 20, 75 end
+            end
+        end
         w.recipes = {}
         _G.C_TradeSkillUI = {
             GetChildProfessionInfo = function() return {professionName = w.openProf or "Cooking", skillLevel = 20, maxSkillLevel = 75} end,
@@ -140,6 +166,15 @@ do
     check(lines[1].text == "Mining  45/75" and mine and nextUp, "classic: advice built")
     w.slash("status")
     check(Printed("skills read through skill lines: Cooking 20/75, Mining 45/75"), "classic: /rxpp status lists the skills")
+    -- the report: "Professions" folded shut in the skills tab hid Mining from the list, and a
+    -- trained miner read as never trained. The header is opened for the scan and folded back.
+    local w2 = NewWorld({client = "classic", events = CLASSIC_EVENTS, folded = true, db = {setupDone = true, chosen = {Mining = true}, show = true}})
+    check(#w2.visible() == 5 and w2.visible()[4].name == "Secondary Skills", "classic: with Professions folded, Mining is not in the list at all")
+    w2.Fire("PLAYER_ENTERING_WORLD")
+    check(w2.ns.profs.Mining and w2.ns.profs.Mining.rank == 45, "classic: a folded header is opened for the scan, so the trained profession is found")
+    check(w2.tree[2].folded == true and w2.expands == 1 and w2.collapses == 1 and w2.tree[1].folded == false, "classic: and folded back after, the open ones left open")
+    local lines2 = w2.ns.BuildProfLines("Mining", w2.ns.GetTracked().Mining)
+    check(lines2[1].text == "Mining  45/75" and not lines2[2].text:find("Not learned", 1, true), "classic: no 'Not learned yet' for a trained profession")
 end
 
 --------------------------------------------------------------------------
@@ -174,6 +209,14 @@ do
     local anyLine = false
     for _, f in ipairs(w.frames) do for _, t in ipairs(f.texts) do if t.text and t.text:find("Mining  45/75", 1, true) then anyLine = true end end end
     check(anyLine, "forever: the window shows the skill line")
+    -- the same fold on Forever's skills tab, through C_SkillInfo's expand/collapse
+    local wf = NewWorld({client = "forever", events = FOREVER_EVENTS, folded = true, db = {setupDone = true, chosen = {Mining = true}, show = true}})
+    wf.Fire("PLAYER_ENTERING_WORLD")
+    check(wf.ns.profs.Mining and wf.ns.profs.Mining.rank == 45 and wf.tree[2].folded == true and wf.expands == 1 and wf.collapses == 1, "forever: a folded Professions header is opened for the scan and folded back")
+    -- with GetProfessions there too, both are read and merged
+    local wp = NewWorld({client = "forever", events = FOREVER_EVENTS, folded = true, professions = true, db = {setupDone = true, chosen = {Mining = true, Cooking = true}, show = true}})
+    wp.Fire("PLAYER_ENTERING_WORLD")
+    check(wp.ns.profs.Mining.rank == 45 and wp.ns.profs.Cooking.rank == 20 and wp.ns.skillAPI == "GetProfessions + C_SkillInfo", "forever: GetProfessions and C_SkillInfo both read, results merged")
 end
 
 -- a secret rank (Forever hides some numbers from addon code) counts as unknown, not an error
