@@ -1,0 +1,11 @@
+## Interface: 16001
+## Title: CrossTalk (Forever)
+## Notes: Say short things the other faction can read on WoW Forever - RIP BOZO, GG, GOOD LUCK - spelled out in letters the game lets through. One-time calibration with a player of the other faction finds the letters for your game build. /ct
+## Author: case2392
+## Version: 1.0.0
+## SavedVariables: CrossTalkDB
+
+Core.lua
+Calibrate.lua
+UI.lua
+Main.lua

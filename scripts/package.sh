@@ -41,7 +41,7 @@ wanted() {
 }
 
 cd "$root"
-for addon in RestedXPMulti ForeverClassicUI AdventurePlates RXPProfessions RIPBozo; do
+for addon in RestedXPMulti ForeverClassicUI AdventurePlates RXPProfessions RIPBozo CrossTalk; do
     if wanted "$addon" && [ -f "$addon/$addon.toc" ]; then
         # everything in the folder except art sources and screenshots
         files=()
