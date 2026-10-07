@@ -1,0 +1,115 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@700;900&display=swap" rel="stylesheet">
+<style>
+  body { margin: 0; background: #222; }
+  .sheet { display: flex; gap: 40px; padding: 40px; }
+  svg { display: block; }
+</style>
+</head>
+<body>
+<div class="sheet">
+<!-- CrossTalk (Forever): the Classic UI (Forever) ring and ribbon, with a
+     blue and a red speech bubble crossing in the middle -->
+<svg id="logo" width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <radialGradient id="disc" cx="50%" cy="42%" r="62%">
+      <stop offset="0" stop-color="#34405e"/>
+      <stop offset="0.5" stop-color="#1a2034"/>
+      <stop offset="0.9" stop-color="#0b0e18"/>
+      <stop offset="1" stop-color="#05070c"/>
+    </radialGradient>
+    <linearGradient id="gold" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fff2b0"/>
+      <stop offset="0.35" stop-color="#e2b64a"/>
+      <stop offset="0.6" stop-color="#a8761c"/>
+      <stop offset="1" stop-color="#f3d77a"/>
+    </linearGradient>
+    <linearGradient id="blue" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#4f86f0"/>
+      <stop offset="0.55" stop-color="#2452c4"/>
+      <stop offset="1" stop-color="#132f7a"/>
+    </linearGradient>
+    <linearGradient id="red" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#e0453a"/>
+      <stop offset="0.55" stop-color="#a51f17"/>
+      <stop offset="1" stop-color="#5e0c08"/>
+    </linearGradient>
+    <linearGradient id="ribbon" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#a5221f"/>
+      <stop offset="0.5" stop-color="#7a1412"/>
+      <stop offset="1" stop-color="#4e0b0a"/>
+    </linearGradient>
+    <linearGradient id="ribbonDark" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#5a0f0e"/>
+      <stop offset="1" stop-color="#360706"/>
+    </linearGradient>
+    <radialGradient id="gem" cx="35%" cy="30%" r="70%">
+      <stop offset="0" stop-color="#bfe6ff"/>
+      <stop offset="0.4" stop-color="#2f8de0"/>
+      <stop offset="1" stop-color="#0b2d63"/>
+    </radialGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="5" stdDeviation="4" flood-color="#000" flood-opacity="0.85"/>
+    </filter>
+    <filter id="glow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="12"/>
+    </filter>
+    <pattern id="stone" width="10" height="10" patternUnits="userSpaceOnUse">
+      <circle cx="2" cy="3" r="0.9" fill="#fff" opacity="0.05"/>
+      <circle cx="7" cy="8" r="0.7" fill="#000" opacity="0.35"/>
+    </pattern>
+  </defs>
+
+  <rect width="512" height="512" rx="28" fill="#07080c"/>
+  <circle cx="256" cy="256" r="230" fill="url(#disc)"/>
+  <circle cx="256" cy="256" r="230" fill="url(#stone)"/>
+  <!-- a faint blue and red glow behind the bubbles -->
+  <circle cx="198" cy="205" r="95" fill="#2f63e0" opacity="0.28" filter="url(#glow)"/>
+  <circle cx="314" cy="310" r="95" fill="#d0302a" opacity="0.28" filter="url(#glow)"/>
+
+  <!-- blue bubble, tail down and left -->
+  <g filter="url(#shadow)">
+    <path d="M 100 164 Q 100 142 122 142 L 274 142 Q 296 142 296 164 L 296 240 Q 296 262 274 262 L 160 262 L 116 298 L 126 262 Q 100 262 100 240 Z"
+          fill="url(#blue)" stroke="url(#gold)" stroke-width="7" stroke-linejoin="round"/>
+    <text x="198" y="240" text-anchor="middle" font-family="Cinzel, 'Liberation Serif', serif" font-weight="900" font-size="92"
+          fill="#ffffff" stroke="#0b1a45" stroke-width="5" paint-order="stroke" letter-spacing="2">GG</text>
+  </g>
+  <!-- red bubble, tail down and right, over the blue one -->
+  <g filter="url(#shadow)">
+    <path d="M 216 272 Q 216 250 238 250 L 390 250 Q 412 250 412 272 L 412 346 Q 412 368 390 368 L 398 394 L 356 368 L 238 368 Q 216 368 216 346 Z"
+          fill="url(#red)" stroke="url(#gold)" stroke-width="7" stroke-linejoin="round"/>
+    <text x="314" y="343" text-anchor="middle" font-family="Cinzel, 'Liberation Serif', serif" font-weight="900" font-size="84"
+          fill="#ffffff" stroke="#3d0603" stroke-width="5" paint-order="stroke" letter-spacing="2">RIP</text>
+  </g>
+
+  <!-- the ring: thin gold, four gems -->
+  <circle cx="256" cy="256" r="234" fill="none" stroke="#2a1a05" stroke-width="22"/>
+  <circle cx="256" cy="256" r="234" fill="none" stroke="url(#gold)" stroke-width="16"/>
+  <circle cx="256" cy="256" r="224" fill="none" stroke="#3b2607" stroke-width="3"/>
+  <circle cx="256" cy="256" r="244" fill="none" stroke="#3b2607" stroke-width="3"/>
+  <g stroke="#3b2607" stroke-width="2.5">
+    <g id="gemN"><circle cx="256" cy="22" r="9" fill="url(#gem)"/></g>
+    <use href="#gemN" transform="rotate(90 256 256)"/>
+    <use href="#gemN" transform="rotate(270 256 256)"/>
+  </g>
+
+  <!-- CROSSTALK across the top -->
+  <text x="256" y="118" text-anchor="middle" font-family="Cinzel, 'Liberation Serif', serif" font-weight="900" font-size="58"
+        fill="url(#gold)" stroke="#2a1a05" stroke-width="4" paint-order="stroke" filter="url(#shadow)" letter-spacing="1">CROSSTALK</text>
+
+  <!-- FOREVER ribbon, as on the Classic UI (Forever) logo -->
+  <g filter="url(#shadow)">
+    <polygon points="64,402 120,402 120,470 64,470 86,436" fill="url(#ribbonDark)" stroke="#2a0605" stroke-width="2"/>
+    <polygon points="448,402 392,402 392,470 448,470 426,436" fill="url(#ribbonDark)" stroke="#2a0605" stroke-width="2"/>
+    <rect x="100" y="394" width="312" height="72" rx="6" fill="url(#ribbon)" stroke="#2a0605" stroke-width="3"/>
+    <rect x="106" y="400" width="300" height="60" rx="4" fill="none" stroke="#e8b95a" stroke-width="1.5" opacity="0.7"/>
+    <text x="256" y="448" text-anchor="middle" font-family="Cinzel, 'Liberation Serif', serif" font-weight="900" font-size="52"
+          fill="#fff3cf" stroke="#2a0605" stroke-width="3" paint-order="stroke" letter-spacing="2">FOREVER</text>
+  </g>
+</svg>
+</div>
+</body>
+</html>
