@@ -1,0 +1,53 @@
+<h1>CrossTalk (Forever)</h1>
+<p><strong>Say short things the other faction can actually read on World of Warcraft Forever.</strong></p>
+<p>The game turns everything you say into gibberish for the other faction. CrossTalk spells your message out in single letters the game lets through, so a Horde player standing next to you reads <code>R I B r B O S O</code>, and their CrossTalk reads it back as <strong>RIB BOSO</strong>. Your faction's language can't make every letter, so a few are swapped for the nearest sound (P becomes B, Z becomes S).</p>
+
+<h2>Features</h2>
+<ul>
+<li><strong>Phrase board:</strong> RIP BOZO, GOOD LUCK, LOSER, GG, LOL, NICE TRY, HELLO, BYE, THANKS, WELL PLAYED, SORRY, RUN. Left click says it, right click yells it.</li>
+<li><strong>See before you send:</strong> every phrase's tooltip shows exactly what the other side will read.</li>
+<li><strong>Your own phrases:</strong> type one into the board and click Add. Ctrl-click a phrase to remove it.</li>
+<li><strong>Free text:</strong> <code>/ct good game</code> says anything short.</li>
+<li><strong>Reads them back:</strong> when someone of the other faction spells a message this way (CrossTalk, Hermes or PVPTaunt), your chat shows <code>Name spelled: THANK YOU</code>.</li>
+<li><strong>Works both ways:</strong> Alliance to Horde and Horde to Alliance.</li>
+</ul>
+
+<h2>One-time setup (important)</h2>
+<p>Which character turns into which letter changes from patch to patch, and nobody has published the letters for Forever yet. CrossTalk finds them once, with one player of each faction:</p>
+<ol>
+<li>Both of you install CrossTalk and stand next to each other.</li>
+<li>The player of the other faction targets you and clicks <strong>Listen</strong> on their board.</li>
+<li>You click <strong>Calibrate</strong>, then <strong>Send probe</strong> three or four times, until their window says all letters are found.</li>
+<li>Their window shows a short code. They send it to you (a Battle.net whisper crosses factions).</li>
+<li>You click <strong>Paste their code</strong>. Done until the next patch.</li>
+</ol>
+<p>The letters are the same for everyone of your faction on the same game version, so share your code with friends (<code>/ct code</code>) and they can skip the setup. Updated codes will ship with the addon as they are found.</p>
+
+<h2>Commands</h2>
+<ul>
+<li><code>/ct</code> - show or hide the phrase board</li>
+<li><code>/ct &lt;text&gt;</code> - say it so the other faction can read it</li>
+<li><code>/ct yell &lt;text&gt;</code> - the same, yelled</li>
+<li><code>/ct add &lt;text&gt;</code> and <code>/ct remove &lt;text&gt;</code> - edit the board's phrases</li>
+<li><code>/ct calibrate</code> - the setup window</li>
+<li><code>/ct listen [name]</code> - help someone of the other faction set up (no name: your target)</li>
+<li><code>/ct import &lt;code&gt;</code> and <code>/ct code</code> - use a code, or show yours to share</li>
+<li><code>/ct decode on|off</code> - read spelled messages from the other faction</li>
+<li><code>/ct status</code> - your language, game version and letters</li>
+</ul>
+
+<h2>Good to know</h2>
+<ul>
+<li>Only short messages fit: each letter is its own word, and a message is capped at 255 bytes.</li>
+<li>The game only lets an addon /say from a click or a typed command, so CrossTalk never sends anything on its own.</li>
+<li>After a game patch, if the other side reads gibberish, run the setup again.</li>
+<li>The spelling trick was first published by the Hermes addon for Classic. CrossTalk is its own code, built for Forever.</li>
+</ul>
+
+<h2>Also by RealJustinCase</h2>
+<ul>
+<li><strong>Classic UI (Forever)</strong> - the Classic Era look on WoW Forever</li>
+<li><strong>Adventure Plates</strong> - Final Fantasy XIV-style adventurer plates</li>
+<li><strong>RestedXP Party Sync</strong> and <strong>RestedXP Professions</strong></li>
+</ul>
+<p>Found a bug? Leave a comment with what you typed and what the other side saw, and paste the output of <code>/ct status</code> from both of you.</p>
