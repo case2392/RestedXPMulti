@@ -82,7 +82,6 @@ The letters are the same for everyone of your faction on the same game version, 
 ## Also by RealJustinCase
 
 - **Classic UI (Forever):** the Classic Era look on WoW Forever
-- **Adventure Plates:** Final Fantasy XIV-style adventurer plates
 - **RestedXP Party Sync** and **RestedXP Professions**
 
 Found a bug? Leave a comment with what you typed and what the other side saw, and paste the output of `/ct status` from both of you.

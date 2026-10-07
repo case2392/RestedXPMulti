@@ -110,7 +110,7 @@ ns.LinkBox = LinkBox
 -- copy from (the game opens no browser, so a copyable address is the link)
 ns.OTHER_ADDONS = {
     {name = "Classic UI (Forever)", url = ns.FEEDBACK_URL, mine = true},
-    {name = "Adventure Plates", url = "https://www.curseforge.com/wow/addons/adventure-plates", blurb = "an adventurer card for your character, like FFXIV's"}
+    {name = "RestedXP Party Sync", url = "https://www.curseforge.com/wow/addons/restedxpmulti", blurb = "level with a friend in lockstep on RestedXP guides"}
 }
 
 -- "More add-ons by RealJustinCase": a heading, then a name and a copyable
