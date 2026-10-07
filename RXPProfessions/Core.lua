@@ -29,15 +29,24 @@ end
 --   Forever (Camelot engine): C_SkillInfo.GetSkillLineInfo(i) -> a table
 --   retail-style:            GetProfessions() ids + GetProfessionInfo(id)
 -- Every one the client has is read and the results merged, so a
--- profession one of them misses is still found by another.
-local function Record(found, name, rank, maxRank)
-    if name and ns.TRACKED[name] and not found[name] then
-        found[name] = {
-            rank = Plain(rank) or 0,
-            maxRank = Plain(maxRank) or 0,
-            kind = ns.TRACKED[name]
-        }
+-- profession one of them misses is still found by another. Where two
+-- disagree the higher number wins: a skill only goes up, and a source
+-- that lags behind must not hold it down. (0.6.1 let the first source
+-- win and read GetProfessions first; a report had Skinning stuck at 61
+-- after levelling it to 105, reload or not.) Each source's reading is
+-- kept for /rxpp status.
+local function Record(found, name, rank, maxRank, source)
+    if not (name and ns.TRACKED[name]) then return end
+    rank, maxRank = Plain(rank) or 0, Plain(maxRank) or 0
+    local p = found[name]
+    if not p then
+        p = {rank = rank, maxRank = maxRank, kind = ns.TRACKED[name], sources = {}}
+        found[name] = p
+    else
+        if rank > p.rank then p.rank = rank end
+        if maxRank > p.maxRank then p.maxRank = maxRank end
     end
+    p.sources[source] = rank .. "/" .. maxRank
 end
 
 -- The skill-line lists only hold what the skills tab shows: a skill under
@@ -48,7 +57,7 @@ end
 -- back after, bottom up so the indexes above stay put.
 --   src.count() -> n;  src.line(i) -> name, isHeader, isFolded, rank, maxRank
 --   src.expand(i), src.collapse(i)
-local function ScanSkillLines(src, found)
+local function ScanSkillLines(src, found, source)
     local folded = {}
     for i = src.count() or 0, 1, -1 do
         local name, isHeader, isFolded = src.line(i)
@@ -59,7 +68,7 @@ local function ScanSkillLines(src, found)
     end
     for i = 1, src.count() or 0 do
         local name, isHeader, _, rank, maxRank = src.line(i)
-        if not isHeader then Record(found, name, rank, maxRank) end
+        if not isHeader then Record(found, name, rank, maxRank, source) end
     end
     if next(folded) and src.collapse then
         for i = src.count() or 0, 1, -1 do
@@ -97,27 +106,37 @@ local function ForeverSkillLines()
     }
 end
 
+-- Opening and closing a folded header raises SKILL_LINES_CHANGED, and
+-- on Forever that event runs on the spot, inside the call: unguarded, the
+-- scan's own fold-back started a new scan, which opened the header again,
+-- and so on. ns.scanning makes the handler ignore the events the scan
+-- causes itself.
 function ns.ScanSkills()
     local found = {}
     local used = {}
-    -- the profession list first: it does not depend on the skills tab
-    if GetProfessions and GetProfessionInfo then
-        for _, id in ipairs({GetProfessions()}) do
-            local ok, name, _, rank, maxRank = pcall(GetProfessionInfo, id)
-            if ok then Record(found, name, rank, maxRank) end
+    ns.scanning = true
+    local ok, err = pcall(function()
+        local classic = ClassicSkillLines()
+        if classic then
+            ScanSkillLines(classic, found, "skill lines")
+            used[#used + 1] = "skill lines"
         end
-        used[#used + 1] = "GetProfessions"
-    end
-    local classic = ClassicSkillLines()
-    if classic then
-        ScanSkillLines(classic, found)
-        used[#used + 1] = "skill lines"
-    end
-    local forever = ForeverSkillLines()
-    if forever then
-        ScanSkillLines(forever, found)
-        used[#used + 1] = "C_SkillInfo"
-    end
+        local forever = ForeverSkillLines()
+        if forever then
+            ScanSkillLines(forever, found, "C_SkillInfo")
+            used[#used + 1] = "C_SkillInfo"
+        end
+        -- the profession list: does not depend on the skills tab
+        if GetProfessions and GetProfessionInfo then
+            for _, id in ipairs({GetProfessions()}) do
+                local okP, name, _, rank, maxRank = pcall(GetProfessionInfo, id)
+                if okP then Record(found, name, rank, maxRank, "GetProfessions") end
+            end
+            used[#used + 1] = "GetProfessions"
+        end
+    end)
+    ns.scanning = false
+    if not ok then ns.lastError = tostring(err) end
     ns.skillAPI = #used > 0 and table.concat(used, " + ") or "none"
     return found
 end
@@ -694,6 +713,12 @@ eventFrame:SetScript("OnEvent", function(_, event)
         if ns.db then ns.ScanOpenCraft() end
         return
     end
+    if event == "SKILL_LINES_CHANGED" and ns.scanning then return end
+    if event == "CHAT_MSG_SKILL" and C_Timer and C_Timer.After then
+        -- "Your skill in Skinning has increased to 62" can arrive before
+        -- the skill list holds 62: look again a moment later as well
+        C_Timer.After(1, function() if ns.db then ns.Refresh() end end)
+    end
     if event == "PLAYER_ENTERING_WORLD" then
         RXPProfessionsDB = RXPProfessionsDB or {}
         if RXPProfessionsDB.show == nil then RXPProfessionsDB.show = true end
@@ -724,13 +749,25 @@ SlashCmdList["RXPPROFESSIONS"] = function(input)
     elseif input == "setup" then
         ns.ShowSetup()
     elseif input == "status" then
+        ns.Refresh()
         local names = {}
         for name, p in pairs(ns.profs) do
-            table.insert(names, string.format("%s %d/%d", name, p.rank, p.maxRank))
+            -- when the sources disagree, say what each one said
+            local readings, seen, differ = {}, nil, false
+            for source, r in pairs(p.sources or {}) do
+                readings[#readings + 1] = source .. " " .. r
+                if seen and seen ~= r then differ = true end
+                seen = r
+            end
+            table.sort(readings)
+            local line = string.format("%s %d/%d", name, p.rank, p.maxRank)
+            if differ then line = line .. " (" .. table.concat(readings, "; ") .. ")" end
+            table.insert(names, line)
         end
         table.sort(names)
         ns.Print("skills read through %s: %s", tostring(ns.skillAPI),
                  #names > 0 and table.concat(names, ", ") or "none tracked")
+        if ns.lastError then ns.Print("last error: %s", ns.lastError) end
         if #ns.missingEvents > 0 then
             ns.Print("events this client lacks (skipped): %s", table.concat(ns.missingEvents, ", "))
         end

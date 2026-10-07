@@ -47,6 +47,15 @@ present).
   is stepped back to the last recipe you can have, and your profession
   window's skill-up colours are remembered so "Meanwhile: X (still skills
   up)" names a recipe you know when the route's is out of reach.
+- A skill stuck at an old value (a report: Skinning still 61 after
+  levelling it to 105, reload or not): 0.6.1 read the profession list
+  first and let the first source win, so a source that lagged behind
+  held the number down. Since 0.6.3 every source is read and the highest
+  number wins (a skill only goes up), a skill-up is looked at again a
+  moment after its chat message, and `/rxpp status` shows what each
+  source said when they disagree. The scan also ignores the "skills
+  changed" events its own header opening causes, which on Forever run on
+  the spot and could set off scan after scan.
 - A profession under a folded header in the skills tab (a "Professions"
   heading clicked shut) is not in the game's skill list at all, and a
   trained one read as never learned (a report). Since 0.6.1 folded headers

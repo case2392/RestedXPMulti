@@ -92,8 +92,19 @@ local function NewWorld(opts)
     w.visible = visible
     w.tree = tree
     w.expands, w.collapses = 0, 0
-    local function expand(i) local l = visible()[i]; assert(l and l.header, "expand on a non-header"); l.folded = false; w.expands = w.expands + 1 end
-    local function collapse(i) local l = visible()[i]; assert(l and l.header, "collapse on a non-header"); l.folded = true; w.collapses = w.collapses + 1 end
+    -- Forever raises SKILL_LINES_CHANGED on the spot when a header opens
+    -- or closes (opts.syncEvents), inside the call
+    local function changed()
+        if opts.syncEvents and w.eventFrame then
+            w.depth = (w.depth or 0) + 1
+            w.maxDepth = math.max(w.maxDepth or 0, w.depth)
+            assert(w.depth < 20, "SKILL_LINES_CHANGED recursion")
+            w.Fire("SKILL_LINES_CHANGED")
+            w.depth = w.depth - 1
+        end
+    end
+    local function expand(i) local l = visible()[i]; assert(l and l.header, "expand on a non-header"); l.folded = false; w.expands = w.expands + 1; changed() end
+    local function collapse(i) local l = visible()[i]; assert(l and l.header, "collapse on a non-header"); l.folded = true; w.collapses = w.collapses + 1; changed() end
     -- the classic profession window (w.trade = {prof, {{name, difficulty}, ...}})
     -- and trainer window (w.trainer = {{name, category, skill, level}, ...})
     w.trade, w.trainer = nil, {}
@@ -120,7 +131,7 @@ local function NewWorld(opts)
         if opts.professions then
             _G.GetProfessions = function() return 7, nil, nil, nil, 12, nil end
             _G.GetProfessionInfo = function(id)
-                if id == 7 then return "Mining", 1, 45, 75 end
+                if id == 7 then return "Mining", 1, opts.staleMining or 45, 75 end
                 if id == 12 then return "Cooking", 1, 20, 75 end
             end
         end
@@ -226,7 +237,27 @@ do
     -- with GetProfessions there too, both are read and merged
     local wp = NewWorld({client = "forever", events = FOREVER_EVENTS, folded = true, professions = true, db = {setupDone = true, chosen = {Mining = true, Cooking = true}, show = true}})
     wp.Fire("PLAYER_ENTERING_WORLD")
-    check(wp.ns.profs.Mining.rank == 45 and wp.ns.profs.Cooking.rank == 20 and wp.ns.skillAPI == "GetProfessions + C_SkillInfo", "forever: GetProfessions and C_SkillInfo both read, results merged")
+    check(wp.ns.profs.Mining.rank == 45 and wp.ns.profs.Cooking.rank == 20 and wp.ns.skillAPI == "C_SkillInfo + GetProfessions", "forever: GetProfessions and C_SkillInfo both read, results merged")
+    -- the report: Skinning stuck at 61 after levelling to 105. One source lagging behind
+    -- (here the profession list says Mining 30 while the skills tab says 45) must not hold it down
+    local ws = NewWorld({client = "forever", events = FOREVER_EVENTS, professions = true, staleMining = 30, db = {setupDone = true, chosen = {Mining = true}, show = true}})
+    ws.Fire("PLAYER_ENTERING_WORLD")
+    check(ws.ns.profs.Mining.rank == 45, "forever: a source that lags behind does not hold the skill down (45, not 30)")
+    ws.slash("status")
+    check(Printed("Mining 45/75 (C_SkillInfo 45/75; GetProfessions 30/75)"), "forever: /rxpp status shows what each source said when they disagree")
+    -- and the skill moves on: a skill-up is picked up from the skills tab
+    ws.tree[2].children[1].rank = 46
+    ws.Fire("CHAT_MSG_SKILL")
+    check(ws.ns.profs.Mining.rank == 46, "forever: a skill-up updates the window")
+    local later = 0
+    for _, t in ipairs(ws.timers) do if t[1] == 1 then later = later + 1 end end
+    check(later >= 1, "forever: and it looks again a moment after the skill-up message")
+    -- Forever runs SKILL_LINES_CHANGED inside the header calls: the scan's own
+    -- open/fold must not set off scan after scan
+    local wr = NewWorld({client = "forever", events = FOREVER_EVENTS, folded = true, syncEvents = true, db = {setupDone = true, chosen = {Mining = true}, show = true}})
+    local okR, errR = pcall(wr.Fire, "PLAYER_ENTERING_WORLD")
+    check(okR and wr.ns.profs.Mining and wr.ns.profs.Mining.rank == 45 and wr.expands == 1 and wr.collapses == 1 and wr.tree[2].folded == true,
+          "forever: the scan's own header events do not start another scan (" .. tostring(errR) .. ")")
 end
 
 --------------------------------------------------------------------------
