@@ -11,14 +11,614 @@ local locale = GetLocale and GetLocale() or "enUS"
 if locale == "enGB" then locale = "enUS" end
 ns.LOCALE = locale
 
--- The skill lines' names, per client language (English is the key).
-ns.PROF_NAMES = {}
+-- The skill lines' names, per client language (English is the key):
+-- Classic Era's, which Forever shares (October 2026: Wowhead's skill
+-- lists for every client and language, the client data tables via
+-- wago.tools, and other addons' tables, each name from two sources and
+-- re-checked by a third). Italian Classic clients show English names.
+ns.PROF_NAMES = {
+    deDE = {
+        ["Mining"] = "Bergbau",
+        ["Herbalism"] = "Kräuterkunde",
+        ["Skinning"] = "Kürschnerei",
+        ["Fishing"] = "Angeln",
+        ["First Aid"] = "Erste Hilfe",
+        ["Alchemy"] = "Alchimie",
+        ["Blacksmithing"] = "Schmiedekunst",
+        ["Engineering"] = "Ingenieurskunst",
+        ["Leatherworking"] = "Lederverarbeitung",
+        ["Tailoring"] = "Schneiderei",
+        ["Enchanting"] = "Verzauberkunst",
+        ["Cooking"] = "Kochkunst"
+    },
+    frFR = {
+        ["Mining"] = "Minage",
+        ["Herbalism"] = "Herboristerie",
+        ["Skinning"] = "Dépeçage",
+        ["Fishing"] = "Pêche",
+        ["First Aid"] = "Secourisme",
+        ["Alchemy"] = "Alchimie",
+        ["Blacksmithing"] = "Forge",
+        ["Engineering"] = "Ingénierie",
+        ["Leatherworking"] = "Travail du cuir",
+        ["Tailoring"] = "Couture",
+        ["Enchanting"] = "Enchantement",
+        ["Cooking"] = "Cuisine"
+    },
+    esES = {
+        ["Mining"] = "Minería",
+        ["Herbalism"] = "Botánica",
+        ["Skinning"] = "Desollar",
+        ["Fishing"] = "Pesca",
+        ["First Aid"] = "Primeros auxilios",
+        ["Alchemy"] = "Alquimia",
+        ["Blacksmithing"] = "Herrería",
+        ["Engineering"] = "Ingeniería",
+        ["Leatherworking"] = "Marroquinería",
+        ["Tailoring"] = "Costura",
+        ["Enchanting"] = "Encantamiento",
+        ["Cooking"] = "Cocina"
+    },
+    esMX = {
+        ["Mining"] = "Minería",
+        ["Herbalism"] = "Herboristería",
+        ["Skinning"] = "Desuello",
+        ["Fishing"] = "Pesca",
+        ["First Aid"] = "Primeros auxilios",
+        ["Alchemy"] = "Alquimia",
+        ["Blacksmithing"] = "Herrería",
+        ["Engineering"] = "Ingeniería",
+        ["Leatherworking"] = "Peletería",
+        ["Tailoring"] = "Sastrería",
+        ["Enchanting"] = "Encantamiento",
+        ["Cooking"] = "Cocina"
+    },
+    ptBR = {
+        ["Mining"] = "Mineração",
+        ["Herbalism"] = "Herborismo",
+        ["Skinning"] = "Esfolamento",
+        ["Fishing"] = "Pesca",
+        ["First Aid"] = "Primeiros Socorros",
+        ["Alchemy"] = "Alquimia",
+        ["Blacksmithing"] = "Ferraria",
+        ["Engineering"] = "Engenharia",
+        ["Leatherworking"] = "Couraria",
+        ["Tailoring"] = "Alfaiataria",
+        ["Enchanting"] = "Encantamento",
+        ["Cooking"] = "Culinária"
+    },
+    ruRU = {
+        ["Mining"] = "Горное дело",
+        ["Herbalism"] = "Травничество",
+        ["Skinning"] = "Снятие шкур",
+        ["Fishing"] = "Рыбная ловля",
+        ["First Aid"] = "Первая помощь",
+        ["Alchemy"] = "Алхимия",
+        ["Blacksmithing"] = "Кузнечное дело",
+        ["Engineering"] = "Инженерное дело",
+        ["Leatherworking"] = "Кожевничество",
+        ["Tailoring"] = "Портняжное дело",
+        ["Enchanting"] = "Наложение чар",
+        ["Cooking"] = "Кулинария"
+    },
+    koKR = {
+        ["Mining"] = "채광",
+        ["Herbalism"] = "약초 채집",
+        ["Skinning"] = "무두질",
+        ["Fishing"] = "낚시",
+        ["First Aid"] = "응급치료",
+        ["Alchemy"] = "연금술",
+        ["Blacksmithing"] = "대장기술",
+        ["Engineering"] = "기계공학",
+        ["Leatherworking"] = "가죽 세공",
+        ["Tailoring"] = "재봉술",
+        ["Enchanting"] = "마법부여",
+        ["Cooking"] = "요리"
+    },
+    zhCN = {
+        ["Mining"] = "采矿",
+        ["Herbalism"] = "草药学",
+        ["Skinning"] = "剥皮",
+        ["Fishing"] = "钓鱼",
+        ["First Aid"] = "急救",
+        ["Alchemy"] = "炼金术",
+        ["Blacksmithing"] = "锻造",
+        ["Engineering"] = "工程学",
+        ["Leatherworking"] = "制皮",
+        ["Tailoring"] = "裁缝",
+        ["Enchanting"] = "附魔",
+        ["Cooking"] = "烹饪"
+    },
+    zhTW = {
+        ["Mining"] = "採礦",
+        ["Herbalism"] = "草藥學",
+        ["Skinning"] = "剝皮",
+        ["Fishing"] = "釣魚",
+        ["First Aid"] = "急救",
+        ["Alchemy"] = "煉金術",
+        ["Blacksmithing"] = "鍛造",
+        ["Engineering"] = "工程學",
+        ["Leatherworking"] = "製皮",
+        ["Tailoring"] = "裁縫",
+        ["Enchanting"] = "附魔",
+        ["Cooking"] = "烹飪"
+    }
+}
 
--- The rank names as the game writes them.
-ns.RANK_NAMES = {}
+-- Other spellings some clients use (TBC's and Mists' Spanish, Korean,
+-- German and Taiwanese, TBC's Russian Skinning with a Latin C, Forever's
+-- Italian): all matched, never shown.
+ns.PROF_ALIASES = {
+    deDE = {
+        ["Alchemy"] = {"Alchemie"}
+    },
+    esES = {
+        ["Herbalism"] = {"Herboristería"},
+        ["Skinning"] = {"Desuello"},
+        ["Leatherworking"] = {"Peletería"},
+        ["Tailoring"] = {"Sastrería"}
+    },
+    ruRU = {
+        ["Skinning"] = {"Cнятие шкур"}
+    },
+    koKR = {
+        ["Herbalism"] = {"약초채집"},
+        ["Leatherworking"] = {"가죽세공"}
+    },
+    zhTW = {
+        ["Alchemy"] = {"鍊金術"}
+    },
+    itIT = {
+        ["Mining"] = {"Estrazione"},
+        ["Herbalism"] = {"Erbalismo"},
+        ["Skinning"] = {"Scuoiatura"},
+        ["Fishing"] = {"Pesca"},
+        ["First Aid"] = {"Pronto Soccorso", "Primo Soccorso"},
+        ["Alchemy"] = {"Alchimia"},
+        ["Blacksmithing"] = {"Forgiatura"},
+        ["Engineering"] = {"Ingegneria"},
+        ["Leatherworking"] = {"Conciatura"},
+        ["Tailoring"] = {"Sartoria"},
+        ["Enchanting"] = {"Incantamento"},
+        ["Cooking"] = {"Cucina"}
+    }
+}
 
--- Mining nodes (herbs are named through their items, Data.lua).
-ns.NODE_NAMES = {}
+-- The rank names as the game writes them (Era's spell sub-texts; the
+-- later ranks from the game's own strings). Italian clients: English,
+-- except on Forever.
+ns.RANK_NAMES = {
+    deDE = {
+        ["Apprentice"] = "Lehrling",
+        ["Journeyman"] = "Geselle",
+        ["Expert"] = "Experte",
+        ["Artisan"] = "Fachmann",
+        ["Master"] = "Meister",
+        ["Grand Master"] = "Großmeister",
+        ["Illustrious"] = "Erhabener",
+        ["Zen Master"] = "Zenmeister"
+    },
+    frFR = {
+        ["Apprentice"] = "Apprenti",
+        ["Journeyman"] = "Compagnon",
+        ["Expert"] = "Expert",
+        ["Artisan"] = "Artisan",
+        ["Master"] = "Maître",
+        ["Grand Master"] = "Grand maître",
+        ["Illustrious"] = "Illustre",
+        ["Zen Master"] = "Maître zen"
+    },
+    esES = {
+        ["Apprentice"] = "Aprendiz",
+        ["Journeyman"] = "Oficial",
+        ["Expert"] = "Experto",
+        ["Artisan"] = "Artesano",
+        ["Master"] = "Maestro",
+        ["Grand Master"] = "Gran maestro",
+        ["Illustrious"] = "Ilustre",
+        ["Zen Master"] = "Maestro zen"
+    },
+    esMX = {
+        ["Apprentice"] = "Aprendiz",
+        ["Journeyman"] = "Oficial",
+        ["Expert"] = "Experto",
+        ["Artisan"] = "Artesano",
+        ["Master"] = "Maestro",
+        ["Grand Master"] = "Gran maestro",
+        ["Illustrious"] = "Ilustre",
+        ["Zen Master"] = "Maestro zen"
+    },
+    ptBR = {
+        ["Apprentice"] = "Aprendiz",
+        ["Journeyman"] = "Profissional",
+        ["Expert"] = "Perito",
+        ["Artisan"] = "Artífice",
+        ["Master"] = "Mestre",
+        ["Grand Master"] = "Grão-mestre",
+        ["Illustrious"] = "Ilustre",
+        ["Zen Master"] = "Mestre Zen"
+    },
+    ruRU = {
+        ["Apprentice"] = "Ученик",
+        ["Journeyman"] = "Подмастерье",
+        ["Expert"] = "Умелец",
+        ["Artisan"] = "Мастеровой",
+        ["Master"] = "Мастер",
+        ["Grand Master"] = "Великий мастер",
+        ["Illustrious"] = "Прославленный мастер",
+        ["Zen Master"] = "Дзен-мастер"
+    },
+    koKR = {
+        ["Apprentice"] = "초급",
+        ["Journeyman"] = "수습",
+        ["Expert"] = "숙련",
+        ["Artisan"] = "전문",
+        ["Master"] = "대가",
+        ["Grand Master"] = "거장",
+        ["Illustrious"] = "명인",
+        ["Zen Master"] = "달인"
+    },
+    zhCN = {
+        ["Apprentice"] = "初级",
+        ["Journeyman"] = "中级",
+        ["Expert"] = "高级",
+        ["Artisan"] = "大师级",
+        ["Master"] = "大师级",
+        ["Grand Master"] = "宗师级",
+        ["Illustrious"] = "巨匠级",
+        ["Zen Master"] = "禅师级"
+    },
+    zhTW = {
+        ["Apprentice"] = "初級",
+        ["Journeyman"] = "中級",
+        ["Expert"] = "高級",
+        ["Artisan"] = "專家級",
+        ["Master"] = "大師級",
+        ["Grand Master"] = "宗師級",
+        ["Illustrious"] = "大宗師級",
+        ["Zen Master"] = "禪師級"
+    }
+}
+ns.RANK_NAMES_FOR = {
+    tbc = {zhCN = {Artisan = "专家级"}, ruRU = {Artisan = "Искусник"}},
+    later = {zhCN = {Artisan = "专家级"}, ruRU = {Artisan = "Искусник"}},
+    forever = {itIT = {Apprentice = "Apprendista", Journeyman = "Praticante", Expert = "Esperto", Artisan = "Specialista",
+                       Master = "Maestro", ["Grand Master"] = "Gran Maestro", Illustrious = "Illustre Gran Maestro",
+                       ["Zen Master"] = "Maestro Zen"}}
+}
+
+-- Mining nodes and herbs as the game names the node (it differs from the
+-- herb item's name in a few languages); Latin American Spanish herbs come
+-- from their items instead (the node names there have one source only).
+ns.NODE_NAMES = {
+    deDE = {
+        ["Copper Vein"] = "Kupfervorkommen",
+        ["Tin Vein"] = "Zinnvorkommen",
+        ["Silver Vein"] = "Silbervorkommen",
+        ["Iron Deposit"] = "Eisenvorkommen",
+        ["Gold Vein"] = "Goldvorkommen",
+        ["Mithril Deposit"] = "Mithrilablagerung",
+        ["Truesilver Deposit"] = "Echtsilberablagerung",
+        ["Small Thorium Vein"] = "Kleines Thoriumvorkommen",
+        ["Rich Thorium Vein"] = "Reiches Thoriumvorkommen",
+        ["Peacebloom"] = "Friedensblume",
+        ["Silverleaf"] = "Silberblatt",
+        ["Earthroot"] = "Erdwurzel",
+        ["Mageroyal"] = "Maguskönigskraut",
+        ["Briarthorn"] = "Wilddornrose",
+        ["Stranglekelp"] = "Würgetang",
+        ["Bruiseweed"] = "Beulengras",
+        ["Wild Steelbloom"] = "Wildstahlblume",
+        ["Kingsblood"] = "Königsblut",
+        ["Liferoot"] = "Lebenswurz",
+        ["Goldthorn"] = "Golddorn",
+        ["Khadgar's Whisker"] = "Khadgars Schnurrbart",
+        ["Firebloom"] = "Feuerblüte",
+        ["Purple Lotus"] = "Lila Lotus",
+        ["Sungrass"] = "Sonnengras",
+        ["Ghost Mushroom"] = "Geisterpilz",
+        ["Gromsblood"] = "Gromsblut",
+        ["Golden Sansam"] = "Goldener Sansam",
+        ["Dreamfoil"] = "Traumblatt",
+        ["Mountain Silversage"] = "Bergsilberweisling",
+        ["Plaguebloom"] = "Pestblüte",
+        ["Icecap"] = "Eiskappe"
+    },
+    frFR = {
+        ["Copper Vein"] = "Filon de cuivre",
+        ["Tin Vein"] = "Filon d'étain",
+        ["Silver Vein"] = "Filon d'argent",
+        ["Iron Deposit"] = "Gisement de fer",
+        ["Gold Vein"] = "Filon d'or",
+        ["Mithril Deposit"] = "Gisement de mithril",
+        ["Truesilver Deposit"] = "Gisement de vrai-argent",
+        ["Small Thorium Vein"] = "Petit filon de thorium",
+        ["Rich Thorium Vein"] = "Riche filon de thorium",
+        ["Peacebloom"] = "Pacifique",
+        ["Silverleaf"] = "Feuillargent",
+        ["Earthroot"] = "Terrestrine",
+        ["Mageroyal"] = "Mage royal",
+        ["Briarthorn"] = "Eglantine",
+        ["Stranglekelp"] = "Etouffante",
+        ["Bruiseweed"] = "Doulourante",
+        ["Wild Steelbloom"] = "Aciérite sauvage",
+        ["Kingsblood"] = "Sang-royal",
+        ["Liferoot"] = "Vietérule",
+        ["Goldthorn"] = "Dorépine",
+        ["Khadgar's Whisker"] = "Moustache de Khadgar",
+        ["Firebloom"] = "Fleur de feu",
+        ["Purple Lotus"] = "Lotus pourpre",
+        ["Sungrass"] = "Soleillette",
+        ["Ghost Mushroom"] = "Champignon fantôme",
+        ["Gromsblood"] = "Gromsang",
+        ["Golden Sansam"] = "Sansam doré",
+        ["Dreamfoil"] = "Feuillerêve",
+        ["Mountain Silversage"] = "Sauge-argent des montagnes",
+        ["Plaguebloom"] = "Fleur de peste",
+        ["Icecap"] = "Calot de glace"
+    },
+    esES = {
+        ["Copper Vein"] = "Filón de cobre",
+        ["Tin Vein"] = "Filón de estaño",
+        ["Silver Vein"] = "Filón de plata",
+        ["Iron Deposit"] = "Depósito de hierro",
+        ["Gold Vein"] = "Filón de oro",
+        ["Mithril Deposit"] = "Depósito de mitril",
+        ["Truesilver Deposit"] = "Depósito de veraplata",
+        ["Small Thorium Vein"] = "Filón pequeño de torio",
+        ["Rich Thorium Vein"] = "Filón de torio enriquecido",
+        ["Peacebloom"] = "Flor de paz",
+        ["Silverleaf"] = "Hojaplata",
+        ["Earthroot"] = "Raíz de tierra",
+        ["Mageroyal"] = "Marregal",
+        ["Briarthorn"] = "Brezospina",
+        ["Stranglekelp"] = "Alga estranguladora",
+        ["Bruiseweed"] = "Hierba cardenal",
+        ["Wild Steelbloom"] = "Acérita salvaje",
+        ["Kingsblood"] = "Sangrerregia",
+        ["Liferoot"] = "Vidarraíz",
+        ["Goldthorn"] = "Espina de oro",
+        ["Khadgar's Whisker"] = "Vibrisa de Khadgar",
+        ["Firebloom"] = "Flor de fuego",
+        ["Purple Lotus"] = "Loto cárdeno",
+        ["Sungrass"] = "Solea",
+        ["Ghost Mushroom"] = "Champiñón fantasma",
+        ["Gromsblood"] = "Gromsanguina",
+        ["Golden Sansam"] = "Sansam dorado",
+        ["Dreamfoil"] = "Hojasueño",
+        ["Mountain Silversage"] = "Salviargenta de montaña",
+        ["Plaguebloom"] = "flor de peste",
+        ["Icecap"] = "Setelo"
+    },
+    esMX = {
+        ["Copper Vein"] = "Filón de cobre",
+        ["Tin Vein"] = "Filón de estaño",
+        ["Silver Vein"] = "Filón de plata",
+        ["Iron Deposit"] = "Depósito de hierro",
+        ["Gold Vein"] = "Filón de oro",
+        ["Mithril Deposit"] = "Depósito de mitril",
+        ["Truesilver Deposit"] = "Depósito de veraplata",
+        ["Small Thorium Vein"] = "Filón pequeño de torio",
+        ["Rich Thorium Vein"] = "Filón de torio enriquecido"
+    },
+    ptBR = {
+        ["Copper Vein"] = "Veio de Cobre",
+        ["Tin Vein"] = "Veio de Estanho",
+        ["Silver Vein"] = "Veio de Prata",
+        ["Iron Deposit"] = "Depósito de Ferro",
+        ["Gold Vein"] = "Veio de Ouro",
+        ["Mithril Deposit"] = "Depósito de Mithril",
+        ["Truesilver Deposit"] = "Depósito de Veraprata",
+        ["Small Thorium Vein"] = "Veio de Tório Escasso",
+        ["Rich Thorium Vein"] = "Veio de Tório Abundante",
+        ["Peacebloom"] = "Botão-da-paz",
+        ["Silverleaf"] = "Folha-prata",
+        ["Earthroot"] = "Raiz-telúrica",
+        ["Mageroyal"] = "Magi-real",
+        ["Briarthorn"] = "Cravespinho",
+        ["Stranglekelp"] = "Estrangulalga",
+        ["Bruiseweed"] = "Ervamossa",
+        ["Wild Steelbloom"] = "Ácera-agreste",
+        ["Kingsblood"] = "Sangue-real",
+        ["Liferoot"] = "Raiz-da-vida",
+        ["Goldthorn"] = "Espinheira-dourada",
+        ["Khadgar's Whisker"] = "Bigode-de-hadgar",
+        ["Firebloom"] = "Ignídea",
+        ["Purple Lotus"] = "Lótus Roxo",
+        ["Sungrass"] = "Ervassol",
+        ["Ghost Mushroom"] = "Cogumelo-fantasma",
+        ["Gromsblood"] = "Sangue-de-grom",
+        ["Golden Sansam"] = "Sonsona-dourada",
+        ["Dreamfoil"] = "Folha-de-sonho",
+        ["Mountain Silversage"] = "Sálvia-prata-da-montanha",
+        ["Plaguebloom"] = "Pragônia",
+        ["Icecap"] = "Chapéu-de-gelo"
+    },
+    ruRU = {
+        ["Copper Vein"] = "Медная жила",
+        ["Tin Vein"] = "Оловянная жила",
+        ["Silver Vein"] = "Серебряная жила",
+        ["Iron Deposit"] = "Залежи железа",
+        ["Gold Vein"] = "Золотая жила",
+        ["Mithril Deposit"] = "Мифриловые залежи",
+        ["Truesilver Deposit"] = "Залежи истинного серебра",
+        ["Small Thorium Vein"] = "Малая ториевая жила",
+        ["Rich Thorium Vein"] = "Богатая ториевая жила",
+        ["Peacebloom"] = "Мироцвет",
+        ["Silverleaf"] = "Сребролист",
+        ["Earthroot"] = "Землекорень",
+        ["Mageroyal"] = "Магороза",
+        ["Briarthorn"] = "Остротерн",
+        ["Stranglekelp"] = "Удавник",
+        ["Bruiseweed"] = "Синячник",
+        ["Wild Steelbloom"] = "Дикий сталецвет",
+        ["Kingsblood"] = "Королевская кровь",
+        ["Liferoot"] = "Жизнекорень",
+        ["Goldthorn"] = "Златошип",
+        ["Khadgar's Whisker"] = "Кадгаров ус",
+        ["Firebloom"] = "Огнецвет",
+        ["Purple Lotus"] = "Лиловый лотос",
+        ["Sungrass"] = "Солнечник",
+        ["Ghost Mushroom"] = "Призрачная поганка",
+        ["Gromsblood"] = "Кровь Грома",
+        ["Golden Sansam"] = "Золотой сансам",
+        ["Dreamfoil"] = "Снолист",
+        ["Mountain Silversage"] = "Горный серебряный шалфей",
+        ["Plaguebloom"] = "Чумоцвет",
+        ["Icecap"] = "Ледяной зев"
+    },
+    koKR = {
+        ["Copper Vein"] = "구리 광맥",
+        ["Tin Vein"] = "주석 광맥",
+        ["Silver Vein"] = "은 광맥",
+        ["Iron Deposit"] = "철 광맥",
+        ["Gold Vein"] = "금 광맥",
+        ["Mithril Deposit"] = "미스릴 광맥",
+        ["Truesilver Deposit"] = "진은 광맥",
+        ["Small Thorium Vein"] = "작은 토륨 광맥",
+        ["Rich Thorium Vein"] = "풍부한 토륨 광맥",
+        ["Peacebloom"] = "평온초",
+        ["Silverleaf"] = "은엽수 덤불",
+        ["Earthroot"] = "뱀뿌리",
+        ["Mageroyal"] = "마법초",
+        ["Briarthorn"] = "찔레가시",
+        ["Stranglekelp"] = "갈래물풀",
+        ["Bruiseweed"] = "생채기풀",
+        ["Wild Steelbloom"] = "야생 철쭉",
+        ["Kingsblood"] = "왕꽃잎풀",
+        ["Liferoot"] = "생명의 뿌리",
+        ["Goldthorn"] = "황금가시",
+        ["Khadgar's Whisker"] = "카드가의 수염",
+        ["Firebloom"] = "화염초",
+        ["Purple Lotus"] = "보라 연꽃",
+        ["Sungrass"] = "태양풀",
+        ["Ghost Mushroom"] = "유령버섯",
+        ["Gromsblood"] = "그롬의 피",
+        ["Golden Sansam"] = "황금 산삼",
+        ["Dreamfoil"] = "꿈풀",
+        ["Mountain Silversage"] = "은초롱이",
+        ["Plaguebloom"] = "역병초",
+        ["Icecap"] = "얼음송이"
+    },
+    zhCN = {
+        ["Copper Vein"] = "铜矿",
+        ["Tin Vein"] = "锡矿",
+        ["Silver Vein"] = "银矿",
+        ["Iron Deposit"] = "铁矿石",
+        ["Gold Vein"] = "金矿石",
+        ["Mithril Deposit"] = "秘银矿脉",
+        ["Truesilver Deposit"] = "真银矿石",
+        ["Small Thorium Vein"] = "瑟银矿脉",
+        ["Rich Thorium Vein"] = "富瑟银矿",
+        ["Peacebloom"] = "宁神花",
+        ["Silverleaf"] = "银叶草",
+        ["Earthroot"] = "地根草",
+        ["Mageroyal"] = "魔皇草",
+        ["Briarthorn"] = "石南草",
+        ["Stranglekelp"] = "荆棘藻",
+        ["Bruiseweed"] = "跌打草",
+        ["Wild Steelbloom"] = "野钢花",
+        ["Kingsblood"] = "皇血草",
+        ["Liferoot"] = "活根草",
+        ["Goldthorn"] = "金棘草",
+        ["Khadgar's Whisker"] = "卡德加的胡须",
+        ["Firebloom"] = "火焰花",
+        ["Purple Lotus"] = "紫莲花",
+        ["Sungrass"] = "太阳草",
+        ["Ghost Mushroom"] = "幽灵菇",
+        ["Gromsblood"] = "格罗姆之血",
+        ["Golden Sansam"] = "黄金参",
+        ["Dreamfoil"] = "梦叶草",
+        ["Mountain Silversage"] = "山鼠草",
+        ["Plaguebloom"] = "瘟疫花",
+        ["Icecap"] = "冰盖草"
+    },
+    zhTW = {
+        ["Copper Vein"] = "銅礦脈",
+        ["Tin Vein"] = "錫礦脈",
+        ["Silver Vein"] = "銀礦脈",
+        ["Iron Deposit"] = "鐵礦床",
+        ["Gold Vein"] = "金礦脈",
+        ["Mithril Deposit"] = "秘銀礦床",
+        ["Truesilver Deposit"] = "真銀礦床",
+        ["Small Thorium Vein"] = "瑟銀礦脈",
+        ["Rich Thorium Vein"] = "富瑟銀礦脈",
+        ["Peacebloom"] = "寧神花",
+        ["Silverleaf"] = "銀葉草",
+        ["Earthroot"] = "地根草",
+        ["Mageroyal"] = "魔皇草",
+        ["Briarthorn"] = "石南草",
+        ["Stranglekelp"] = "荊棘藻",
+        ["Bruiseweed"] = "跌打草",
+        ["Wild Steelbloom"] = "野鋼花",
+        ["Kingsblood"] = "皇血草",
+        ["Liferoot"] = "活根草",
+        ["Goldthorn"] = "金棘草",
+        ["Khadgar's Whisker"] = "卡德加的鬍鬚",
+        ["Firebloom"] = "火焰花",
+        ["Purple Lotus"] = "紫蓮花",
+        ["Sungrass"] = "太陽草",
+        ["Ghost Mushroom"] = "鬼魂菇",
+        ["Gromsblood"] = "格羅姆之血",
+        ["Golden Sansam"] = "黃金蔘",
+        ["Dreamfoil"] = "夢葉草",
+        ["Mountain Silversage"] = "山鼠草",
+        ["Plaguebloom"] = "瘟疫花",
+        ["Icecap"] = "冰蓋草"
+    }
+}
+-- ...renamed on these clients
+ns.NODE_NAMES_FOR = {
+    tbc = {
+        deDE = {
+            ["Mountain Silversage"] = "Bergsilbersalbei"
+        },
+        esES = {
+            ["Khadgar's Whisker"] = "Mostacho de Khadgar",
+            ["Firebloom"] = "Flor de Fuego",
+            ["Plaguebloom"] = "Flor de peste"
+        }
+    },
+    later = {
+        deDE = {
+            ["Copper Vein"] = "Kupferader",
+            ["Tin Vein"] = "Zinnader",
+            ["Silver Vein"] = "Silberader",
+            ["Gold Vein"] = "Goldader",
+            ["Mithril Deposit"] = "Mithrilvorkommen",
+            ["Truesilver Deposit"] = "Echtsilbervorkommen",
+            ["Small Thorium Vein"] = "Kleine Thoriumader",
+            ["Rich Thorium Vein"] = "Reiche Thoriumader",
+            ["Mountain Silversage"] = "Bergsilbersalbei",
+            ["Plaguebloom"] = "Trauermoos"
+        },
+        frFR = {
+            ["Plaguebloom"] = "Chagrinelle",
+            ["Icecap"] = "Chapeglace"
+        },
+        esES = {
+            ["Khadgar's Whisker"] = "Mostacho de Khadgar",
+            ["Plaguebloom"] = "Musgopena"
+        },
+        ptBR = {
+            ["Plaguebloom"] = "Limágoa"
+        },
+        ruRU = {
+            ["Earthroot"] = "Земляной корень",
+            ["Liferoot"] = "Корень жизни",
+            ["Plaguebloom"] = "Печаль-трава"
+        },
+        koKR = {
+            ["Plaguebloom"] = "슬픔이끼"
+        },
+        zhCN = {
+            ["Plaguebloom"] = "天灾花"
+        },
+        zhTW = {
+            ["Plaguebloom"] = "悲傷苔蘚"
+        }
+    }
+}
 
 -- The addon's own sentences, keyed by their English (translated October
 -- 2026 and each reviewed against the game's own words in that language;

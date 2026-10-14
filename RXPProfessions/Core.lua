@@ -24,6 +24,15 @@ do
     -- came from books and quests, not trainers
     ns.BOOK_RANKS = toc < 30000
 end
+-- names this client writes differently from Classic Era (Locales.lua)
+for _, set in ipairs({{"NODE_NAMES", "NODE_NAMES_FOR"}, {"RANK_NAMES", "RANK_NAMES_FOR"}}) do
+    local over = ns[set[2]] and ns[set[2]][ns.CLIENT] and ns[set[2]][ns.CLIENT][ns.LOCALE]
+    if over then
+        local names = ns[set[1]][ns.LOCALE] or {}
+        ns[set[1]][ns.LOCALE] = names
+        for key, name in pairs(over) do names[key] = name end
+    end
+end
 if ns.IS_FOREVER then
     for _, craft in pairs(ns.CRAFT) do
         craft.route = craft.foreverRoute or craft.route
@@ -49,6 +58,12 @@ end
 
 local L = ns.L
 
+-- lowercase A-Z only: Lua's lower() and its character classes know only
+-- ASCII, and one client was seen to mangle Cyrillic in lower()
+function ns.Fold(text)
+    return (tostring(text):gsub("[A-Z]", function(c) return string.char(c:byte() + 32) end))
+end
+
 local function Split(text)
     local out = {}
     for part in tostring(text or ""):gmatch("[^/]+") do
@@ -69,6 +84,8 @@ local function SpellName(id)
         local ok, name = pcall(GetSpellInfo, id)
         if ok and type(name) == "string" and name ~= "" then return name end
     end
+    -- not loaded yet: ask (SPELL_DATA_LOAD_RESULT redraws the window)
+    if api and api.RequestLoadSpellData then pcall(api.RequestLoadSpellData, id) end
 end
 
 -- an item's name; nil until the client has it cached - it is asked for,
@@ -81,8 +98,11 @@ local function ItemName(id)
         local ok, n = pcall(api.GetItemNameByID, id)
         if ok and type(n) == "string" and n ~= "" then name = n end
     end
-    if not name and GetItemInfo then
-        local ok, n = pcall(GetItemInfo, id)
+    -- (Forever has no GetItemInfo global, only C_Item's; on a cache miss
+    -- it returns nothing at all)
+    local getInfo = (api and api.GetItemInfo) or GetItemInfo
+    if not name and getInfo then
+        local ok, n = pcall(getInfo, id)
         if ok and type(n) == "string" and n ~= "" then name = n end
     end
     if not name and api and api.RequestLoadItemDataByID then
@@ -103,7 +123,7 @@ local function ProfNames()
     local function add(name, key)
         if type(name) == "string" and name ~= "" then
             profByName[name] = key
-            profByName[name:lower()] = key
+            profByName[ns.Fold(name)] = key
         end
     end
     for key in pairs(ns.TRACKED) do add(key, key) end
@@ -116,8 +136,14 @@ local function ProfNames()
             for _, name in ipairs(list) do add(name, key) end
         end
     end
-    -- the profession's own spell, where its name is the skill line's
-    for key, id in pairs(ns.PROF_SPELLS or {}) do add(SpellName(id), key) end
+    -- and the client's own name for each skill line, whatever its language
+    local display = C_TradeSkillUI and C_TradeSkillUI.GetTradeSkillDisplayName
+    if display then
+        for id, key in pairs(ns.SKILL_LINES) do
+            local ok, name = pcall(display, id)
+            if ok then add(name, key) end
+        end
+    end
     return profByName
 end
 function ns.ProfKey(name, id)
@@ -127,7 +153,7 @@ function ns.ProfKey(name, id)
     end
     if type(name) ~= "string" then return nil end
     local names = ProfNames()
-    return names[name] or names[name:lower()]
+    return names[name] or names[ns.Fold(name)]
 end
 -- a profession, a rank, as this client writes them: the name the game
 -- gave for it, else Locales.lua's
@@ -391,13 +417,15 @@ local NOT_RECIPE = {header = true, subheader = true}
 -- matched any), hence only ASCII spaces and punctuation go, and names
 -- with other letters are matched exactly.
 local function Key(name)
-    return (tostring(name):gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", ""):lower():gsub("[%s%p]", ""))
+    local plain = tostring(name):gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
+    -- ASCII spaces and punctuation only (by byte, not by class)
+    return (ns.Fold(plain):gsub("[%z\1-\47\58-\64\91-\96\123-\127]", ""))
 end
 local function LooseKey(name)
     local plain = tostring(name):gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
     if plain:find("[\128-\255]") then return Key(plain) end
     local words = {}
-    for w in plain:lower():gmatch("%a+") do
+    for w in ns.Fold(plain):gmatch("[a-z]+") do
         if w ~= "enchant" then
             if #w > 3 then w = w:gsub("s$", "") end
             words[#words + 1] = w
@@ -821,13 +849,17 @@ function ns.CurrentZone()
     local api = C_Map
     if api and api.GetBestMapForUnit then
         local ok, map = pcall(api.GetBestMapForUnit, "player")
-        if ok and map then
+        -- a sub-zone map (a cave, a starting area) is walked up to its zone
+        for _ = 1, 4 do
+            if not (ok and map) then break end
             for key, waters in pairs(ns.ZONE_WATERS) do
                 if waters.map == map then
                     local okI, info = pcall(api.GetMapInfo, map)
                     return key, waters, okI and type(info) == "table" and info.name or key
                 end
             end
+            local okP, info = pcall(api.GetMapInfo, map)
+            map = okP and type(info) == "table" and info.parentMapID
         end
     end
     local zone = (GetRealZoneText and GetRealZoneText()) or ""
@@ -1283,7 +1315,7 @@ local EVENTS = {
     "PLAYER_ENTERING_WORLD", "SKILL_LINES_CHANGED", "CHAT_MSG_SKILL",
     "ZONE_CHANGED_NEW_AREA", "TRADE_SKILL_SHOW", "TRADE_SKILL_UPDATE",
     "TRADE_SKILL_LIST_UPDATE", "TRADE_SKILL_DATA_SOURCE_CHANGED", "CRAFT_SHOW", "CRAFT_UPDATE",
-    "TRAINER_SHOW", "TRAINER_UPDATE", "GET_ITEM_INFO_RECEIVED"
+    "TRAINER_SHOW", "TRAINER_UPDATE", "GET_ITEM_INFO_RECEIVED", "SPELL_DATA_LOAD_RESULT"
 }
 ns.missingEvents = {}
 for _, event in ipairs(EVENTS) do
@@ -1296,9 +1328,9 @@ end
 local TRADE_EVENTS = {TRADE_SKILL_SHOW = true, TRADE_SKILL_UPDATE = true, TRADE_SKILL_LIST_UPDATE = true,
                       TRADE_SKILL_DATA_SOURCE_CHANGED = true}
 eventFrame:SetScript("OnEvent", function(_, event)
-    if event == "GET_ITEM_INFO_RECEIVED" then
-        -- an item name the window asked for has arrived: redraw once, a
-        -- moment later, however many arrive together
+    if event == "GET_ITEM_INFO_RECEIVED" or event == "SPELL_DATA_LOAD_RESULT" then
+        -- an item or spell name the window asked for has arrived: redraw
+        -- once, a moment later, however many arrive together
         if ns.db and not ns.itemRedraw then
             ns.itemRedraw = true
             local function redraw() ns.itemRedraw = nil; ns.UpdateUI() end
