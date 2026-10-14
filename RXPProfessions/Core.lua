@@ -292,7 +292,7 @@ local function RecordWindow(prof, given, list)
         end
     end
     db.knownRecipes[prof] = known
-    db.allRecipes = nil -- 0.6.4 dropped the "not in this game" list
+    db.allRecipes = nil -- 1.0.0 dropped the "not in this game" list
     db.recipeRank[prof] = rank
     -- the window's skill is the freshest there is: a skill-up while
     -- crafting reaches it before the skills list, so the advice moves on
