@@ -148,19 +148,135 @@ end
 
 -- a recipe's skill-up colour as one word: optimal (orange), medium
 -- (yellow), easy (green), trivial (grey). Classic hands the word back from
--- GetTradeSkillInfo; Forever an Enum.TradeskillRelativeDifficulty number.
+-- GetTradeSkillInfo / GetCraftInfo; Forever an
+-- Enum.TradeskillRelativeDifficulty number.
 local DIFFICULTY_BY_NUMBER = {[0] = "optimal", [1] = "medium", [2] = "easy", [3] = "trivial"}
 local function Difficulty(v)
     if type(v) == "string" then return v end
     if type(v) == "number" then return DIFFICULTY_BY_NUMBER[v] or "unknown" end
     return "unknown"
 end
--- does a known recipe still give skill-ups (orange or yellow; green most of the time)
-local SKILLS_UP = {optimal = true, medium = true, easy = true}
+-- colours in order, best first, and the words players use for them
+local ORDER = {optimal = 0, medium = 1, easy = 2, trivial = 3}
+local BY_ORDER = {[0] = "optimal", [1] = "medium", [2] = "easy", [3] = "trivial"}
+ns.COLOR_WORD = {optimal = "orange", medium = "yellow", easy = "green", trivial = "grey"}
+local NOT_RECIPE = {header = true, subheader = true}
+
+-- Recipe names are matched loosely: a later client may write
+-- "Enchant Bracers - Minor Stamina" where the route says "Enchant Bracer
+-- - Minor Stamina" (a report: "some of the enchant titles no longer
+-- match"). Exact key: letters and digits only, lowercase. Loose key: the
+-- same without the word "enchant" and without a plural s on each word.
+local function Key(name)
+    return (tostring(name):gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", ""):lower():gsub("[^%w]", ""))
+end
+local function LooseKey(name)
+    local words = {}
+    for w in tostring(name):gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", ""):lower():gmatch("%a+") do
+        if w ~= "enchant" then
+            if #w > 3 then w = w:gsub("s$", "") end
+            words[#words + 1] = w
+        end
+    end
+    return table.concat(words)
+end
+ns.RecipeKey, ns.RecipeLooseKey = Key, LooseKey
+
+--------------------------------------------------------------------------
+-- Live recipe colours.
+--
+-- The craft routes in Data.lua are Classic Era's, and a later game
+-- version can move a recipe's skill-up range: a report had Linen Bag no
+-- longer giving skill-ups at 63 Tailoring and Enchant Bracer - Minor
+-- Stamina likewise, "last week's patch". The game itself knows: every
+-- open profession window colours each recipe orange, yellow, green or
+-- grey. Each sighting is kept with the skill it was seen at, and because
+-- a recipe's colour only ever gets worse as skill rises, one sighting
+-- also bounds it at other skills: orange at 60 means at best orange
+-- below 60, grey at 70 means grey from 70 up. The route is then checked
+-- against what the game said, and the game wins.
+--
+--   ns.db.recipeColors[prof][recipe] = {
+--       seen = {optimal = {min = r, max = r}, ...},  -- skills seen at, per colour
+--       last = "optimal", lastRank = r }
+-- A sighting that contradicts older ones (the patch changed the recipe)
+-- drops the older ones; a new game build starts the colours afresh.
+--------------------------------------------------------------------------
+
+local function ColorStore(prof)
+    local db = ns.db
+    local build = GetBuildInfo and select(2, GetBuildInfo()) or nil
+    if build and db.recipeColorsBuild ~= build then
+        db.recipeColors = {}
+        db.recipeColorsBuild = build
+    end
+    db.recipeColors = db.recipeColors or {}
+    db.recipeColors[prof] = db.recipeColors[prof] or {}
+    return db.recipeColors[prof]
+end
+
+local function NoteColor(store, recipe, diff, rank)
+    local o = ORDER[diff]
+    if not o or type(rank) ~= "number" then return end
+    local r = store[recipe]
+    if not r then
+        r = {seen = {}}
+        store[recipe] = r
+    end
+    -- drop older sightings this one proves wrong: a better colour at the
+    -- same or a higher skill, or a worse colour at the same or a lower one
+    for c, s in pairs(r.seen) do
+        local oc = ORDER[c]
+        if (oc < o and s.max >= rank) or (oc > o and s.min <= rank) then
+            r.seen[c] = nil
+        end
+    end
+    local s = r.seen[diff] or {}
+    s.min = math.min(s.min or rank, rank)
+    s.max = math.max(s.max or rank, rank)
+    r.seen[diff] = s
+    r.last, r.lastRank = diff, rank
+end
+
+-- Records one window's worth: list = {{name, diff, learned}, ...};
+-- complete = the list holds unlearned recipes too (Forever), so a name
+-- missing from it is not on this game version at all.
+local function RecordWindow(prof, rank, list, complete)
+    local known, all = {}, {}
+    local store = ColorStore(prof)
+    for _, e in ipairs(list) do
+        all[e.name] = true
+        if e.learned ~= false then
+            known[e.name] = e.diff
+            NoteColor(store, e.name, e.diff, rank)
+        end
+    end
+    ns.db.knownRecipes = ns.db.knownRecipes or {}
+    ns.db.knownRecipes[prof] = known
+    ns.db.allRecipes = ns.db.allRecipes or {}
+    ns.db.allRecipes[prof] = complete and all or nil
+    ns.db.recipeRank = ns.db.recipeRank or {}
+    ns.db.recipeRank[prof] = rank
+    -- the window's skill is the freshest there is: a skill-up while
+    -- crafting reaches it before the skills list, so the advice moves on
+    -- with the colours it was given
+    local p = ns.profs and ns.profs[prof]
+    if p and type(rank) == "number" and rank > p.rank then p.rank = rank end
+end
+
+-- the profession's skill now, for a scan that the window did not give
+local function RankOf(prof, given)
+    if type(given) == "number" then
+        local ok = pcall(function() return given == 0 end)
+        if ok then return given end
+    end
+    local p = ns.profs and ns.profs[prof]
+    return p and p.rank
+end
 
 -- Forever (and retail) keep recipes behind C_TradeSkillUI: the open
 -- profession's name from GetChildProfessionInfo, every recipe id the
--- window knows, and a learned flag on each
+-- window knows (unlearned ones too), a learned flag and the colour on each
 local function ScanTradeSkillUI()
     local api = C_TradeSkillUI
     if not (api and api.GetAllRecipeIDs and api.GetRecipeInfo) then return end
@@ -172,20 +288,22 @@ local function ScanTradeSkillUI()
     if type(prof) ~= "string" or not ns.TRACKED[prof] then return end
     local okIds, ids = pcall(api.GetAllRecipeIDs)
     if not okIds or type(ids) ~= "table" then return end
-    local known, any = {}, false
+    local list, any = {}, false
     for _, id in ipairs(ids) do
         local okR, r = pcall(api.GetRecipeInfo, id)
-        if okR and type(r) == "table" and r.name and r.learned then
-            known[r.name] = Difficulty(r.relativeDifficulty)
-            any = true
+        if okR and type(r) == "table" and type(r.name) == "string" then
+            local diff = Difficulty(r.relativeDifficulty)
+            -- a learned recipe the game says cannot skill up is grey
+            if r.learned and r.canSkillUp == false then diff = "trivial" end
+            list[#list + 1] = {name = r.name, diff = diff, learned = r.learned and true or false}
+            if r.learned then any = true end
         end
     end
     -- the list arrives empty on the first event of an opening window;
     -- nothing known is not the same as nothing learned, so wait for the
     -- next one rather than wipe what was remembered
     if not any then return end
-    ns.db.knownRecipes = ns.db.knownRecipes or {}
-    ns.db.knownRecipes[prof] = known
+    RecordWindow(prof, RankOf(prof, info.skillLevel), list, true)
     ns.UpdateUI()
     return true
 end
@@ -194,15 +312,17 @@ function ns.ScanOpenTradeSkill()
     if not (GetTradeSkillLine and GetNumTradeSkills) then
         return ScanTradeSkillUI()
     end
-    local prof = GetTradeSkillLine()
+    local prof, rank = GetTradeSkillLine()
     if not prof or prof == "UNKNOWN" or not ns.TRACKED[prof] then return end
-    local known = {}
-    for i = 1, GetNumTradeSkills() do
+    local list = {}
+    for i = 1, GetNumTradeSkills() or 0 do
         local rname, rtype = GetTradeSkillInfo(i)
-        if rname and rtype ~= "header" then known[rname] = Difficulty(rtype) end
+        if rname and not NOT_RECIPE[rtype] then
+            list[#list + 1] = {name = rname, diff = Difficulty(rtype)}
+        end
     end
-    ns.db.knownRecipes = ns.db.knownRecipes or {}
-    ns.db.knownRecipes[prof] = known
+    if #list == 0 then return end
+    RecordWindow(prof, RankOf(prof, rank), list, false)
     ns.UpdateUI()
 end
 
@@ -234,28 +354,87 @@ function ns.ScanTrainer()
     return seen
 end
 
+-- the name a profession's own lists use for a route recipe, looked up
+-- exactly first and loosely second; nil when no list has it
+local function Resolve(map, recipe)
+    if not map then return nil end
+    if map[recipe] ~= nil then return recipe end
+    local k, lk = Key(recipe), LooseKey(recipe)
+    local loose
+    for name in pairs(map) do
+        if Key(name) == k then return name end
+        if not loose and LooseKey(name) == lk then loose = name end
+    end
+    return loose
+end
+ns.ResolveRecipe = Resolve
+
 -- what the trainer said a recipe needs, if a trainer has been visited
 function ns.RecipeRequirement(prof, recipe)
     local reqs = ns.db and ns.db.recipeReq and ns.db.recipeReq[prof]
-    return reqs and reqs[recipe]
+    local name = Resolve(reqs, recipe)
+    return name and reqs[name]
 end
 
-function ns.ScanOpenCraft() -- Enchanting uses the separate Craft API
+function ns.ScanOpenCraft() -- Enchanting uses the separate Craft API on older clients
     if not (GetCraftDisplaySkillLine and GetNumCrafts) then return end
-    local prof = GetCraftDisplaySkillLine()
+    local prof, rank = GetCraftDisplaySkillLine()
     if not prof or not ns.TRACKED[prof] then return end
-    local known = {}
-    for i = 1, GetNumCrafts() do
+    local list = {}
+    for i = 1, GetNumCrafts() or 0 do
         local rname, _, rtype = GetCraftInfo(i)
-        if rname and rtype ~= "header" then known[rname] = true end
+        if rname and not NOT_RECIPE[rtype] then
+            list[#list + 1] = {name = rname, diff = Difficulty(rtype)}
+        end
     end
-    ns.db.knownRecipes = ns.db.knownRecipes or {}
-    ns.db.knownRecipes[prof] = known
+    if #list == 0 then return end
+    RecordWindow(prof, RankOf(prof, rank), list, false)
     ns.UpdateUI()
 end
 
 function ns.GetKnownRecipes(prof)
     return ns.db and ns.db.knownRecipes and ns.db.knownRecipes[prof]
+end
+
+-- A recipe's colour at a given skill, from everything the game has shown.
+-- Returns colour, sure, seenColour, seenRank:
+--   colour - the best estimate ("optimal".."trivial"), nil when never seen
+--   sure   - true when the sightings pin it down exactly at this skill
+--   seenColour, seenRank - the sighting the estimate leans on, for wording
+function ns.RecipeColor(prof, recipe, rank)
+    local store = ns.db and ns.db.recipeColors and ns.db.recipeColors[prof]
+    local name = Resolve(store, recipe)
+    local r = name and store[name]
+    if not r or type(rank) ~= "number" then return nil end
+    -- seen at or below this skill: it is now that colour or worse
+    -- seen at or above it: it is now that colour or better
+    local lower, upper
+    for c, s in pairs(r.seen) do
+        local o = ORDER[c]
+        if s.min <= rank and (not lower or o > lower) then lower = o end
+        if s.max >= rank and (not upper or o < upper) then upper = o end
+    end
+    if lower and upper and lower == upper then return BY_ORDER[lower], true, BY_ORDER[lower], rank end
+    -- nothing is better than orange or worse than grey: orange seen at a
+    -- higher skill, or grey at a lower one, settles it
+    if upper == 0 and not lower then return "optimal", true, "optimal", rank end
+    if lower == 3 then return "trivial", true, "trivial", rank end
+    if lower then
+        -- the sighting it leans on: the highest skill seen at that colour
+        return BY_ORDER[lower], false, BY_ORDER[lower], r.seen[BY_ORDER[lower]].max
+    end
+    if upper then
+        return BY_ORDER[upper], false, BY_ORDER[upper], r.seen[BY_ORDER[upper]].min
+    end
+    return nil
+end
+
+-- "orange", or "orange at 60" when the colour is from a lower skill
+function ns.ColorText(prof, recipe, rank)
+    local c, sure, seenC, seenRank = ns.RecipeColor(prof, recipe, rank)
+    if not c then return nil end
+    if sure or seenRank == rank then return ns.COLOR_WORD[c] end
+    return string.format("%s at %d", ns.COLOR_WORD[seenC], seenRank)
 end
 
 -- the skill a route row really needs: the trainer's word for its recipe
@@ -270,20 +449,36 @@ function ns.RouteRowNeeds(prof, row)
     return need
 end
 
--- of the recipes the player knows, the one most likely to skill up: the
--- orange ones first, then yellow, then green; nil when none would
-function ns.BestKnownRecipe(prof)
+-- Of the recipes the player knows, the one most likely to skill up at
+-- this skill: orange first, then yellow, then green; never grey. Among
+-- equals, a recipe the route uses wins (its mats are listed), then the
+-- name. Returns name, colour, the route row it is on (if any).
+function ns.BestKnownRecipe(prof, rank)
     local known = ns.GetKnownRecipes(prof)
     if not known then return end
-    local order = {optimal = 1, medium = 2, easy = 3}
-    local best, bestRank
-    for recipe, diff in pairs(known) do
-        local r = order[diff]
-        if r and (not bestRank or r < bestRank or (r == bestRank and recipe < best)) then
-            best, bestRank = recipe, r
+    rank = rank or (ns.profs[prof] and ns.profs[prof].rank)
+    local rowOf = {}
+    local craft = ns.CRAFT[prof]
+    for _, row in ipairs(craft and craft.route or {}) do
+        for alt in tostring(row[2]):gmatch("[^/]+") do
+            alt = alt:gsub("^%s+", ""):gsub("%s+$", "")
+            local name = Resolve(known, alt)
+            if name then rowOf[name] = row end
         end
     end
-    return best
+    local best, bestO, bestRow
+    for recipe, diff in pairs(known) do
+        local c = ns.RecipeColor(prof, recipe, rank) or (type(diff) == "string" and diff)
+        local o = ORDER[c]
+        if o and o < 3 then
+            local row = rowOf[recipe]
+            local better = not bestO or o < bestO or
+                               (o == bestO and row and not bestRow) or
+                               (o == bestO and (row ~= nil) == (bestRow ~= nil) and recipe < best)
+            if better then best, bestO, bestRow = recipe, o, row end
+        end
+    end
+    return best, best and BY_ORDER[bestO], bestRow
 end
 
 --------------------------------------------------------------------------
@@ -494,64 +689,95 @@ function ns.BuildProfLines(name, p)
                 current = prev
             end
             if current then
-                -- prefer an alternative the player actually knows; warn
-                -- with the recipe source when none of them are known
                 local knownMap = ns.GetKnownRecipes(name)
-                local display = current[2]
-                local anyKnown = false
-                if knownMap then
-                    for alt in current[2]:gmatch("[^/]+") do
-                        alt = alt:gsub("^%s+", ""):gsub("%s+$", "")
-                        if knownMap[alt] then
-                            if not anyKnown then display = alt end
-                            anyKnown = true
+                local allMap = ns.db and ns.db.allRecipes and ns.db.allRecipes[name]
+                -- the row's alternatives the player knows, the best-coloured
+                -- one first, with its colour at the skill they are at now
+                local routeName, routeColor, anyKnown, inGame = nil, nil, false, false
+                for alt in current[2]:gmatch("[^/]+") do
+                    alt = alt:gsub("^%s+", ""):gsub("%s+$", "")
+                    local known = ns.ResolveRecipe(knownMap, alt)
+                    if known then
+                        local c = ns.RecipeColor(name, known, p.rank) or
+                                      (type(knownMap[known]) == "string" and knownMap[known] or nil)
+                        if not anyKnown or (ORDER[c] or 9) < (ORDER[routeColor] or 9) then
+                            routeName, routeColor = known, c
                         end
+                        anyKnown = true
                     end
+                    if ns.ResolveRecipe(allMap, alt) then inGame = true end
                 end
-                add(string.format("Craft: %s", display), "normal")
-                if tooEarly then
-                    add(string.format("(%s needs %d - your trainer said so)", tooEarly[2],
-                                      ns.RouteRowNeeds(name, tooEarly)), "dim")
-                end
-                -- the route's recipe is not known, but one that is still
-                -- gives skill-ups: say so rather than send them shopping
-                if knownMap and not anyKnown then
-                    local best = ns.BestKnownRecipe(name)
-                    if best then add(string.format("Meanwhile: %s (still skills up)", best), "good") end
-                end
-                if fishCombo then
-                    add(string.format("Mats: %s", current.fish), "dim")
-                    local spot = ns.ZoneWaterSpot(current)
-                    if spot then
-                        add(spot, "good")
-                    else
-                        add(string.format("(fish: %s)", current.where), "dim")
+                local display = routeName or current[2]
+                local routeO = ORDER[routeColor]
+                -- The game outranks the route: when it shows the route's
+                -- recipe grey (no skill-ups), or green while the player knows
+                -- something orange or yellow, the better recipe is the one
+                -- to craft. (A report: Linen Bag at 63 Tailoring and Enchant
+                -- Bracer - Minor Stamina at 63 Enchanting, both past their
+                -- skill-ups after a patch, still recommended.)
+                local best, bestColor, bestRow = ns.BestKnownRecipe(name, p.rank)
+                local takeBest = anyKnown and routeO and best and best ~= routeName and
+                                     (routeO == 3 or (routeO == 2 and ORDER[bestColor] <= 1))
+                if takeBest then
+                    add(string.format("Craft: %s (%s)", best, ns.ColorText(name, best, p.rank) or ns.COLOR_WORD[bestColor]), "normal")
+                    add(string.format("(%s is %s for you now - the game moved it, so this beats the route)",
+                                      routeName, ns.ColorText(name, routeName, p.rank) or ns.COLOR_WORD[routeColor]), "dim")
+                    if bestRow and bestRow[3] then add("Mats: " .. bestRow[3], "dim") end
+                else
+                    local colorText = routeName and ns.ColorText(name, routeName, p.rank)
+                    add(string.format("Craft: %s%s", display, colorText and (" (" .. colorText .. ")") or ""), "normal")
+                    if routeO == 3 then
+                        add("It gives no skill-ups any more, and you know nothing better - check your trainer for new recipes", "warn")
+                    elseif routeO == 2 then
+                        add("Green: it only skills up some of the time", "dim")
                     end
-                elseif current[3] then
-                    add("Mats: " .. current[3], "dim")
-                end
-                local source = current.source or current.recipe
-                if type(source) == "table" then
-                    local faction = UnitFactionGroup and
-                                        UnitFactionGroup("player")
-                    source = faction == "Horde" and source.H or source.A
-                end
-                if knownMap and not anyKnown then
-                    local need = ns.RecipeRequirement(name, display)
-                    if need and need > p.rank then
-                        add(string.format("Learn it at %d from your trainer", need), "warn")
-                    else
-                        add("You don't know this recipe yet!", "warn")
-                        add("Get it: " ..
-                                (source or "check your trainer / recipe vendors"),
-                            "warn")
+                    if tooEarly then
+                        add(string.format("(%s needs %d - your trainer said so)", tooEarly[2],
+                                          ns.RouteRowNeeds(name, tooEarly)), "dim")
                     end
-                elseif not knownMap then
-                    if source then
-                        add("Recipe: " .. source, "dim")
+                    -- the route's recipe is not known, but one that is still
+                    -- gives skill-ups: say so rather than send them shopping
+                    if knownMap and not anyKnown and best then
+                        add(string.format("Meanwhile: %s (%s)", best, ns.ColorText(name, best, p.rank) or ns.COLOR_WORD[bestColor]), "good")
                     end
-                    add(string.format("(open your %s window once so I can track your recipes)",
-                                      name), "dim")
+                    if fishCombo then
+                        add(string.format("Mats: %s", current.fish), "dim")
+                        local spot = ns.ZoneWaterSpot(current)
+                        if spot then
+                            add(spot, "good")
+                        else
+                            add(string.format("(fish: %s)", current.where), "dim")
+                        end
+                    elseif current[3] then
+                        add("Mats: " .. current[3], "dim")
+                    end
+                    local source = current.source or current.recipe
+                    if type(source) == "table" then
+                        local faction = UnitFactionGroup and
+                                            UnitFactionGroup("player")
+                        source = faction == "Horde" and source.H or source.A
+                    end
+                    if knownMap and not anyKnown then
+                        local need = ns.RecipeRequirement(name, display)
+                        if allMap and not inGame then
+                            -- Forever lists every recipe, learned or not:
+                            -- one missing from the list is not in this game
+                            add(string.format("%s isn't in your %s list - this game version may not have it", display, name), "warn")
+                        elseif need and need > p.rank then
+                            add(string.format("Learn it at %d from your trainer", need), "warn")
+                        else
+                            add("You don't know this recipe yet!", "warn")
+                            add("Get it: " ..
+                                    (source or "check your trainer / recipe vendors"),
+                                "warn")
+                        end
+                    elseif not knownMap then
+                        if source then
+                            add("Recipe: " .. source, "dim")
+                        end
+                        add(string.format("(open your %s window once so I can check these recipes against your game)",
+                                          name), "dim")
+                    end
                 end
             end
             if nextUp then
@@ -768,6 +994,16 @@ SlashCmdList["RXPPROFESSIONS"] = function(input)
         ns.Print("skills read through %s: %s", tostring(ns.skillAPI),
                  #names > 0 and table.concat(names, ", ") or "none tracked")
         if ns.lastError then ns.Print("last error: %s", ns.lastError) end
+        -- when each profession's recipe list was last read from its window
+        local read = {}
+        for prof, rank in pairs(ns.db.recipeRank or {}) do
+            local n = 0
+            for _ in pairs(ns.GetKnownRecipes(prof) or {}) do n = n + 1 end
+            read[#read + 1] = string.format("%s %d recipes at skill %d", prof, n, rank)
+        end
+        table.sort(read)
+        ns.Print("recipe colours read: %s", #read > 0 and table.concat(read, ", ")
+                     or "none yet - open a profession window once")
         if #ns.missingEvents > 0 then
             ns.Print("events this client lacks (skipped): %s", table.concat(ns.missingEvents, ", "))
         end

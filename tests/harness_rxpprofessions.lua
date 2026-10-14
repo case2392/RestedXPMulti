@@ -44,7 +44,7 @@ local function NewWorld(opts)
     printed = {}
     for _, k in ipairs({"GetNumSkillLines", "GetSkillLineInfo", "C_SkillInfo", "GetProfessions", "GetProfessionInfo",
                         "GetTradeSkillLine", "GetNumTradeSkills", "GetTradeSkillInfo", "C_TradeSkillUI",
-                        "GetCraftDisplaySkillLine", "GetNumCrafts", "GetCraftInfo", "LibStub", "RXPProfessionsDB"}) do
+                        "GetCraftDisplaySkillLine", "GetNumCrafts", "GetCraftInfo", "LibStub", "RXPProfessionsDB", "GetBuildInfo"}) do
         _G[k] = nil
     end
     _G.print = function(...) local t = {} for i = 1, select("#", ...) do t[i] = tostring(select(i, ...)) end table.insert(printed, table.concat(t, " ")) end
@@ -81,6 +81,10 @@ local function NewWorld(opts)
         {name = "Secondary Skills", header = true, folded = false, children = {{name = "Cooking", rank = opts.secretRank and secret or 20, maxRank = 75}}}
     }
     if opts.leatherworking then table.insert(tree[2].children, {name = "Leatherworking", rank = opts.leatherworking, maxRank = 75}) end
+    for _, extra in ipairs(opts.extra or {}) do table.insert(tree[2].children, extra) end
+    -- the game build: a new one starts recipe colours afresh
+    w.build = opts.build or "61582"
+    _G.GetBuildInfo = function() return "1.15.8", w.build, "Oct 1 2026", 11508 end
     local function visible()
         local out = {}
         for _, h in ipairs(tree) do
@@ -105,14 +109,19 @@ local function NewWorld(opts)
     end
     local function expand(i) local l = visible()[i]; assert(l and l.header, "expand on a non-header"); l.folded = false; w.expands = w.expands + 1; changed() end
     local function collapse(i) local l = visible()[i]; assert(l and l.header, "collapse on a non-header"); l.folded = true; w.collapses = w.collapses + 1; changed() end
-    -- the classic profession window (w.trade = {prof, {{name, difficulty}, ...}})
-    -- and trainer window (w.trainer = {{name, category, skill, level}, ...})
+    -- the classic profession window (w.trade = {prof, {{name, difficulty}, ...}},
+    -- its skill in w.tradeRank), the craft window Enchanting uses on older
+    -- clients (w.craft = {prof, rank, {{name, difficulty}, ...}}) and the
+    -- trainer window (w.trainer = {{name, category, skill, level}, ...})
     w.trade, w.trainer = nil, {}
     _G.GetNumTrainerServices = function() return #w.trainer end
     _G.GetTrainerServiceInfo = function(i) local t = w.trainer[i]; return t[1], "", t[2], false end
     _G.GetTrainerServiceSkillReq = function(i) local t = w.trainer[i]; return t[3], t[4] end
     if opts.client == "classic" then
-        _G.GetTradeSkillLine = function() return w.trade and w.trade[1] or "UNKNOWN" end
+        _G.GetTradeSkillLine = function() return w.trade and w.trade[1] or "UNKNOWN", w.tradeRank, 75 end
+        _G.GetCraftDisplaySkillLine = function() if w.craft then return w.craft[1], w.craft[2], 75 end end
+        _G.GetNumCrafts = function() return w.craft and #w.craft[3] or 0 end
+        _G.GetCraftInfo = function(i) local r = w.craft[3][i]; return r[1], "", r[2], 0, true, 0, 0 end
         _G.GetNumTradeSkills = function() return w.trade and #w.trade[2] or 0 end
         _G.GetTradeSkillInfo = function(i) local r = w.trade[2][i]; return r[1], r[2] end
         _G.GetNumSkillLines = function() return #visible() end
@@ -137,7 +146,7 @@ local function NewWorld(opts)
         end
         w.recipes = {}
         _G.C_TradeSkillUI = {
-            GetChildProfessionInfo = function() return {professionName = w.openProf or "Cooking", skillLevel = 20, maxSkillLevel = 75} end,
+            GetChildProfessionInfo = function() return {professionName = w.openProf or "Cooking", skillLevel = w.openRank or 20, maxSkillLevel = 75} end,
             GetAllRecipeIDs = function() local ids = {}; for id in pairs(w.recipes) do ids[#ids + 1] = id end; table.sort(ids); return ids end,
             GetRecipeInfo = function(id) return w.recipes[id] end
         }
@@ -295,7 +304,7 @@ do
     w.Fire("TRADE_SKILL_SHOW")
     text = craftLines(w)
     check(w.ns.GetKnownRecipes("Leatherworking")["Handstitched Leather Boots"] == "optimal", "leatherworking: known recipes carry their skill-up colour")
-    check(text:find("Craft: Embossed Leather Gloves", 1, true) and text:find("Learn it at 55 from your trainer", 1, true) == nil and text:find("You don't know this recipe yet!", 1, true) and text:find("Meanwhile: Handstitched Leather Boots (still skills up)", 1, true), "leatherworking: at 56 the gloves are due, unknown, and the orange boots offered meanwhile")
+    check(text:find("Craft: Embossed Leather Gloves", 1, true) and text:find("Learn it at 55 from your trainer", 1, true) == nil and text:find("You don't know this recipe yet!", 1, true) and text:find("Meanwhile: Handstitched Leather Boots (orange)", 1, true), "leatherworking: at 56 the gloves are due, unknown, and the orange boots offered meanwhile")
     w.tree[2].children[2].rank = 40; w.Fire("SKILL_LINES_CHANGED")
     w.ns.CRAFT.Leatherworking.route[3][1] = 30   -- the old row again, trainer known: 55 > 40
     text = craftLines(w)
@@ -310,6 +319,144 @@ do
     text = craftLines(w)
     check(text:find("Craft: Handstitched Leather Boots", 1, true), "leatherworking: trainer says 55, rank 50, row says 45: stepped back")
     w.ns.CRAFT.Leatherworking.route[3][1] = 55
+end
+
+--------------------------------------------------------------------------
+-- The report: "recommending items for skill-up that no longer provide
+-- skill-up. I'm 63 in tailoring; it instructs me to make Linen Bags until
+-- I reach 70 [then] Reinforced Linen Cape. Similarly enchanting at 63 ...
+-- Enchant Bracer - Minor (Inferior) Stamina, also some of the enchant
+-- titles no longer match ... last week's patch". The game's own colours
+-- now outrank the route.
+--------------------------------------------------------------------------
+do
+    local function lines(w, prof)
+        local out = {}
+        for _, l in ipairs(w.ns.BuildProfLines(prof, w.ns.GetTracked()[prof])) do out[#out + 1] = l.text end
+        return table.concat(out, "\n")
+    end
+    local tailor = {name = "Tailoring", rank = 63, maxRank = 75}
+    local enchant = {name = "Enchanting", rank = 63, maxRank = 75}
+    local w = NewWorld({client = "classic", events = CLASSIC_EVENTS, level = 14, extra = {tailor, enchant},
+                        db = {setupDone = true, chosen = {Tailoring = true, Enchanting = true}, show = true}})
+    w.Fire("PLAYER_ENTERING_WORLD")
+    local text = lines(w, "Tailoring")
+    check(text:find("Craft: Linen Bag\n", 1, true) and text:find("open your Tailoring window once so I can check these recipes against your game", 1, true),
+          "report: before the window has been opened, the route's Linen Bag, and a nudge to open the window")
+
+    -- the window after the patch: Linen Bag grey at 63, something else orange
+    w.trade = {"Tailoring", {{"Tailoring", "header"}, {"Bolt of Linen Cloth", "trivial"}, {"Linen Bag", "trivial"},
+                             {"Simple Linen Boots", "optimal"}, {"Brown Linen Pants", "medium"}, {"Cloth", "subheader"}}}
+    w.tradeRank = 63
+    w.Fire("TRADE_SKILL_SHOW")
+    text = lines(w, "Tailoring")
+    check(text:find("Craft: Simple Linen Boots (orange)", 1, true) and text:find("(Linen Bag is grey for you now - the game moved it, so this beats the route)", 1, true),
+          "report: Linen Bag grey at 63 - the orange recipe the game shows is recommended instead, and the reason given")
+    check(w.ns.GetKnownRecipes("Tailoring")["Tailoring"] == nil and w.ns.GetKnownRecipes("Tailoring")["Cloth"] == nil, "report: header and subheader rows are not recipes")
+    check(not text:find("Mats: 3 Bolt of Linen", 1, true), "report: the route's mats for the bag are not shown for the boots")
+
+    -- skill rises without the window: the boots' orange is from 63, the bag's grey holds
+    tailor.rank = 66; w.Fire("SKILL_LINES_CHANGED")
+    text = lines(w, "Tailoring")
+    check(text:find("Craft: Simple Linen Boots (orange at 63)", 1, true) and text:find("(Linen Bag is grey for you now", 1, true),
+          "report: at 66 the boots read 'orange at 63' (not re-seen), the bag stays grey (grey only gets more grey)")
+    check(w.ns.RecipeColor("Tailoring", "Linen Bag", 66) == "trivial" and select(2, w.ns.RecipeColor("Tailoring", "Linen Bag", 66)) == true, "colours: grey at 63 is grey for sure at 66")
+    check(w.ns.RecipeColor("Tailoring", "Simple Linen Boots", 50) == "optimal" and select(2, w.ns.RecipeColor("Tailoring", "Simple Linen Boots", 50)) == true, "colours: orange at 63 is orange for sure at 50")
+    check(select(2, w.ns.RecipeColor("Tailoring", "Brown Linen Pants", 70)) == false, "colours: yellow at 63 is only a guess at 70")
+
+    -- green route recipe, a yellow one known: the yellow one
+    tailor.rank = 63; w.Fire("SKILL_LINES_CHANGED")
+    w.trade = {"Tailoring", {{"Linen Bag", "easy"}, {"Brown Linen Pants", "medium"}, {"Simple Linen Boots", "trivial"}}}
+    w.tradeRank = 64; tailor.rank = 64
+    w.Fire("TRADE_SKILL_UPDATE")
+    text = lines(w, "Tailoring")
+    check(text:find("Craft: Brown Linen Pants (yellow)", 1, true) and text:find("(Linen Bag is green for you now", 1, true),
+          "report: green route recipe and a yellow one known - the yellow one")
+    -- green and nothing better: keep it, say it is hit and miss
+    w.trade = {"Tailoring", {{"Linen Bag", "easy"}, {"Brown Linen Pants", "trivial"}}}
+    w.tradeRank = 65; tailor.rank = 65
+    w.Fire("TRADE_SKILL_UPDATE")
+    text = lines(w, "Tailoring")
+    check(text:find("Craft: Linen Bag (green)", 1, true) and text:find("Green: it only skills up some of the time", 1, true), "report: green and nothing better - kept, flagged")
+    -- grey and nothing better: say there are no skill-ups left in it
+    w.trade = {"Tailoring", {{"Linen Bag", "trivial"}, {"Brown Linen Pants", "trivial"}}}
+    w.tradeRank = 66; tailor.rank = 66
+    w.Fire("TRADE_SKILL_UPDATE")
+    text = lines(w, "Tailoring")
+    check(text:find("Craft: Linen Bag (grey)", 1, true) and text:find("It gives no skill-ups any more, and you know nothing better - check your trainer for new recipes", 1, true),
+          "report: grey and nothing better - says so and points at the trainer")
+    -- still orange where the route says: unchanged advice, with the colour
+    w.trade = {"Tailoring", {{"Linen Bag", "optimal"}}}
+    w.tradeRank = 66
+    w.Fire("TRADE_SKILL_UPDATE")
+    text = lines(w, "Tailoring")
+    check(text:find("Craft: Linen Bag (orange)", 1, true) and text:find("Mats: 3 Bolt of Linen + Coarse Thread", 1, true) and not text:find("game moved it", 1, true),
+          "report: where the game agrees with the route, the route stands, with its colour and mats")
+    check(w.ns.RecipeColor("Tailoring", "Linen Bag", 66) == "optimal" and w.ns.db.recipeColors.Tailoring["Linen Bag"].seen.trivial == nil,
+          "colours: a sighting that contradicts older ones (a patch) replaces them")
+
+    -- Enchanting through the craft window, with the names a later client uses
+    w.craft = {"Enchanting", 63, {{"Enchanting", "header"}, {"Runed Copper Rod", "trivial"}, {"Enchant Bracers - Minor Health", "trivial"},
+                                   {"Enchant Bracers - Minor Stamina", "trivial"}, {"Enchant Cloak - Minor Resistance", "optimal"}}}
+    w.Fire("CRAFT_SHOW")
+    text = lines(w, "Enchanting")
+    check(w.ns.ResolveRecipe(w.ns.GetKnownRecipes("Enchanting"), "Enchant Bracer - Minor Stamina") == "Enchant Bracers - Minor Stamina",
+          "names: the route's 'Enchant Bracer - Minor Stamina' finds the game's 'Enchant Bracers - Minor Stamina'")
+    check(text:find("Craft: Enchant Cloak - Minor Resistance (orange)", 1, true) and text:find("(Enchant Bracers - Minor Stamina is grey for you now", 1, true),
+          "report: enchanting at 63 - the grey bracer enchant replaced by the orange one the game shows")
+    check(w.ns.GetKnownRecipes("Enchanting")["Enchant Cloak - Minor Resistance"] == "optimal", "craft window: colours recorded (they were not before)")
+    -- trainer requirements match loosely too
+    w.trainer = {{"Enchant Bracers - Lesser Stamina", "unavailable", "Enchanting", 130}}
+    w.Fire("TRAINER_SHOW")
+    check(w.ns.RecipeRequirement("Enchanting", "Enchant Bracer - Lesser Stamina") == 130, "names: the trainer's renamed recipe is found for the route's name")
+
+    -- a new game build starts the colours afresh
+    w.build = "62000"
+    w.trade = {"Tailoring", {{"Linen Bag", "medium"}}}
+    w.tradeRank = 66
+    w.Fire("TRADE_SKILL_UPDATE")
+    check(w.ns.db.recipeColors.Enchanting == nil and w.ns.db.recipeColors.Tailoring["Linen Bag"].last == "medium" and w.ns.db.recipeColorsBuild == "62000",
+          "colours: a new game build clears the old sightings")
+
+    w.slash("status")
+    check(Printed("recipe colours read: Enchanting 4 recipes at skill 63, Tailoring 1 recipes at skill 66"),
+          "status: when each profession's recipes were last read")
+    -- saved data from before 0.6.2 (known recipes as true) still works
+    w.ns.db.knownRecipes.Tailoring = {["Linen Bag"] = true}
+    w.ns.db.recipeColors = nil
+    local okOld = pcall(lines, w, "Tailoring")
+    check(okOld, "old saved data: a recipe stored as true does not break the advice")
+end
+
+-- Forever: every recipe is listed, learned or not, with the game's own
+-- colour and whether it can still skill up
+do
+    local w = NewWorld({client = "forever", events = FOREVER_EVENTS, extra = {{name = "Tailoring", rank = 63, maxRank = 75}},
+                        db = {setupDone = true, chosen = {Tailoring = true}, show = true}})
+    w.Fire("PLAYER_ENTERING_WORLD")
+    w.openProf, w.openRank = "Tailoring", 63
+    w.recipes = {
+        [1] = {name = "Bolt of Linen Cloth", learned = true, relativeDifficulty = 3},
+        [2] = {name = "Linen Bag", learned = true, relativeDifficulty = 1, canSkillUp = false},
+        [3] = {name = "Simple Kilt", learned = true, relativeDifficulty = 0, canSkillUp = true},
+        [4] = {name = "Reinforced Linen Cape", learned = false}
+    }
+    w.Fire("TRADE_SKILL_LIST_UPDATE")
+    local text = {}
+    for _, l in ipairs(w.ns.BuildProfLines("Tailoring", w.ns.GetTracked().Tailoring)) do text[#text + 1] = l.text end
+    text = table.concat(text, "\n")
+    check(text:find("Craft: Simple Kilt (orange)", 1, true) and text:find("(Linen Bag is grey for you now", 1, true),
+          "forever: a learned recipe the game says can't skill up counts as grey, and is replaced")
+    check(w.ns.db.allRecipes.Tailoring["Reinforced Linen Cape"] and not w.ns.GetKnownRecipes("Tailoring")["Reinforced Linen Cape"],
+          "forever: unlearned recipes are listed as in the game, not as known")
+    -- a route recipe this game does not have at all
+    w.ns.CRAFT.Tailoring.route[2][2] = "Linen Satchel Of Old"
+    text = {}
+    for _, l in ipairs(w.ns.BuildProfLines("Tailoring", w.ns.GetTracked().Tailoring)) do text[#text + 1] = l.text end
+    text = table.concat(text, "\n")
+    check(text:find("Linen Satchel Of Old isn't in your Tailoring list - this game version may not have it", 1, true) and text:find("Meanwhile: Simple Kilt (orange)", 1, true),
+          "forever: a route recipe missing from the game's full list is called out, with something that does skill up")
+    w.ns.CRAFT.Tailoring.route[2][2] = "Linen Bag"
 end
 
 -- a secret rank (Forever hides some numbers from addon code) counts as unknown, not an error
