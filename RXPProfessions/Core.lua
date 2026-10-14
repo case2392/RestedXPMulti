@@ -15,6 +15,7 @@ do
     toc = type(toc) == "number" and toc or 0
     ns.IS_FOREVER = toc >= 16000 and toc < 20000
     ns.IS_TBC = toc >= 20000 and toc < 30000
+    ns.HAS_MASTER = toc >= 20000 -- Classic Era and Forever stop at Artisan
 end
 if ns.IS_FOREVER then
     for _, craft in pairs(ns.CRAFT) do
@@ -22,6 +23,16 @@ if ns.IS_FOREVER then
         craft.notes = craft.foreverNotes or craft.notes
     end
     for key, value in pairs(ns.FOREVER or {}) do ns[key] = value end
+    -- its new village trainers fill gaps, never replace an entry
+    for race, extra in pairs(ns.FOREVER_VILLAGE or {}) do
+        local villages = ns.VILLAGE_TRAINERS[race] or {}
+        ns.VILLAGE_TRAINERS[race] = villages
+        for prof, text in pairs(extra) do villages[prof] = villages[prof] or text end
+    end
+end
+-- a gathering tier's name on this game (Forever adds starter nodes)
+function ns.TierName(tier)
+    return (ns.IS_FOREVER and tier.forever) or tier[2]
 end
 function ns.RowName(row)
     return (ns.IS_TBC and row.tbc) or row[2]
@@ -516,16 +527,18 @@ function ns.ColorText(prof, recipe, rank)
     return string.format("%s at %d", ns.COLOR_WORD[seenC], seenRank)
 end
 
--- the skill a route row really needs: the trainer's word for its recipe
--- (any of the alternatives) when there is one, else the row's own number
+-- the skill a route row really needs: the row's own number, unless the
+-- trainer said every one of its alternatives needs more - then the least
+-- of those (either alternative will do, so the cheapest to reach counts)
 function ns.RouteRowNeeds(prof, row)
-    local need = row[1]
+    local lowest
     for alt in tostring(ns.RowName(row)):gmatch("[^/]+") do
         alt = alt:gsub("^%s+", ""):gsub("%s+$", "")
         local said = ns.RecipeRequirement(prof, alt)
-        if said and said > need then need = said end
+        if not said then return row[1] end
+        if not lowest or said < lowest then lowest = said end
     end
-    return need
+    return math.max(row[1], lowest or row[1])
 end
 
 -- Of the recipes the player knows, the one most likely to skill up at
@@ -638,8 +651,20 @@ end
 
 local function RankInfo(maxRank)
     for _, r in ipairs(ns.RANKS) do
-        if maxRank <= r.cap then return r end
+        if maxRank <= r.cap then
+            -- no Master on Classic Era or Forever: Artisan is the last rank
+            if r.fromTBC and not ns.HAS_MASTER then return {cap = r.cap} end
+            return r
+        end
     end
+end
+
+-- what the next rank asks besides skill: {level = n} for a trainer's
+-- character level, {how = "book" | "quest", skill = n} where it is not a
+-- trainer's to give (First Aid, Cooking, Fishing)
+function ns.RankRule(name, kind, nextRank)
+    local rules = ns.RANK_RULES[name] or (kind == "craft" and ns.RANK_RULES.craft)
+    return rules and rules[nextRank] or {}
 end
 
 -- Returns a list of {text, style} lines for one profession.
@@ -690,7 +715,7 @@ function ns.BuildProfLines(name, p)
             if p.kind == "gather" then
                 local _, nextUp = CurrentAndNext(ns.GATHER[name].tiers, p.rank)
                 if nextUp then
-                    milestone, milestoneName = nextUp[1], nextUp[2]
+                    milestone, milestoneName = nextUp[1], ns.TierName(nextUp)
                 end
             else
                 local craftDef = ns.CRAFT[name]
@@ -714,22 +739,31 @@ function ns.BuildProfLines(name, p)
         end
     end
 
-    -- trainer / cap advice
+    -- trainer / cap advice: the next rank at its skill and character
+    -- level, from a trainer - or from a book or a quest (First Aid,
+    -- Cooking, Fishing), which the notes below name
     local rank = RankInfo(p.maxRank)
     local capped = p.rank >= p.maxRank
-    if rank and rank.nextRank and p.rank >= (rank.trainAt or math.huge) then
+    local nextRank = rank and rank.nextRank
+    local rule = nextRank and ns.RankRule(name, p.kind, nextRank) or {}
+    local trainAt = rule.skill or (rank and rank.trainAt)
+    local tooLow = rule.level and level < rule.level and
+                       string.format(" - needs character level %d (you're %d)", rule.level, level) or ""
+    local fromItem = rule.how and string.format("%s %s comes from a %s - see below", nextRank, name, rule.how)
+    if nextRank and p.rank >= (trainAt or math.huge) then
         if capped then
-            add(string.format("Capped! Train %s at a %s trainer", rank.nextRank,
-                              name), "warn")
+            add("Capped! " .. (fromItem or string.format("Train %s at a %s trainer", nextRank, name)) .. tooLow, "warn")
+        elseif tooLow ~= "" then
+            add(string.format("%s at %d%s", nextRank, trainAt, tooLow), "warn")
         else
-            add(string.format("Can train %s now (%d needed)", rank.nextRank,
-                              rank.trainAt), "good")
+            add(fromItem or string.format("Can train %s now (%d needed)", nextRank, trainAt), "good")
         end
     elseif capped then
         add("Skill capped for this expansion", "dim")
-    elseif rank and rank.nextRank and p.maxRank - p.rank <= 10 then
-        add(string.format("Cap soon - train %s at %d", rank.nextRank,
-                          rank.trainAt), "warn")
+    elseif nextRank and p.maxRank - p.rank <= 10 then
+        add(string.format("Cap soon - %s at %d%s",
+                          rule.how and string.format("%s comes from a %s", nextRank, rule.how) or ("train " .. nextRank),
+                          trainAt, tooLow), "warn")
     end
 
     -- what to do right now
@@ -737,10 +771,10 @@ function ns.BuildProfLines(name, p)
         local gather = ns.GATHER[name]
         local current, nextUp = CurrentAndNext(gather.tiers, p.rank)
         if current then
-            add(string.format("%s: %s", gather.verb, current[2]), "normal")
+            add(string.format("%s: %s", gather.verb, ns.TierName(current)), "normal")
         end
         if nextUp then
-            add(string.format("At %d: %s", nextUp[1], nextUp[2]), "dim")
+            add(string.format("At %d: %s", nextUp[1], ns.TierName(nextUp)), "dim")
         end
     elseif p.kind == "craft" then
         local craft = ns.CRAFT[name]
@@ -908,8 +942,10 @@ function ns.BuildProfLines(name, p)
             end
         end
     elseif p.kind == "skinning" then
-        -- max skinnable mob level is roughly skill/5 (min 10)
-        local maxLevel = math.max(10, math.floor(p.rank / 5))
+        -- the highest beast you can skin: level 10 + skill/10 below skill
+        -- 100, skill/5 from there (Classic's rule; a report would tell if
+        -- Forever's differs)
+        local maxLevel = p.rank < 100 and 10 + math.floor(p.rank / 10) or math.floor(p.rank / 5)
         add(string.format("Skin your kills (up to ~level %d mobs)", maxLevel),
             "normal")
     end
@@ -968,7 +1004,7 @@ function ns.Refresh()
             for _, tier in ipairs(ns.GATHER[name].tiers) do
                 if old.rank < tier[1] and p.rank >= tier[1] and tier[1] > 1 then
                     ns.Print("|cFF66FF66%s unlocked:|r you can now gather %s!",
-                             name, tier[2])
+                             name, ns.TierName(tier))
                 end
             end
         end

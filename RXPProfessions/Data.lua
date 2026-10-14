@@ -1,5 +1,8 @@
--- RestedXP Professions - static profession data (WoW Classic 1-300)
--- Routes are the standard community leveling paths; skill-up RNG means
+-- RestedXP Professions - static profession data (1-300)
+-- Routes are the standard community leveling paths, checked row by row
+-- against each game's recipe data (Classic Era and TBC: the client's
+-- skill-up ranges and the trainer tables; WoW Forever: its client data
+-- and trainer windows players recorded, October 2026). Skill-up RNG means
 -- brackets can shift by a few points in practice.
 
 local addonName, ns = ...
@@ -10,16 +13,27 @@ ns.RANKS = {
     {cap = 75, trainAt = 50, nextRank = "Journeyman"},
     {cap = 150, trainAt = 125, nextRank = "Expert"},
     {cap = 225, trainAt = 200, nextRank = "Artisan"},
-    {cap = 300, trainAt = 275, nextRank = "Master"}, -- TBC only
+    {cap = 300, trainAt = 275, nextRank = "Master", fromTBC = true}, -- not on Classic Era or Forever
     {cap = 375}
 }
 
+-- What a rank asks besides skill. Crafting trainers want a character
+-- level; First Aid, Cooking and Fishing give Expert through a book and
+-- Artisan through a quest at 225 (the notes say where).
+ns.RANK_RULES = {
+    craft = {Journeyman = {level = 10}, Expert = {level = 20}, Artisan = {level = 35}, Master = {level = 50}},
+    ["First Aid"] = {Expert = {how = "book"}, Artisan = {how = "quest", skill = 225, level = 35}},
+    ["Cooking"] = {Expert = {how = "book"}, Artisan = {how = "quest", skill = 225, level = 35}},
+    ["Fishing"] = {Expert = {how = "book"}, Artisan = {how = "quest", skill = 225, level = 35}}
+}
+
 -- Gathering professions: what unlocks at which skill. Sorted ascending.
+-- (Forever's tiers are the same; `forever` names its new starter nodes.)
 ns.GATHER = {
     ["Mining"] = {
         verb = "Mine",
         tiers = {
-            {1, "Copper Vein"},
+            {1, "Copper Vein", forever = "Copper Vein / Poor Copper Vein (Chunk of Amber in Shadowglen)"},
             {65, "Tin Vein"},
             {75, "Silver Vein"},
             {125, "Iron Deposit"},
@@ -33,7 +47,7 @@ ns.GATHER = {
     ["Herbalism"] = {
         verb = "Pick",
         tiers = {
-            {1, "Peacebloom / Silverleaf"},
+            {1, "Peacebloom / Silverleaf", forever = "Peacebloom / Silverleaf (Wilted / Stunted in starting areas)"},
             {15, "Earthroot"},
             {50, "Mageroyal"},
             {70, "Briarthorn"},
@@ -58,11 +72,15 @@ ns.GATHER = {
     }
 }
 
--- Crafting professions: route = {from, item, mats}, notes = {at, text}.
+-- Crafting professions: route = {from, recipe, mats}, notes = {at, text}.
+-- A row reads "from this skill, craft this until the next row". A recipe
+-- may list alternatives split by " / " (whichever you know); `source` says
+-- where to get one a trainer does not teach ({A = ..., H = ...} per
+-- faction); `tbc` / `tbcMats` are TBC's name and mats where they differ.
 -- primary = counts against the ~5-skill-per-level pace check.
--- forever / foreverMats: the recipe's name and mats on WoW Forever, where
--- they differ from Classic Era (read from Wowhead's Forever tooltips,
--- October 2026: Forever renamed and re-costed some recipes).
+-- foreverRoute / foreverNotes: WoW Forever's own, where the game differs
+-- (its client data, build 70291, and its trainers as players recorded
+-- them; Core.lua swaps them in on Forever).
 ns.CRAFT = {
     ["First Aid"] = {
         route = {
@@ -71,17 +89,37 @@ ns.CRAFT = {
             {80, "Wool Bandage", "1 Wool Cloth"},
             {115, "Heavy Wool Bandage", "2 Wool Cloth"},
             {150, "Silk Bandage", "1 Silk Cloth"},
-            {180, "Heavy Silk Bandage", "2 Silk Cloth"},
-            {210, "Mageweave Bandage", "1 Mageweave Cloth"},
-            {240, "Heavy Mageweave Bandage", "2 Mageweave Cloth"},
-            {260, "Runecloth Bandage", "1 Runecloth"},
-            {290, "Heavy Runecloth Bandage", "2 Runecloth"}
+            {180, "Heavy Silk Bandage", "2 Silk Cloth",
+             source = {A = "Manual (22s): Deneb Walker - Stromgarde Keep, Arathi Highlands",
+                       H = "Manual (22s): Balai Lok'Wein - Brackenwall Village, Dustwallow Marsh"}},
+            {210, "Mageweave Bandage", "1 Mageweave Cloth",
+             source = {A = "Manual (50s): Deneb Walker - Stromgarde Keep, Arathi Highlands",
+                       H = "Manual (50s): Balai Lok'Wein - Brackenwall Village, Dustwallow Marsh"}},
+            {240, "Heavy Mageweave Bandage", "2 Mageweave Cloth",
+             source = {A = "Doctor Gustaf VanHowzen - Theramore Isle, Dustwallow Marsh (the Triage doctor)",
+                       H = "Doctor Gregory Victor - Hammerfall, Arathi Highlands (the Triage doctor)"}},
+            {260, "Runecloth Bandage", "1 Runecloth",
+             source = {A = "Doctor Gustaf VanHowzen - Theramore Isle, Dustwallow Marsh (the Triage doctor)",
+                       H = "Doctor Gregory Victor - Hammerfall, Arathi Highlands (the Triage doctor)"}},
+            {290, "Heavy Runecloth Bandage", "2 Runecloth",
+             source = {A = "Doctor Gustaf VanHowzen - Theramore Isle, Dustwallow Marsh (the Triage doctor)",
+                       H = "Doctor Gregory Victor - Hammerfall, Arathi Highlands (the Triage doctor)"}}
         },
         notes = {
-            {150, {A = "Expert rank: book |cFFFFCC00Expert First Aid - Under Wraps|r - Deneb Walker, Stromgarde (Arathi)",
-                   H = "Expert rank: book |cFFFFCC00Expert First Aid - Under Wraps|r - Balai Lok'Wein, Brackenwall (Dustwallow)"},
+            {150, {A = "Expert rank: book |cFFFFCC00Expert First Aid - Under Wraps|r (1g) - Deneb Walker, Stromgarde (Arathi); also sells the 180 and 210 bandage manuals",
+                   H = "Expert rank: book |cFFFFCC00Expert First Aid - Under Wraps|r (1g) - Balai Lok'Wein, Brackenwall (Dustwallow); also sells the 180 and 210 bandage manuals"},
              req = 125, gate = 150},
-            {225, "Artisan rank: |cFFFFCC00Triage|r quest (Theramore / Hammerfall)",
+            {225, {A = "Artisan rank: |cFFFFCC00Triage|r quest (level 35) - Doctor Gustaf VanHowzen, Theramore",
+                   H = "Artisan rank: |cFFFFCC00Triage|r quest (level 35) - Doctor Gregory Victor, Hammerfall (Arathi)"},
+             req = 225, gate = 225}
+        },
+        foreverNotes = {
+            {50, "Forever: First Aid makes the healing potions too - Minor (1), Lesser (55) and Healing (110) from your trainer, with herbs and vials"},
+            {150, {A = "Expert rank: book |cFFFFCC00Expert First Aid - Under Wraps|r (1g) - Deneb Walker, Stromgarde (Arathi); also sells the 180 and 210 bandage manuals",
+                   H = "Expert rank: book |cFFFFCC00Expert First Aid - Under Wraps|r (1g) - Balai Lok'Wein, Brackenwall (Dustwallow); also sells the 180 and 210 bandage manuals"},
+             req = 125, gate = 150},
+            {225, {A = "Artisan rank: |cFFFFCC00Triage|r quest (level 35) - Doctor Gustaf VanHowzen, Theramore",
+                   H = "Artisan rank: |cFFFFCC00Triage|r quest (level 35) - Doctor Gregory Victor, Hammerfall (Arathi)"},
              req = 225, gate = 225}
         }
     },
@@ -94,19 +132,39 @@ ns.CRAFT = {
             {140, "Lesser Mana Potion", "Mageroyal + Stranglekelp + Empty Vial"},
             {155, "Greater Healing Potion", "Liferoot + Kingsblood + Leaded Vial"},
             {185, "Elixir of Agility", "Stranglekelp + Goldthorn + Leaded Vial"},
-            {210, "Elixir of Greater Defense", "Wild Steelbloom + Goldthorn + Leaded Vial",
-             forever = "Elixir of Defense", foreverMats = "Wild Steelbloom + Goldthorn + Leaded Vial (makes 2)"},
+            {210, "Elixir of Greater Defense", "Wild Steelbloom + Goldthorn + Leaded Vial"},
             {215, "Superior Healing Potion", "Sungrass + Khadgar's Whisker + Crystal Vial"},
-            {230, "Elixir of Detect Undead", "Arthas' Tears + Crystal Vial",
-             forever = "Draught of Detect Undead", foreverMats = "Arthas' Tears + Crystal Vial (makes 2)"},
+            {230, "Elixir of Detect Undead", "Arthas' Tears + Crystal Vial"},
             {250, "Elixir of Greater Agility", "Sungrass + Goldthorn + Crystal Vial"},
-            {265, "Superior Mana Potion", "Sungrass + Blindweed + Crystal Vial"},
-            {285, "Major Healing Potion", "Golden Sansam + Mountain Silversage + Crystal Vial"}
+            {265, "Superior Mana Potion", "2 Sungrass + 2 Blindweed + 1 Crystal Vial"},
+            {285, "Major Healing Potion", "2 Golden Sansam + 1 Mountain Silversage + 1 Crystal Vial"}
+        },
+        foreverRoute = {
+            -- Forever moved the healing potions to First Aid
+            {1, "Elixir of Minor Defense", "1 Silverleaf + 1 Peacebloom + 1 Empty Vial"},
+            {60, "Elixir of Minor Fortitude", "2 Earthroot + 1 Peacebloom + 1 Empty Vial"},
+            {90, "Elixir of Wisdom", "1 Mageroyal + 2 Briarthorn + 1 Empty Vial"},
+            {120, "Lesser Mana Potion", "1 Mageroyal + 1 Stranglekelp + 1 Empty Vial"},
+            {160, "Mana Potion", "1 Stranglekelp + 1 Kingsblood + 1 Leaded Vial"},
+            {185, "Elixir of Agility", "1 Stranglekelp + 1 Goldthorn + 1 Leaded Vial"},
+            {210, "Elixir of Defense", "1 Wild Steelbloom + 1 Goldthorn + 1 Leaded Vial"},
+            {230, "Draught of Detect Undead", "1 Arthas' Tears + 1 Crystal Vial"},
+            {250, "Elixir of Greater Agility", "1 Sungrass + 1 Goldthorn + 1 Crystal Vial"},
+            {265, "Superior Mana Potion", "2 Sungrass + 2 Blindweed + 1 Crystal Vial",
+             source = {A = "Recipe (about 1g 20s, limited stock): Ulthir - Alchemy supplies, Darnassus",
+                       H = "Recipe (about 1g 25s, limited stock): Algernon - Alchemy supplies, Undercity"}}
         },
         notes = {
             {1, "Vials: Alchemy supplies vendor (near trainers)"},
             {225, {A = "Artisan trainer: Kylanna Windwhisper - Feathermoon Stronghold, Feralas",
                    H = "Artisan trainer: Rogvar - Stonard, Swamp of Sorrows"},
+             req = 200, gate = 225}
+        },
+        foreverNotes = {
+            {1, "Vials: Alchemy supplies vendor (near trainers)"},
+            {20, "Forever: the healing potions are First Aid recipes now"},
+            {225, {A = "Artisan trainer: Kylanna Windwhisper - Feathermoon Stronghold, Feralas; or Master Mycologist Shurome - Emerald Sanctuary, Felwood",
+                   H = "Artisan trainer: Master Mycologist Shurome - Emerald Sanctuary, Felwood"},
              req = 200, gate = 225}
         }
     },
@@ -118,18 +176,59 @@ ns.CRAFT = {
             {75, "Coarse Grinding Stone", "2 Coarse Stone"},
             {90, "Runed Copper Belt", "10 Copper Bar"},
             {105, "Rough Bronze Leggings", "6 Bronze Bar"},
-            {125, "Heavy Grinding Stone", "3 Heavy Stone (keep them!)"},
-            {150, "Green Iron Leggings", "8 Iron Bar + Heavy Grinding Stone + Green Dye"},
-            {165, "Green Iron Bracers", "6 Iron Bar + Green Dye"},
-            {190, "Solid Grinding Stone", "4 Solid Stone"},
-            {215, "Steel Plate Helm", "14 Steel Bar + Solid Grinding Stone"},
+            {125, "Heavy Grinding Stone", "3 Heavy Stone"},
+            {137, "Patterned Bronze Bracers", "5 Bronze Bar + 2 Coarse Grinding Stone"},
+            {155, "Green Iron Leggings", "8 Iron Bar + 1 Heavy Grinding Stone + 1 Green Dye"},
+            {165, "Green Iron Bracers", "6 Iron Bar + 1 Green Dye"},
+            {190, "Golden Scale Bracers", "5 Steel Bar + 2 Heavy Grinding Stone"},
+            {215, "Steel Plate Helm", "14 Steel Bar + 1 Solid Grinding Stone"},
             {235, "Mithril Coif", "10 Mithril Bar + 6 Mageweave Cloth"},
             {250, "Dense Grinding Stone", "4 Dense Stone"},
-            {275, "Thorium Bracers", "8 Thorium Bar (plans: vendor/AH)"}
+            {257, "Heavy Mithril Boots", "14 Mithril Bar + 4 Thick Leather"},
+            {270, "Imperial Plate Bracers", "20 Thorium Bar + 1 Star Ruby",
+             tbcMats = "12 Thorium Bar", source = "Plans: quest from Derotain Mudsipper, Gadgetzan (Tanaris) - needs level 50 and 20 Thorium Bar (TBC: 10)"}
+        },
+        foreverRoute = {
+            {1, "Rough Sharpening Stone", "1 Rough Stone"},
+            {25, "Rough Grinding Stone", "2 Rough Stone"},
+            {65, "Copper Chain Belt", "6 Copper Bar"},
+            {90, "Rough Bronze Leggings", "6 Bronze Bar"},
+            {130, "Green Iron Leggings", "8 Iron Bar + 1 Heavy Grinding Stone + 1 Green Dye",
+             source = {A = "Expert trainer: Bengus Deepforge - Ironforge, or Brikk Keencraft - Booty Bay",
+                       H = "Expert trainer: Saru Steelfury - Orgrimmar, or Brikk Keencraft - Booty Bay"}},
+            {140, "Green Iron Bracers", "6 Iron Bar + 1 Green Dye",
+             source = {A = "Expert trainer: Bengus Deepforge - Ironforge, or Brikk Keencraft - Booty Bay",
+                       H = "Expert trainer: Saru Steelfury - Orgrimmar, or Brikk Keencraft - Booty Bay"}},
+            {177, "Golden Scale Bracers", "5 Steel Bar + 2 Heavy Grinding Stone"},
+            {197, "Heavy Mithril Gauntlet", "6 Mithril Bar + 4 Mageweave Cloth"},
+            {210, "Steel Plate Helm", "14 Steel Bar + 1 Solid Grinding Stone"},
+            {220, "Heavy Mithril Axe", "12 Mithril Bar + 2 Citrine + 1 Solid Grinding Stone + 4 Heavy Leather"},
+            {230, "Mithril Coif", "10 Mithril Bar + 6 Mageweave Cloth",
+             source = "Artisan trainer: Brikk Keencraft - Booty Bay"},
+            {235, "Heavy Mithril Boots", "14 Mithril Bar + 4 Thick Leather",
+             source = "Artisan trainer: Brikk Keencraft - Booty Bay"},
+            {240, "Imperial Plate Belt", "22 Thorium Bar + 6 Rugged Leather + 1 Aquamarine",
+             source = "Plans: quest from Derotain Mudsipper, Gadgetzan (Tanaris) - needs level 50 and 20 Thorium Bar"},
+            {260, "Imperial Plate Bracers", "20 Thorium Bar + 1 Star Ruby",
+             source = "Plans: quest from Derotain Mudsipper, Gadgetzan (Tanaris) - needs level 50 and 20 Thorium Bar"},
+            {275, "Imperial Plate Boots", "34 Thorium Bar + 1 Star Ruby + 1 Aquamarine",
+             source = "Plans: quest from Derotain Mudsipper, Gadgetzan (Tanaris) - needs level 50 and 40 Thorium Bar"}
         },
         notes = {
             {1, "Pairs best with Mining"},
-            {225, "Artisan trainer: Brikk Keencraft, Booty Bay", req = 200, gate = 225}
+            {100, "Keep your Coarse Grinding Stones: Patterned Bronze Bracers (137) takes 2 each, about 37"},
+            {130, "Make extra Heavy Grinding Stones and keep them: Green Iron Leggings (155) takes 1, Golden Scale Bracers (190) 2 - about 65 in all"},
+            {215, "Steel Plate Helm takes a Solid Grinding Stone each: learn it at the trainer (200) and make about 20 (4 Solid Stone each)"},
+            {225, "Artisan trainer: Brikk Keencraft, Booty Bay", req = 200, gate = 225},
+            {255, "Imperial Plate Bracers (270): the plans are a quest in Gadgetzan that needs character level 50"}
+        },
+        foreverNotes = {
+            {1, "Pairs best with Mining"},
+            {130, "Learn Heavy Grinding Stone (100) and make about 60 (3 Heavy Stone each): Green Iron Leggings takes 1, Golden Scale Bracers (177) 2"},
+            {210, "Learn Solid Grinding Stone (175) and make about 40 (4 Solid Stone each) for Steel Plate Helm and Heavy Mithril Axe"},
+            {220, "Heavy Mithril Axe turns green at 222: if Brikk Keencraft (Booty Bay) already teaches you Mithril Coif, make that instead"},
+            {225, "Artisan trainer: Brikk Keencraft, Booty Bay", req = 200, gate = 225},
+            {240, "Imperial Plate plans (240+) are quests in Gadgetzan that need character level 50. Not 50 yet? From 250, Plans: Ornate Thorium Handaxe (Magnus Frostwake, Caer Darrow) is orange to 274"}
         }
     },
     ["Engineering"] = {
@@ -137,126 +236,321 @@ ns.CRAFT = {
         route = {
             {1, "Rough Blasting Powder", "1 Rough Stone"},
             {30, "Handful of Copper Bolts", "1 Copper Bar"},
-            {50, "Arclight Spanner, then Copper Tube", "6 Copper Bar; Tube: 2 Copper Bar + Weak Flux"},
+            {50, "Arclight Spanner", "6 Copper Bar"},
+            {51, "Copper Tube", "2 Copper Bar + 1 Weak Flux"},
             {75, "Coarse Blasting Powder", "1 Coarse Stone"},
-            {90, "Whirring Bronze Gizmo", "2 Bronze Bar + 1 Wool Cloth"},
-            {105, "Bronze Tube", "2 Bronze Bar + Weak Flux"},
+            {90, "Copper Modulator", "2 Handful of Copper Bolts + 1 Copper Bar + 2 Linen Cloth"},
+            {105, "Bronze Tube", "2 Bronze Bar + 1 Weak Flux"},
             {125, "Heavy Blasting Powder", "1 Heavy Stone"},
-            {150, "Iron Strut", "2 Iron Bar"},
-            {155, "Gyrochronatom", "1 Iron Bar + 1 Gold Power Core"},
+            {135, "Whirring Bronze Gizmo", "2 Bronze Bar + 1 Wool Cloth"},
+            {150, "Bronze Framework", "2 Bronze Bar + 1 Medium Leather + 1 Wool Cloth"},
+            {160, "Iron Strut", "2 Iron Bar"},
+            {170, "Gyrochronatom", "1 Iron Bar + 1 Gold Power Core"},
             {175, "Solid Blasting Powder", "2 Solid Stone"},
+            {185, "Iron Grenade", "1 Iron Bar + 1 Heavy Blasting Powder + 1 Silk Cloth (makes 2-4)"},
             {195, "Mithril Tube", "3 Mithril Bar"},
             {215, "Mithril Casing", "3 Mithril Bar"},
+            {235, "Hi-Explosive Bomb", "2 Mithril Casing + 1 Unstable Trigger + 2 Solid Blasting Powder (makes 4)"},
+            {245, "Mithril Gyro-Shot", "2 Mithril Bar + 2 Solid Blasting Powder (makes 200)"},
             {250, "Dense Blasting Powder", "2 Dense Stone"},
-            {260, "Thorium Widget", "3 Thorium Bar + 1 Runecloth"},
-            {290, "Thorium Tube", "6 Thorium Bar"}
+            {255, "Dense Dynamite", "2 Dense Blasting Powder + 3 Runecloth (makes 2)"},
+            {260, "Thorium Widget", "3 Thorium Bar + 1 Runecloth",
+             source = {A = "Schematic (about 1g 20s, limited stock): Gearcutter Cogspinner - Ironforge",
+                       H = "Schematic (about 1g 20s, limited stock): Sovik - Orgrimmar"}},
+            {290, "Thorium Tube", "6 Thorium Bar",
+             source = "Schematic (limited stock): Xizzer Fizzbolt - Everlook, Winterspring"}
+        },
+        foreverRoute = {
+            {1, "Rough Blasting Powder", "1 Rough Stone"},
+            {30, "Handful of Copper Bolts", "1 Copper Bar"},
+            {50, "Arclight Spanner", "6 Copper Bar"},
+            {51, "Copper Tube", "2 Copper Bar + 1 Weak Flux"},
+            {75, "Coarse Blasting Powder", "1 Coarse Stone"},
+            {90, "Copper Modulator", "2 Handful of Copper Bolts + 1 Copper Bar + 2 Linen Cloth"},
+            {105, "Bronze Tube", "2 Bronze Bar + 1 Weak Flux"},
+            {125, "Heavy Blasting Powder", "1 Heavy Stone"},
+            {135, "Whirring Bronze Gizmo", "2 Bronze Bar + 1 Wool Cloth"},
+            {150, "Bronze Framework", "2 Bronze Bar + 1 Medium Leather + 1 Wool Cloth"},
+            {160, "Iron Strut", "2 Iron Bar"},
+            {170, "Gyrochronatom", "1 Iron Bar + 1 Gold Power Core"},
+            {175, "Solid Blasting Powder", "2 Solid Stone"},
+            {185, "Iron Grenade", "1 Iron Bar + 1 Heavy Blasting Powder + 1 Silk Cloth (makes 3)"},
+            {195, "Mithril Tube", "3 Mithril Bar"},
+            {215, "Mithril Casing", "3 Mithril Bar"},
+            {235, "Hi-Explosive Bomb", "2 Mithril Casing + 1 Unstable Trigger + 2 Solid Blasting Powder (makes 4)"},
+            {245, "Mithril Gyro-Shot", "2 Mithril Bar + 2 Solid Blasting Powder (makes 200)"},
+            {250, "Dense Blasting Powder", "2 Dense Stone"},
+            {255, "Dense Dynamite", "2 Dense Blasting Powder + 3 Runecloth (makes 2)"},
+            {260, "Thorium Widget", "3 Thorium Bar + 1 Runecloth",
+             source = {A = "Schematic (about 1g 20s, limited stock): Gearcutter Cogspinner - Ironforge",
+                       H = "Schematic (about 1g 20s, limited stock): Sovik - Orgrimmar"}},
+            {290, "Thorium Tube", "6 Thorium Bar",
+             source = "Schematic: Kor'gar - Powderfuse Port, Riverglades (boat from Steamwheedle Port), or Xizzer Fizzbolt - Everlook (limited stock)"}
         },
         notes = {
             {1, "Pairs best with Mining"},
-            {200, "At 200: choose Gnomish or Goblin specialization"}
+            {200, "At 200 (level 30+): choose Gnomish or Goblin specialization - an Engineering trainer has the quest"},
+            {225, "Artisan trainer: Buzzek Bracketswing - Gadgetzan, Tanaris", req = 200, gate = 225}
+        },
+        foreverNotes = {
+            {1, "Pairs best with Mining"},
+            {30, "Most Engineering parts are made at an anvil with a Blacksmith Hammer (trade supplies vendors) - keep your Arclight Spanner too"},
+            {200, "At 200 (level 30+): choose Gnomish or Goblin specialization - an Engineering trainer has the quest"},
+            {225, "Artisan trainer: Buzzek Bracketswing - Gadgetzan, Tanaris; or Kaylaena Springwhisper - Mount Hyjal", req = 200, gate = 225}
         }
     },
     ["Leatherworking"] = {
         primary = true,
         route = {
             {1, "Light Armor Kit", "1 Light Leather"},
-            {20, "Handstitched Leather Boots", "2 Light Leather + Coarse Thread"},
-            -- a report (TBC): the gloves are trained at 55 and the belt
-            -- at 85, not 30 and 55 as this once said; the boots carry to 55
-            {55, "Embossed Leather Gloves", "3 Light Leather + Coarse Thread"},
-            {85, "Fine Leather Belt", "6 Light Leather + Coarse Thread"},
-            {100, "Dark Leather Boots", "4 Medium Leather + Fine Thread + Gray Dye (cure a few Medium Hides with Salt for the belts next)"},
-            {120, "Dark Leather Belt", "6 Medium Leather + Cured Medium Hide + Fine Thread"},
-            {150, "Heavy Armor Kit", "5 Heavy Leather"},
-            {170, "Barbaric Shoulders", "8 Heavy Leather + Fine Thread"},
-            {200, "Nightscape Headband", "5 Thick Leather + 2 Silken Thread"},
-            {230, "Nightscape Pants", "14 Thick Leather + 4 Silken Thread"},
-            {250, "Rugged Armor Kit", "5 Rugged Leather"},
-            {265, "Wicked Leather Bracers", "8 Rugged Leather + Black Dye (pattern: drop/AH)"},
-            {285, "Wicked Leather Headband", "12 Rugged Leather + Black Dye"}
+            {20, "Handstitched Leather Boots", "2 Light Leather + 1 Coarse Thread"},
+            {55, "Embossed Leather Gloves", "3 Light Leather + 2 Coarse Thread"},
+            {85, "Fine Leather Belt", "6 Light Leather + 2 Coarse Thread"},
+            {100, "Dark Leather Boots", "4 Medium Leather + 2 Fine Thread + 1 Gray Dye"},
+            {125, "Dark Leather Belt", "1 Fine Leather Belt + 1 Cured Medium Hide + 2 Fine Thread + 1 Gray Dye"},
+            {150, "Heavy Armor Kit", "5 Heavy Leather + 1 Fine Thread"},
+            {175, "Barbaric Shoulders", "8 Heavy Leather + 1 Cured Heavy Hide + 2 Fine Thread",
+             source = {A = "Expert trainer: Telonis - Darnassus, or Drakk Stonehand - Aerie Peak (TBC: any trainer)",
+                       H = "Expert trainer: Una - Thunder Bluff, or Hahrana Ironhide - Camp Mojache (TBC: any trainer)"}},
+            {205, "Nightscape Headband", "5 Thick Leather + 2 Silken Thread",
+             source = {A = "Expert trainer: Telonis - Darnassus, or Drakk Stonehand - Aerie Peak (TBC: any trainer)",
+                       H = "Expert trainer: Una - Thunder Bluff, or Hahrana Ironhide - Camp Mojache (TBC: any trainer)"}},
+            {235, "Nightscape Pants", "14 Thick Leather + 4 Silken Thread",
+             source = {A = "Artisan trainer: Drakk Stonehand - Aerie Peak, The Hinterlands (TBC: any trainer)",
+                       H = "Artisan trainer: Hahrana Ironhide - Camp Mojache, Feralas (TBC: any trainer)"}},
+            {250, "Rugged Armor Kit", "5 Rugged Leather",
+             source = {A = "Artisan trainer: Drakk Stonehand - Aerie Peak, The Hinterlands (TBC: any trainer)",
+                       H = "Artisan trainer: Hahrana Ironhide - Camp Mojache, Feralas (TBC: any trainer)"}},
+            {265, "Wicked Leather Bracers / Wicked Leather Gauntlets", "8 Rugged Leather + 1 Black Dye + 1 Rune Thread",
+             source = {A = "TBC: your trainer (Bracers). Era: Gauntlets pattern - Leonard Porter, Chillwind Camp, Western Plaguelands (limited stock)",
+                       H = "TBC: your trainer (Bracers). Era: Gauntlets pattern - Werg Thickblade, The Bulwark, Tirisfal Glades (limited stock)"}},
+            {285, "Wicked Leather Headband / Wicked Leather Gauntlets", "12 Rugged Leather + 1 Black Dye + 1 Rune Thread / 8 Rugged Leather + 1 Black Dye + 1 Rune Thread",
+             source = "TBC: your trainer teaches the Headband (280). Era: its pattern drops from Jadefire satyrs in Felwood or the Auction House - or keep making the Gauntlets"},
+            {290, "Wicked Leather Headband / Runic Leather Headband", "12 Rugged Leather + 1 Black Dye + 1 Rune Thread / 14 Rugged Leather + 10 Runecloth + 1 Rune Thread",
+             source = "TBC: your trainer. Era: Runic Leather Headband pattern - Jase Farlane, Light's Hope Chapel (limited stock)"}
+        },
+        foreverRoute = {
+            {1, "Light Armor Kit", "1 Light Leather"},
+            {20, "Handstitched Leather Boots", "2 Light Leather + 1 Coarse Thread"},
+            {55, "Embossed Leather Gloves", "3 Light Leather + 2 Coarse Thread"},
+            {85, "Fine Leather Belt", "6 Light Leather + 2 Coarse Thread"},
+            {100, "Dark Leather Cloak", "8 Medium Leather + 1 Fine Thread + 1 Gray Dye"},
+            {115, "Dark Leather Belt", "1 Fine Leather Belt + 1 Cured Medium Hide + 2 Fine Thread + 1 Gray Dye"},
+            {137, "Heavy Armor Kit", "5 Heavy Leather + 1 Fine Thread"},
+            {155, "Barbaric Shoulders", "8 Heavy Leather + 1 Cured Heavy Hide + 2 Fine Thread",
+             source = {A = "Expert trainer: Telonis - Darnassus, or Drakk Stonehand - Aerie Peak (Hinterlands)",
+                       H = "Expert trainer: Una - Thunder Bluff, or Hahrana Ironhide - Camp Mojache (Feralas)"}},
+            {180, "Guardian Gloves", "4 Heavy Leather + 1 Cured Heavy Hide + 1 Silken Thread",
+             source = {A = "Expert trainer: Telonis - Darnassus, or Drakk Stonehand - Aerie Peak (Hinterlands)",
+                       H = "Expert trainer: Una - Thunder Bluff, or Hahrana Ironhide - Camp Mojache (Feralas)"}},
+            {195, "Nightscape Headband", "5 Thick Leather + 2 Silken Thread",
+             source = {A = "Expert trainer: Telonis - Darnassus, or Drakk Stonehand - Aerie Peak (Hinterlands)",
+                       H = "Expert trainer: Una - Thunder Bluff, or Hahrana Ironhide - Camp Mojache (Feralas)"}},
+            {210, "Thick Leather Ammo Pouch", "10 Thick Leather + 1 Cured Thick Hide + 1 Elixir of Defense + 6 Silken Thread",
+             source = {A = "Expert trainer: Telonis - Darnassus, or Drakk Stonehand - Aerie Peak (Hinterlands)",
+                       H = "Expert trainer: Una - Thunder Bluff, or Hahrana Ironhide - Camp Mojache (Feralas)"}},
+            {235, "Wicked Leather Gauntlets", "8 Rugged Leather + 1 Black Dye + 1 Rune Thread",
+             source = {A = "Pattern (1g 20s, limited stock): Leonard Porter - Chillwind Camp, Western Plaguelands",
+                       H = "Pattern (1g 20s, limited stock): Werg Thickblade - The Bulwark, Tirisfal Glades"}},
+            {265, "Runic Leather Headband", "14 Rugged Leather + 10 Runecloth + 1 Rune Thread",
+             source = "Pattern (about 2g 30s, limited stock): Jase Farlane - Light's Hope Chapel, Eastern Plaguelands"}
         },
         notes = {
             {1, "Pairs best with Skinning"},
-            {225, "Artisan trainers: Feralas (both factions)", req = 200, gate = 225}
+            {150, {A = "Expert rank: Telonis - Darnassus, or Drakk Stonehand - Aerie Peak (TBC: any trainer)",
+                   H = "Expert rank: Una - Thunder Bluff, or Hahrana Ironhide - Camp Mojache (TBC: any trainer)"},
+             req = 125, gate = 150},
+            {225, {A = "Artisan trainer: Drakk Stonehand - Aerie Peak, The Hinterlands (TBC: any trainer)",
+                   H = "Artisan trainer: Hahrana Ironhide - Camp Mojache, Feralas (TBC: any trainer)"},
+             req = 200, gate = 225}
+        },
+        foreverNotes = {
+            {1, "Pairs best with Skinning"},
+            {150, {A = "Expert rank: Telonis - Darnassus, or Drakk Stonehand - Aerie Peak, The Hinterlands",
+                   H = "Expert rank: Una - Thunder Bluff, or Hahrana Ironhide - Camp Mojache, Feralas"},
+             req = 125, gate = 150},
+            {225, {A = "Artisan trainer: Drakk Stonehand - Aerie Peak, The Hinterlands",
+                   H = "Artisan trainer: Hahrana Ironhide - Camp Mojache, Feralas"},
+             req = 200, gate = 225}
         }
     },
     ["Tailoring"] = {
         primary = true,
         route = {
             {1, "Bolt of Linen Cloth", "2 Linen Cloth"},
-            {45, "Linen Bag", "3 Bolt of Linen + Coarse Thread"},
-            {70, "Reinforced Linen Cape", "2 Bolt of Linen + 3 Coarse Thread"},
+            {37, "Linen Belt", "1 Bolt of Linen Cloth + 1 Coarse Thread"},
+            {45, "Linen Bag", "3 Bolt of Linen Cloth + 3 Coarse Thread"},
+            {70, "Reinforced Linen Cape", "2 Bolt of Linen Cloth + 3 Coarse Thread"},
             {75, "Bolt of Woolen Cloth", "3 Wool Cloth"},
-            {100, "Gray Woolen Shirt", "2 Bolt of Wool + Fine Thread + Gray Dye"},
-            {110, "Double-stitched Woolen Shoulders", "3 Bolt of Wool + 2 Fine Thread"},
+            {100, "Gray Woolen Shirt", "2 Bolt of Woolen Cloth + 1 Fine Thread + 1 Gray Dye"},
+            {110, "Double-stitched Woolen Shoulders", "3 Bolt of Woolen Cloth + 2 Fine Thread"},
             {125, "Bolt of Silk Cloth", "4 Silk Cloth"},
-            {145, "Azure Silk Hood", "2 Bolt of Silk + 2 Blue Dye"},
-            {160, "Silk Headband", "3 Bolt of Silk + 2 Fine Thread"},
+            {145, "Azure Silk Hood", "2 Bolt of Silk Cloth + 2 Blue Dye + 1 Fine Thread"},
+            {160, "Silk Headband", "3 Bolt of Silk Cloth + 2 Fine Thread"},
             {175, "Bolt of Mageweave", "5 Mageweave Cloth"},
-            {185, "Crimson Silk Vest", "4 Bolt of Silk + 2 Red Dye"},
-            {200, "Black Mageweave Leggings / Gloves", "2 Bolt of Mageweave + Silken Thread"},
-            {215, "Black Mageweave Headband / Shoulders", "3 Bolt of Mageweave + Silken Thread"},
-            {230, "Bolt of Runecloth", "5 Runecloth"},
-            {250, "Runecloth Belt", "3 Bolt of Runecloth + Rune Thread"},
-            {260, "Runecloth Gloves", "4 Bolt of Runecloth + 4 Rugged Leather"},
-            {275, "Runecloth Bag", "5 Bolt of Runecloth + 2 Rugged Leather + Rune Thread"}
+            {185, "Crimson Silk Vest", "4 Bolt of Silk Cloth + 2 Red Dye + 2 Fine Thread"},
+            {205, "Black Mageweave Leggings", "2 Bolt of Mageweave + 3 Silken Thread"},
+            {215, "Black Mageweave Gloves", "2 Bolt of Mageweave + 2 Heavy Silken Thread"},
+            {230, "Black Mageweave Headband / Black Mageweave Shoulders", "3 Bolt of Mageweave + 2 Heavy Silken Thread"},
+            {250, "Bolt of Runecloth", "5 Runecloth"},
+            {255, "Runecloth Belt", "3 Bolt of Runecloth + 1 Rune Thread"},
+            {285, "Runecloth Gloves", "4 Bolt of Runecloth + 4 Rugged Leather + 1 Rune Thread",
+             source = "TBC: your trainer (275). Era: pattern from Qia - Everlook, Winterspring (limited stock); without it, Runecloth Belt (green)"}
         },
-        notes = {}
+        foreverRoute = {
+            -- Forever's ranges are 20-45 below Classic's: Linen Bag greys at 65
+            {1, "Bolt of Linen Cloth", "2 Linen Cloth"},
+            {37, "Linen Belt", "1 Bolt of Linen Cloth + 1 Coarse Thread"},
+            {55, "Bolt of Woolen Cloth", "3 Wool Cloth"},
+            {70, "Woolen Cape", "1 Bolt of Woolen Cloth + 1 Fine Thread"},
+            {100, "Bolt of Silk Cloth", "4 Silk Cloth"},
+            {110, "Double-Stitched Woolen Shoulders", "3 Bolt of Woolen Cloth + 2 Fine Thread"},
+            {120, "Azure Silk Hood", "2 Bolt of Silk Cloth + 2 Blue Dye + 1 Fine Thread"},
+            {135, "Formal White Shirt", "3 Bolt of Silk Cloth + 2 Bleach + 1 Fine Thread"},
+            {150, "Crimson Silk Vest", "4 Bolt of Silk Cloth + 2 Red Dye + 2 Fine Thread"},
+            {170, "Black Mageweave Leggings / Black Mageweave Vest", "2 Bolt of Mageweave + 3 Silken Thread"},
+            {185, "Black Mageweave Gloves", "2 Bolt of Mageweave + 2 Heavy Silken Thread"},
+            {210, "Mageweave Bag", "4 Bolt of Mageweave + 2 Silken Thread"},
+            {220, "Runecloth Cloak", "4 Bolt of Runecloth + 1 Ironweb Spider Silk + 1 Rune Thread",
+             source = "Pattern (1g 20s, limited stock): Darnall - Nighthaven, Moonglade"},
+            {230, "Runecloth Gloves", "4 Bolt of Runecloth + 4 Rugged Leather + 1 Rune Thread",
+             source = "Pattern (1g 68s, limited stock): Qia - Everlook, Winterspring"},
+            {250, "Runecloth Boots", "4 Bolt of Runecloth + 2 Ironweb Spider Silk + 4 Rugged Leather + 1 Rune Thread",
+             source = "Pattern (2g, limited stock): Darnall - Nighthaven, Moonglade"},
+            {265, "Runecloth Shoulders / Runecloth Headband", "7 Bolt of Runecloth + 2 Ironweb Spider Silk + 4 Rugged Leather + 1 Rune Thread / 4 Bolt of Runecloth + 2 Ironweb Spider Silk + 1 Rune Thread",
+             source = "Patterns: rare drops (Molten Core, Blackrock Spire, Stratholme, Thorium Lockboxes) - check the Auction House"}
+        },
+        notes = {
+            {225, {A = "Artisan trainer: Timothy Worthington - Theramore Isle, Dustwallow Marsh",
+                   H = "Artisan trainer: Daryl Stack - Tarren Mill, Hillsbrad Foothills"},
+             req = 200, gate = 225}
+        },
+        foreverNotes = {
+            {210, "Bolt of Runecloth: the Artisan trainer teaches it (likely about 205, not confirmed on Forever yet) - buy bolts if it won't yet"},
+            {255, "From 265 the patterns are scarce: Runecloth Shoulders (rare drop) lasts to 299; Runecloth Headband (drop) and Runecloth Cuffs (Pexmit, a rare vendor in Mount Hyjal) are yellow to 279"},
+            {225, {A = "Artisan trainer: Timothy Worthington - Theramore Isle, Dustwallow Marsh",
+                   H = "Artisan trainer: Daryl Stack - Tarren Mill, Hillsbrad Foothills"},
+             req = 200, gate = 225}
+        }
     },
     ["Enchanting"] = {
         primary = true,
         route = {
-            {1, "Runed Copper Rod", "Copper Rod + Strange Dust + Lesser Magic Essence"},
-            {2, "Enchant Bracer - Minor Health", "1 Strange Dust",
-             forever = "Enchant Bracer - Inferior Stamina", foreverMats = "1 Mote of Magic"},
-            -- the game's name is "Minor Deflect"; "Minor Deflection" never matched
-            {50, "Enchant Bracer - Minor Deflect", "1 Lesser Magic Essence + 1 Strange Dust",
-             foreverMats = "1 Lesser Magic Essence"},
-            {60, "Enchant Bracer - Minor Stamina", "3 Strange Dust", foreverMats = "2 Strange Dust"},
-            {110, "Enchant Bracer - Lesser Stamina", "2 Soul Dust"},
-            {135, "Enchant Bracer - Spirit", "1 Lesser Mystic Essence"},
-            {160, "Enchant Bracer - Strength", "1 Vision Dust"},
-            {200, "Enchant Shield - Greater Stamina", "5 Dream Dust"},
-            {230, "Enchant Bracer - Greater Strength", "2 Dream Dust"},
-            {250, "Enchant Bracer - Greater Intellect", "3 Lesser Eternal Essence"},
-            {275, "Enchant Cloak - Superior Defense", "8 Illusion Dust"}
+            {1, "Runed Copper Rod", "1 Copper Rod + 1 Strange Dust + 1 Lesser Magic Essence"},
+            {2, "Enchant Bracer - Minor Health", "1 Strange Dust"},
+            {70, "Enchant Bracer - Minor Stamina", "3 Strange Dust"},
+            {110, "Runed Silver Rod", "1 Silver Rod + 6 Strange Dust + 3 Greater Magic Essence + 1 Shadowgem",
+             tbcMats = "1 Silver Rod + 6 Strange Dust + 3 Greater Magic Essence + 1 Runed Copper Rod"},
+            {111, "Enchant Shield - Minor Stamina", "1 Lesser Astral Essence + 2 Strange Dust"},
+            {130, "Enchant Bracer - Lesser Stamina", "2 Soul Dust"},
+            {165, "Runed Golden Rod", "1 Golden Rod + 1 Iridescent Pearl + 2 Greater Astral Essence + 2 Soul Dust",
+             tbcMats = "1 Golden Rod + 1 Iridescent Pearl + 2 Greater Astral Essence + 2 Soul Dust + 1 Runed Silver Rod"},
+            {166, "Enchant Bracer - Spirit", "1 Lesser Mystic Essence"},
+            {180, "Enchant Bracer - Strength", "1 Vision Dust"},
+            {205, "Runed Truesilver Rod", "1 Truesilver Rod + 1 Black Pearl + 2 Greater Mystic Essence + 2 Vision Dust",
+             tbcMats = "1 Truesilver Rod + 1 Black Pearl + 2 Greater Mystic Essence + 2 Vision Dust + 1 Runed Golden Rod"},
+            {206, "Enchant Cloak - Greater Defense", "3 Vision Dust"},
+            {240, "Enchant Bracer - Greater Strength", "2 Dream Dust + 1 Greater Nether Essence"},
+            {285, "Enchant Cloak - Superior Defense / Enchant Shield - Greater Stamina", "8 Illusion Dust / 10 Dream Dust",
+             source = {A = "Formulas (limited stock): cloak - Lorelae Wintersong, Nighthaven, Moonglade; shield - Mythrin'dir, Darnassus",
+                       H = "Formulas (limited stock): cloak - Lorelae Wintersong, Nighthaven, Moonglade; shield - Daniel Bartlett, Undercity"}}
+        },
+        foreverRoute = {
+            -- Forever renamed Minor Health "Inferior Stamina" (greys at 25)
+            {1, "Runed Copper Rod", "1 Copper Rod + 1 Mote of Magic"},
+            {2, "Enchant Bracer - Inferior Stamina", "1 Mote of Magic"},
+            {22, "Enchant Chest - Inferior Stamina", "1 Strange Dust"},
+            {70, "Enchant Bracer - Minor Stamina", "2 Strange Dust"},
+            {100, "Runed Silver Rod", "1 Silver Rod + 3 Strange Dust + 4 Lesser Magic Essence + 1 Shadowgem"},
+            {101, "Enchant Cloak - Minor Protection", "2 Strange Dust"},
+            {130, "Enchant Bracer - Lesser Stamina", "1 Soul Dust"},
+            {160, "Runed Golden Rod", "1 Golden Rod + 1 Iridescent Pearl + 1 Greater Astral Essence + 1 Soul Dust"},
+            {161, "Enchant Boots - Lesser Agility", "1 Soul Dust"},
+            {180, "Enchant Bracer - Strength", "1 Vision Dust"},
+            {205, "Runed Truesilver Rod", "1 Truesilver Rod + 1 Black Pearl + 1 Greater Mystic Essence + 1 Vision Dust"},
+            {206, "Enchant Cloak - Greater Defense", "1 Vision Dust"},
+            {245, "Enchant Bracer - Greater Strength", "1 Dream Dust + 2 Lesser Nether Essence"},
+            {285, "Enchant Cloak - Superior Defense / Enchant Shield - Greater Stamina", "8 Illusion Dust / 6 Dream Dust",
+             source = {A = "Formulas (limited stock): cloak - Lorelae Wintersong, Nighthaven, Moonglade; shield - Mythrin'dir, Darnassus",
+                       H = "Formulas (limited stock): cloak - Lorelae Wintersong, Nighthaven, Moonglade; shield - Daniel Bartlett, Undercity"}}
         },
         notes = {
             {1, "Disenchant unneeded greens for dusts/essences"},
-            {100, "Craft Runed Silver Rod (Silver Rod + dusts/essences)"},
-            {155, "Craft Runed Golden Rod"},
-            {200, "Craft Runed Truesilver Rod"},
-            {225, "Artisan trainer: Annora, Uldaman (inside the dungeon)", req = 200, gate = 225},
-            {290, "Craft Runed Arcanite Rod"}
+            {225, "Artisan trainer: Annora, Uldaman (inside the dungeon)", req = 200, gate = 225}
+        },
+        foreverNotes = {
+            {1, "Disenchant unneeded greens for dusts/essences"},
+            {1, "Mote of Magic: make them from Strange Dust (the Mote of Magic recipe)"},
+            {225, "Artisan trainer: Annora, Uldaman (inside the dungeon)", req = 200, gate = 225}
         }
     },
     ["Cooking"] = {
         route = {
-            -- (Spice Bread was listed here; it is not in Classic Era or Forever)
-            {1, "Charred Wolf Meat", "Stringy Wolf Meat",
-             source = "taught by the Cooking trainer"},
+            {1, "Charred Wolf Meat", "1 Stringy Wolf Meat",
+             source = "Learned with Apprentice Cooking at any Cooking trainer"},
             {40, "Smoked Bear Meat", "1 Bear Meat",
-             source = "vendor recipe (Loch Modan / Silverpine); or revisit your trainer for new recipes"},
-            {80, "Crab Cake / Dry Pork Ribs", "Crawler Meat / Boar Ribs + Mild Spices",
-             source = "trainer / vendor recipes - revisit your Cooking trainer"},
-            {130, "Curiously Tasty Omelet", "1 Raptor Egg + Mild Spices",
-             source = "vendor recipe (city cooking suppliers)"},
-            {175, "Roast Raptor", "1 Raptor Flesh + Hot Spices",
-             source = "vendor recipe (Stranglethorn / Gadgetzan cooks)"},
+             source = {A = "Recipe: Drac Roughcut - Thelsamar, Loch Modan",
+                       H = "Recipe: Andrew Hilbert - The Sepulcher, Silverpine Forest"}},
+            {80, "Crab Cake / Dry Pork Ribs", "1 Crawler Meat + 1 Mild Spices / 1 Boar Ribs + 1 Mild Spices",
+             source = "Cooking trainer (Crab Cake at 75, Dry Pork Ribs at 80)"},
+            {125, "Goblin Deviled Clams", "1 Tangy Clam Meat + 1 Hot Spices",
+             source = "Cooking trainer (125, 3s)"},
+            {175, "Roast Raptor", "1 Raptor Flesh + 1 Hot Spices",
+             source = {A = "Recipe (50s): Corporal Bluth - Rebel Camp, Stranglethorn; Hammon Karwn - Refuge Pointe, Arathi; Helenia Olden - Theramore",
+                       H = "Recipe (50s): Nerrist - Grom'gol, Stranglethorn; Keena - Hammerfall, Arathi; Ogg'marr - Brackenwall, Dustwallow Marsh"}},
+            {200, "Spider Sausage", "2 White Spider Meat",
+             source = "Cooking trainer (200, 40s)"},
             {225, "Monster Omelet", "1 Giant Egg + 2 Soothing Spices",
-             source = "vendor recipe - Himmik, Everlook (Winterspring)"},
-            {250, "Tender Wolf Steak", "1 Tender Wolf Meat + Soothing Spices",
-             source = "vendor recipe (Gadgetzan)"},
-            {285, "Smoked Desert Dumplings", "1 Sandworm Meat + Soothing Spices",
-             source = "quest reward (Silithus)"}
+             source = {A = "Recipe (1g 20s): Himmik - Everlook, Winterspring; or Malygen - Talonbranch Glade, Felwood",
+                       H = "Recipe (1g 20s): Himmik - Everlook, Winterspring; or Bale - Bloodvenom Post, Felwood"}},
+            {250, "Tender Wolf Steak", "1 Tender Wolf Meat + 1 Soothing Spices",
+             source = {A = "Recipe (1g 20s): Dirge Quikcleave - Gadgetzan, Tanaris; or Truk Wildbeard - Aerie Peak, Hinterlands",
+                       H = "Recipe (1g 20s): Dirge Quikcleave - Gadgetzan, Tanaris"}},
+            {262, "Nightfin Soup / Poached Sunscale Salmon / Tender Wolf Steak", "1 Raw Nightfin Snapper + 1 Refreshing Spring Water / 1 Raw Sunscale Salmon / 1 Tender Wolf Meat + 1 Soothing Spices",
+             source = "Fish recipes (2g each): Gikkix - Steamwheedle Port, Tanaris. On Era, Tender Wolf Steak still skills up here"},
+            {285, "Smoked Desert Dumplings", "1 Sandworm Meat + 1 Soothing Spices",
+             source = "Quest 'Sharing the Knowledge' (level 54): the Sandy Cookbook in Silithus, back to Calandrath at Cenarion Hold"}
+        },
+        foreverRoute = {
+            {1, "Charred Wolf Meat / Roasted Boar Meat", "1 Stringy Wolf Meat / 1 Chunk of Boar Meat",
+             source = "Learned automatically with Apprentice Cook at any Cooking trainer (1s)"},
+            {40, "Spiced Wolf Meat", "1 Stringy Wolf Meat + 1 Mild Spices",
+             source = "Cooking trainer, from skill 10 (50c)"},
+            {50, "Coyote Steak / Boiled Clams", "1 Coyote Meat / 1 Clam Meat + 1 Refreshing Spring Water",
+             source = "Cooking trainer, from skill 50 (1s each); train Journeyman Cook there too (5s)"},
+            {80, "Crab Cake / Dry Pork Ribs", "1 Crawler Meat + 1 Mild Spices / 1 Boar Ribs + 1 Mild Spices",
+             source = "Cooking trainer: Crab Cake from skill 75 (2s), Dry Pork Ribs from skill 80 (1s 50c)"},
+            {125, "Goblin Deviled Clams", "1 Tangy Clam Meat + 1 Hot Spices",
+             source = "Cooking trainer, from skill 125 (3s)"},
+            {175, "Roast Raptor", "1 Raptor Flesh + 1 Hot Spices",
+             source = {A = "Recipe (50s): Corporal Bluth - Rebel Camp, Stranglethorn; Hammon Karwn - Refuge Pointe, Arathi; Helenia Olden - Theramore",
+                       H = "Recipe (50s): Nerrist - Grom'gol, Stranglethorn; Keena - Hammerfall, Arathi; Ogg'marr - Brackenwall, Dustwallow Marsh"}},
+            {200, "Spider Sausage", "2 White Spider Meat",
+             source = "Cooking trainer, from skill 200 (40s)"},
+            {225, "Monster Omelet", "1 Giant Egg + 2 Soothing Spices",
+             source = {A = "Recipe (1g 20s): Himmik - Everlook, Winterspring; or Malygen - Talonbranch Glade, Felwood",
+                       H = "Recipe (1g 20s): Himmik - Everlook, Winterspring; or Bale - Bloodvenom Post, Felwood"}},
+            {250, "Tender Wolf Steak", "1 Tender Wolf Meat + 1 Soothing Spices",
+             source = {A = "Recipe (1g 20s): Dirge Quikcleave - Gadgetzan, Tanaris; or Truk Wildbeard - Aerie Peak, Hinterlands",
+                       H = "Recipe (1g 20s): Dirge Quikcleave - Gadgetzan, Tanaris"}},
+            {285, "Nightfin Soup", "1 Raw Nightfin Snapper + 1 Refreshing Spring Water",
+             source = "Recipe (1g 80s): Gikkix - Steamwheedle Port, Tanaris"}
         },
         notes = {
             {150, {A = "Expert rank: buy |cFFFFCC00Expert Cookbook|r from Shandrina - Ashenvale (49, 67)",
-                   H = "Expert rank: buy |cFFFFCC00Expert Cookbook|r from Wulan - Shadowprey Village, Desolace (26, 69)"},
+                   H = "Expert rank: buy |cFFFFCC00Expert Cookbook|r from Wulan - Shadowprey Village, Desolace (26, 70)"},
              req = 125, gate = 150},
-            {225, "Artisan rank: |cFFFFCC00Clamlette Surprise|r quest (Dirge, Gadgetzan)",
+            {225, "Artisan rank: |cFFFFCC00Clamlette Surprise|r quest (level 35) - Dirge Quikcleave, Gadgetzan",
              req = 225, gate = 225},
-            {285, "Dumplings recipe: quest in Silithus"}
+            {285, "Dumplings recipe: quest in Silithus (level 54)"}
+        },
+        foreverNotes = {
+            {150, {A = "Expert rank: buy |cFFFFCC00Expert Cookbook|r from Shandrina - Ashenvale (49, 67)",
+                   H = "Expert rank: buy |cFFFFCC00Expert Cookbook|r from Wulan - Shadowprey Village, Desolace (26, 70)"},
+             req = 125, gate = 150},
+            {225, "Artisan rank: |cFFFFCC00Clamlette Surprise|r quest (level 35) - Dirge Quikcleave, Gadgetzan",
+             req = 225, gate = 225},
+            {260, "Forever: Smoked Desert Dumplings, Baked Salmon and the other top dishes need an Iron Oven - this route sticks to campfire recipes"}
         }
     }
 }
@@ -307,27 +601,29 @@ ns.FISH_COOKING = {
     {1, "Brilliant Smallfish", band = {1, 12}, fish = "Raw Brilliant Smallfish",
      where = "starting-zone lakes & rivers", water = "inland",
      recipe = {A = "Catherine Leland - Stormwind canals (by the fishing trainer)",
-               H = "Shankys - Orgrimmar, Valley of Honor (by the fishing trainer)"}},
+               H = "Harn Longcast - Bloodhoof Village, or Martine Tramblay - Tirisfal Glades (none in Orgrimmar)"}},
     {50, "Longjaw Mud Snapper", band = {1, 25}, fish = "Raw Longjaw Mud Snapper",
      where = "inland lakes & rivers", water = "inland",
-     recipe = {A = "Catherine Leland - Stormwind canals",
-               H = "Shankys - Orgrimmar, Valley of Honor"}},
+     recipe = {A = "Tharynn Bouden - Goldshire, or Khara Deepwater - Loch Modan",
+               H = "Harn Longcast - Bloodhoof Village, or Killian Sanatha - Silverpine Forest coast"}},
     {100, "Bristle Whisker Catfish", band = {12, 35}, fish = "Raw Bristle Whisker Catfish",
      where = "rivers in 10-30 zones", water = "inland",
-     recipe = {A = "Catherine Leland - Stormwind canals",
-               H = "Shankys - Orgrimmar, Valley of Honor"}},
-    {175, "Rockscale Cod", band = {10, 45}, fish = "Raw Rockscale Cod",
-     where = "coastal waters in 20-40 zones", water = "coast",
-     recipe = "coastal-town fishing suppliers (Menethil, Ratchet...)"},
+     recipe = {A = "Catherine Leland - Stormwind canals, or Lindea Rabonne - Southshore",
+               H = "Kilxx - Ratchet, or Derak Nightfall - Tarren Mill"}},
+    {175, "Rockscale Cod", band = {30, 45}, fish = "Raw Rockscale Cod",
+     where = "coasts of 30-45 zones (Swamp of Sorrows, Dustwallow, Stranglethorn, Desolace)", water = "coast",
+     recipe = {A = "Stuart Fleming - Menethil Harbor, or Kelsey Yance - Booty Bay",
+               H = "Shankys - Orgrimmar, Valley of Honor, or Kelsey Yance - Booty Bay"}},
     {225, "Spotted Yellowtail", band = {28, 50}, fish = "Raw Spotted Yellowtail",
      where = "Stranglethorn / Tanaris coasts", water = "coast",
-     recipe = "Kelsey Yance (Booty Bay) or Gikkix (Steamwheedle Port, Tanaris)"},
+     recipe = "Gikkix - Steamwheedle Port, Tanaris"},
     {250, "Nightfin Soup", band = {40, 60}, fish = "Raw Nightfin Snapper",
      where = "high-level inland waters, at night", water = "inland",
-     recipe = "Vivianna (Feathermoon) / Sheendra Tallgrass (Camp Mojache), Feralas"},
-    {285, "Baked Salmon", band = {40, 60}, fish = "Raw Whitescale Salmon",
-     where = "high-level inland waters", water = "inland",
-     recipe = "Vivianna (Feathermoon) / Sheendra Tallgrass (Camp Mojache), Feralas"}
+     recipe = "Gikkix - Steamwheedle Port, Tanaris"},
+    {285, "Baked Salmon", band = {55, 60}, fish = "Raw Whitescale Salmon",
+     where = "inland waters of Winterspring, Eastern Plaguelands and Deadwind Pass", water = "inland",
+     recipe = {A = "Vivianna - Feathermoon Stronghold, Feralas",
+               H = "Sheendra Tallgrass - Camp Mojache, Feralas"}}
 }
 
 ns.FISHING_NOTES = {
@@ -378,7 +674,7 @@ ns.TRAINERS = {
     },
     ["Leatherworking"] = {
         A = "Simon Tanner - Stormwind, Old Town",
-        H = "Karolek - Orgrimmar, Valley of Honor"
+        H = "Karolek - Orgrimmar, The Drag (Kodohide Leatherworkers)"
     },
     ["Skinning"] = {
         A = "Maris Granger - Stormwind, Old Town",
@@ -401,7 +697,7 @@ ns.TRAINERS = {
         H = "Arnok - Orgrimmar, Valley of Spirits"
     },
     ["Fishing"] = {
-        A = "Arnold Leland - Stormwind, canals by Cathedral Square",
+        A = "Arnold Leland - Stormwind, canal dock at the west corner of the Trade District",
         H = "Lumak - Orgrimmar, Valley of Honor"
     }
 }
@@ -411,10 +707,10 @@ ns.TRAINERS = {
 -- professions fall back to the capital trainer above.
 local goldshire = {
     ["Alchemy"] = "Alchemist Mallory - farmhouse north of Goldshire",
-    ["Herbalism"] = "Herbalist Pomeroy - hut northeast of Goldshire",
+    ["Herbalism"] = "Herbalist Pomeroy - farmhouse north of Goldshire (with Alchemist Mallory)",
     ["Blacksmithing"] = "Smith Argus - Goldshire",
-    ["Leatherworking"] = "Adele Fielder - camp south of Goldshire",
-    ["Skinning"] = "Helene Peltskinner - west side of Goldshire",
+    ["Leatherworking"] = "Adele Fielder - camp by Crystal Lake, northeast of Goldshire",
+    ["Skinning"] = "Helene Peltskinner - camp by Crystal Lake, northeast of Goldshire",
     ["Cooking"] = "Tomas - Lion's Pride Inn kitchen, Goldshire",
     ["First Aid"] = "Michelle Belle - Lion's Pride Inn, Goldshire",
     ["Fishing"] = "Lee Brown - Crystal Lake, Elwynn Forest"
@@ -428,13 +724,16 @@ local kharanos = {
 local dolanaar = {
     ["Alchemy"] = "Cyndra Kindwhisper - Dolanaar",
     ["Herbalism"] = "Malorne Bladeleaf - Dolanaar",
-    ["Skinning"] = "Radnaal Maneweaver - southwest of Dolanaar",
-    ["Leatherworking"] = "Nadyia Maneweaver - southwest of Dolanaar",
+    ["Skinning"] = "Radnaal Maneweaver - hut west-northwest of Dolanaar",
+    ["Leatherworking"] = "Nadyia Maneweaver - hut west-northwest of Dolanaar",
     ["Cooking"] = "Zarrin - Dolanaar",
     ["First Aid"] = "Byancie - Dolanaar"
 }
 local durotar = {
     ["Alchemy"] = "Miao'zan - Sen'jin Village",
+    ["Herbalism"] = "Mishiki - Sen'jin Village",
+    ["Mining"] = "Krunn - Razor Hill",
+    ["Engineering"] = "Mukdrak - Razor Hill",
     ["First Aid"] = "Rawrk - Razor Hill",
     ["Fishing"] = "Lau'Tiki - Sen'jin Village coast"
 }
@@ -443,13 +742,15 @@ local mulgore = {
     ["Skinning"] = "Yonn Deepcut - Bloodhoof Village",
     ["First Aid"] = "Vira Younghoof - Bloodhoof Village",
     ["Fishing"] = "Uthan Stillwater - Bloodhoof Village pond",
-    ["Cooking"] = "Pyall Silentstride - Camp Narache"
+    ["Cooking"] = "Pyall Silentstride - Bloodhoof Village"
 }
 local tirisfal = {
     ["Alchemy"] = "Carolai Anise - Brill",
     ["Herbalism"] = "Faruza - Brill",
-    ["Tailoring"] = "Bowen Brisboise - north of Brill",
-    ["Leatherworking"] = "Shelene Rhobart - south of Brill",
+    ["Tailoring"] = "Bowen Brisboise - Cold Hearth Manor, west of Brill",
+    ["Leatherworking"] = "Shelene Rhobart - farm southeast of Brill",
+    ["Skinning"] = "Rand Rhobart - farm southeast of Brill",
+    ["Enchanting"] = "Vance Undergloom - Brill",
     ["First Aid"] = "Nurse Neela - Brill",
     ["Fishing"] = "Clyde Kellen - Brill lake"
 }
@@ -463,7 +764,49 @@ ns.VILLAGE_TRAINERS = {
     Orc = durotar,
     Troll = durotar,
     Tauren = mulgore,
-    Scourge = tirisfal
+    Scourge = tirisfal,
+    -- WoW Forever's new race starts on Zephras Isle; Shen'dar Village has
+    -- a trainer for every profession
+    Skyborne = {
+        ["Alchemy"] = "Nyassa Swiftdraught - Shen'dar Village, Zephras Isle",
+        ["Blacksmithing"] = "Aedi Thriceforged - Shen'dar Village",
+        ["Cooking"] = "Zerril Softbreeze - Shen'dar Village",
+        ["Enchanting"] = "Nasalanna Windsinger - Shen'dar Village",
+        ["Engineering"] = "Strange Hermit - Shadowgale Forest, east of Shen'dar Village",
+        ["First Aid"] = "Naleeia Tattermend - Shen'dar Village",
+        ["Fishing"] = "Fenn Fairweather - south edge of Shen'dar Village",
+        ["Herbalism"] = "Halassa Fernbreeze - Shen'dar Village",
+        ["Leatherworking"] = "Indari Sunseam - Shen'dar Village",
+        ["Mining"] = "Messana Crestwind - Shen'dar Village",
+        ["Skinning"] = "Mendalass Tattermend - Shen'dar Village",
+        ["Tailoring"] = "Taleen Shimmerthread - Shen'dar Village"
+    }
+}
+
+-- WoW Forever only: its starting areas gained "Junior" Mining, Herbalism
+-- and Skinning trainers (Apprentice only) and two village trainers. They
+-- fill the gaps above; an entry above is never replaced.
+ns.FOREVER_VILLAGE = {
+    Human = {["Mining"] = "Kelsey Fargo - Northshire Valley, north of the Abbey"},
+    Dwarf = {["Herbalism"] = "Emrys Flintbeard - Anvilmar, Coldridge Valley",
+             ["Skinning"] = "Brighid Stormflayer - Anvilmar, Coldridge Valley"},
+    NightElf = {["Mining"] = "Fanorran Stilloak - Aldrassil, Shadowglen"},
+    Orc = {["Skinning"] = "Kagil - Valley of Trials", ["Enchanting"] = "Pa'zula - Sen'jin Village"},
+    Tauren = {["Herbalism"] = "Garan Sunstrider - Camp Narache", ["Mining"] = "Vartha Rockmane - Camp Narache"},
+    Scourge = {["Mining"] = "Walter Mason - Deathknell", ["Cooking"] = "William Pickman - Brill"}
+}
+
+-- WoW Forever replaces these tables whole (Core.lua). Its top fish dish,
+-- Baked Salmon, needs an Iron Oven there, so Nightfin Soup runs to 300.
+ns.FOREVER = {
+    FISH_COOKING = {ns.FISH_COOKING[1], ns.FISH_COOKING[2], ns.FISH_COOKING[3],
+                    ns.FISH_COOKING[4], ns.FISH_COOKING[5], ns.FISH_COOKING[6]},
+    FISHING_NOTES = {
+        {130, "Expert rank: book |cFFFFCC00Expert Fishing - The Bass and You|r (needs level 20) - Old Man Heming, Booty Bay",
+         req = 125, gate = 150},
+        {225, "Artisan rank: Nat Pagle quest (level 35) - Dustwallow Marsh",
+         req = 225, gate = 225}
+    }
 }
 
 -- shown in the first-launch setup window, in this order

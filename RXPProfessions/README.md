@@ -37,8 +37,21 @@ present).
 
 ## Notes & roadmap
 
-- Skill data targets Classic Era / Anniversary (works in TBC; Outland
-  content not yet covered).
+- Skill data covers Classic Era / Anniversary, TBC (Outland content not
+  yet covered) and World of Warcraft Forever, which has **routes of its
+  own** (1.0.0). A report had RXPP recommend recipes that no longer gave
+  skill-ups (Linen Bag at 63 Tailoring, an Enchanting bracer at 63, and
+  enchant names that no longer matched). That player was on Forever,
+  whose skill-up ranges, trainer levels and recipe names differ from
+  Classic's: Linen Bag greys at 65 there, not 105, and Classic's Enchant
+  Bracer - Minor Health is "Inferior Stamina" (grey at 25). Every route
+  row, Forever's and Classic's, is now checked against the game's own
+  recipe data: learnable at the row's skill, and still giving skill-ups
+  until the next row. That check also fixed rows in the Classic routes
+  (Enchanting from 110 up asked for enchants the trainer does not teach
+  yet, among others). In game, the colours your profession window shows
+  still outrank the route: a recipe gone grey (or green, when you know
+  something better) is replaced by the best one you know.
 - The craft routes are static tables, so a row can be wrong: a TBC report
   had Leatherworking "a tier ahead at all times" (the gloves the row put at
   30 are trained at 55, the belt at 85). Those rows are fixed (0.6.2), and
@@ -75,8 +88,9 @@ present).
 lua5.1 tests/harness_rxpprofessions.lua .
 ```
 
-drives the addon on a Classic Era client, a Forever client (its API
-tables, a secret rank, its trade skill window) and a retail-style one.
+drives the addon on a Classic Era client, a TBC one, a Forever client
+(its API tables, a secret rank, its profession window, its routes) and a
+retail-style one.
 - English-language clients only for now (professions are matched by name).
 - Craft routes are the standard approximate ones; skill-up RNG means brackets
   can shift by a few points.

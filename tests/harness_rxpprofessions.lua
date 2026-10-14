@@ -68,7 +68,7 @@ local function NewWorld(opts)
     _G.C_Timer = {NewTicker = function(s, fn) table.insert(w.timers, {s, fn}) end, After = function(s, fn) table.insert(w.timers, {s, fn}) end}
     _G.UnitLevel = function() return opts.level or 20 end
     _G.UnitFactionGroup = function() return "Alliance" end
-    _G.UnitRace = function() return "Human", "Human" end
+    _G.UnitRace = function() return opts.race or "Human", opts.race or "Human" end
     _G.GetRealZoneText = function() return opts.zone or "Elwynn Forest" end
     _G.RXPProfessionsDB = opts.db
 
@@ -423,7 +423,7 @@ do
     w.tradeRank = 66
     w.Fire("TRADE_SKILL_UPDATE")
     text = lines(w, "Tailoring")
-    check(text:find("Craft: Linen Bag (orange)", 1, true) and text:find("Mats: 3 Bolt of Linen + Coarse Thread", 1, true) and not text:find("game moved it", 1, true),
+    check(text:find("Craft: Linen Bag (orange)", 1, true) and text:find("Mats: 3 Bolt of Linen Cloth + 3 Coarse Thread", 1, true) and not text:find("game moved it", 1, true),
           "report: where the game agrees with the route, the route stands, with its colour and mats")
     check(w.ns.RecipeColor("Tailoring", "Linen Bag", 66) == "optimal" and w.ns.db.recipeColors.Tailoring["Linen Bag"].seen.trivial == nil,
           "colours: a sighting that contradicts older ones (a patch) replaces them")
@@ -435,7 +435,7 @@ do
     text = lines(w, "Enchanting")
     check(w.ns.ResolveRecipe(w.ns.GetKnownRecipes("Enchanting"), "Enchant Bracer - Minor Stamina") == "Enchant Bracers - Minor Stamina",
           "names: the route's 'Enchant Bracer - Minor Stamina' finds the game's 'Enchant Bracers - Minor Stamina'")
-    check(text:find("Craft: Enchant Cloak - Minor Resistance (orange)", 1, true) and text:find("(Enchant Bracers - Minor Stamina is grey for you now", 1, true),
+    check(text:find("Craft: Enchant Cloak - Minor Resistance (orange)", 1, true) and text:find("(Enchant Bracers - Minor Health is grey for you now", 1, true),
           "report: enchanting at 63 - the grey bracer enchant replaced by the orange one the game shows")
     check(w.ns.GetKnownRecipes("Enchanting")["Enchant Cloak - Minor Resistance"] == "optimal", "craft window: colours recorded (they were not before)")
     -- trainer requirements match loosely too
@@ -534,30 +534,122 @@ do
     check(w.ns.GetKnownRecipes("Tailoring") == nil, "classic: a linked profession window is not read")
 end
 
--- Forever's own recipe names and mats, read from Wowhead's Forever data:
--- Enchant Bracer - Minor Health is "Inferior Stamina" there and takes a
--- Mote of Magic; Elixir of Greater Defense is "Elixir of Defense"
+-- WoW Forever has routes of its own: the report's player was shown
+-- Classic Era's, where Linen Bag runs 45-69 - on Forever it greys at 65,
+-- and Enchant Bracer - Minor Health is "Inferior Stamina", grey at 25
+local function Lines(w, prof)
+    local out = {}
+    for _, l in ipairs(w.ns.BuildProfLines(prof, w.ns.GetTracked()[prof])) do out[#out + 1] = l.text end
+    return table.concat(out, "\n")
+end
 do
-    local function lines(w, prof)
-        local out = {}
-        for _, l in ipairs(w.ns.BuildProfLines(prof, w.ns.GetTracked()[prof])) do out[#out + 1] = l.text end
-        return table.concat(out, "\n")
-    end
-    local f = NewWorld({client = "forever", events = FOREVER_EVENTS, extra = {{name = "Enchanting", rank = 10, maxRank = 75}, {name = "Alchemy", rank = 212, maxRank = 225}},
-                        db = {setupDone = true, chosen = {Enchanting = true, Alchemy = true}, show = true}})
+    local tailor = {name = "Tailoring", rank = 63, maxRank = 75}
+    local enchant = {name = "Enchanting", rank = 63, maxRank = 75}
+    local alchemy = {name = "Alchemy", rank = 5, maxRank = 75}
+    local f = NewWorld({client = "forever", events = FOREVER_EVENTS, level = 14, extra = {tailor, enchant, alchemy},
+                        db = {setupDone = true, chosen = {Tailoring = true, Enchanting = true, Alchemy = true}, show = true}})
     f.Fire("PLAYER_ENTERING_WORLD")
-    local text = lines(f, "Enchanting")
-    check(f.ns.IS_FOREVER and text:find("Craft: Enchant Bracer - Inferior Stamina", 1, true) and text:find("Mats: 1 Mote of Magic", 1, true) and text:find("At 50: Enchant Bracer - Minor Deflect", 1, true),
-          "forever names: the route uses Forever's recipe name and mats")
-    check(lines(f, "Alchemy"):find("Craft: Elixir of Defense", 1, true) and lines(f, "Alchemy"):find("(makes 2)", 1, true), "forever names: Alchemy too")
-    local c = NewWorld({client = "classic", events = CLASSIC_EVENTS, extra = {{name = "Enchanting", rank = 52, maxRank = 75}},
-                        db = {setupDone = true, chosen = {Enchanting = true}, show = true}})
+    local text = Lines(f, "Tailoring")
+    check(f.ns.IS_FOREVER and text:find("Craft: Bolt of Woolen Cloth\n", 1, true) and text:find("At 70: Woolen Cape", 1, true) and not text:find("Linen Bag", 1, true),
+          "forever: at 63 Tailoring the Forever route (Bolt of Woolen Cloth, then Woolen Cape at 70), not Linen Bag")
+    text = Lines(f, "Enchanting")
+    check(text:find("Craft: Enchant Chest - Inferior Stamina\n", 1, true) and text:find("Mats: 1 Strange Dust", 1, true) and text:find("At 70: Enchant Bracer - Minor Stamina", 1, true),
+          "forever: at 63 Enchanting, Chest - Inferior Stamina, then Minor Stamina at 70")
+    enchant.rank = 10; f.Fire("SKILL_LINES_CHANGED")
+    text = Lines(f, "Enchanting")
+    check(text:find("Craft: Enchant Bracer - Inferior Stamina", 1, true) and text:find("Mats: 1 Mote of Magic", 1, true) and text:find("Mote of Magic: make them from Strange Dust", 1, true),
+          "forever: Forever's names and mats, and its own notes")
+    text = Lines(f, "Alchemy")
+    check(text:find("Craft: Elixir of Minor Defense", 1, true) and not text:find("Healing Potion", 1, true) and text:find("healing potions are First Aid recipes", 1, true),
+          "forever: Alchemy starts on an elixir - the healing potions are First Aid's there")
+    -- a faction-split source shows the player's side only
+    alchemy.rank = 270; alchemy.maxRank = 300; f.Fire("SKILL_LINES_CHANGED")
+    text = Lines(f, "Alchemy")
+    check(text:find("Recipe: Recipe (about 1g 20s, limited stock): Ulthir", 1, true) and not text:find("Algernon", 1, true), "sources: a per-faction source shows the player's faction")
+    -- Classic keeps Classic Era's route
+    local c = NewWorld({client = "classic", events = CLASSIC_EVENTS, level = 14, extra = {{name = "Tailoring", rank = 63, maxRank = 75}},
+                        db = {setupDone = true, chosen = {Tailoring = true}, show = true}})
     c.Fire("PLAYER_ENTERING_WORLD")
-    c.craft = {"Enchanting", 52, {{"Enchant Bracer - Minor Deflect", "optimal"}, {"Enchant Bracer - Minor Health", "easy"}}}
-    c.Fire("CRAFT_SHOW")
-    text = lines(c, "Enchanting")
-    check(not c.ns.IS_FOREVER and text:find("Craft: Enchant Bracer - Minor Deflect (orange)", 1, true) and text:find("Mats: 1 Lesser Magic Essence + 1 Strange Dust", 1, true) and not text:find("know this recipe", 1, true),
-          "classic names: 'Minor Deflect' (the game's name) now matches the known recipe, with Classic's mats")
+    check(Lines(c, "Tailoring"):find("Craft: Linen Bag", 1, true), "classic: Classic Era's route stands there (Linen Bag is orange to 69)")
+end
+
+-- TBC: its own mats where they differ (its rods use up the one before)
+do
+    local t = NewWorld({client = "tbc", events = CLASSIC_EVENTS, level = 30, extra = {{name = "Enchanting", rank = 110, maxRank = 150}},
+                        db = {setupDone = true, chosen = {Enchanting = true}, show = true}})
+    t.Fire("PLAYER_ENTERING_WORLD")
+    check(t.ns.IS_TBC and Lines(t, "Enchanting"):find("Mats: 1 Silver Rod + 6 Strange Dust + 3 Greater Magic Essence + 1 Runed Copper Rod", 1, true), "tbc: TBC's mats for the Runed Silver Rod")
+    local e = NewWorld({client = "classic", events = CLASSIC_EVENTS, level = 30, extra = {{name = "Enchanting", rank = 110, maxRank = 150}},
+                        db = {setupDone = true, chosen = {Enchanting = true}, show = true}})
+    e.Fire("PLAYER_ENTERING_WORLD")
+    check(Lines(e, "Enchanting"):find("+ 1 Shadowgem", 1, true), "era: Era's mats for it")
+end
+
+-- ranks: no Master before TBC; a book or a quest for First Aid, Cooking
+-- and Fishing; a character level for crafting trainers
+do
+    local tail = {name = "Tailoring", rank = 290, maxRank = 300}
+    local fa = {name = "First Aid", rank = 150, maxRank = 150}
+    local cook = {name = "Cooking", rank = 218, maxRank = 225}
+    local w = NewWorld({client = "classic", events = CLASSIC_EVENTS, level = 60, extra = {tail, fa, cook},
+                        db = {setupDone = true, chosen = {Tailoring = true, ["First Aid"] = true, Cooking = true}, show = true}})
+    w.Fire("PLAYER_ENTERING_WORLD")
+    local text = Lines(w, "Tailoring")
+    check(not text:find("Master", 1, true), "ranks: Classic Era has no Master rank to train at 290/300")
+    tail.rank = 300; w.Fire("SKILL_LINES_CHANGED")
+    check(Lines(w, "Tailoring"):find("Skill capped for this expansion", 1, true), "ranks: 300/300 is the end on Classic Era")
+    check(Lines(w, "First Aid"):find("Capped! Expert First Aid comes from a book - see below", 1, true), "ranks: Expert First Aid is a book, not a trainer")
+    check(Lines(w, "Cooking"):find("Cap soon - Artisan comes from a quest at 225", 1, true), "ranks: Artisan Cooking is a quest at 225, not a trainer at 200")
+    local t = NewWorld({client = "tbc", events = CLASSIC_EVENTS, level = 60, extra = {{name = "Tailoring", rank = 280, maxRank = 300}},
+                        db = {setupDone = true, chosen = {Tailoring = true}, show = true}})
+    t.Fire("PLAYER_ENTERING_WORLD")
+    check(Lines(t, "Tailoring"):find("Can train Master now (275 needed)", 1, true), "ranks: TBC trains Master at 275")
+    local low = NewWorld({client = "forever", events = FOREVER_EVENTS, level = 15, extra = {{name = "Tailoring", rank = 126, maxRank = 150}},
+                          db = {setupDone = true, chosen = {Tailoring = true}, show = true}})
+    low.Fire("PLAYER_ENTERING_WORLD")
+    check(Lines(low, "Tailoring"):find("Expert at 125 - needs character level 20 (you're 15)", 1, true), "ranks: Expert needs character level 20")
+end
+
+-- a row of alternatives needs the least the trainer asks of them: Crab
+-- Cake (75) or Dry Pork Ribs (110 in one table), so 80 still stands
+do
+    local cook = {name = "Cooking", rank = 85, maxRank = 150}
+    local w = NewWorld({client = "classic", events = CLASSIC_EVENTS, level = 20, extra = {cook},
+                        db = {setupDone = true, chosen = {Cooking = true}, show = true}})
+    w.Fire("PLAYER_ENTERING_WORLD")
+    w.trainer = {{"Crab Cake", "used", "Cooking", 75}, {"Dry Pork Ribs", "available", "Cooking", 110}}
+    w.Fire("TRAINER_SHOW")
+    check(Lines(w, "Cooking"):find("Craft: Crab Cake / Dry Pork Ribs", 1, true), "alternatives: one learnable alternative keeps the row")
+    w.trainer = {{"Crab Cake", "available", "Cooking", 90}, {"Dry Pork Ribs", "available", "Cooking", 110}}
+    w.Fire("TRAINER_SHOW")
+    check(Lines(w, "Cooking"):find("Craft: Smoked Bear Meat", 1, true), "alternatives: when the trainer says all need more, the row steps back")
+end
+
+-- skinning: level 10 + skill/10 below 100, skill/5 from there
+do
+    local w = NewWorld({client = "classic", events = CLASSIC_EVENTS, extra = {{name = "Skinning", rank = 50, maxRank = 75}},
+                        db = {setupDone = true, chosen = {Skinning = true}, show = true}})
+    w.Fire("PLAYER_ENTERING_WORLD")
+    check(Lines(w, "Skinning"):find("up to ~level 15 mobs", 1, true), "skinning: 50 skill skins level 15 beasts (not 10)")
+end
+
+-- Forever's trainers: its new race, and the starting areas' Junior trainers
+do
+    local function trainerLines(client, race)
+        local w = NewWorld({client = client, race = race, level = 3, events = client == "forever" and FOREVER_EVENTS or CLASSIC_EVENTS,
+                            db = {setupDone = true, chosen = {Herbalism = true, Tailoring = true, Mining = true}, show = true}})
+        w.Fire("PLAYER_ENTERING_WORLD")
+        return Lines(w, "Herbalism"), Lines(w, "Tailoring"), w
+    end
+    local herb = trainerLines("forever", "Dwarf")
+    check(herb:find("Emrys Flintbeard - Anvilmar, Coldridge Valley", 1, true), "forever: a dwarf is sent to the Junior Herbalism trainer in Coldridge Valley")
+    herb = trainerLines("classic", "Dwarf")
+    check(not herb:find("Emrys Flintbeard", 1, true), "classic: no Forever-only trainers there")
+    local _, tail = trainerLines("forever", "Skyborne")
+    check(tail:find("Taleen Shimmerthread - Shen'dar Village", 1, true), "forever: the Skyborne train in Shen'dar Village")
+    local _, _, w = trainerLines("forever", "Human")
+    local mine = Lines(w, "Mining")
+    check(mine:find("Mine: Copper Vein / Poor Copper Vein", 1, true), "forever: its starter copper nodes are named")
 end
 
 -- a secret rank (Forever hides some numbers from addon code) counts as unknown, not an error
