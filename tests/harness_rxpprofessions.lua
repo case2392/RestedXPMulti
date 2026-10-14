@@ -83,7 +83,7 @@ local function NewWorld(opts)
     end
     if opts.map then
         _G.C_Map = {GetBestMapForUnit = function() return opts.map end,
-                    GetMapInfo = function(id) return {name = (opts.mapNames or {})[id] or "?"} end}
+                    GetMapInfo = function(id) return {name = (opts.mapNames or {})[id] or "?", parentMapID = (opts.mapParents or {})[id]} end}
     end
     _G.RXPProfessionsDB = opts.db
 
@@ -97,6 +97,10 @@ local function NewWorld(opts)
     }
     if opts.leatherworking then table.insert(tree[2].children, {name = "Leatherworking", rank = opts.leatherworking, maxRank = 75}) end
     for _, extra in ipairs(opts.extra or {}) do table.insert(tree[2].children, extra) end
+    -- opts.skillIDs: English name -> the skill line's ID, which C_SkillInfo hands back
+    for _, h in ipairs(tree) do
+        for _, c in ipairs(h.children) do c.id = (opts.skillIDs or {})[c.name] end
+    end
     if opts.names then
         for _, h in ipairs(tree) do
             for _, c in ipairs(h.children) do c.name = opts.names[c.name] or c.name end
@@ -162,7 +166,7 @@ local function NewWorld(opts)
             GetNumSkillLines = function() return #visible() end,
             GetSkillLineInfo = function(i)
                 local l = visible()[i]
-                return {name = l.name, isHeader = l.header or false, isCollapsed = l.header and l.folded or false, rank = l.rank, maxRank = l.maxRank, parentSkillLineID = 0}
+                return {name = l.name, isHeader = l.header or false, isCollapsed = l.header and l.folded or false, rank = l.rank, maxRank = l.maxRank, parentSkillLineID = 0, skillID = l.id}
             end,
             ExpandSkillHeader = expand, CollapseSkillHeader = collapse
         }
@@ -194,12 +198,12 @@ local function NewWorld(opts)
             GetChildProfessionInfo = function()
                 if w.noChild then return {professionID = 0, professionName = "", skillLevel = 0, maxSkillLevel = 0} end
                 return {professionID = 2540, professionName = w.childName or w.openProf or "Cooking", parentProfessionName = w.openProf or "Cooking",
-                        skillLevel = w.openRank or 20, maxSkillLevel = 75}
+                        parentProfessionID = w.openID, skillLevel = w.openRank or 20, maxSkillLevel = 75}
             end,
             GetBaseProfessionInfo = function()
                 -- the base line's ID is the profession's skill line (Tailoring 197)
                 local ids = {Cooking = 185, Tailoring = 197, Enchanting = 333, Alchemy = 171, Jewelcrafting = 755}
-                return {professionID = ids[w.openProf or "Cooking"] or 0, professionName = w.openProf or "Cooking",
+                return {professionID = w.openID or ids[w.openProf or "Cooking"] or 0, professionName = w.openProf or "Cooking",
                         skillLevel = w.openRank or 20, maxSkillLevel = 75}
             end,
             GetFilteredRecipeIDs = function() return ids(false) end,
@@ -209,7 +213,9 @@ local function NewWorld(opts)
             IsDataSourceChanging = function() return w.changing or false end,
             IsTradeSkillLinked = function() return w.linked or false end,
             IsTradeSkillGuild = function() return false end,
-            IsNPCCrafting = function() return false end
+            IsNPCCrafting = function() return false end,
+            -- the skill line's name in the client's language (opts.displayNames: id -> name)
+            GetTradeSkillDisplayName = function(id) return (opts.displayNames or {})[id] end
         }
     elseif opts.client == "retail" then
         _G.GetProfessions = function() return 7, 9, nil, nil, 12, nil end
@@ -813,6 +819,136 @@ do
     w.Fire("TRADE_SKILL_LIST_UPDATE")
     check(Lines(w, "Enchanting"):find("Not in your window's list - if you know it, clear the window's filters once", 1, true),
           "review: with only the filtered list, a missing recipe may be the filter's doing")
+end
+
+--------------------------------------------------------------------------
+-- Other languages (1.1.0). A report: "My professions are not detected
+-- because I play in French." The game names skills, recipes, items and
+-- zones in its own language; the addon's sentences come from Locales.lua.
+--------------------------------------------------------------------------
+do
+    local FR = {Mining = "Minage", Tailoring = "Couture", Cooking = "Cuisine", Defense = "Défense",
+                ["Class Skills"] = "Compétences de classe", Professions = "Métiers", ["Secondary Skills"] = "Compétences secondaires"}
+    local function french(opts)
+        opts = opts or {}
+        local tail = {name = "Tailoring", rank = opts.rank or 50, maxRank = 75}
+        local w = NewWorld({client = opts.client or "classic", locale = "frFR", level = 15, names = FR, extra = {tail},
+                            events = opts.client == "forever" and FOREVER_EVENTS or CLASSIC_EVENTS,
+                            spells = {[3755] = "Sac en lin", [2397] = "Cape en lin renforcée", [8776] = "Ceinture en lin"},
+                            items = opts.items or {[2996] = "Rouleau d'étoffe de lin", [2320] = "Fil grossier"},
+                            map = opts.map, mapNames = opts.mapNames, mapParents = opts.mapParents, zone = opts.zone,
+                            db = {setupDone = true, chosen = {Mining = true, Tailoring = true, Cooking = true}, show = true}})
+        w.Fire("PLAYER_ENTERING_WORLD")
+        return w, tail
+    end
+    local w = french()
+    check(w.ns.profs.Mining and w.ns.profs.Mining.rank == 45 and w.ns.profs.Tailoring and w.ns.profs.Tailoring.rank == 50 and
+          w.ns.profs.Cooking and w.ns.profs.Cooking.rank == 20, "fr: Minage, Couture and Cuisine are found")
+    local text = Lines(w, "Mining")
+    check(text:find("Minage  45/75", 1, true) and text:find("Miner : Filon de cuivre", 1, true) and text:find("À 65 : Filon d'étain", 1, true),
+          "fr: the mining advice reads in French, nodes named as the game names them")
+    text = Lines(w, "Tailoring")
+    check(text:find("Couture  50/75", 1, true) and text:find("Créer : Sac en lin\n", 1, true) and
+          text:find("Composants : 3 Rouleau d'étoffe de lin + 3 Fil grossier", 1, true) and text:find("À 70 : Cape en lin renforcée", 1, true),
+          "fr: recipes and mats named by the game, by spell and item ID")
+    check(not text:find("Linen", 1, true) and not text:find("Craft:", 1, true), "fr: no English left in the craft lines")
+    w.slash("status")
+    check(Printed("client language: frFR"), "fr: /rxpp status names the client's language")
+    -- the profession window, in French
+    w.trade, w.tradeRank = {"Couture", {{"Sac en lin", "optimal"}, {"Ceinture en lin", "medium"}}}, 50
+    w.Fire("TRADE_SKILL_SHOW")
+    local known = w.ns.GetKnownRecipes("Tailoring")
+    check(known and known["Sac en lin"] and known["Ceinture en lin"], "fr: the Couture window's recipes are remembered under Tailoring")
+    text = Lines(w, "Tailoring")
+    check(text:find("Créer : Sac en lin (orange)", 1, true) and not text:find("Vous ne connaissez pas", 1, true),
+          "fr: the window's colour is matched to the route recipe by its French name")
+    -- the trainer, in French
+    w = french()
+    w.trainer = {{"Sac en lin", "available", "Couture", 55}}
+    w.Fire("TRAINER_SHOW")
+    check(w.ns.RecipeRequirement("Tailoring", "Sac en lin") == 55, "fr: a trainer's 'Couture' requirement is filed under Tailoring")
+    check(Lines(w, "Tailoring"):find("(Sac en lin requiert 55 - d'après votre maître)", 1, true), "fr: and the route steps back for it")
+    -- an item not cached yet: English until it arrives, and it is asked for
+    w = french({items = {[2996] = "Rouleau d'étoffe de lin"}})
+    text = Lines(w, "Tailoring")
+    check(text:find("Composants : 3 Bolt of Linen Cloth + 3 Coarse Thread", 1, true) and w.itemRequests[2320],
+          "fr: an uncached reagent leaves the English mats and asks the game for the item")
+    w.timers = {}
+    w.Fire("GET_ITEM_INFO_RECEIVED", 2320, true)
+    check(#w.timers == 1, "fr: the item's arrival schedules a redraw")
+    -- the zone, by map ID: the French zone name is not in the data
+    w = french({map = 1433, mapNames = {[1433] = "Les Carmines"}, zone = "Les Carmines"})
+    local key, waters, label = w.ns.CurrentZone()
+    check(key == "Redridge Mountains" and waters and label == "Les Carmines", "fr: the zone is found by its map ID")
+    check(w.ns.ZoneWaterSpot({water = "inland"}) == "Ici (Les Carmines) : les eaux intérieures", "fr: the fishing spot names the zone as the game does")
+    w = french({map = 9999, mapParents = {[9999] = 1433}, mapNames = {[1433] = "Les Carmines"}})
+    check(w.ns.CurrentZone() == "Redridge Mountains", "fr: a sub-zone map is walked up to its zone")
+    w = french({zone = "Les Carmines"})
+    check(w.ns.CurrentZone() == nil, "fr: without a map ID, a French zone name matches nothing (no wrong water)")
+end
+
+-- Russian: names with no ASCII letters must not all match each other
+do
+    local RU = {Mining = "Горное дело", Tailoring = "Портняжное дело"}
+    local tail = {name = "Tailoring", rank = 50, maxRank = 75}
+    local w = NewWorld({client = "classic", locale = "ruRU", events = CLASSIC_EVENTS, level = 15, names = RU, extra = {tail},
+                        spells = {[3755] = "Льняная сумка"},
+                        db = {setupDone = true, chosen = {Mining = true, Tailoring = true}, show = true}})
+    w.Fire("PLAYER_ENTERING_WORLD")
+    local L = w.ns.L
+    check(w.ns.profs.Mining and w.ns.profs.Tailoring and w.ns.profs.Tailoring.rank == 50, "ru: Cyrillic skill names are found")
+    check(Lines(w, "Mining"):find(string.format(L["Mine: %s"], "Медная жила"), 1, true) and L["Mine: %s"] ~= "Mine: %s",
+          "ru: the mining line in Russian")
+    local k1, k2 = w.ns.RecipeKey("Льняная сумка"), w.ns.RecipeKey("Льняной плащ")
+    check(k1 ~= "" and k2 ~= "" and k1 ~= k2, "ru: Cyrillic recipe keys keep their letters")
+    check(w.ns.ResolveRecipe({["Льняной плащ"] = true}, "Льняная сумка") == nil and
+          w.ns.ResolveRecipe({["Льняная сумка"] = true}, "Льняная сумка") == "Льняная сумка", "ru: one Cyrillic recipe does not match another")
+    -- a window without the route's recipe: it is not mistaken for another one
+    w.trade, w.tradeRank = {"Портняжное дело", {{"Льняной плащ", "optimal"}}}, 50
+    w.Fire("TRADE_SKILL_SHOW")
+    local text = Lines(w, "Tailoring")
+    check(w.ns.GetKnownRecipes("Tailoring")["Льняной плащ"] and text:find(L["You don't know this recipe yet!"], 1, true) and
+          not text:find("Льняная сумка (", 1, true) and text:find(string.format(L["Meanwhile: %s (%s)"], "Льняной плащ", L["orange"]), 1, true),
+          "ru: an unknown route recipe is not matched to another Cyrillic one (that one is offered meanwhile)")
+    -- TBC's Russian client writes Skinning with a Latin C
+    local t = NewWorld({client = "tbc", locale = "ruRU", events = CLASSIC_EVENTS, names = {Skinning = "Cнятие шкур"},
+                        extra = {{name = "Skinning", rank = 80, maxRank = 150}}, db = {setupDone = true, chosen = {Skinning = true}, show = true}})
+    t.Fire("PLAYER_ENTERING_WORLD")
+    check(t.ns.profs.Skinning and t.ns.profs.Skinning.rank == 80, "ru: TBC's 'Cнятие шкур' (Latin C) is Skinning")
+    check(t.ns.RankLabel("Artisan") == "Искусник" and w.ns.RankLabel("Artisan") ~= "Искусник", "ru: TBC's own word for Artisan")
+end
+
+-- Forever: the skill line's ID decides, whatever the name
+do
+    local tail = {name = "Tailoring", rank = 50, maxRank = 75}
+    local w = NewWorld({client = "forever", locale = "frFR", events = FOREVER_EVENTS, names = {Tailoring = "Couture d'antan"},
+                        skillIDs = {Tailoring = 197}, extra = {tail}, db = {setupDone = true, chosen = {Tailoring = true}, show = true}})
+    w.Fire("PLAYER_ENTERING_WORLD")
+    check(w.ns.profs.Tailoring and w.ns.profs.Tailoring.rank == 50, "forever fr: a name in no table is found by its skill-line ID")
+    check(Lines(w, "Tailoring"):find("Couture d'antan  50/75", 1, true), "forever fr: and labelled as the game names it")
+    w.openProf, w.openRank, w.openID = "Couture d'antan", 50, 197
+    w.recipes = {[3755] = {name = "Sac en lin", learned = true, relativeDifficulty = 0}}
+    w.Fire("TRADE_SKILL_LIST_UPDATE")
+    check(w.ns.GetKnownRecipes("Tailoring") and w.ns.GetKnownRecipes("Tailoring")["Sac en lin"], "forever fr: its window is read by the profession's ID")
+    -- a client that only names it: GetTradeSkillDisplayName
+    local d = NewWorld({client = "forever", locale = "deDE", events = FOREVER_EVENTS, names = {Tailoring = "Schneidern"},
+                        displayNames = {[197] = "Schneidern"}, extra = {{name = "Tailoring", rank = 30, maxRank = 75}},
+                        db = {setupDone = true, chosen = {Tailoring = true}, show = true}})
+    d.Fire("PLAYER_ENTERING_WORLD")
+    check(d.ns.profs.Tailoring and d.ns.profs.Tailoring.rank == 30, "forever: the game's own display name for the skill line is matched")
+    -- Italian: Forever names professions and ranks in Italian, the Classic clients in English
+    local it = NewWorld({client = "forever", locale = "itIT", events = FOREVER_EVENTS, names = {Tailoring = "Sartoria"},
+                         extra = {{name = "Tailoring", rank = 30, maxRank = 75}}, db = {setupDone = true, chosen = {Tailoring = true}, show = true}})
+    it.Fire("PLAYER_ENTERING_WORLD")
+    check(it.ns.profs.Tailoring and it.ns.RankLabel("Artisan") == "Specialista", "forever it: Sartoria found, Italian ranks")
+    local ic = NewWorld({client = "classic", locale = "itIT", events = CLASSIC_EVENTS, extra = {{name = "Tailoring", rank = 30, maxRank = 75}},
+                         db = {setupDone = true, chosen = {Tailoring = true}, show = true}})
+    ic.Fire("PLAYER_ENTERING_WORLD")
+    check(ic.ns.profs.Tailoring and ic.ns.RankLabel("Artisan") == "Artisan", "classic it: English names there")
+    -- a language with no translation reads in English
+    local x = NewWorld({client = "classic", locale = "xxXX", events = CLASSIC_EVENTS, db = {setupDone = true, chosen = {Mining = true}, show = true}})
+    x.Fire("PLAYER_ENTERING_WORLD")
+    check(Lines(x, "Mining"):find("Mine: Copper Vein", 1, true), "unknown language: English")
 end
 
 -- a secret rank (Forever hides some numbers from addon code) counts as unknown, not an error
