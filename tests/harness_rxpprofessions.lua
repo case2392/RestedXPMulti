@@ -85,7 +85,7 @@ local function NewWorld(opts)
     -- the game build: a new one starts recipe colours afresh
     w.build = opts.build or "61582"
     -- Forever reports toc 16001; the routes pick its recipe names and mats from that
-    local toc = opts.client == "forever" and 16001 or 11508
+    local toc = opts.client == "forever" and 16001 or opts.client == "tbc" and 20505 or 11508
     _G.GetBuildInfo = function() return "1.15.8", w.build, "Oct 1 2026", toc end
     local function visible()
         local out = {}
@@ -117,15 +117,22 @@ local function NewWorld(opts)
     -- trainer window (w.trainer = {{name, category, skill, level}, ...})
     w.trade, w.trainer = nil, {}
     _G.GetNumTrainerServices = function() return #w.trainer end
-    _G.GetTrainerServiceInfo = function(i) local t = w.trainer[i]; return t[1], "", t[2], false end
+    -- Classic: name, subText, serviceType, isExpanded
+    -- Forever: name, serviceType, texture, reqLevel, subText, category
+    _G.GetTrainerServiceInfo = function(i)
+        local t = w.trainer[i]
+        if opts.client == "forever" then return t[1], t[2], 136243, 0, "", "Recipes" end
+        return t[1], "", t[2], false
+    end
     _G.GetTrainerServiceSkillReq = function(i) local t = w.trainer[i]; return t[3], t[4] end
-    if opts.client == "classic" then
+    if opts.client == "classic" or opts.client == "tbc" then
         _G.GetTradeSkillLine = function() return w.trade and w.trade[1] or "UNKNOWN", w.tradeRank, 75 end
         _G.GetCraftDisplaySkillLine = function() if w.craft then return w.craft[1], w.craft[2], 75 end end
         _G.GetNumCrafts = function() return w.craft and #w.craft[3] or 0 end
         _G.GetCraftInfo = function(i) local r = w.craft[3][i]; return r[1], "", r[2], 0, true, 0, 0 end
         _G.GetNumTradeSkills = function() return w.trade and #w.trade[2] or 0 end
         _G.GetTradeSkillInfo = function(i) local r = w.trade[2][i]; return r[1], r[2] end
+        _G.IsTradeSkillLinked = function() return w.linked or false end
         _G.GetNumSkillLines = function() return #visible() end
         _G.GetSkillLineInfo = function(i) local l = visible()[i]; return l.name, l.header or false, l.header and not l.folded or nil, l.rank, nil, nil, l.maxRank end
         _G.ExpandSkillHeader, _G.CollapseSkillHeader = expand, collapse
@@ -147,10 +154,32 @@ local function NewWorld(opts)
             end
         end
         w.recipes = {}
+        -- GetChildProfessionInfo always returns a table: professionID 0
+        -- when there is no child (w.noChild), and Blizzard then reads the
+        -- base; the name players see is parentProfessionName, else
+        -- professionName. GetFilteredRecipeIDs is learned-only on Forever.
+        local function ids(all)
+            local out = {}
+            for id, r in pairs(w.recipes) do if all or r.learned then out[#out + 1] = id end end
+            table.sort(out)
+            return out
+        end
         _G.C_TradeSkillUI = {
-            GetChildProfessionInfo = function() return {professionName = w.openProf or "Cooking", skillLevel = w.openRank or 20, maxSkillLevel = 75} end,
-            GetAllRecipeIDs = function() local ids = {}; for id in pairs(w.recipes) do ids[#ids + 1] = id end; table.sort(ids); return ids end,
-            GetRecipeInfo = function(id) return w.recipes[id] end
+            GetChildProfessionInfo = function()
+                if w.noChild then return {professionID = 0, professionName = "", skillLevel = 0, maxSkillLevel = 0} end
+                return {professionID = 2540, professionName = w.childName or w.openProf or "Cooking", parentProfessionName = w.openProf or "Cooking",
+                        skillLevel = w.openRank or 20, maxSkillLevel = 75}
+            end,
+            GetBaseProfessionInfo = function()
+                return {professionID = 185, professionName = w.openProf or "Cooking", skillLevel = w.openRank or 20, maxSkillLevel = 75}
+            end,
+            GetFilteredRecipeIDs = function() return ids(false) end,
+            GetRecipeInfo = function(id) return w.recipes[id] end,
+            IsTradeSkillReady = function() return not w.notReady end,
+            IsDataSourceChanging = function() return w.changing or false end,
+            IsTradeSkillLinked = function() return w.linked or false end,
+            IsTradeSkillGuild = function() return false end,
+            IsNPCCrafting = function() return false end
         }
     elseif opts.client == "retail" then
         _G.GetProfessions = function() return 7, 9, nil, nil, 12, nil end
@@ -178,7 +207,8 @@ local CLASSIC_EVENTS = {"PLAYER_ENTERING_WORLD", "SKILL_LINES_CHANGED", "CHAT_MS
                         "TRADE_SKILL_SHOW", "TRADE_SKILL_UPDATE", "CRAFT_SHOW", "CRAFT_UPDATE", "TRAINER_SHOW", "TRAINER_UPDATE"}
 -- Forever: retail's trade skill events, no TRADE_SKILL_UPDATE, no CRAFT_*
 local FOREVER_EVENTS = {"PLAYER_ENTERING_WORLD", "SKILL_LINES_CHANGED", "CHAT_MSG_SKILL", "ZONE_CHANGED_NEW_AREA",
-                        "TRADE_SKILL_SHOW", "TRADE_SKILL_LIST_UPDATE", "TRADE_SKILL_CLOSE", "TRAINER_SHOW", "TRAINER_UPDATE"}
+                        "TRADE_SKILL_SHOW", "TRADE_SKILL_LIST_UPDATE", "TRADE_SKILL_DATA_SOURCE_CHANGED", "TRADE_SKILL_CLOSE",
+                        "TRAINER_SHOW", "TRAINER_UPDATE"}
 
 --------------------------------------------------------------------------
 -- Classic Era: as before
@@ -186,7 +216,8 @@ local FOREVER_EVENTS = {"PLAYER_ENTERING_WORLD", "SKILL_LINES_CHANGED", "CHAT_MS
 do
     local ok, w = pcall(NewWorld, {client = "classic", events = CLASSIC_EVENTS, db = {setupDone = true, chosen = {Mining = true, Cooking = true}, show = true}})
     check(ok, "classic: loads")
-    check(#w.ns.missingEvents == 1 and w.ns.missingEvents[1] == "TRADE_SKILL_LIST_UPDATE", "classic: only retail's list event is missing here, and it is skipped")
+    check(#w.ns.missingEvents == 2 and w.ns.missingEvents[1] == "TRADE_SKILL_LIST_UPDATE" and w.ns.missingEvents[2] == "TRADE_SKILL_DATA_SOURCE_CHANGED",
+          "classic: only retail's list events are missing here, and they are skipped")
     w.Fire("PLAYER_ENTERING_WORLD")
     check(w.ns.profs.Mining and w.ns.profs.Mining.rank == 45 and w.ns.profs.Mining.maxRank == 75 and w.ns.skillAPI == "skill lines", "classic: skills read from GetSkillLineInfo")
     local lines = w.ns.BuildProfLines("Mining", w.ns.profs.Mining)
@@ -421,8 +452,8 @@ do
           "colours: a new game build clears the old sightings")
 
     w.slash("status")
-    check(Printed("recipe colours read: Enchanting 4 recipes at skill 63, Tailoring 1 recipes at skill 66"),
-          "status: when each profession's recipes were last read")
+    check(Printed("recipe colours read: Enchanting 4 recipes at skill 63, Tailoring 4 recipes at skill 66 (last through GetTradeSkillInfo)"),
+          "status: when each profession's recipes were last read, and through what")
     -- saved data from before 0.6.2 (known recipes as true) still works
     w.ns.db.knownRecipes.Tailoring = {["Linen Bag"] = true}
     w.ns.db.recipeColors = nil
@@ -430,8 +461,9 @@ do
     check(okOld, "old saved data: a recipe stored as true does not break the advice")
 end
 
--- Forever: every recipe is listed, learned or not, with the game's own
--- colour and whether it can still skill up
+-- Forever: recipes come from GetFilteredRecipeIDs, as in Blizzard's own
+-- window - learned ones only, less whatever the player's filters hide -
+-- with the game's colour and whether each can still skill up
 do
     local w = NewWorld({client = "forever", events = FOREVER_EVENTS, extra = {{name = "Tailoring", rank = 63, maxRank = 75}},
                         db = {setupDone = true, chosen = {Tailoring = true}, show = true}})
@@ -444,21 +476,62 @@ do
         [4] = {name = "Reinforced Linen Cape", learned = false}
     }
     w.Fire("TRADE_SKILL_LIST_UPDATE")
-    local text = {}
-    for _, l in ipairs(w.ns.BuildProfLines("Tailoring", w.ns.GetTracked().Tailoring)) do text[#text + 1] = l.text end
-    text = table.concat(text, "\n")
-    check(text:find("Craft: Simple Kilt (orange)", 1, true) and text:find("(Linen Bag is grey for you now", 1, true),
-          "forever: a learned recipe the game says can't skill up counts as grey, and is replaced")
-    check(w.ns.db.allRecipes.Tailoring["Reinforced Linen Cape"] and not w.ns.GetKnownRecipes("Tailoring")["Reinforced Linen Cape"],
-          "forever: unlearned recipes are listed as in the game, not as known")
-    -- a route recipe this game does not have at all
-    w.ns.CRAFT.Tailoring.route[2][2] = "Linen Satchel Of Old"
-    text = {}
-    for _, l in ipairs(w.ns.BuildProfLines("Tailoring", w.ns.GetTracked().Tailoring)) do text[#text + 1] = l.text end
-    text = table.concat(text, "\n")
-    check(text:find("Linen Satchel Of Old isn't in your Tailoring list - this game version may not have it", 1, true) and text:find("Meanwhile: Simple Kilt (orange)", 1, true),
-          "forever: a route recipe missing from the game's full list is called out, with something that does skill up")
-    w.ns.CRAFT.Tailoring.route[2][2] = "Linen Bag"
+    local known = w.ns.GetKnownRecipes("Tailoring")
+    check(known and known["Simple Kilt"] == "optimal" and known["Linen Bag"] == "trivial" and not known["Reinforced Linen Cape"] and w.ns.recipeAPI == "GetFilteredRecipeIDs",
+          "forever: recipes read through GetFilteredRecipeIDs; one that can't skill up counts as grey")
+    -- the player ticks "skill-ups only": the list shrinks, nothing known is forgotten
+    w.recipes[1].learned, w.recipes[2].learned = false, false
+    w.Fire("TRADE_SKILL_LIST_UPDATE")
+    known = w.ns.GetKnownRecipes("Tailoring")
+    check(known["Linen Bag"] and known["Bolt of Linen Cloth"] and known["Simple Kilt"], "forever: a filtered list adds to the known recipes, never replaces them")
+    -- a window still loading says skill 0: not a profession learned afresh
+    w.openRank = 0
+    w.Fire("TRADE_SKILL_LIST_UPDATE")
+    check(w.ns.GetKnownRecipes("Tailoring")["Linen Bag"] and w.ns.db.recipeRank.Tailoring == 63, "forever: a window reading skill 0 while it loads does not start the list over")
+    w.openRank = 63
+    w.recipes[1].learned, w.recipes[2].learned = true, true
+    -- a list still being built, a linked window, someone else's: not read
+    w.recipes[5] = {name = "Brown Linen Robe", learned = true, relativeDifficulty = 0}
+    w.notReady = true; w.Fire("TRADE_SKILL_LIST_UPDATE"); w.notReady = false
+    w.changing = true; w.Fire("TRADE_SKILL_LIST_UPDATE"); w.changing = false
+    w.linked = true; w.Fire("TRADE_SKILL_LIST_UPDATE"); w.linked = false
+    check(w.ns.GetKnownRecipes("Tailoring")["Brown Linen Robe"] == nil, "forever: not read while not ready, while the data source changes, or from a linked window")
+    w.Fire("TRADE_SKILL_DATA_SOURCE_CHANGED")
+    check(w.ns.GetKnownRecipes("Tailoring")["Brown Linen Robe"] == "optimal", "forever: read once the data source has changed")
+    -- the profession's name: the parent's when the child's differs, the base's when there is no child
+    w.childName = "Classic Tailoring"
+    w.recipes[6] = {name = "Linen Cloak", learned = true, relativeDifficulty = 2}
+    w.Fire("TRADE_SKILL_LIST_UPDATE")
+    check(w.ns.GetKnownRecipes("Tailoring")["Linen Cloak"] == "easy", "forever: the child profession's parent name is used")
+    w.childName, w.noChild = nil, true
+    w.recipes[7] = {name = "Linen Belt", learned = true, relativeDifficulty = 1}
+    w.Fire("TRADE_SKILL_LIST_UPDATE")
+    check(w.ns.GetKnownRecipes("Tailoring")["Linen Belt"] == "medium", "forever: with no child profession (id 0), the base profession is read")
+    w.noChild = nil
+    -- the profession dropped and learned again: the old list goes
+    w.openRank = 5
+    w.recipes = {[1] = {name = "Bolt of Linen Cloth", learned = true, relativeDifficulty = 0}}
+    w.Fire("TRADE_SKILL_LIST_UPDATE")
+    known = w.ns.GetKnownRecipes("Tailoring")
+    check(known["Bolt of Linen Cloth"] == "optimal" and known["Linen Bag"] == nil, "forever: a lower skill than last time starts the list over")
+    -- Forever's trainer hands its values back in another order
+    w.trainer = {{"Linen Belt", "used", "Tailoring", 15}, {"Woolen Cape", "unavailable", "Tailoring", 55}}
+    w.Fire("TRAINER_SHOW")
+    check(w.ns.RecipeRequirement("Tailoring", "Woolen Cape") == 55 and w.ns.RecipeRequirement("Tailoring", "Linen Belt") == 15, "forever: trainer requirements read in Forever's order")
+    w.slash("status")
+    check(Printed("(last through GetFilteredRecipeIDs)"), "forever: /rxpp status names the recipe API")
+end
+
+-- Classic: a linked profession (someone's [Tailoring] link) is not the player's own
+do
+    local w = NewWorld({client = "classic", events = CLASSIC_EVENTS, extra = {{name = "Tailoring", rank = 63, maxRank = 75}},
+                        db = {setupDone = true, chosen = {Tailoring = true}, show = true}})
+    w.Fire("PLAYER_ENTERING_WORLD")
+    w.linked = true
+    w.trade = {"Tailoring", {{"Mooncloth Robe", "optimal"}}}
+    w.tradeRank = 300
+    w.Fire("TRADE_SKILL_SHOW")
+    check(w.ns.GetKnownRecipes("Tailoring") == nil, "classic: a linked profession window is not read")
 end
 
 -- Forever's own recipe names and mats, read from Wowhead's Forever data:

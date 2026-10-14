@@ -6,17 +6,28 @@ local addonName, ns = ...
 
 local eventFrame = CreateFrame("Frame")
 
--- WoW Forever (toc 16001) renamed and re-costed some recipes; route rows
--- carry its names and mats beside Classic Era's (Data.lua)
+-- Which game this is, from the interface number: WoW Forever (16001) moved
+-- most skill-up ranges, trainer levels and recipe names, so it has routes
+-- of its own (Data.lua foreverRoute / foreverNotes, ns.FOREVER); TBC
+-- renamed a few recipes (a route row's `tbc` / `tbcMats`).
 do
     local toc = GetBuildInfo and select(4, GetBuildInfo())
-    ns.IS_FOREVER = type(toc) == "number" and toc >= 16000 and toc < 20000
+    toc = type(toc) == "number" and toc or 0
+    ns.IS_FOREVER = toc >= 16000 and toc < 20000
+    ns.IS_TBC = toc >= 20000 and toc < 30000
+end
+if ns.IS_FOREVER then
+    for _, craft in pairs(ns.CRAFT) do
+        craft.route = craft.foreverRoute or craft.route
+        craft.notes = craft.foreverNotes or craft.notes
+    end
+    for key, value in pairs(ns.FOREVER or {}) do ns[key] = value end
 end
 function ns.RowName(row)
-    return (ns.IS_FOREVER and row.forever) or row[2]
+    return (ns.IS_TBC and row.tbc) or row[2]
 end
 function ns.RowMats(row)
-    return (ns.IS_FOREVER and row.foreverMats) or row[3]
+    return (ns.IS_TBC and row.tbcMats) or row[3]
 end
 ns.profs = {} -- name -> {rank, maxRank, kind}
 
@@ -198,10 +209,11 @@ ns.RecipeKey, ns.RecipeLooseKey = Key, LooseKey
 --------------------------------------------------------------------------
 -- Live recipe colours.
 --
--- The craft routes in Data.lua are Classic Era's, and a later game
--- version can move a recipe's skill-up range: a report had Linen Bag no
--- longer giving skill-ups at 63 Tailoring and Enchant Bracer - Minor
--- Stamina likewise, "last week's patch". The game itself knows: every
+-- The craft routes in Data.lua are written for each game, but a patch can
+-- move a recipe's skill-up range: a report had Linen Bag no longer giving
+-- skill-ups at 63 Tailoring and Enchant Bracer - Minor Stamina likewise,
+-- "last week's patch" (it was WoW Forever, then on Classic Era's route,
+-- where Linen Bag greys at 65). The game itself knows: every
 -- open profession window colours each recipe orange, yellow, green or
 -- grey. Each sighting is kept with the skill it was seen at, and because
 -- a recipe's colour only ever gets worse as skill rises, one sighting
@@ -251,25 +263,37 @@ local function NoteColor(store, recipe, diff, rank)
     r.last, r.lastRank = diff, rank
 end
 
--- Records one window's worth: list = {{name, diff, learned}, ...};
--- complete = the list holds unlearned recipes too (Forever), so a name
--- missing from it is not on this game version at all.
-local function RecordWindow(prof, rank, list, complete)
-    local known, all = {}, {}
+-- Records one window's worth: list = {{name, diff, learned}, ...}.
+-- A window can show only part of what is known: a folded header, "Have
+-- Materials", a name search, Forever's skill-up and slot filters. So what
+-- it shows is added to what was known, never put in its place (else the
+-- route's recipe would drop out and read as "You don't know this recipe
+-- yet!"). A lower skill than last time, in the window's own words, means
+-- the profession was dropped and learned again: then the list starts
+-- over. (Only its own words: the skills list can lag a point behind.)
+-- given = the skill the window states; without one (or a secret one, or
+-- 0 while it loads) the skills list's is used.
+local function RecordWindow(prof, given, list)
+    local own = Plain(given)
+    if own and own <= 0 then own = nil end
+    local rank = own or (ns.profs and ns.profs[prof] and ns.profs[prof].rank)
+    local db = ns.db
+    db.knownRecipes = db.knownRecipes or {}
+    db.recipeRank = db.recipeRank or {}
+    local known, last = db.knownRecipes[prof], db.recipeRank[prof]
+    if type(known) ~= "table" or (own and type(last) == "number" and own < last) then
+        known = {}
+    end
     local store = ColorStore(prof)
     for _, e in ipairs(list) do
-        all[e.name] = true
         if e.learned ~= false then
             known[e.name] = e.diff
             NoteColor(store, e.name, e.diff, rank)
         end
     end
-    ns.db.knownRecipes = ns.db.knownRecipes or {}
-    ns.db.knownRecipes[prof] = known
-    ns.db.allRecipes = ns.db.allRecipes or {}
-    ns.db.allRecipes[prof] = complete and all or nil
-    ns.db.recipeRank = ns.db.recipeRank or {}
-    ns.db.recipeRank[prof] = rank
+    db.knownRecipes[prof] = known
+    db.allRecipes = nil -- 0.6.4 dropped the "not in this game" list
+    db.recipeRank[prof] = rank
     -- the window's skill is the freshest there is: a skill-up while
     -- crafting reaches it before the skills list, so the advice moves on
     -- with the colours it was given
@@ -277,30 +301,64 @@ local function RecordWindow(prof, rank, list, complete)
     if p and type(rank) == "number" and rank > p.rank then p.rank = rank end
 end
 
--- the profession's skill now, for a scan that the window did not give
-local function RankOf(prof, given)
-    if type(given) == "number" then
-        local ok = pcall(function() return given == 0 end)
-        if ok then return given end
-    end
-    local p = ns.profs and ns.profs[prof]
-    return p and p.rank
+-- true when an optional game function exists and says yes
+local function Says(fn)
+    if type(fn) ~= "function" then return false end
+    local ok, v = pcall(fn)
+    return ok and v == true
 end
 
--- Forever (and retail) keep recipes behind C_TradeSkillUI: the open
--- profession's name from GetChildProfessionInfo, every recipe id the
--- window knows (unlearned ones too), a learned flag and the colour on each
+-- The window shows someone else's recipes (a linked profession, a guild
+-- list, an NPC crafting for you): reading it would overwrite the player's
+-- own. Classic clients have the global; Forever the C_TradeSkillUI ones.
+local function ForeignWindow()
+    local api = C_TradeSkillUI
+    return Says(IsTradeSkillLinked) or
+               (api and (Says(api.IsTradeSkillLinked) or Says(api.IsTradeSkillGuild) or Says(api.IsNPCCrafting))) or false
+end
+
+-- the open profession's name on Forever: GetChildProfessionInfo always
+-- hands a table back, an empty one (professionID 0) when there is no
+-- child, and Blizzard then reads GetBaseProfessionInfo; the name players
+-- see is parentProfessionName, else professionName
+local function OpenProfession(api)
+    local ok, prof, info = pcall(function()
+        local i = api.GetChildProfessionInfo and api.GetChildProfessionInfo()
+        if type(i) ~= "table" or i.professionID == 0 then
+            i = api.GetBaseProfessionInfo and api.GetBaseProfessionInfo()
+        end
+        if type(i) ~= "table" then return end
+        for _, n in ipairs({i.parentProfessionName or false, i.professionName or false}) do
+            if type(n) == "string" and ns.TRACKED[n] then return n, i end
+        end
+    end)
+    if ok then return prof, info end
+end
+
+-- Forever (and retail) keep recipes behind C_TradeSkillUI. Blizzard's
+-- window lists GetFilteredRecipeIDs: on Forever the learned recipes only,
+-- less whatever the player's filters hide (hence RecordWindow adds, never
+-- replaces). GetAllRecipeIDs, where a client has it, is the fallback.
+-- Each recipe carries a learned flag and its colour.
 local function ScanTradeSkillUI()
     local api = C_TradeSkillUI
-    if not (api and api.GetAllRecipeIDs and api.GetRecipeInfo) then return end
-    local okP, info = pcall(function()
-        return (api.GetChildProfessionInfo and api.GetChildProfessionInfo()) or
-                   (api.GetBaseProfessionInfo and api.GetBaseProfessionInfo())
-    end)
-    local prof = okP and type(info) == "table" and info.professionName
-    if type(prof) ~= "string" or not ns.TRACKED[prof] then return end
-    local okIds, ids = pcall(api.GetAllRecipeIDs)
-    if not okIds or type(ids) ~= "table" then return end
+    if not (api and api.GetRecipeInfo and (api.GetFilteredRecipeIDs or api.GetAllRecipeIDs)) then return end
+    -- a list still being built is skipped, as Blizzard's window does
+    if api.IsTradeSkillReady and not Says(api.IsTradeSkillReady) then return end
+    if Says(api.IsDataSourceChanging) or ForeignWindow() then return end
+    local prof, info = OpenProfession(api)
+    if not prof then return end
+    local ids
+    for _, source in ipairs({"GetFilteredRecipeIDs", "GetAllRecipeIDs"}) do
+        if not ids and api[source] then
+            local okIds, got = pcall(api[source])
+            if okIds and type(got) == "table" and #got > 0 then
+                ids = got
+                ns.recipeAPI = source
+            end
+        end
+    end
+    if not ids then return end
     local list, any = {}, false
     for _, id in ipairs(ids) do
         local okR, r = pcall(api.GetRecipeInfo, id)
@@ -316,15 +374,17 @@ local function ScanTradeSkillUI()
     -- nothing known is not the same as nothing learned, so wait for the
     -- next one rather than wipe what was remembered
     if not any then return end
-    RecordWindow(prof, RankOf(prof, info.skillLevel), list, true)
+    RecordWindow(prof, info.skillLevel, list)
     ns.UpdateUI()
     return true
 end
 
 function ns.ScanOpenTradeSkill()
-    if not (GetTradeSkillLine and GetNumTradeSkills) then
+    -- Forever's window is C_TradeSkillUI's, whatever old globals linger
+    if ns.IS_FOREVER or not (GetTradeSkillLine and GetNumTradeSkills) then
         return ScanTradeSkillUI()
     end
+    if ForeignWindow() then return end
     local prof, rank = GetTradeSkillLine()
     if not prof or prof == "UNKNOWN" or not ns.TRACKED[prof] then return end
     local list = {}
@@ -335,7 +395,8 @@ function ns.ScanOpenTradeSkill()
         end
     end
     if #list == 0 then return end
-    RecordWindow(prof, RankOf(prof, rank), list, false)
+    ns.recipeAPI = "GetTradeSkillInfo"
+    RecordWindow(prof, rank, list)
     ns.UpdateUI()
 end
 
@@ -352,10 +413,14 @@ function ns.ScanTrainer()
     local reqs = ns.db.recipeReq or {}
     local seen = 0
     for i = 1, n do
-        local okI, name, _, category = pcall(GetTrainerServiceInfo, i)
+        -- Classic: name, subText, serviceType, isExpanded
+        -- Forever: name, serviceType, texture, reqLevel, subText, category
+        local okI, name, second, third = pcall(GetTrainerServiceInfo, i)
+        local serviceType = ns.IS_FOREVER and second or third
         local okR, skill, level = pcall(GetTrainerServiceSkillReq, i)
-        if okI and okR and type(name) == "string" and category ~= "header" and
-            type(skill) == "string" and ns.TRACKED[skill] and type(level) == "number" then
+        level = okR and Plain(level)
+        if okI and okR and type(name) == "string" and serviceType ~= "header" and
+            type(skill) == "string" and ns.TRACKED[skill] and level then
             reqs[skill] = reqs[skill] or {}
             reqs[skill][name] = level
             seen = seen + 1
@@ -401,7 +466,8 @@ function ns.ScanOpenCraft() -- Enchanting uses the separate Craft API on older c
         end
     end
     if #list == 0 then return end
-    RecordWindow(prof, RankOf(prof, rank), list, false)
+    ns.recipeAPI = "GetCraftInfo"
+    RecordWindow(prof, rank, list)
     ns.UpdateUI()
 end
 
@@ -703,10 +769,9 @@ function ns.BuildProfLines(name, p)
             end
             if current then
                 local knownMap = ns.GetKnownRecipes(name)
-                local allMap = ns.db and ns.db.allRecipes and ns.db.allRecipes[name]
                 -- the row's alternatives the player knows, the best-coloured
                 -- one first, with its colour at the skill they are at now
-                local routeName, routeColor, anyKnown, inGame = nil, nil, false, false
+                local routeName, routeColor, anyKnown = nil, nil, false
                 for alt in ns.RowName(current):gmatch("[^/]+") do
                     alt = alt:gsub("^%s+", ""):gsub("%s+$", "")
                     local known = ns.ResolveRecipe(knownMap, alt)
@@ -718,7 +783,6 @@ function ns.BuildProfLines(name, p)
                         end
                         anyKnown = true
                     end
-                    if ns.ResolveRecipe(allMap, alt) then inGame = true end
                 end
                 local display = routeName or ns.RowName(current)
                 local routeO = ORDER[routeColor]
@@ -772,11 +836,7 @@ function ns.BuildProfLines(name, p)
                     end
                     if knownMap and not anyKnown then
                         local need = ns.RecipeRequirement(name, display)
-                        if allMap and not inGame then
-                            -- Forever lists every recipe, learned or not:
-                            -- one missing from the list is not in this game
-                            add(string.format("%s isn't in your %s list - this game version may not have it", display, name), "warn")
-                        elseif need and need > p.rank then
+                        if need and need > p.rank then
                             add(string.format("Learn it at %d from your trainer", need), "warn")
                         else
                             add("You don't know this recipe yet!", "warn")
@@ -932,7 +992,7 @@ end
 local EVENTS = {
     "PLAYER_ENTERING_WORLD", "SKILL_LINES_CHANGED", "CHAT_MSG_SKILL",
     "ZONE_CHANGED_NEW_AREA", "TRADE_SKILL_SHOW", "TRADE_SKILL_UPDATE",
-    "TRADE_SKILL_LIST_UPDATE", "CRAFT_SHOW", "CRAFT_UPDATE",
+    "TRADE_SKILL_LIST_UPDATE", "TRADE_SKILL_DATA_SOURCE_CHANGED", "CRAFT_SHOW", "CRAFT_UPDATE",
     "TRAINER_SHOW", "TRAINER_UPDATE"
 }
 ns.missingEvents = {}
@@ -940,7 +1000,11 @@ for _, event in ipairs(EVENTS) do
     local ok = pcall(eventFrame.RegisterEvent, eventFrame, event)
     if not ok then table.insert(ns.missingEvents, event) end
 end
-local TRADE_EVENTS = {TRADE_SKILL_SHOW = true, TRADE_SKILL_UPDATE = true, TRADE_SKILL_LIST_UPDATE = true}
+-- (on Forever the list event can come while the window's data is still
+-- being swapped: the scan then waits, as Blizzard's window does, for a
+-- later one - or for TRADE_SKILL_DATA_SOURCE_CHANGED, which ends the swap)
+local TRADE_EVENTS = {TRADE_SKILL_SHOW = true, TRADE_SKILL_UPDATE = true, TRADE_SKILL_LIST_UPDATE = true,
+                      TRADE_SKILL_DATA_SOURCE_CHANGED = true}
 eventFrame:SetScript("OnEvent", function(_, event)
     if TRADE_EVENTS[event] then
         if ns.db then ns.ScanOpenTradeSkill() end
@@ -1015,8 +1079,9 @@ SlashCmdList["RXPPROFESSIONS"] = function(input)
             read[#read + 1] = string.format("%s %d recipes at skill %d", prof, n, rank)
         end
         table.sort(read)
-        ns.Print("recipe colours read: %s", #read > 0 and table.concat(read, ", ")
-                     or "none yet - open a profession window once")
+        ns.Print("recipe colours read: %s%s", #read > 0 and table.concat(read, ", ")
+                     or "none yet - open a profession window once",
+                 ns.recipeAPI and (" (last through " .. ns.recipeAPI .. ")") or "")
         if #ns.missingEvents > 0 then
             ns.Print("events this client lacks (skipped): %s", table.concat(ns.missingEvents, ", "))
         end
