@@ -188,8 +188,8 @@ function ns.UpdateUI()
     table.sort(names)
 
     if #names == 0 then
-        Line("No professions tracked.", "dim")
-        Line("/rxpp setup to choose some", "dim")
+        Line(ns.L["No professions tracked."], "dim")
+        Line(ns.L["/rxpp setup to choose some"], "dim")
     end
 
     for idx, name in ipairs(names) do
@@ -244,7 +244,7 @@ function ns.ShowSetup()
 
     local sub = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     sub:SetPoint("TOP", 0, -30)
-    sub:SetText("Which professions are you leveling?")
+    sub:SetText(ns.L["Which professions are you leveling?"])
 
     local learned = ns.ScanSkills()
     local boxes = {}
@@ -261,7 +261,7 @@ function ns.ShowSetup()
         local label = f:CreateFontString(nil, "OVERLAY",
                                          "GameFontHighlightSmall")
         label:SetPoint("LEFT", cb, "RIGHT", 2, 0)
-        label:SetText(name .. (learned[name] and " |cFF66FF66*|r" or ""))
+        label:SetText(ns.ProfLabel(name) .. (learned[name] and " |cFF66FF66*|r" or ""))
         cb:SetChecked((ns.db.chosen and ns.db.chosen[name]) or
                           (not ns.db.chosen and learned[name] and true) or
                           false)
@@ -272,7 +272,7 @@ function ns.ShowSetup()
 
     local hint = f:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
     hint:SetPoint("TOPLEFT", 24, yOff)
-    hint:SetText("|cFF66FF66*|r = already learned")
+    hint:SetText(ns.L["|cFF66FF66*|r = already learned"])
     yOff = yOff - 22
     local ahBox = CreateFrame("CheckButton", nil, f, "UICheckButtonTemplate")
     ahBox:SetPoint("TOPLEFT", 24, yOff)
@@ -280,14 +280,14 @@ function ns.ShowSetup()
     ahBox:SetHeight(24)
     local ahLabel = f:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     ahLabel:SetPoint("LEFT", ahBox, "RIGHT", 4, 0)
-    ahLabel:SetText("Use the Auction House for materials")
+    ahLabel:SetText(ns.L["Use the Auction House for materials"])
     ahBox:SetChecked(ns.db.useAH and true or false)
 
     local ok = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
     ok:SetWidth(100)
     ok:SetHeight(22)
     ok:SetPoint("BOTTOM", 0, 12)
-    ok:SetText("Save")
+    ok:SetText(ns.L["Save"])
     ok:SetScript("OnClick", function()
         ns.db.chosen = {}
         for name, cb in pairs(boxes) do
@@ -296,7 +296,7 @@ function ns.ShowSetup()
         ns.db.useAH = ahBox:GetChecked() and true or false
         ns.db.setupDone = true
         f:Hide()
-        ns.Print("saved. Change any time with /rxpp setup")
+        ns.Print(ns.L["saved. Change any time with /rxpp setup"])
         ns.db.show = true
         ns.ToggleUI("show")
         ns.Refresh()

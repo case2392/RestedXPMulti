@@ -37,26 +37,172 @@ if ns.IS_FOREVER then
         for prof, text in pairs(extra) do villages[prof] = villages[prof] or text end
     end
 end
--- a gathering tier's name on this game (Forever adds starter nodes)
+--------------------------------------------------------------------------
+-- Names in the player's language. The data is written in English; the
+-- game names recipes and items itself, in its own language, by spell and
+-- item ID, so the advice reads in French on a French client and matches
+-- what the profession window and the trainer list (a report: "my
+-- professions are not detected because I play in French"). Professions,
+-- ranks and mining nodes come from Locales.lua, the addon's own sentences
+-- from ns.L.
+--------------------------------------------------------------------------
+
+local L = ns.L
+
+local function Split(text)
+    local out = {}
+    for part in tostring(text or ""):gmatch("[^/]+") do
+        out[#out + 1] = part:gsub("^%s+", ""):gsub("%s+$", "")
+    end
+    return out
+end
+
+-- a spell's name (any spell, known or not, from the client's own data)
+local function SpellName(id)
+    if type(id) ~= "number" then return nil end
+    local api = C_Spell
+    if api and api.GetSpellName then
+        local ok, name = pcall(api.GetSpellName, id)
+        if ok and type(name) == "string" and name ~= "" then return name end
+    end
+    if GetSpellInfo then
+        local ok, name = pcall(GetSpellInfo, id)
+        if ok and type(name) == "string" and name ~= "" then return name end
+    end
+end
+
+-- an item's name; nil until the client has it cached - it is asked for,
+-- and GET_ITEM_INFO_RECEIVED redraws the window when it arrives
+local function ItemName(id)
+    if type(id) ~= "number" then return nil end
+    local api = C_Item
+    local name
+    if api and api.GetItemNameByID then
+        local ok, n = pcall(api.GetItemNameByID, id)
+        if ok and type(n) == "string" and n ~= "" then name = n end
+    end
+    if not name and GetItemInfo then
+        local ok, n = pcall(GetItemInfo, id)
+        if ok and type(n) == "string" and n ~= "" then name = n end
+    end
+    if not name and api and api.RequestLoadItemDataByID then
+        pcall(api.RequestLoadItemDataByID, id)
+    end
+    return name
+end
+ns.SpellName, ns.ItemName = SpellName, ItemName
+
+-- Professions are keyed by their English names. The game names them in
+-- its own language: by skill-line ID where an API gives one, else by any
+-- name it may use (every language's, so a client set to one language
+-- with another's data still matches).
+local profByName
+local function ProfNames()
+    if profByName then return profByName end
+    profByName = {}
+    local function add(name, key)
+        if type(name) == "string" and name ~= "" then
+            profByName[name] = key
+            profByName[name:lower()] = key
+        end
+    end
+    for key in pairs(ns.TRACKED) do add(key, key) end
+    for _, names in pairs(ns.PROF_NAMES or {}) do
+        for key, name in pairs(names) do add(name, key) end
+    end
+    -- the profession's own spell, where its name is the skill line's
+    for key, id in pairs(ns.PROF_SPELLS or {}) do add(SpellName(id), key) end
+    return profByName
+end
+function ns.ProfKey(name, id)
+    if id ~= nil then
+        local ok, key = pcall(function() return ns.SKILL_LINES[id] end)
+        if ok and key then return key end
+    end
+    if type(name) ~= "string" then return nil end
+    local names = ProfNames()
+    return names[name] or names[name:lower()]
+end
+-- a profession, a rank, as this client writes them
+function ns.ProfLabel(key)
+    local names = ns.PROF_NAMES[ns.LOCALE]
+    return names and names[key] or key
+end
+function ns.RankLabel(rank)
+    local names = ns.RANK_NAMES[ns.LOCALE]
+    return names and names[rank] or rank
+end
+
+-- a gathering tier on this client: the node names Locales.lua has, else
+-- the herb's item name from the game, else the English (Forever's starter
+-- nodes are named in English only)
 function ns.TierName(tier)
-    return (ns.IS_FOREVER and tier.forever) or tier[2]
+    if ns.LOCALE == "enUS" then return (ns.IS_FOREVER and tier.forever) or tier[2] end
+    local nodes = ns.NODE_NAMES[ns.LOCALE]
+    local names = Split(tier[2])
+    for i, name in ipairs(names) do
+        names[i] = (nodes and nodes[name]) or (tier.items and ItemName(tier.items[i])) or name
+    end
+    return table.concat(names, " / ")
+end
+
+-- A route row's recipes - its " / " alternatives - as this game names
+-- them: through their spells, else the English (TBC's where it differs)
+function ns.RowAlts(row)
+    local names = Split((ns.IS_TBC and row.tbc) or row[2])
+    local ids = row.spell
+    if type(ids) == "number" then ids = {ids} end
+    if type(ids) == "table" then
+        for i, id in ipairs(ids) do names[i] = SpellName(id) or names[i] end
+    end
+    return names
 end
 function ns.RowName(row)
-    return (ns.IS_TBC and row.tbc) or row[2]
+    return table.concat(ns.RowAlts(row), " / ")
 end
--- A row's mats; for a row of alternatives ("A / B", mats "x / y") and a
--- chosen recipe, only that recipe's part
-function ns.RowMats(row, recipe, known)
-    local mats = (ns.IS_TBC and row.tbcMats) or row[3]
-    if not (mats and recipe) then return mats end
-    local parts, alts = {}, {}
-    for m in mats:gmatch("[^/]+") do parts[#parts + 1] = m:gsub("^%s+", ""):gsub("%s+$", "") end
-    for a in tostring(ns.RowName(row)):gmatch("[^/]+") do alts[#alts + 1] = a:gsub("^%s+", ""):gsub("%s+$", "") end
-    if #parts < 2 or #parts ~= #alts then return mats end
-    for i, a in ipairs(alts) do
-        if a == recipe or (known and ns.ResolveRecipe(known, a) == recipe) then return parts[i] end
+
+local function Reagents(list)
+    local parts = {}
+    for _, r in ipairs(list) do
+        local name = ItemName(r[1])
+        if not name then return nil end
+        parts[#parts + 1] = r[2] .. " " .. name
     end
-    return mats
+    return table.concat(parts, " + ")
+end
+-- A row's mats, named by the game (the English text until the items are
+-- cached); for a row of alternatives and a chosen recipe, only that
+-- recipe's part; alternatives with the same mats are written once
+function ns.RowMats(row, recipe, known)
+    local reag = (ns.IS_TBC and row.tbcReagents) or row.reagents
+    local parts
+    if type(reag) == "table" and type(reag[1]) == "table" then
+        local lists = type(reag[1][1]) == "table" and reag or {reag}
+        parts = {}
+        for i, list in ipairs(lists) do
+            parts[i] = Reagents(list)
+            if not parts[i] then parts = nil break end
+        end
+        if parts and row.makes and #parts == 1 then
+            parts[1] = parts[1] .. " " .. string.format(L["(makes %s)"], tostring(row.makes))
+        end
+    end
+    if not parts then
+        local text = (ns.IS_TBC and row.tbcMats) or row[3]
+        if not text then return nil end
+        parts = Split(text)
+    end
+    local alts = ns.RowAlts(row)
+    if recipe and #parts > 1 and #parts == #alts then
+        for i, a in ipairs(alts) do
+            if a == recipe or (known and ns.ResolveRecipe(known, a) == recipe) then return parts[i] end
+        end
+    end
+    local out, seen = {}, {}
+    for _, m in ipairs(parts) do
+        if not seen[m] then seen[m] = true; out[#out + 1] = m end
+    end
+    return table.concat(out, " / ")
 end
 -- Where to get a row's recipe; TBC's trainers teach some that Era sells
 -- (tbcSource = "" means the trainer has it, nothing to say)
@@ -96,7 +242,8 @@ end
 -- win and read GetProfessions first; a report had Skinning stuck at 61
 -- after levelling it to 105, reload or not.) Each source's reading is
 -- kept for /rxpp status.
-local function Record(found, name, rank, maxRank, source)
+local function Record(found, name, rank, maxRank, source, id)
+    name = ns.ProfKey(name, id)
     if not (name and ns.TRACKED[name]) then return end
     rank, maxRank = Plain(rank) or 0, Plain(maxRank) or 0
     local p = found[name]
@@ -116,7 +263,7 @@ end
 -- report: "even by talking to the trainers addon doesn't seem to see I'm
 -- already trained". Folded headers are opened for the pass and folded
 -- back after, bottom up so the indexes above stay put.
---   src.count() -> n;  src.line(i) -> name, isHeader, isFolded, rank, maxRank
+--   src.count() -> n;  src.line(i) -> name, isHeader, isFolded, rank, maxRank, id
 --   src.expand(i), src.collapse(i)
 local function ScanSkillLines(src, found, source)
     local folded = {}
@@ -128,8 +275,8 @@ local function ScanSkillLines(src, found, source)
         end
     end
     for i = 1, src.count() or 0 do
-        local name, isHeader, _, rank, maxRank = src.line(i)
-        if not isHeader then Record(found, name, rank, maxRank, source) end
+        local name, isHeader, _, rank, maxRank, id = src.line(i)
+        if not isHeader then Record(found, name, rank, maxRank, source, id) end
     end
     if next(folded) and src.collapse then
         for i = src.count() or 0, 1, -1 do
@@ -160,7 +307,7 @@ local function ForeverSkillLines()
         line = function(i)
             local ok, info = pcall(api.GetSkillLineInfo, i)
             if not ok or type(info) ~= "table" then return end
-            return info.name, info.isHeader, info.isCollapsed, info.rank, info.maxRank
+            return info.name, info.isHeader, info.isCollapsed, info.rank, info.maxRank, info.skillID
         end,
         expand = api.ExpandSkillHeader,
         collapse = api.CollapseSkillHeader
@@ -190,8 +337,8 @@ function ns.ScanSkills()
         -- the profession list: does not depend on the skills tab
         if GetProfessions and GetProfessionInfo then
             for _, id in ipairs({GetProfessions()}) do
-                local okP, name, _, rank, maxRank = pcall(GetProfessionInfo, id)
-                if okP then Record(found, name, rank, maxRank, "GetProfessions") end
+                local okP, name, _, rank, maxRank, _, _, skillLine = pcall(GetProfessionInfo, id)
+                if okP then Record(found, name, rank, maxRank, "GetProfessions", skillLine) end
             end
             used[#used + 1] = "GetProfessions"
         end
@@ -226,14 +373,20 @@ local NOT_RECIPE = {header = true, subheader = true}
 -- Recipe names are matched loosely: a later client may write
 -- "Enchant Bracers - Minor Stamina" where the route says "Enchant Bracer
 -- - Minor Stamina" (a report: "some of the enchant titles no longer
--- match"). Exact key: letters and digits only, lowercase. Loose key: the
--- same without the word "enchant" and without a plural s on each word.
+-- match"). Exact key: lowercase, without spaces and punctuation. Loose
+-- key: also without the word "enchant" and a plural s on each word.
+-- Lua's character classes know only ASCII: "[^%w]" also threw away every
+-- letter of a Russian or Chinese name (all keys came out "", so any recipe
+-- matched any), hence only ASCII spaces and punctuation go, and names
+-- with other letters are matched exactly.
 local function Key(name)
-    return (tostring(name):gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", ""):lower():gsub("[^%w]", ""))
+    return (tostring(name):gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", ""):lower():gsub("[%s%p]", ""))
 end
 local function LooseKey(name)
+    local plain = tostring(name):gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
+    if plain:find("[\128-\255]") then return Key(plain) end
     local words = {}
-    for w in tostring(name):gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", ""):lower():gmatch("%a+") do
+    for w in plain:lower():gmatch("%a+") do
         if w ~= "enchant" then
             if #w > 3 then w = w:gsub("s$", "") end
             words[#words + 1] = w
@@ -365,9 +518,10 @@ local function OpenProfession(api)
             i = api.GetBaseProfessionInfo and api.GetBaseProfessionInfo()
         end
         if type(i) ~= "table" then return end
-        for _, n in ipairs({i.parentProfessionName or false, i.professionName or false}) do
-            if type(n) == "string" and ns.TRACKED[n] then return n, i end
-        end
+        -- by skill-line ID first (the base line, e.g. 197), then by name
+        local key = ns.ProfKey(i.parentProfessionName, i.parentProfessionID) or
+                        ns.ProfKey(i.professionName, i.professionID)
+        if key and ns.TRACKED[key] then return key, i end
     end)
     if ok then return prof, info end
 end
@@ -428,8 +582,9 @@ function ns.ScanOpenTradeSkill()
         return ScanTradeSkillUI()
     end
     if ForeignWindow() then return end
-    local prof, rank = GetTradeSkillLine()
-    if not prof or prof == "UNKNOWN" or not ns.TRACKED[prof] then return end
+    local line, rank = GetTradeSkillLine()
+    local prof = ns.ProfKey(line)
+    if not prof or not ns.TRACKED[prof] then return end
     local list = {}
     for i = 1, GetNumTradeSkills() or 0 do
         local rname, rtype = GetTradeSkillInfo(i)
@@ -462,6 +617,7 @@ function ns.ScanTrainer()
         local serviceType = ns.IS_FOREVER and second or third
         local okR, skill, level = pcall(GetTrainerServiceSkillReq, i)
         level = okR and Plain(level)
+        skill = okR and ns.ProfKey(skill)
         if okI and okR and type(name) == "string" and serviceType ~= "header" and
             type(skill) == "string" and ns.TRACKED[skill] and level then
             reqs[skill] = reqs[skill] or {}
@@ -481,6 +637,7 @@ local function Resolve(map, recipe)
     if not map then return nil end
     if map[recipe] ~= nil then return recipe end
     local k, lk = Key(recipe), LooseKey(recipe)
+    if k == "" then return nil end
     local loose
     for name in pairs(map) do
         if Key(name) == k then return name end
@@ -499,7 +656,8 @@ end
 
 function ns.ScanOpenCraft() -- Enchanting uses the separate Craft API on older clients
     if not (GetCraftDisplaySkillLine and GetNumCrafts) then return end
-    local prof, rank = GetCraftDisplaySkillLine()
+    local line, rank = GetCraftDisplaySkillLine()
+    local prof = ns.ProfKey(line)
     if not prof or not ns.TRACKED[prof] then return end
     local list = {}
     for i = 1, GetNumCrafts() or 0 do
@@ -555,8 +713,8 @@ end
 function ns.ColorText(prof, recipe, rank)
     local c, sure, seenC, seenRank = ns.RecipeColor(prof, recipe, rank)
     if not c then return nil end
-    if sure or seenRank == rank then return ns.COLOR_WORD[c] end
-    return string.format("%s at %d", ns.COLOR_WORD[seenC], seenRank)
+    if sure or seenRank == rank then return L[ns.COLOR_WORD[c]] end
+    return string.format(L["%s at %d"], L[ns.COLOR_WORD[seenC]], seenRank)
 end
 
 -- the skill a route row really needs: the row's own number, unless the
@@ -564,8 +722,7 @@ end
 -- of those (either alternative will do, so the cheapest to reach counts)
 function ns.RouteRowNeeds(prof, row)
     local lowest
-    for alt in tostring(ns.RowName(row)):gmatch("[^/]+") do
-        alt = alt:gsub("^%s+", ""):gsub("%s+$", "")
+    for _, alt in ipairs(ns.RowAlts(row)) do
         local said = ns.RecipeRequirement(prof, alt)
         if not said then return row[1] end
         if not lowest or said < lowest then lowest = said end
@@ -584,8 +741,7 @@ function ns.BestKnownRecipe(prof, rank)
     local rowOf = {}
     local craft = ns.CRAFT[prof]
     for _, row in ipairs(craft and craft.route or {}) do
-        for alt in tostring(ns.RowName(row)):gmatch("[^/]+") do
-            alt = alt:gsub("^%s+", ""):gsub("%s+$", "")
+        for _, alt in ipairs(ns.RowAlts(row)) do
             local name = Resolve(known, alt)
             if name then rowOf[name] = row end
         end
@@ -636,31 +792,51 @@ local function GuideContext()
         if type(gname) == "string" and gname ~= "" then
             gname = gname:gsub("\n.*", ""):gsub("|c%x%x%x%x%x%x%x%x", "")
                          :gsub("|r", "")
-            return "finishing " .. gname
+            return string.format(L["finishing %s"], gname)
         end
     end
     local zone = (GetRealZoneText and GetRealZoneText()) or
                      (GetZoneText and GetZoneText())
-    if zone and zone ~= "" then return "leaving " .. zone end
-    return "moving on"
+    if zone and zone ~= "" then return string.format(L["leaving %s"], zone) end
+    return L["moving on"]
 end
 
 -- "In Redridge Mountains: Lake Everstill" - but only when the current zone
 -- has the right kind of water AND the fish actually lives at this zone's
 -- level (no catfish in starter-zone lakes)
-function ns.ZoneWaterSpot(entry)
+-- The ZONE_WATERS entry for where the player is, and the zone's name as
+-- the game writes it: by map ID (any language), else by English zone name.
+function ns.CurrentZone()
+    local api = C_Map
+    if api and api.GetBestMapForUnit then
+        local ok, map = pcall(api.GetBestMapForUnit, "player")
+        if ok and map then
+            for key, waters in pairs(ns.ZONE_WATERS) do
+                if waters.map == map then
+                    local okI, info = pcall(api.GetMapInfo, map)
+                    return key, waters, okI and type(info) == "table" and info.name or key
+                end
+            end
+        end
+    end
     local zone = (GetRealZoneText and GetRealZoneText()) or ""
-    local waters = ns.ZONE_WATERS[zone]
+    if ns.ZONE_WATERS[zone] then return zone, ns.ZONE_WATERS[zone], zone end
+end
+
+function ns.ZoneWaterSpot(entry)
+    local zone, waters, label = ns.CurrentZone()
     if not waters then return end
     local spot = entry.water and waters[entry.water]
     if not spot then return end
     if entry.zones and not entry.zones[zone] then return end
+    -- the spot names are English; elsewhere just "the inland waters"
+    if ns.LOCALE ~= "enUS" then spot = entry.water == "coast" and L["the coast"] or L["the inland waters"] end
     if entry.band and waters.lvl then
         if waters.lvl < entry.band[1] or waters.lvl > entry.band[2] then
             return
         end
     end
-    return string.format("In %s: %s", zone, spot)
+    return string.format(L["In %s: %s"], label, spot)
 end
 
 -- resolve {A=..., H=...} tables to the player's faction
@@ -717,9 +893,10 @@ function ns.BuildProfLines(name, p)
         table.insert(lines, {text = text, style = style or "normal"})
     end
 
+    local label = ns.ProfLabel(name)
     if p.unlearned then
-        add(name, "head")
-        add("Not learned yet - train with:", "warn")
+        add(label, "head")
+        add(L["Not learned yet - train with:"], "warn")
         local trainers = ns.TRAINERS[name]
         local faction = UnitFactionGroup and UnitFactionGroup("player")
         local capital = trainers and
@@ -732,15 +909,15 @@ function ns.BuildProfLines(name, p)
         local nearby = villages and villages[name]
         if nearby and level <= 14 then
             add(nearby, "normal")
-            if capital then add("or: " .. capital, "dim") end
+            if capital then add(string.format(L["or: %s"], capital), "dim") end
         elseif capital then
             add(capital, "normal")
         end
-        add("(any city guard can mark trainers on your map)", "dim")
+        add(L["(any city guard can mark trainers on your map)"], "dim")
         return lines
     end
 
-    add(string.format("%s  %d/%d", name, p.rank, p.maxRank), "head")
+    add(string.format("%s  %d/%d", label, p.rank, p.maxRank), "head")
 
     -- pace check: rough classic rule of thumb is ~5 skill per character
     -- level; warn when falling well behind so you catch up before moving on.
@@ -772,10 +949,10 @@ function ns.BuildProfLines(name, p)
             end
             local context = GuideContext()
             if milestone and milestone <= pace then
-                add(string.format("Aim for %d (%s) before %s", milestone,
+                add(string.format(L["Aim for %d (%s) before %s"], milestone,
                                   milestoneName, context), "warn")
             else
-                add(string.format("Catch up toward ~%d before %s", pace,
+                add(string.format(L["Catch up toward ~%d before %s"], pace,
                                   context), "warn")
             end
         end
@@ -789,26 +966,29 @@ function ns.BuildProfLines(name, p)
     local nextRank = rank and rank.nextRank
     local rule = nextRank and ns.RankRule(name, p.kind, nextRank) or {}
     local trainAt = rule.skill or (rank and rank.trainAt)
+    local rankLabel = nextRank and ns.RankLabel(nextRank)
     local tooLow = rule.level and level < rule.level and
-                       string.format(" - needs character level %d (you're %d)", rule.level, level) or ""
-    local fromItem = rule.how and string.format("%s %s comes from a %s - see below", nextRank, name, rule.how)
-    local article = name:find("^[AEIOU]") and "an" or "a"
+                       string.format(L[" - needs character level %d (you're %d)"], rule.level, level) or ""
+    -- each sentence whole, so it can be translated whole
+    local fromItem = rule.how == "book" and string.format(L["%s %s comes from a book - see below"], rankLabel, label) or
+                         rule.how == "quest" and string.format(L["%s %s comes from a quest - see below"], rankLabel, label) or nil
+    local atTrainer = name:find("^[AEIOU]") and L["Train %s at an %s trainer"] or L["Train %s at a %s trainer"]
     -- the last rank there is on this game, and capped at it
     local finalCap = capped and rank ~= nil and not nextRank
     if nextRank and p.rank >= (trainAt or math.huge) then
         if capped then
-            add("Capped! " .. (fromItem or string.format("Train %s at %s %s trainer", nextRank, article, name)) .. tooLow, "warn")
+            add(string.format(L["Capped! %s"], fromItem or string.format(atTrainer, rankLabel, label)) .. tooLow, "warn")
         elseif tooLow ~= "" then
-            add(string.format("%s at %d%s", nextRank, trainAt, tooLow), "warn")
+            add(string.format(L["%s at %d"], rankLabel, trainAt) .. tooLow, "warn")
         else
-            add(fromItem or string.format("Can train %s now (%d needed)", nextRank, trainAt), "good")
+            add(fromItem or string.format(L["Can train %s now (%d needed)"], rankLabel, trainAt), "good")
         end
     elseif capped then
-        add("Skill capped for this expansion", "dim")
+        add(L["Skill capped for this expansion"], "dim")
     elseif nextRank and p.maxRank - p.rank <= 10 then
-        add(string.format("Cap soon - %s at %d%s",
-                          rule.how and string.format("%s comes from a %s", nextRank, rule.how) or ("train " .. nextRank),
-                          trainAt, tooLow), "warn")
+        local soon = rule.how == "book" and L["Cap soon - %s comes from a book at %d"] or
+                         rule.how == "quest" and L["Cap soon - %s comes from a quest at %d"] or L["Cap soon - train %s at %d"]
+        add(string.format(soon, rankLabel, trainAt) .. tooLow, "warn")
     end
 
     -- what to do right now
@@ -816,22 +996,22 @@ function ns.BuildProfLines(name, p)
         local gather = ns.GATHER[name]
         local current, nextUp = CurrentAndNext(gather.tiers, p.rank)
         if current then
-            add(string.format("%s: %s", gather.verb, ns.TierName(current)), "normal")
+            add(string.format(L[gather.verb .. ": %s"], ns.TierName(current)), "normal")
         end
         if nextUp then
-            add(string.format("At %d: %s", nextUp[1], ns.TierName(nextUp)), "dim")
+            add(string.format(L["At %d: %s"], nextUp[1], ns.TierName(nextUp)), "dim")
         end
     elseif p.kind == "craft" then
         local craft = ns.CRAFT[name]
         if craft and finalCap then
-            add("Nothing left to skill up here - craft only what you need", "dim")
+            add(L["Nothing left to skill up here - craft only what you need"], "dim")
         elseif craft then
             local route = craft.route
             local fishCombo = name == "Cooking" and ns.FishCookCombo()
             if fishCombo then route = ns.FISH_COOKING end
             local current, nextUp = CurrentAndNext(route, p.rank)
             if fishCombo then
-                add("Combo: cooking your Fishing catches", "good")
+                add(L["Combo: cooking your Fishing catches"], "good")
             end
             -- a row whose recipe the trainer sells only at a higher skill
             -- than the row claims is a tier early: step back to the last
@@ -853,8 +1033,7 @@ function ns.BuildProfLines(name, p)
                 -- the row's alternatives the player knows, the best-coloured
                 -- one first, with its colour at the skill they are at now
                 local routeName, routeColor, anyKnown = nil, nil, false
-                for alt in ns.RowName(current):gmatch("[^/]+") do
-                    alt = alt:gsub("^%s+", ""):gsub("%s+$", "")
+                for _, alt in ipairs(ns.RowAlts(current)) do
                     local known = ns.ResolveRecipe(knownMap, alt)
                     if known then
                         local c = ns.RecipeColor(name, known, p.rank)
@@ -876,41 +1055,41 @@ function ns.BuildProfLines(name, p)
                 local takeBest = anyKnown and routeO and best and best ~= routeName and
                                      (routeO == 3 or (routeO == 2 and ORDER[bestColor] <= 1))
                 if takeBest then
-                    add(string.format("Craft: %s (%s)", best, ns.ColorText(name, best, p.rank) or ns.COLOR_WORD[bestColor]), "normal")
+                    add(string.format(L["Craft: %s (%s)"], best, ns.ColorText(name, best, p.rank) or L[ns.COLOR_WORD[bestColor]]), "normal")
                     -- grey: the game moved it; green: it only skills up some
                     -- of the time (many rows end on a few green points)
-                    add(string.format(routeO == 3 and "(%s is %s for you now - the game moved it, so this beats the route)" or
-                                          "(%s is %s for you now and only skills up some of the time, so this beats the route)",
-                                      routeName, ns.ColorText(name, routeName, p.rank) or ns.COLOR_WORD[routeColor]), "dim")
+                    add(string.format(routeO == 3 and L["(%s is %s for you now - the game moved it, so this beats the route)"] or
+                                          L["(%s is %s for you now and only skills up some of the time, so this beats the route)"],
+                                      routeName, ns.ColorText(name, routeName, p.rank) or L[ns.COLOR_WORD[routeColor]]), "dim")
                     local bestMats = bestRow and ns.RowMats(bestRow, best, knownMap)
-                    if bestMats then add("Mats: " .. bestMats, "dim") end
+                    if bestMats then add(string.format(L["Mats: %s"], bestMats), "dim") end
                 else
                     local colorText = routeName and ns.ColorText(name, routeName, p.rank)
-                    add(string.format("Craft: %s%s", display, colorText and (" (" .. colorText .. ")") or ""), "normal")
+                    add(colorText and string.format(L["Craft: %s (%s)"], display, colorText) or string.format(L["Craft: %s"], display), "normal")
                     if routeO == 3 then
-                        add("It gives no skill-ups any more, and you know nothing better - check your trainer for new recipes", "warn")
+                        add(L["It gives no skill-ups any more, and you know nothing better - check your trainer for new recipes"], "warn")
                     elseif routeO == 2 then
-                        add("Green: it only skills up some of the time", "dim")
+                        add(L["Green: it only skills up some of the time"], "dim")
                     end
                     if tooEarly then
-                        add(string.format("(%s needs %d - your trainer said so)", ns.RowName(tooEarly),
+                        add(string.format(L["(%s needs %d - your trainer said so)"], ns.RowName(tooEarly),
                                           ns.RouteRowNeeds(name, tooEarly)), "dim")
                     end
                     -- the route's recipe is not known, but one that is still
                     -- gives skill-ups: say so rather than send them shopping
                     if knownMap and not anyKnown and best then
-                        add(string.format("Meanwhile: %s (%s)", best, ns.ColorText(name, best, p.rank) or ns.COLOR_WORD[bestColor]), "good")
+                        add(string.format(L["Meanwhile: %s (%s)"], best, ns.ColorText(name, best, p.rank) or L[ns.COLOR_WORD[bestColor]]), "good")
                     end
                     if fishCombo then
-                        add(string.format("Mats: %s", current.fish), "dim")
+                        add(string.format(L["Mats: %s"], ItemName(current.fishItem) or current.fish), "dim")
                         local spot = ns.ZoneWaterSpot(current)
                         if spot then
                             add(spot, "good")
                         else
-                            add(string.format("(fish: %s)", current.where), "dim")
+                            add(string.format(L["(fish: %s)"], current.where), "dim")
                         end
                     elseif ns.RowMats(current) then
-                        add("Mats: " .. ns.RowMats(current, routeName, knownMap), "dim")
+                        add(string.format(L["Mats: %s"], ns.RowMats(current, routeName, knownMap)), "dim")
                     end
                     local source = ns.RowSource(current)
                     if type(source) == "table" then
@@ -921,23 +1100,21 @@ function ns.BuildProfLines(name, p)
                     if knownMap and not anyKnown then
                         local need = ns.RecipeRequirement(name, display)
                         if need and need > p.rank then
-                            add(string.format("Learn it at %d from your trainer", need), "warn")
+                            add(string.format(L["Learn it at %d from your trainer"], need), "warn")
                         elseif ns.db.recipeFiltered and ns.db.recipeFiltered[name] then
                             -- the list came through the window's filters
-                            add("Not in your window's list - if you know it, clear the window's filters once", "warn")
-                            add("Get it: " .. (source or "check your trainer / recipe vendors"), "dim")
+                            add(L["Not in your window's list - if you know it, clear the window's filters once"], "warn")
+                            add(string.format(L["Get it: %s"], source or L["check your trainer / recipe vendors"]), "dim")
                         else
-                            add("You don't know this recipe yet!", "warn")
-                            add("Get it: " ..
-                                    (source or "check your trainer / recipe vendors"),
-                                "warn")
+                            add(L["You don't know this recipe yet!"], "warn")
+                            add(string.format(L["Get it: %s"], source or L["check your trainer / recipe vendors"]), "warn")
                         end
                     elseif not knownMap then
                         if source then
-                            add("Get it: " .. source, "dim")
+                            add(string.format(L["Get it: %s"], source), "dim")
                         end
-                        add(string.format("(open your %s window once so I can check these recipes against your game)",
-                                          name), "dim")
+                        add(string.format(L["(open your %s window once so I can check these recipes against your game)"],
+                                          label), "dim")
                     end
                 end
             end
@@ -953,7 +1130,7 @@ function ns.BuildProfLines(name, p)
                     end
                     if tier == current then after = true end
                 end
-                add(string.format("At %d: %s", nextAt, ns.RowName(nextUp)), "dim")
+                add(string.format(L["At %d: %s"], nextAt, ns.RowName(nextUp)), "dim")
             end
             for _, note in ipairs(craft.notes or {}) do
                 if NoteVisible(note, p.rank, p.maxRank) then
@@ -961,7 +1138,7 @@ function ns.BuildProfLines(name, p)
                 end
             end
             if craft.primary and ns.db and ns.db.useAH then
-                add("Tip: buy missing mats from the Auction House", "dim")
+                add(L["Tip: buy missing mats from the Auction House"], "dim")
             end
         end
     elseif p.kind == "fishing" then
@@ -971,35 +1148,34 @@ function ns.BuildProfLines(name, p)
             local current, nextUp = CurrentAndNext(ns.FISH_COOKING,
                                                    cooking.rank)
             if current then
-                add(string.format("Catch: %s", current.fish), "normal")
+                add(string.format(L["Catch: %s"], ItemName(current.fishItem) or current.fish), "normal")
                 local spot = ns.ZoneWaterSpot(current)
                 if spot then
                     add(spot, "good")
                 else
-                    add(string.format("Where: %s", current.where), "dim")
+                    add(string.format(L["Where: %s"], current.where), "dim")
                 end
-                add("(feeds your Cooking bracket)", "dim")
+                add(L["(feeds your Cooking bracket)"], "dim")
             end
             if nextUp then
-                add(string.format("Later (Cooking %d): %s", nextUp[1],
-                                  nextUp.fish), "dim")
+                add(string.format(L["Later (Cooking %d): %s"], nextUp[1],
+                                  ItemName(nextUp.fishItem) or nextUp.fish), "dim")
             end
         elseif finalCap then
-            add("Fishing is maxed - fish wherever your catches are", "normal")
+            add(L["Fishing is maxed - fish wherever your catches are"], "normal")
         else
-            add("Fish anywhere - each catch can skill up", "normal")
-            add("Higher-level zones need higher skill (use lures)", "dim")
+            add(L["Fish anywhere - each catch can skill up"], "normal")
+            add(L["Higher-level zones need higher skill (use lures)"], "dim")
         end
         -- fish escape when the zone needs more skill than you have; escaped
         -- catches give no skill, so this is the one real fishing mistake
-        local zone = (GetRealZoneText and GetRealZoneText()) or ""
-        local waters = ns.ZONE_WATERS[zone]
+        local _, waters, zoneLabel = ns.CurrentZone()
         if waters and waters.minskill then
             if p.rank < waters.minskill then
-                add(string.format("Fish escape here! %s needs ~%d skill (you: %d)",
-                                  zone, waters.minskill, p.rank), "warn")
+                add(string.format(L["Fish escape here! %s needs ~%d skill (you: %d)"],
+                                  zoneLabel, waters.minskill, p.rank), "warn")
             else
-                add(string.format("Skill OK for %s (needs %d)", zone,
+                add(string.format(L["Skill OK for %s (needs %d)"], zoneLabel,
                                   waters.minskill), "dim")
             end
         end
@@ -1013,7 +1189,7 @@ function ns.BuildProfLines(name, p)
         -- 100, skill/5 from there (Classic's rule; a report would tell if
         -- Forever's differs)
         local maxLevel = p.rank < 100 and 10 + math.floor(p.rank / 10) or math.floor(p.rank / 5)
-        add(string.format("Skin your kills (up to ~level %d mobs)", maxLevel),
+        add(string.format(L["Skin your kills (up to ~level %d mobs)"], maxLevel),
             "normal")
     end
 
@@ -1070,8 +1246,8 @@ function ns.Refresh()
             p.rank > old.rank then
             for _, tier in ipairs(ns.GATHER[name].tiers) do
                 if old.rank < tier[1] and p.rank >= tier[1] and tier[1] > 1 then
-                    ns.Print("|cFF66FF66%s unlocked:|r you can now gather %s!",
-                             name, ns.TierName(tier))
+                    ns.Print(L["|cFF66FF66%s unlocked:|r you can now gather %s!"],
+                             ns.ProfLabel(name), ns.TierName(tier))
                 end
             end
         end
@@ -1096,7 +1272,7 @@ local EVENTS = {
     "PLAYER_ENTERING_WORLD", "SKILL_LINES_CHANGED", "CHAT_MSG_SKILL",
     "ZONE_CHANGED_NEW_AREA", "TRADE_SKILL_SHOW", "TRADE_SKILL_UPDATE",
     "TRADE_SKILL_LIST_UPDATE", "TRADE_SKILL_DATA_SOURCE_CHANGED", "CRAFT_SHOW", "CRAFT_UPDATE",
-    "TRAINER_SHOW", "TRAINER_UPDATE"
+    "TRAINER_SHOW", "TRAINER_UPDATE", "GET_ITEM_INFO_RECEIVED"
 }
 ns.missingEvents = {}
 for _, event in ipairs(EVENTS) do
@@ -1109,7 +1285,16 @@ end
 local TRADE_EVENTS = {TRADE_SKILL_SHOW = true, TRADE_SKILL_UPDATE = true, TRADE_SKILL_LIST_UPDATE = true,
                       TRADE_SKILL_DATA_SOURCE_CHANGED = true}
 eventFrame:SetScript("OnEvent", function(_, event)
-    if TRADE_EVENTS[event] then
+    if event == "GET_ITEM_INFO_RECEIVED" then
+        -- an item name the window asked for has arrived: redraw once, a
+        -- moment later, however many arrive together
+        if ns.db and not ns.itemRedraw then
+            ns.itemRedraw = true
+            local function redraw() ns.itemRedraw = nil; ns.UpdateUI() end
+            if C_Timer and C_Timer.After then C_Timer.After(0.3, redraw) else redraw() end
+        end
+        return
+    elseif TRADE_EVENTS[event] then
         if ns.db then ns.ScanOpenTradeSkill() end
         return
     elseif event == "TRAINER_SHOW" or event == "TRAINER_UPDATE" then
@@ -1174,6 +1359,7 @@ SlashCmdList["RXPPROFESSIONS"] = function(input)
         ns.Print("skills read through %s: %s", tostring(ns.skillAPI),
                  #names > 0 and table.concat(names, ", ") or "none tracked")
         if ns.lastError then ns.Print("last error: %s", ns.lastError) end
+        ns.Print("client language: %s", tostring(ns.LOCALE))
         -- when each profession's recipe list was last read from its window
         local read = {}
         for prof, rank in pairs(ns.db.recipeRank or {}) do
@@ -1189,6 +1375,6 @@ SlashCmdList["RXPPROFESSIONS"] = function(input)
             ns.Print("events this client lacks (skipped): %s", table.concat(ns.missingEvents, ", "))
         end
     else
-        ns.Print("commands: |cFFFFCC00/rxpp|r toggle the window, |cFFFFCC00/rxpp setup|r choose professions, |cFFFFCC00/rxpp status|r what the client gives us")
+        ns.Print(L["commands: |cFFFFCC00/rxpp|r toggle the window, |cFFFFCC00/rxpp setup|r choose professions, |cFFFFCC00/rxpp status|r what the client gives us"])
     end
 end

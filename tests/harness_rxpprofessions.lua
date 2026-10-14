@@ -44,7 +44,8 @@ local function NewWorld(opts)
     printed = {}
     for _, k in ipairs({"GetNumSkillLines", "GetSkillLineInfo", "C_SkillInfo", "GetProfessions", "GetProfessionInfo",
                         "GetTradeSkillLine", "GetNumTradeSkills", "GetTradeSkillInfo", "C_TradeSkillUI",
-                        "GetCraftDisplaySkillLine", "GetNumCrafts", "GetCraftInfo", "LibStub", "RXPProfessionsDB", "GetBuildInfo"}) do
+                        "GetCraftDisplaySkillLine", "GetNumCrafts", "GetCraftInfo", "LibStub", "RXPProfessionsDB", "GetBuildInfo",
+                        "GetLocale", "GetSpellInfo", "GetItemInfo", "C_Map", "C_Item", "C_Spell"}) do
         _G[k] = nil
     end
     _G.print = function(...) local t = {} for i = 1, select("#", ...) do t[i] = tostring(select(i, ...)) end table.insert(printed, table.concat(t, " ")) end
@@ -70,6 +71,20 @@ local function NewWorld(opts)
     _G.UnitFactionGroup = function() return opts.faction or "Alliance" end
     _G.UnitRace = function() return opts.race or "Human", opts.race or "Human" end
     _G.GetRealZoneText = function() return opts.zone or "Elwynn Forest" end
+    -- another language: the client names skills, spells, items and zones
+    -- in it (opts.names: English skill name -> the client's; opts.spells /
+    -- opts.items: id -> name; opts.map: the player's uiMapID, opts.mapNames)
+    _G.GetLocale = function() return opts.locale or "enUS" end
+    w.itemRequests = {}
+    if opts.spells then _G.GetSpellInfo = function(id) return opts.spells[id] end end
+    if opts.items then
+        _G.GetItemInfo = function(id) return opts.items[id] end
+        _G.C_Item = {RequestLoadItemDataByID = function(id) w.itemRequests[id] = true end}
+    end
+    if opts.map then
+        _G.C_Map = {GetBestMapForUnit = function() return opts.map end,
+                    GetMapInfo = function(id) return {name = (opts.mapNames or {})[id] or "?"} end}
+    end
     _G.RXPProfessionsDB = opts.db
 
     -- the skills tab's list: headers with children that vanish from the
@@ -82,6 +97,11 @@ local function NewWorld(opts)
     }
     if opts.leatherworking then table.insert(tree[2].children, {name = "Leatherworking", rank = opts.leatherworking, maxRank = 75}) end
     for _, extra in ipairs(opts.extra or {}) do table.insert(tree[2].children, extra) end
+    if opts.names then
+        for _, h in ipairs(tree) do
+            for _, c in ipairs(h.children) do c.name = opts.names[c.name] or c.name end
+        end
+    end
     -- the game build: a new one starts recipe colours afresh
     w.build = opts.build or "61582"
     -- Forever reports toc 16001; the routes pick its recipe names and mats from that
@@ -177,7 +197,10 @@ local function NewWorld(opts)
                         skillLevel = w.openRank or 20, maxSkillLevel = 75}
             end,
             GetBaseProfessionInfo = function()
-                return {professionID = 185, professionName = w.openProf or "Cooking", skillLevel = w.openRank or 20, maxSkillLevel = 75}
+                -- the base line's ID is the profession's skill line (Tailoring 197)
+                local ids = {Cooking = 185, Tailoring = 197, Enchanting = 333, Alchemy = 171, Jewelcrafting = 755}
+                return {professionID = ids[w.openProf or "Cooking"] or 0, professionName = w.openProf or "Cooking",
+                        skillLevel = w.openRank or 20, maxSkillLevel = 75}
             end,
             GetFilteredRecipeIDs = function() return ids(false) end,
             GetAllRecipeIDs = function() if not w.noAllIDs then return ids(true) end end,
@@ -198,7 +221,7 @@ local function NewWorld(opts)
     end
 
     local ns = {}
-    for _, f in ipairs({"Data.lua", "Core.lua", "UI.lua"}) do
+    for _, f in ipairs({"Locales.lua", "Data.lua", "Core.lua", "UI.lua"}) do
         local chunk = assert(loadfile(root .. "/RXPProfessions/" .. f))
         chunk("RXPProfessions", ns)
     end
@@ -211,11 +234,12 @@ local function NewWorld(opts)
 end
 
 local CLASSIC_EVENTS = {"PLAYER_ENTERING_WORLD", "SKILL_LINES_CHANGED", "CHAT_MSG_SKILL", "ZONE_CHANGED_NEW_AREA",
-                        "TRADE_SKILL_SHOW", "TRADE_SKILL_UPDATE", "CRAFT_SHOW", "CRAFT_UPDATE", "TRAINER_SHOW", "TRAINER_UPDATE"}
+                        "TRADE_SKILL_SHOW", "TRADE_SKILL_UPDATE", "CRAFT_SHOW", "CRAFT_UPDATE", "TRAINER_SHOW", "TRAINER_UPDATE",
+                        "GET_ITEM_INFO_RECEIVED"}
 -- Forever: retail's trade skill events, no TRADE_SKILL_UPDATE, no CRAFT_*
 local FOREVER_EVENTS = {"PLAYER_ENTERING_WORLD", "SKILL_LINES_CHANGED", "CHAT_MSG_SKILL", "ZONE_CHANGED_NEW_AREA",
                         "TRADE_SKILL_SHOW", "TRADE_SKILL_LIST_UPDATE", "TRADE_SKILL_DATA_SOURCE_CHANGED", "TRADE_SKILL_CLOSE",
-                        "TRAINER_SHOW", "TRAINER_UPDATE"}
+                        "TRAINER_SHOW", "TRAINER_UPDATE", "GET_ITEM_INFO_RECEIVED"}
 
 --------------------------------------------------------------------------
 -- Classic Era: as before

@@ -9,6 +9,7 @@
 ## OptionalDeps: RXPGuides
 ## SavedVariablesPerCharacter: RXPProfessionsDB
 
+Locales.lua
 Data.lua
 Core.lua
 UI.lua
