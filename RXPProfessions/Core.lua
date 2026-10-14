@@ -156,11 +156,24 @@ function ns.ProfKey(name, id)
     return names[name] or names[ns.Fold(name)]
 end
 -- a profession, a rank, as this client writes them: the name the game
--- gave for it, else Locales.lua's
+-- gave for it in a scan, else the one it gives for the skill line, else
+-- Locales.lua's for this client (a profession not learned yet has no scan)
 ns.profLabels = {}
 function ns.ProfLabel(key)
     if ns.profLabels[key] then return ns.profLabels[key] end
-    local names = ns.PROF_NAMES[ns.LOCALE]
+    local display = C_TradeSkillUI and C_TradeSkillUI.GetTradeSkillDisplayName
+    if display then
+        for id, k in pairs(ns.SKILL_LINES) do
+            if k == key then
+                local ok, name = pcall(display, id)
+                if ok and type(name) == "string" and name ~= "" then return name end
+            end
+        end
+    end
+    local client = ns.PROF_NAMES_FOR and ns.PROF_NAMES_FOR[ns.CLIENT]
+    local names = client and client[ns.LOCALE]
+    if names and names[key] then return names[key] end
+    names = ns.PROF_NAMES[ns.LOCALE]
     return names and names[key] or key
 end
 function ns.RankLabel(rank)
@@ -172,11 +185,15 @@ end
 -- the herb's item name from the game, else the English (Forever's starter
 -- nodes are named in English only)
 function ns.TierName(tier)
-    if ns.LOCALE == "enUS" then return (ns.IS_FOREVER and tier.forever) or tier[2] end
     local nodes = ns.NODE_NAMES[ns.LOCALE]
+    if ns.LOCALE == "enUS" then
+        if ns.IS_FOREVER and tier.forever then return tier.forever end
+        -- only renames (Mists: Plaguebloom is Sorrowmoss)
+        if not nodes then return tier[2] end
+    end
     local names = Split(tier[2])
     for i, name in ipairs(names) do
-        names[i] = (nodes and nodes[name]) or (tier.items and ItemName(tier.items[i])) or name
+        names[i] = (nodes and nodes[name]) or (ns.LOCALE ~= "enUS" and tier.items and ItemName(tier.items[i])) or name
     end
     return table.concat(names, " / ")
 end
@@ -373,9 +390,15 @@ function ns.ScanSkills()
         end
         -- the profession list: does not depend on the skills tab
         if GetProfessions and GetProfessionInfo then
-            for _, id in ipairs({GetProfessions()}) do
-                local okP, name, _, rank, maxRank, _, _, skillLine = pcall(GetProfessionInfo, id)
-                if okP then Record(found, name, rank, maxRank, "GetProfessions", skillLine) end
+            -- nil where a slot is empty (no second profession, no
+            -- archaeology): every slot is read, not up to the first gap
+            local ids = {GetProfessions()}
+            for slot = 1, 6 do
+                local id = ids[slot]
+                if id then
+                    local okP, name, _, rank, maxRank, _, _, skillLine = pcall(GetProfessionInfo, id)
+                    if okP then Record(found, name, rank, maxRank, "GetProfessions", skillLine) end
+                end
             end
             used[#used + 1] = "GetProfessions"
         end
@@ -866,6 +889,28 @@ function ns.CurrentZone()
     if ns.ZONE_WATERS[zone] then return zone, ns.ZONE_WATERS[zone], zone end
 end
 
+-- a zone's name as this game writes it: by its map ID (Mists numbers
+-- its maps otherwise, so the English there), else the English
+function ns.ZoneName(key)
+    if ns.LOCALE == "enUS" or ns.CLIENT == "later" then return key end
+    local map = (ns.ZONE_WATERS[key] and ns.ZONE_WATERS[key].map) or (ns.ZONE_MAPS and ns.ZONE_MAPS[key])
+    local api = C_Map
+    if map and api and api.GetMapInfo then
+        local ok, info = pcall(api.GetMapInfo, map)
+        if ok and type(info) == "table" and type(info.name) == "string" and info.name ~= "" then return info.name end
+    end
+    return key
+end
+
+-- where a fish is caught, in the player's language
+function ns.FishWhere(entry)
+    local zones = {}
+    for i, key in ipairs(entry.whereZones or {}) do zones[i] = ns.ZoneName(key) end
+    local text = L[entry.where]
+    if #zones > 0 then text = string.format(text, table.concat(zones, ", ")) end
+    return text
+end
+
 function ns.ZoneWaterSpot(entry)
     local zone, waters, label = ns.CurrentZone()
     if not waters then return end
@@ -1129,7 +1174,7 @@ function ns.BuildProfLines(name, p)
                         if spot then
                             add(spot, "good")
                         else
-                            add(string.format(L["(fish: %s)"], current.where), "dim")
+                            add(string.format(L["(fish: %s)"], ns.FishWhere(current)), "dim")
                         end
                     elseif ns.RowMats(current) then
                         add(string.format(L["Mats: %s"], ns.RowMats(current, routeName, knownMap)), "dim")
@@ -1196,7 +1241,7 @@ function ns.BuildProfLines(name, p)
                 if spot then
                     add(spot, "good")
                 else
-                    add(string.format(L["Where: %s"], current.where), "dim")
+                    add(string.format(L["Where: %s"], ns.FishWhere(current)), "dim")
                 end
                 add(L["(feeds your Cooking bracket)"], "dim")
             end
@@ -1212,8 +1257,9 @@ function ns.BuildProfLines(name, p)
         end
         -- fish escape when the zone needs more skill than you have; escaped
         -- catches give no skill, so this is the one real fishing mistake
+        -- (until patch 3.1: on Mists every cast lands something)
         local _, waters, zoneLabel = ns.CurrentZone()
-        if waters and waters.minskill then
+        if waters and waters.minskill and ns.CLIENT ~= "later" then
             if p.rank < waters.minskill then
                 add(string.format(L["Fish escape here! %s needs ~%d skill (you: %d)"],
                                   zoneLabel, waters.minskill, p.rank), "warn")

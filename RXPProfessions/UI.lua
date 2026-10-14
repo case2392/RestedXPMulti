@@ -114,7 +114,7 @@ local function CreateWindow()
     close:SetScript("OnClick", function()
         ns.db.show = false
         frame:Hide()
-        ns.Print("window hidden. Type /rxpp to bring it back.")
+        ns.Print(ns.L["window hidden. Type /rxpp to bring it back."])
     end)
 
     ApplySkin()

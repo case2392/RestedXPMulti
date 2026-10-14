@@ -951,6 +951,66 @@ do
     check(Lines(x, "Mining"):find("Mine: Copper Vein", 1, true), "unknown language: English")
 end
 
+-- The 1.1.0 review's findings
+do
+    local function world(client, locale, profs, opts)
+        opts = opts or {}
+        local chosen = {}
+        for _, name in ipairs(opts.chosen or {}) do chosen[name] = true end
+        for _, p in ipairs(profs) do chosen[p.name] = true end
+        local w = NewWorld({client = client, locale = locale, events = client == "forever" and FOREVER_EVENTS or CLASSIC_EVENTS,
+                            level = opts.level or 60, zone = opts.zone, extra = profs, names = opts.names, items = opts.items,
+                            map = opts.map, mapNames = opts.mapNames, displayNames = opts.displayNames,
+                            db = {setupDone = true, chosen = chosen, show = true}})
+        w.Fire("PLAYER_ENTERING_WORLD")
+        return w
+    end
+    -- closing the window says so in the player's language
+    local w = world("classic", "frFR", {})
+    for _, f in ipairs(w.frames) do
+        if f.template == "UIPanelCloseButton" then f.scripts.OnClick(f) end
+    end
+    local closed = w.ns.L["window hidden. Type /rxpp to bring it back."]
+    check(closed ~= "window hidden. Type /rxpp to bring it back." and Printed(closed), "l10n review: the close message is translated")
+    -- a profession not learned yet: the client's own spelling
+    w = world("tbc", "esES", {}, {chosen = {"Tailoring"}})
+    check(Lines(w, "Tailoring"):find("^Sastrería\n"), "l10n review: TBC's Spanish names Tailoring 'Sastrería' before it is learned")
+    w = world("classic", "esES", {}, {chosen = {"Tailoring"}})
+    check(Lines(w, "Tailoring"):find("^Costura\n"), "l10n review: Era's Spanish 'Costura'")
+    w = world("forever", "itIT", {}, {chosen = {"Tailoring"}})
+    check(Lines(w, "Tailoring"):find("^Sartoria\n"), "l10n review: Forever's Italian 'Sartoria', not English")
+    w = world("forever", "frFR", {}, {chosen = {"Tailoring"}, displayNames = {[197] = "Couture (jeu)"}})
+    check(Lines(w, "Tailoring"):find("^Couture %(jeu%)\n"), "l10n review: the game's own name for the skill line comes first")
+    -- Mists renamed Plaguebloom in English too
+    w = world("mists", "enUS", {{name = "Herbalism", rank = 286, maxRank = 300}})
+    check(Lines(w, "Herbalism"):find("Pick: Sorrowmoss", 1, true), "l10n review: Mists in English picks Sorrowmoss")
+    w = world("classic", "enUS", {{name = "Herbalism", rank = 286, maxRank = 300}})
+    check(Lines(w, "Herbalism"):find("Pick: Plaguebloom", 1, true), "l10n review: Era keeps Plaguebloom")
+    -- the fishing spots, zone names from the game
+    local fish = {name = "Fishing", rank = 200, maxRank = 225}
+    w = world("classic", "enUS", {fish}, {zone = "Orgrimmar", chosen = {"Cooking"}})
+    w.tree[3].children[1].rank, w.tree[3].children[1].maxRank = 180, 225
+    w.Fire("SKILL_LINES_CHANGED")
+    check(Lines(w, "Fishing"):find("Where: coasts of 30-45 zones (Swamp of Sorrows, Dustwallow Marsh, Stranglethorn Vale, Desolace)", 1, true),
+          "l10n review: English fishing spot with its zones")
+    local names = {[1435] = "Marais des Chagrins", [1445] = "Marécage d'Âprefange", [1434] = "Vallée de Strangleronce", [1443] = "Désolace",
+                   [1454] = "Orgrimmar"}
+    w = world("classic", "frFR", {fish}, {zone = "Orgrimmar", map = 1454, mapNames = names, names = {Fishing = "Pêche", Cooking = "Cuisine"}, chosen = {"Cooking"}})
+    w.tree[3].children[1].rank, w.tree[3].children[1].maxRank = 180, 225
+    w.Fire("SKILL_LINES_CHANGED")
+    local L = w.ns.L
+    local where = string.format(L["coasts of 30-45 zones (%s)"], "Marais des Chagrins, Marécage d'Âprefange, Vallée de Strangleronce, Désolace")
+    check(L["coasts of 30-45 zones (%s)"] ~= "coasts of 30-45 zones (%s)" and Lines(w, "Fishing"):find(string.format(L["Where: %s"], where), 1, true),
+          "l10n review: the French fishing spot, zones named by the game")
+    check(Lines(w, "Cooking"):find(string.format(L["(fish: %s)"], where), 1, true), "l10n review: and on the Cooking side")
+    -- no escaping fish on Mists (gone since patch 3.1)
+    fish = {name = "Fishing", rank = 20, maxRank = 75}
+    w = world("mists", "enUS", {fish}, {zone = "Redridge Mountains"})
+    check(not Lines(w, "Fishing"):find("Fish escape here", 1, true), "l10n review: Mists does not warn of escaping fish")
+    w = world("classic", "enUS", {fish}, {zone = "Redridge Mountains"})
+    check(Lines(w, "Fishing"):find("Fish escape here! Redridge Mountains needs ~55 skill (you: 20)", 1, true), "l10n review: Era still does")
+end
+
 -- a secret rank (Forever hides some numbers from addon code) counts as unknown, not an error
 do
     local w = NewWorld({client = "forever", events = FOREVER_EVENTS, secretRank = true, db = {setupDone = true, chosen = {Cooking = true}, show = true}})
@@ -966,6 +1026,7 @@ do
     check(ok, "retail: loads")
     w.Fire("PLAYER_ENTERING_WORLD")
     check(w.ns.profs.Mining and w.ns.profs.Mining.rank == 45 and w.ns.profs.Enchanting.rank == 10 and w.ns.skillAPI == "GetProfessions", "retail: skills read from GetProfessions ids")
+    check(w.ns.profs.Cooking and w.ns.profs.Cooking.rank == 20, "retail: a profession after an empty slot is read too")
 end
 
 -- a client with no skill API at all: nothing tracked, nothing thrown

@@ -145,6 +145,41 @@ ns.PROF_NAMES = {
     }
 }
 
+-- ...and the names that differ on these clients (Wowhead's skill lists
+-- for TBC Anniversary, Mists Classic and Forever, October 2026), shown
+-- for a profession not learned yet; a learned one is labelled with the
+-- name the game gave it
+ns.PROF_NAMES_FOR = {
+    tbc = {
+        esES = {["Leatherworking"] = "Peletería", ["Tailoring"] = "Sastrería"},
+        koKR = {["Leatherworking"] = "가죽세공"},
+        zhTW = {["Alchemy"] = "鍊金術"}
+    },
+    later = {
+        deDE = {["Alchemy"] = "Alchemie"},
+        esES = {["Herbalism"] = "Herboristería", ["Skinning"] = "Desuello", ["Leatherworking"] = "Peletería", ["Tailoring"] = "Sastrería"},
+        koKR = {["Herbalism"] = "약초채집", ["Leatherworking"] = "가죽세공"},
+        zhTW = {["Alchemy"] = "鍊金術"}
+    },
+    forever = {
+        koKR = {["Herbalism"] = "약초채집", ["Leatherworking"] = "가죽세공"},
+        itIT = {
+            ["Mining"] = "Estrazione",
+            ["Herbalism"] = "Erbalismo",
+            ["Skinning"] = "Scuoiatura",
+            ["Fishing"] = "Pesca",
+            ["First Aid"] = "Pronto Soccorso",
+            ["Alchemy"] = "Alchimia",
+            ["Blacksmithing"] = "Forgiatura",
+            ["Engineering"] = "Ingegneria",
+            ["Leatherworking"] = "Conciatura",
+            ["Tailoring"] = "Sartoria",
+            ["Enchanting"] = "Incantamento",
+            ["Cooking"] = "Cucina"
+        }
+    }
+}
+
 -- Other spellings some clients use (TBC's and Mists' Spanish, Korean,
 -- German and Taiwanese, TBC's Russian Skinning with a Latin C, Forever's
 -- Italian): all matched, never shown.
@@ -580,6 +615,10 @@ ns.NODE_NAMES_FOR = {
         }
     },
     later = {
+        -- Cataclysm renamed it, in English too
+        enUS = {
+            ["Plaguebloom"] = "Sorrowmoss"
+        },
         deDE = {
             ["Copper Vein"] = "Kupferader",
             ["Tin Vein"] = "Zinnader",

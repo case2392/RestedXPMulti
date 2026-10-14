@@ -799,7 +799,11 @@ ns.ZONE_WATERS = {
 }
 
 -- spell = the dish's recipe and fishItem = the fish, so the game names
--- both in its own language
+-- both in its own language; where = a sentence in Locales.lua, its %s the
+-- whereZones, which the game names by map ID (ZONE_WATERS, ns.ZONE_MAPS)
+-- zones named in the fishing advice that have no ZONE_WATERS entry
+ns.ZONE_MAPS = {["Eastern Plaguelands"] = 1423, ["Deadwind Pass"] = 1430}
+
 ns.FISH_COOKING = {
     {1, "Brilliant Smallfish", spell = 7751, fishItem = 6291, band = {1, 12}, fish = "Raw Brilliant Smallfish",
      where = "starting-zone lakes & rivers", water = "inland",
@@ -814,11 +818,12 @@ ns.FISH_COOKING = {
      recipe = {A = "Catherine Leland - Stormwind canals, or Lindea Rabonne - Southshore",
                H = "Kilxx - Ratchet, or Derak Nightfall - Tarren Mill"}},
     {175, "Rockscale Cod", spell = 7828, fishItem = 6362, band = {30, 45}, fish = "Raw Rockscale Cod",
-     where = "coasts of 30-45 zones (Swamp of Sorrows, Dustwallow, Stranglethorn, Desolace)", water = "coast",
+     where = "coasts of 30-45 zones (%s)", whereZones = {"Swamp of Sorrows", "Dustwallow Marsh", "Stranglethorn Vale", "Desolace"},
+     water = "coast",
      recipe = {A = "Stuart Fleming - Menethil Harbor, or Kelsey Yance - Booty Bay",
                H = "Shankys - Orgrimmar, Valley of Honor, or Kelsey Yance - Booty Bay"}},
     {225, "Spotted Yellowtail", spell = 18238, fishItem = 4603, band = {28, 50}, fish = "Raw Spotted Yellowtail",
-     where = "Stranglethorn / Tanaris coasts", water = "coast",
+     where = "coasts of %s", whereZones = {"Stranglethorn Vale", "Tanaris"}, water = "coast",
      recipe = "Gikkix - Steamwheedle Port, Tanaris"},
     -- zones = where the fish is really caught (a zone's level alone also
     -- let in Stranglethorn, Dustwallow and the Swamp for Nightfin)
@@ -828,7 +833,7 @@ ns.FISH_COOKING = {
      where = "high-level inland waters, at night", water = "inland",
      recipe = "Gikkix - Steamwheedle Port, Tanaris"},
     {285, "Baked Salmon", spell = 18247, fishItem = 13889, band = {55, 60}, fish = "Raw Whitescale Salmon", zones = {["Winterspring"] = true},
-     where = "inland waters of Winterspring, Eastern Plaguelands and Deadwind Pass", water = "inland",
+     where = "inland waters of %s", whereZones = {"Winterspring", "Eastern Plaguelands", "Deadwind Pass"}, water = "inland",
      recipe = {A = "Vivianna - Feathermoon Stronghold, Feralas",
                H = "Sheendra Tallgrass - Camp Mojache, Feralas"}}
 }

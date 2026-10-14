@@ -42,7 +42,9 @@ looked professions up by their English names only. Now:
 - **Recipes, materials, herbs and zones are named by the game itself**, by
   spell, item and map ID, so they read exactly as your profession window
   and trainer show them. An item your client has not loaded yet shows in
-  English for a moment and is filled in when it arrives.
+  English for a moment and is filled in when it arrives. (Mists Classic
+  numbers its maps differently, so there the fishing hints name zones in
+  English and do not know which zone you are in.)
 - **The addon's own sentences** ("Craft:", "Can train Journeyman now",
   "Capped!" ...) are translated into French, German, Spanish (Spain and
   Latin America), Brazilian Portuguese, Italian, Russian, Korean and
