@@ -60,6 +60,9 @@ ns.GATHER = {
 
 -- Crafting professions: route = {from, item, mats}, notes = {at, text}.
 -- primary = counts against the ~5-skill-per-level pace check.
+-- forever / foreverMats: the recipe's name and mats on WoW Forever, where
+-- they differ from Classic Era (read from Wowhead's Forever tooltips,
+-- October 2026: Forever renamed and re-costed some recipes).
 ns.CRAFT = {
     ["First Aid"] = {
         route = {
@@ -91,9 +94,11 @@ ns.CRAFT = {
             {140, "Lesser Mana Potion", "Mageroyal + Stranglekelp + Empty Vial"},
             {155, "Greater Healing Potion", "Liferoot + Kingsblood + Leaded Vial"},
             {185, "Elixir of Agility", "Stranglekelp + Goldthorn + Leaded Vial"},
-            {210, "Elixir of Greater Defense", "Wild Steelbloom + Goldthorn + Leaded Vial"},
+            {210, "Elixir of Greater Defense", "Wild Steelbloom + Goldthorn + Leaded Vial",
+             forever = "Elixir of Defense", foreverMats = "Wild Steelbloom + Goldthorn + Leaded Vial (makes 2)"},
             {215, "Superior Healing Potion", "Sungrass + Khadgar's Whisker + Crystal Vial"},
-            {230, "Elixir of Detect Undead", "Arthas' Tears + Crystal Vial"},
+            {230, "Elixir of Detect Undead", "Arthas' Tears + Crystal Vial",
+             forever = "Draught of Detect Undead", foreverMats = "Arthas' Tears + Crystal Vial (makes 2)"},
             {250, "Elixir of Greater Agility", "Sungrass + Goldthorn + Crystal Vial"},
             {265, "Superior Mana Potion", "Sungrass + Blindweed + Crystal Vial"},
             {285, "Major Healing Potion", "Golden Sansam + Mountain Silversage + Crystal Vial"}
@@ -202,9 +207,12 @@ ns.CRAFT = {
         primary = true,
         route = {
             {1, "Runed Copper Rod", "Copper Rod + Strange Dust + Lesser Magic Essence"},
-            {2, "Enchant Bracer - Minor Health", "1 Strange Dust"},
-            {50, "Enchant Bracer - Minor Deflection", "1 Lesser Magic Essence"},
-            {60, "Enchant Bracer - Minor Stamina", "3 Strange Dust"},
+            {2, "Enchant Bracer - Minor Health", "1 Strange Dust",
+             forever = "Enchant Bracer - Inferior Stamina", foreverMats = "1 Mote of Magic"},
+            -- the game's name is "Minor Deflect"; "Minor Deflection" never matched
+            {50, "Enchant Bracer - Minor Deflect", "1 Lesser Magic Essence + 1 Strange Dust",
+             foreverMats = "1 Lesser Magic Essence"},
+            {60, "Enchant Bracer - Minor Stamina", "3 Strange Dust", foreverMats = "2 Strange Dust"},
             {110, "Enchant Bracer - Lesser Stamina", "2 Soul Dust"},
             {135, "Enchant Bracer - Spirit", "1 Lesser Mystic Essence"},
             {160, "Enchant Bracer - Strength", "1 Vision Dust"},
@@ -224,7 +232,8 @@ ns.CRAFT = {
     },
     ["Cooking"] = {
         route = {
-            {1, "Spice Bread / Charred Wolf Meat", "Simple Flour + Mild Spices / Stringy Wolf Meat",
+            -- (Spice Bread was listed here; it is not in Classic Era or Forever)
+            {1, "Charred Wolf Meat", "Stringy Wolf Meat",
              source = "taught by the Cooking trainer"},
             {40, "Smoked Bear Meat", "1 Bear Meat",
              source = "vendor recipe (Loch Modan / Silverpine); or revisit your trainer for new recipes"},

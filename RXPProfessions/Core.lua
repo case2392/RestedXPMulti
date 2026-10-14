@@ -5,6 +5,19 @@
 local addonName, ns = ...
 
 local eventFrame = CreateFrame("Frame")
+
+-- WoW Forever (toc 16001) renamed and re-costed some recipes; route rows
+-- carry its names and mats beside Classic Era's (Data.lua)
+do
+    local toc = GetBuildInfo and select(4, GetBuildInfo())
+    ns.IS_FOREVER = type(toc) == "number" and toc >= 16000 and toc < 20000
+end
+function ns.RowName(row)
+    return (ns.IS_FOREVER and row.forever) or row[2]
+end
+function ns.RowMats(row)
+    return (ns.IS_FOREVER and row.foreverMats) or row[3]
+end
 ns.profs = {} -- name -> {rank, maxRank, kind}
 
 function ns.Print(msg, ...)
@@ -441,7 +454,7 @@ end
 -- (any of the alternatives) when there is one, else the row's own number
 function ns.RouteRowNeeds(prof, row)
     local need = row[1]
-    for alt in tostring(row[2]):gmatch("[^/]+") do
+    for alt in tostring(ns.RowName(row)):gmatch("[^/]+") do
         alt = alt:gsub("^%s+", ""):gsub("%s+$", "")
         local said = ns.RecipeRequirement(prof, alt)
         if said and said > need then need = said end
@@ -460,7 +473,7 @@ function ns.BestKnownRecipe(prof, rank)
     local rowOf = {}
     local craft = ns.CRAFT[prof]
     for _, row in ipairs(craft and craft.route or {}) do
-        for alt in tostring(row[2]):gmatch("[^/]+") do
+        for alt in tostring(ns.RowName(row)):gmatch("[^/]+") do
             alt = alt:gsub("^%s+", ""):gsub("%s+$", "")
             local name = Resolve(known, alt)
             if name then rowOf[name] = row end
@@ -621,7 +634,7 @@ function ns.BuildProfLines(name, p)
                 end
                 local _, nextUp = route and CurrentAndNext(route, p.rank)
                 if nextUp then
-                    milestone, milestoneName = nextUp[1], nextUp[2]
+                    milestone, milestoneName = nextUp[1], ns.RowName(nextUp)
                 end
             end
             local context = GuideContext()
@@ -694,7 +707,7 @@ function ns.BuildProfLines(name, p)
                 -- the row's alternatives the player knows, the best-coloured
                 -- one first, with its colour at the skill they are at now
                 local routeName, routeColor, anyKnown, inGame = nil, nil, false, false
-                for alt in current[2]:gmatch("[^/]+") do
+                for alt in ns.RowName(current):gmatch("[^/]+") do
                     alt = alt:gsub("^%s+", ""):gsub("%s+$", "")
                     local known = ns.ResolveRecipe(knownMap, alt)
                     if known then
@@ -707,7 +720,7 @@ function ns.BuildProfLines(name, p)
                     end
                     if ns.ResolveRecipe(allMap, alt) then inGame = true end
                 end
-                local display = routeName or current[2]
+                local display = routeName or ns.RowName(current)
                 local routeO = ORDER[routeColor]
                 -- The game outranks the route: when it shows the route's
                 -- recipe grey (no skill-ups), or green while the player knows
@@ -722,7 +735,7 @@ function ns.BuildProfLines(name, p)
                     add(string.format("Craft: %s (%s)", best, ns.ColorText(name, best, p.rank) or ns.COLOR_WORD[bestColor]), "normal")
                     add(string.format("(%s is %s for you now - the game moved it, so this beats the route)",
                                       routeName, ns.ColorText(name, routeName, p.rank) or ns.COLOR_WORD[routeColor]), "dim")
-                    if bestRow and bestRow[3] then add("Mats: " .. bestRow[3], "dim") end
+                    if bestRow and ns.RowMats(bestRow) then add("Mats: " .. ns.RowMats(bestRow), "dim") end
                 else
                     local colorText = routeName and ns.ColorText(name, routeName, p.rank)
                     add(string.format("Craft: %s%s", display, colorText and (" (" .. colorText .. ")") or ""), "normal")
@@ -732,7 +745,7 @@ function ns.BuildProfLines(name, p)
                         add("Green: it only skills up some of the time", "dim")
                     end
                     if tooEarly then
-                        add(string.format("(%s needs %d - your trainer said so)", tooEarly[2],
+                        add(string.format("(%s needs %d - your trainer said so)", ns.RowName(tooEarly),
                                           ns.RouteRowNeeds(name, tooEarly)), "dim")
                     end
                     -- the route's recipe is not known, but one that is still
@@ -748,8 +761,8 @@ function ns.BuildProfLines(name, p)
                         else
                             add(string.format("(fish: %s)", current.where), "dim")
                         end
-                    elseif current[3] then
-                        add("Mats: " .. current[3], "dim")
+                    elseif ns.RowMats(current) then
+                        add("Mats: " .. ns.RowMats(current), "dim")
                     end
                     local source = current.source or current.recipe
                     if type(source) == "table" then
@@ -781,7 +794,7 @@ function ns.BuildProfLines(name, p)
                 end
             end
             if nextUp then
-                add(string.format("At %d: %s", nextUp[1], nextUp[2]), "dim")
+                add(string.format("At %d: %s", nextUp[1], ns.RowName(nextUp)), "dim")
             end
             for _, note in ipairs(craft.notes or {}) do
                 if NoteVisible(note, p.rank, p.maxRank) then

@@ -84,7 +84,9 @@ local function NewWorld(opts)
     for _, extra in ipairs(opts.extra or {}) do table.insert(tree[2].children, extra) end
     -- the game build: a new one starts recipe colours afresh
     w.build = opts.build or "61582"
-    _G.GetBuildInfo = function() return "1.15.8", w.build, "Oct 1 2026", 11508 end
+    -- Forever reports toc 16001; the routes pick its recipe names and mats from that
+    local toc = opts.client == "forever" and 16001 or 11508
+    _G.GetBuildInfo = function() return "1.15.8", w.build, "Oct 1 2026", toc end
     local function visible()
         local out = {}
         for _, h in ipairs(tree) do
@@ -457,6 +459,32 @@ do
     check(text:find("Linen Satchel Of Old isn't in your Tailoring list - this game version may not have it", 1, true) and text:find("Meanwhile: Simple Kilt (orange)", 1, true),
           "forever: a route recipe missing from the game's full list is called out, with something that does skill up")
     w.ns.CRAFT.Tailoring.route[2][2] = "Linen Bag"
+end
+
+-- Forever's own recipe names and mats, read from Wowhead's Forever data:
+-- Enchant Bracer - Minor Health is "Inferior Stamina" there and takes a
+-- Mote of Magic; Elixir of Greater Defense is "Elixir of Defense"
+do
+    local function lines(w, prof)
+        local out = {}
+        for _, l in ipairs(w.ns.BuildProfLines(prof, w.ns.GetTracked()[prof])) do out[#out + 1] = l.text end
+        return table.concat(out, "\n")
+    end
+    local f = NewWorld({client = "forever", events = FOREVER_EVENTS, extra = {{name = "Enchanting", rank = 10, maxRank = 75}, {name = "Alchemy", rank = 212, maxRank = 225}},
+                        db = {setupDone = true, chosen = {Enchanting = true, Alchemy = true}, show = true}})
+    f.Fire("PLAYER_ENTERING_WORLD")
+    local text = lines(f, "Enchanting")
+    check(f.ns.IS_FOREVER and text:find("Craft: Enchant Bracer - Inferior Stamina", 1, true) and text:find("Mats: 1 Mote of Magic", 1, true) and text:find("At 50: Enchant Bracer - Minor Deflect", 1, true),
+          "forever names: the route uses Forever's recipe name and mats")
+    check(lines(f, "Alchemy"):find("Craft: Elixir of Defense", 1, true) and lines(f, "Alchemy"):find("(makes 2)", 1, true), "forever names: Alchemy too")
+    local c = NewWorld({client = "classic", events = CLASSIC_EVENTS, extra = {{name = "Enchanting", rank = 52, maxRank = 75}},
+                        db = {setupDone = true, chosen = {Enchanting = true}, show = true}})
+    c.Fire("PLAYER_ENTERING_WORLD")
+    c.craft = {"Enchanting", 52, {{"Enchant Bracer - Minor Deflect", "optimal"}, {"Enchant Bracer - Minor Health", "easy"}}}
+    c.Fire("CRAFT_SHOW")
+    text = lines(c, "Enchanting")
+    check(not c.ns.IS_FOREVER and text:find("Craft: Enchant Bracer - Minor Deflect (orange)", 1, true) and text:find("Mats: 1 Lesser Magic Essence + 1 Strange Dust", 1, true) and not text:find("know this recipe", 1, true),
+          "classic names: 'Minor Deflect' (the game's name) now matches the known recipe, with Classic's mats")
 end
 
 -- a secret rank (Forever hides some numbers from addon code) counts as unknown, not an error
