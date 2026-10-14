@@ -110,6 +110,12 @@ local function ProfNames()
     for _, names in pairs(ns.PROF_NAMES or {}) do
         for key, name in pairs(names) do add(name, key) end
     end
+    -- the other spellings the clients use (TBC's and Mists' differ in places)
+    for _, aliases in pairs(ns.PROF_ALIASES or {}) do
+        for key, list in pairs(aliases) do
+            for _, name in ipairs(list) do add(name, key) end
+        end
+    end
     -- the profession's own spell, where its name is the skill line's
     for key, id in pairs(ns.PROF_SPELLS or {}) do add(SpellName(id), key) end
     return profByName
@@ -123,8 +129,11 @@ function ns.ProfKey(name, id)
     local names = ProfNames()
     return names[name] or names[name:lower()]
 end
--- a profession, a rank, as this client writes them
+-- a profession, a rank, as this client writes them: the name the game
+-- gave for it, else Locales.lua's
+ns.profLabels = {}
 function ns.ProfLabel(key)
+    if ns.profLabels[key] then return ns.profLabels[key] end
     local names = ns.PROF_NAMES[ns.LOCALE]
     return names and names[key] or key
 end
@@ -243,8 +252,10 @@ end
 -- after levelling it to 105, reload or not.) Each source's reading is
 -- kept for /rxpp status.
 local function Record(found, name, rank, maxRank, source, id)
+    local shown = name
     name = ns.ProfKey(name, id)
     if not (name and ns.TRACKED[name]) then return end
+    if type(shown) == "string" and shown ~= "" then ns.profLabels[name] = shown end
     rank, maxRank = Plain(rank) or 0, Plain(maxRank) or 0
     local p = found[name]
     if not p then
