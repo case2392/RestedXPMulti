@@ -733,7 +733,15 @@ T.frFR = {
     ["orange"] = "orange",
     ["yellow"] = "jaune",
     ["green"] = "vert",
-    ["grey"] = "gris"
+    ["grey"] = "gris",
+    ["window hidden. Type /rxpp to bring it back."] = "fenêtre masquée. Tapez /rxpp pour la réafficher.",
+    ["starting-zone lakes & rivers"] = "lacs et rivières des zones de départ",
+    ["inland lakes & rivers"] = "lacs et rivières intérieurs",
+    ["rivers in 10-30 zones"] = "rivières des zones de niveau 10-30",
+    ["coasts of 30-45 zones (%s)"] = "côtes des zones de niveau 30-45 (%s)",
+    ["coasts of %s"] = "côtes (%s)",
+    ["high-level inland waters, at night"] = "eaux intérieures des zones de haut niveau, la nuit",
+    ["inland waters of %s"] = "eaux intérieures (%s)"
 }
 
 T.deDE = {
@@ -805,7 +813,15 @@ T.deDE = {
     ["orange"] = "orange",
     ["yellow"] = "gelb",
     ["green"] = "grün",
-    ["grey"] = "grau"
+    ["grey"] = "grau",
+    ["window hidden. Type /rxpp to bring it back."] = "Fenster ausgeblendet. Gebt /rxpp ein, um es wieder einzublenden.",
+    ["starting-zone lakes & rivers"] = "in Seen und Flüssen der Startgebiete",
+    ["inland lakes & rivers"] = "in Seen und Flüssen",
+    ["rivers in 10-30 zones"] = "in Flüssen in Gebieten der Stufe 10-30",
+    ["coasts of 30-45 zones (%s)"] = "an den Küsten von Gebieten der Stufe 30-45 (%s)",
+    ["coasts of %s"] = "an den Küsten der Gebiete %s",
+    ["high-level inland waters, at night"] = "nachts in Seen und Flüssen hochstufiger Gebiete",
+    ["inland waters of %s"] = "in Seen und Flüssen der Gebiete %s"
 }
 
 T.esES = {
@@ -877,7 +893,15 @@ T.esES = {
     ["orange"] = "naranja",
     ["yellow"] = "amarillo",
     ["green"] = "verde",
-    ["grey"] = "gris"
+    ["grey"] = "gris",
+    ["window hidden. Type /rxpp to bring it back."] = "ventana oculta. Escribe /rxpp para volver a mostrarla.",
+    ["starting-zone lakes & rivers"] = "lagos y ríos de las zonas de inicio",
+    ["inland lakes & rivers"] = "lagos y ríos del interior",
+    ["rivers in 10-30 zones"] = "ríos de las zonas de nivel 10-30",
+    ["coasts of 30-45 zones (%s)"] = "costas de las zonas de nivel 30-45 (%s)",
+    ["coasts of %s"] = "costas de %s",
+    ["high-level inland waters, at night"] = "lagos y ríos de zonas de nivel alto, de noche",
+    ["inland waters of %s"] = "lagos y ríos de %s"
 }
 
 T.esMX = {
@@ -949,7 +973,15 @@ T.esMX = {
     ["orange"] = "naranja",
     ["yellow"] = "amarillo",
     ["green"] = "verde",
-    ["grey"] = "gris"
+    ["grey"] = "gris",
+    ["window hidden. Type /rxpp to bring it back."] = "ventana oculta. Escribe /rxpp para volver a mostrarla.",
+    ["starting-zone lakes & rivers"] = "lagos y ríos de las zonas iniciales",
+    ["inland lakes & rivers"] = "lagos y ríos del interior",
+    ["rivers in 10-30 zones"] = "ríos de las zonas de nivel 10-30",
+    ["coasts of 30-45 zones (%s)"] = "costas de las zonas de nivel 30-45 (%s)",
+    ["coasts of %s"] = "costas de %s",
+    ["high-level inland waters, at night"] = "lagos y ríos de las zonas de alto nivel, de noche",
+    ["inland waters of %s"] = "lagos y ríos de %s"
 }
 
 T.ptBR = {
@@ -1021,7 +1053,15 @@ T.ptBR = {
     ["orange"] = "laranja",
     ["yellow"] = "amarelo",
     ["green"] = "verde",
-    ["grey"] = "cinza"
+    ["grey"] = "cinza",
+    ["window hidden. Type /rxpp to bring it back."] = "janela oculta. Digite /rxpp para trazê-la de volta.",
+    ["starting-zone lakes & rivers"] = "em lagos e rios das zonas iniciais",
+    ["inland lakes & rivers"] = "em lagos e rios",
+    ["rivers in 10-30 zones"] = "em rios de zonas de nível 10-30",
+    ["coasts of 30-45 zones (%s)"] = "na costa das zonas de nível 30-45 (%s)",
+    ["coasts of %s"] = "na costa de %s",
+    ["high-level inland waters, at night"] = "em lagos e rios de zonas de nível alto, à noite",
+    ["inland waters of %s"] = "em lagos e rios de %s"
 }
 
 T.itIT = {
@@ -1093,7 +1133,15 @@ T.itIT = {
     ["orange"] = "arancione",
     ["yellow"] = "giallo",
     ["green"] = "verde",
-    ["grey"] = "grigio"
+    ["grey"] = "grigio",
+    ["window hidden. Type /rxpp to bring it back."] = "finestra nascosta. Digita /rxpp per riaprirla.",
+    ["starting-zone lakes & rivers"] = "laghi e fiumi delle zone iniziali",
+    ["inland lakes & rivers"] = "laghi e fiumi interni",
+    ["rivers in 10-30 zones"] = "fiumi delle zone di livello 10-30",
+    ["coasts of 30-45 zones (%s)"] = "coste delle zone di livello 30-45 (%s)",
+    ["coasts of %s"] = "coste di %s",
+    ["high-level inland waters, at night"] = "acque interne delle zone di alto livello, di notte",
+    ["inland waters of %s"] = "acque interne di %s"
 }
 
 T.ruRU = {
@@ -1165,7 +1213,15 @@ T.ruRU = {
     ["orange"] = "оранжевый",
     ["yellow"] = "желтый",
     ["green"] = "зеленый",
-    ["grey"] = "серый"
+    ["grey"] = "серый",
+    ["window hidden. Type /rxpp to bring it back."] = "окно скрыто. Введите /rxpp, чтобы снова его открыть.",
+    ["starting-zone lakes & rivers"] = "реки и озера в стартовых зонах",
+    ["inland lakes & rivers"] = "реки и озера",
+    ["rivers in 10-30 zones"] = "реки в зонах 10-30-го уровня",
+    ["coasts of 30-45 zones (%s)"] = "побережье зон 30-45-го уровня (%s)",
+    ["coasts of %s"] = "побережье (%s)",
+    ["high-level inland waters, at night"] = "реки и озера в зонах высокого уровня, ночью",
+    ["inland waters of %s"] = "реки и озера (%s)"
 }
 
 T.koKR = {
@@ -1237,7 +1293,15 @@ T.koKR = {
     ["orange"] = "주황",
     ["yellow"] = "노랑",
     ["green"] = "초록",
-    ["grey"] = "회색"
+    ["grey"] = "회색",
+    ["window hidden. Type /rxpp to bring it back."] = "창을 숨겼어요. /rxpp 명령어로 다시 열 수 있어요",
+    ["starting-zone lakes & rivers"] = "시작 지역의 강이나 호수",
+    ["inland lakes & rivers"] = "내륙의 강이나 호수",
+    ["rivers in 10-30 zones"] = "10~30레벨 지역의 강",
+    ["coasts of 30-45 zones (%s)"] = "30~45레벨 지역의 해안가 (%s)",
+    ["coasts of %s"] = "%s 지역의 해안가",
+    ["high-level inland waters, at night"] = "고레벨 지역의 강이나 호수, 밤에만",
+    ["inland waters of %s"] = "%s 지역의 강이나 호수"
 }
 
 T.zhCN = {
@@ -1309,7 +1373,15 @@ T.zhCN = {
     ["orange"] = "橙色",
     ["yellow"] = "黄色",
     ["green"] = "绿色",
-    ["grey"] = "灰色"
+    ["grey"] = "灰色",
+    ["window hidden. Type /rxpp to bring it back."] = "窗口已隐藏。输入 /rxpp 即可重新显示。",
+    ["starting-zone lakes & rivers"] = "新手区的湖泊或河流",
+    ["inland lakes & rivers"] = "内陆的湖泊或河流",
+    ["rivers in 10-30 zones"] = "10-30级区域的河流",
+    ["coasts of 30-45 zones (%s)"] = "30-45级区域的海边（%s）",
+    ["coasts of %s"] = "%s的海边",
+    ["high-level inland waters, at night"] = "高等级区域的湖泊或河流，仅限夜间",
+    ["inland waters of %s"] = "%s的湖泊或河流"
 }
 
 T.zhTW = {
@@ -1381,7 +1453,15 @@ T.zhTW = {
     ["orange"] = "橘色",
     ["yellow"] = "黃色",
     ["green"] = "綠色",
-    ["grey"] = "灰色"
+    ["grey"] = "灰色",
+    ["window hidden. Type /rxpp to bring it back."] = "視窗已隱藏。輸入 /rxpp 即可重新開啟。",
+    ["starting-zone lakes & rivers"] = "新手區域的湖泊或河流",
+    ["inland lakes & rivers"] = "內陸的湖泊或河流",
+    ["rivers in 10-30 zones"] = "10-30級區域的河流",
+    ["coasts of 30-45 zones (%s)"] = "30-45級區域的海邊（%s）",
+    ["coasts of %s"] = "%s的海邊",
+    ["high-level inland waters, at night"] = "高等級區域的湖泊或河流，僅限夜間",
+    ["inland waters of %s"] = "%s的湖泊或河流"
 }
 
 ns.L = setmetatable({}, {__index = function(_, key) return key end})
