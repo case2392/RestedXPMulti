@@ -29,6 +29,28 @@ match your RestedXP theme — always shows what to do *right now*:
 - Professions you picked but haven't learned yet show a "visit a trainer"
   reminder.
 
+## Languages
+
+RXPP works on every client language (1.1.0). A French player reported
+"my professions are not detected because I play in French": until then it
+looked professions up by their English names only. Now:
+
+- **Professions are found in any language** - by the skill line's ID
+  where the game gives one, else by the name the game uses (French,
+  German, Spanish, Portuguese, Italian, Russian, Korean and Chinese, with
+  the spellings that differ between Classic Era, TBC, Mists and Forever).
+- **Recipes, materials, herbs and zones are named by the game itself**, by
+  spell, item and map ID, so they read exactly as your profession window
+  and trainer show them. An item your client has not loaded yet shows in
+  English for a moment and is filled in when it arrives.
+- **The addon's own sentences** ("Craft:", "Can train Journeyman now",
+  "Capped!" ...) are translated into French, German, Spanish (Spain and
+  Latin America), Brazilian Portuguese, Italian, Russian, Korean and
+  Simplified and Traditional Chinese.
+- Still in English: the trainer and vendor names in the "Get it" and
+  trainer notes, the longer notes under a route, and `/rxpp status`.
+  Corrections to any translation are welcome.
+
 ## Install
 
 Copy the `RXPProfessions` folder into `Interface/AddOns/` so you have
