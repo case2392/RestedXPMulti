@@ -14,7 +14,10 @@ ns.RANKS = {
     {cap = 150, trainAt = 125, nextRank = "Expert"},
     {cap = 225, trainAt = 200, nextRank = "Artisan"},
     {cap = 300, trainAt = 275, nextRank = "Master", fromTBC = true}, -- not on Classic Era or Forever
-    {cap = 375}
+    {cap = 375, trainAt = 350, nextRank = "Grand Master", later = true}, -- Mists Classic
+    {cap = 450, trainAt = 425, nextRank = "Illustrious", later = true},
+    {cap = 525, trainAt = 500, nextRank = "Zen Master", later = true},
+    {cap = 600}
 }
 
 -- What a rank asks besides skill. Crafting trainers want a character
@@ -25,6 +28,23 @@ ns.RANK_RULES = {
     ["First Aid"] = {Expert = {how = "book"}, Artisan = {how = "quest", skill = 225, level = 35}},
     ["Cooking"] = {Expert = {how = "book"}, Artisan = {how = "quest", skill = 225, level = 35}},
     ["Fishing"] = {Expert = {how = "book"}, Artisan = {how = "quest", skill = 225, level = 35}}
+}
+-- ...and where a game differs (looked up first; Core.lua ns.CLIENT): the
+-- trainers' and books' level gates as each game's data has them, and
+-- TBC's Master First Aid, Cooking and Fishing, which are books in Outland
+ns.RANK_RULES_FOR = {
+    era = {
+        ["Cooking"] = {Journeyman = {level = 10}},
+        ["Fishing"] = {Expert = {how = "book", level = 20}}
+    },
+    tbc = {
+        ["Cooking"] = {Journeyman = {level = 10}, Master = {how = "book", skill = 300}},
+        ["First Aid"] = {Master = {how = "book", skill = 300}},
+        ["Fishing"] = {Journeyman = {level = 10}, Master = {how = "book", skill = 275, level = 45}}
+    },
+    forever = {
+        ["Fishing"] = {Journeyman = {level = 10}, Expert = {how = "book", level = 20}}
+    }
 }
 
 -- Gathering professions: what unlocks at which skill. Sorted ascending.
@@ -81,6 +101,11 @@ ns.GATHER = {
 -- foreverRoute / foreverNotes: WoW Forever's own, where the game differs
 -- (its client data, build 70291, and its trainers as players recorded
 -- them; Core.lua swaps them in on Forever).
+-- notes shown on some games only (Core.lua NoteVisible, ns.CLIENT)
+local ERA = {era = true}
+local TBC = {tbc = true}
+local BOOKS = {era = true, tbc = true, forever = true} -- book and quest ranks, before patch 3.1
+
 ns.CRAFT = {
     ["First Aid"] = {
         route = {
@@ -108,19 +133,25 @@ ns.CRAFT = {
         notes = {
             {150, {A = "Expert rank: book |cFFFFCC00Expert First Aid - Under Wraps|r (1g) - Deneb Walker, Stromgarde (Arathi); also sells the 180 and 210 bandage manuals",
                    H = "Expert rank: book |cFFFFCC00Expert First Aid - Under Wraps|r (1g) - Balai Lok'Wein, Brackenwall (Dustwallow); also sells the 180 and 210 bandage manuals"},
-             req = 125, gate = 150},
+             req = 125, gate = 150, clients = BOOKS},
             {225, {A = "Artisan rank: |cFFFFCC00Triage|r quest (level 35) - Doctor Gustaf VanHowzen, Theramore",
                    H = "Artisan rank: |cFFFFCC00Triage|r quest (level 35) - Doctor Gregory Victor, Hammerfall (Arathi)"},
-             req = 225, gate = 225}
+             req = 225, gate = 225, clients = BOOKS},
+            {300, {A = "Master rank (Outland): book |cFFFFCC00Master First Aid - Doctor in the House|r - Burko, Temple of Telhamat (Hellfire Peninsula)",
+                   H = "Master rank (Outland): book |cFFFFCC00Master First Aid - Doctor in the House|r - Aresella, Falcon Watch (Hellfire Peninsula)"},
+             req = 290, gate = 300, clients = TBC}
         },
         foreverNotes = {
             {50, "Forever: First Aid makes the healing potions too - Minor (1), Lesser (55) and Healing (110) from your trainer, with herbs and vials"},
             {150, {A = "Expert rank: book |cFFFFCC00Expert First Aid - Under Wraps|r (1g) - Deneb Walker, Stromgarde (Arathi); also sells the 180 and 210 bandage manuals",
                    H = "Expert rank: book |cFFFFCC00Expert First Aid - Under Wraps|r (1g) - Balai Lok'Wein, Brackenwall (Dustwallow); also sells the 180 and 210 bandage manuals"},
-             req = 125, gate = 150},
+             req = 125, gate = 150, clients = BOOKS},
             {225, {A = "Artisan rank: |cFFFFCC00Triage|r quest (level 35) - Doctor Gustaf VanHowzen, Theramore",
                    H = "Artisan rank: |cFFFFCC00Triage|r quest (level 35) - Doctor Gregory Victor, Hammerfall (Arathi)"},
-             req = 225, gate = 225}
+             req = 225, gate = 225, clients = BOOKS},
+            {300, {A = "Master rank (Outland): book |cFFFFCC00Master First Aid - Doctor in the House|r - Burko, Temple of Telhamat (Hellfire Peninsula)",
+                   H = "Master rank (Outland): book |cFFFFCC00Master First Aid - Doctor in the House|r - Aresella, Falcon Watch (Hellfire Peninsula)"},
+             req = 290, gate = 300, clients = TBC}
         }
     },
     ["Alchemy"] = {
@@ -136,8 +167,11 @@ ns.CRAFT = {
             {215, "Superior Healing Potion", "Sungrass + Khadgar's Whisker + Crystal Vial"},
             {230, "Elixir of Detect Undead", "Arthas' Tears + Crystal Vial"},
             {250, "Elixir of Greater Agility", "Sungrass + Goldthorn + Crystal Vial"},
-            {265, "Superior Mana Potion", "2 Sungrass + 2 Blindweed + 1 Crystal Vial"},
-            {285, "Major Healing Potion", "2 Golden Sansam + 1 Mountain Silversage + 1 Crystal Vial"}
+            {265, "Superior Mana Potion", "2 Sungrass + 2 Blindweed + 1 Crystal Vial",
+             tbcSource = "", source = {A = "Recipe (limited stock): Ulthir - Alchemy supplies, Darnassus",
+                       H = "Recipe (limited stock): Algernon - Alchemy supplies, Undercity"}},
+            {285, "Major Healing Potion", "2 Golden Sansam + 1 Mountain Silversage + 1 Crystal Vial",
+             tbcSource = "", source = "Recipe (limited stock): Evie Whirlbrew - Everlook, Winterspring"}
         },
         foreverRoute = {
             -- Forever moved the healing potions to First Aid
@@ -156,9 +190,11 @@ ns.CRAFT = {
         },
         notes = {
             {1, "Vials: Alchemy supplies vendor (near trainers)"},
+            {150, {A = "Expert rank: Ainethil - Darnassus", H = "Expert rank: Doctor Herbert Halsey - Undercity"},
+             req = 125, gate = 150, clients = ERA},
             {225, {A = "Artisan trainer: Kylanna Windwhisper - Feathermoon Stronghold, Feralas",
                    H = "Artisan trainer: Rogvar - Stonard, Swamp of Sorrows"},
-             req = 200, gate = 225}
+             req = 200, gate = 225, clients = ERA}
         },
         foreverNotes = {
             {1, "Vials: Alchemy supplies vendor (near trainers)"},
@@ -218,8 +254,10 @@ ns.CRAFT = {
             {1, "Pairs best with Mining"},
             {100, "Keep your Coarse Grinding Stones: Patterned Bronze Bracers (137) takes 2 each, about 37"},
             {130, "Make extra Heavy Grinding Stones and keep them: Green Iron Leggings (155) takes 1, Golden Scale Bracers (190) 2 - about 65 in all"},
+            {150, {A = "Expert rank: Bengus Deepforge - Ironforge", H = "Expert rank: Saru Steelfury - Orgrimmar"},
+             req = 125, gate = 150, clients = ERA},
             {215, "Steel Plate Helm takes a Solid Grinding Stone each: learn it at the trainer (200) and make about 20 (4 Solid Stone each)"},
-            {225, "Artisan trainer: Brikk Keencraft, Booty Bay", req = 200, gate = 225},
+            {225, "Artisan trainer: Brikk Keencraft, Booty Bay", req = 200, gate = 225, clients = ERA},
             {255, "Imperial Plate Bracers (270): the plans are a quest in Gadgetzan that needs character level 50"}
         },
         foreverNotes = {
@@ -289,8 +327,10 @@ ns.CRAFT = {
         },
         notes = {
             {1, "Pairs best with Mining"},
+            {150, {A = "Expert rank: Springspindle Fizzlegear - Tinker Town, Ironforge", H = "Expert rank: Roxxik - Valley of Honor, Orgrimmar"},
+             req = 125, gate = 150, clients = ERA},
             {200, "At 200 (level 30+): choose Gnomish or Goblin specialization - an Engineering trainer has the quest"},
-            {225, "Artisan trainer: Buzzek Bracketswing - Gadgetzan, Tanaris", req = 200, gate = 225}
+            {225, "Artisan trainer: Buzzek Bracketswing - Gadgetzan, Tanaris", req = 200, gate = 225, clients = ERA}
         },
         foreverNotes = {
             {1, "Pairs best with Mining"},
@@ -310,24 +350,24 @@ ns.CRAFT = {
             {125, "Dark Leather Belt", "1 Fine Leather Belt + 1 Cured Medium Hide + 2 Fine Thread + 1 Gray Dye"},
             {150, "Heavy Armor Kit", "5 Heavy Leather + 1 Fine Thread"},
             {175, "Barbaric Shoulders", "8 Heavy Leather + 1 Cured Heavy Hide + 2 Fine Thread",
-             source = {A = "Expert trainer: Telonis - Darnassus, or Drakk Stonehand - Aerie Peak (TBC: any trainer)",
-                       H = "Expert trainer: Una - Thunder Bluff, or Hahrana Ironhide - Camp Mojache (TBC: any trainer)"}},
+             tbcSource = "", source = {A = "Expert trainer: Telonis - Darnassus, or Drakk Stonehand - Aerie Peak (Hinterlands)",
+                       H = "Expert trainer: Una - Thunder Bluff, or Hahrana Ironhide - Camp Mojache (Feralas)"}},
             {205, "Nightscape Headband", "5 Thick Leather + 2 Silken Thread",
-             source = {A = "Expert trainer: Telonis - Darnassus, or Drakk Stonehand - Aerie Peak (TBC: any trainer)",
-                       H = "Expert trainer: Una - Thunder Bluff, or Hahrana Ironhide - Camp Mojache (TBC: any trainer)"}},
+             tbcSource = "", source = {A = "Expert trainer: Telonis - Darnassus, or Drakk Stonehand - Aerie Peak (Hinterlands)",
+                       H = "Expert trainer: Una - Thunder Bluff, or Hahrana Ironhide - Camp Mojache (Feralas)"}},
             {235, "Nightscape Pants", "14 Thick Leather + 4 Silken Thread",
-             source = {A = "Artisan trainer: Drakk Stonehand - Aerie Peak, The Hinterlands (TBC: any trainer)",
-                       H = "Artisan trainer: Hahrana Ironhide - Camp Mojache, Feralas (TBC: any trainer)"}},
+             tbcSource = "", source = {A = "Artisan trainer: Drakk Stonehand - Aerie Peak, The Hinterlands",
+                       H = "Artisan trainer: Hahrana Ironhide - Camp Mojache, Feralas"}},
             {250, "Rugged Armor Kit", "5 Rugged Leather",
-             source = {A = "Artisan trainer: Drakk Stonehand - Aerie Peak, The Hinterlands (TBC: any trainer)",
-                       H = "Artisan trainer: Hahrana Ironhide - Camp Mojache, Feralas (TBC: any trainer)"}},
+             tbcSource = "", source = {A = "Artisan trainer: Drakk Stonehand - Aerie Peak, The Hinterlands",
+                       H = "Artisan trainer: Hahrana Ironhide - Camp Mojache, Feralas"}},
             {265, "Wicked Leather Bracers / Wicked Leather Gauntlets", "8 Rugged Leather + 1 Black Dye + 1 Rune Thread",
-             source = {A = "TBC: your trainer (Bracers). Era: Gauntlets pattern - Leonard Porter, Chillwind Camp, Western Plaguelands (limited stock)",
-                       H = "TBC: your trainer (Bracers). Era: Gauntlets pattern - Werg Thickblade, The Bulwark, Tirisfal Glades (limited stock)"}},
+             tbcSource = "", source = {A = "Gauntlets pattern (limited stock): Leonard Porter - Chillwind Camp, Western Plaguelands",
+                       H = "Gauntlets pattern (limited stock): Werg Thickblade - The Bulwark, Tirisfal Glades"}},
             {285, "Wicked Leather Headband / Wicked Leather Gauntlets", "12 Rugged Leather + 1 Black Dye + 1 Rune Thread / 8 Rugged Leather + 1 Black Dye + 1 Rune Thread",
-             source = "TBC: your trainer teaches the Headband (280). Era: its pattern drops from Jadefire satyrs in Felwood or the Auction House - or keep making the Gauntlets"},
+             tbcSource = "", source = "Headband pattern: drops from Jadefire satyrs in Felwood, or the Auction House - or keep making the Gauntlets"},
             {290, "Wicked Leather Headband / Runic Leather Headband", "12 Rugged Leather + 1 Black Dye + 1 Rune Thread / 14 Rugged Leather + 10 Runecloth + 1 Rune Thread",
-             source = "TBC: your trainer. Era: Runic Leather Headband pattern - Jase Farlane, Light's Hope Chapel (limited stock)"}
+             tbcSource = "", source = "Runic Leather Headband pattern (limited stock): Jase Farlane - Light's Hope Chapel"}
         },
         foreverRoute = {
             {1, "Light Armor Kit", "1 Light Leather"},
@@ -357,12 +397,12 @@ ns.CRAFT = {
         },
         notes = {
             {1, "Pairs best with Skinning"},
-            {150, {A = "Expert rank: Telonis - Darnassus, or Drakk Stonehand - Aerie Peak (TBC: any trainer)",
-                   H = "Expert rank: Una - Thunder Bluff, or Hahrana Ironhide - Camp Mojache (TBC: any trainer)"},
-             req = 125, gate = 150},
-            {225, {A = "Artisan trainer: Drakk Stonehand - Aerie Peak, The Hinterlands (TBC: any trainer)",
-                   H = "Artisan trainer: Hahrana Ironhide - Camp Mojache, Feralas (TBC: any trainer)"},
-             req = 200, gate = 225}
+            {150, {A = "Expert rank: Telonis - Darnassus, or Drakk Stonehand - Aerie Peak (Hinterlands)",
+                   H = "Expert rank: Una - Thunder Bluff, or Hahrana Ironhide - Camp Mojache (Feralas)"},
+             req = 125, gate = 150, clients = ERA},
+            {225, {A = "Artisan trainer: Drakk Stonehand - Aerie Peak, The Hinterlands",
+                   H = "Artisan trainer: Hahrana Ironhide - Camp Mojache, Feralas"},
+             req = 200, gate = 225, clients = ERA}
         },
         foreverNotes = {
             {1, "Pairs best with Skinning"},
@@ -395,7 +435,7 @@ ns.CRAFT = {
             {250, "Bolt of Runecloth", "5 Runecloth"},
             {255, "Runecloth Belt", "3 Bolt of Runecloth + 1 Rune Thread"},
             {285, "Runecloth Gloves", "4 Bolt of Runecloth + 4 Rugged Leather + 1 Rune Thread",
-             source = "TBC: your trainer (275). Era: pattern from Qia - Everlook, Winterspring (limited stock); without it, Runecloth Belt (green)"}
+             tbcSource = "", source = "Pattern (limited stock): Qia - Everlook, Winterspring; without it, Runecloth Belt (green)"}
         },
         foreverRoute = {
             -- Forever's ranges are 20-45 below Classic's: Linen Bag greys at 65
@@ -421,16 +461,18 @@ ns.CRAFT = {
              source = "Patterns: rare drops (Molten Core, Blackrock Spire, Stratholme, Thorium Lockboxes) - check the Auction House"}
         },
         notes = {
+            {150, {A = "Expert rank: Georgio Bolero - Mage Quarter, Stormwind", H = "Expert rank: Josef Gregorian - Undercity"},
+             req = 125, gate = 150, clients = ERA},
             {225, {A = "Artisan trainer: Timothy Worthington - Theramore Isle, Dustwallow Marsh",
                    H = "Artisan trainer: Daryl Stack - Tarren Mill, Hillsbrad Foothills"},
-             req = 200, gate = 225}
+             req = 200, gate = 225, clients = ERA}
         },
         foreverNotes = {
             {210, "Bolt of Runecloth: the Artisan trainer teaches it (likely about 205, not confirmed on Forever yet) - buy bolts if it won't yet"},
-            {255, "From 265 the patterns are scarce: Runecloth Shoulders (rare drop) lasts to 299; Runecloth Headband (drop) and Runecloth Cuffs (Pexmit, a rare vendor in Mount Hyjal) are yellow to 279"},
             {225, {A = "Artisan trainer: Timothy Worthington - Theramore Isle, Dustwallow Marsh",
                    H = "Artisan trainer: Daryl Stack - Tarren Mill, Hillsbrad Foothills"},
-             req = 200, gate = 225}
+             req = 200, gate = 225},
+            {255, "From 265 the patterns are scarce: Runecloth Shoulders (rare drop) lasts to 299; Runecloth Headband (drop) and Runecloth Cuffs (Pexmit, a rare vendor in Mount Hyjal) are yellow to 279"}
         }
     },
     ["Enchanting"] = {
@@ -476,7 +518,9 @@ ns.CRAFT = {
         },
         notes = {
             {1, "Disenchant unneeded greens for dusts/essences"},
-            {225, "Artisan trainer: Annora, Uldaman (inside the dungeon)", req = 200, gate = 225}
+            {150, {A = "Expert rank: Kitta Firewind - Tower of Azora, Elwynn Forest", H = "Expert rank: Hgarth - Sun Rock Retreat, Stonetalon Mountains"},
+             req = 125, gate = 150, clients = ERA},
+            {225, "Artisan trainer: Annora, Uldaman (inside the dungeon)", req = 200, gate = 225, clients = ERA}
         },
         foreverNotes = {
             {1, "Disenchant unneeded greens for dusts/essences"},
@@ -539,10 +583,13 @@ ns.CRAFT = {
         notes = {
             {150, {A = "Expert rank: buy |cFFFFCC00Expert Cookbook|r from Shandrina - Ashenvale (49, 67)",
                    H = "Expert rank: buy |cFFFFCC00Expert Cookbook|r from Wulan - Shadowprey Village, Desolace (26, 70)"},
-             req = 125, gate = 150},
+             req = 125, gate = 150, clients = BOOKS},
             {225, "Artisan rank: |cFFFFCC00Clamlette Surprise|r quest (level 35) - Dirge Quikcleave, Gadgetzan",
-             req = 225, gate = 225},
-            {285, "Dumplings recipe: quest in Silithus (level 54)"}
+             req = 225, gate = 225, clients = BOOKS},
+            {285, "Dumplings recipe: quest in Silithus (level 54)"},
+            {300, {A = "Master rank (Outland): |cFFFFCC00Master Cookbook|r - Gaston, Honor Hold (Hellfire Peninsula), or Naka, Cenarion Refuge (Zangarmarsh)",
+                   H = "Master rank (Outland): |cFFFFCC00Master Cookbook|r - Baxter, Thrallmar (Hellfire Peninsula), or Naka, Cenarion Refuge (Zangarmarsh)"},
+             req = 290, gate = 300, clients = TBC}
         },
         foreverNotes = {
             {150, {A = "Expert rank: buy |cFFFFCC00Expert Cookbook|r from Shandrina - Ashenvale (49, 67)",
@@ -617,10 +664,14 @@ ns.FISH_COOKING = {
     {225, "Spotted Yellowtail", band = {28, 50}, fish = "Raw Spotted Yellowtail",
      where = "Stranglethorn / Tanaris coasts", water = "coast",
      recipe = "Gikkix - Steamwheedle Port, Tanaris"},
+    -- zones = where the fish is really caught (a zone's level alone also
+    -- let in Stranglethorn, Dustwallow and the Swamp for Nightfin)
     {250, "Nightfin Soup", band = {40, 60}, fish = "Raw Nightfin Snapper",
+     zones = {["Feralas"] = true, ["The Hinterlands"] = true, ["Felwood"] = true, ["Un'Goro Crater"] = true,
+              ["Winterspring"] = true, ["Western Plaguelands"] = true, ["Moonglade"] = true},
      where = "high-level inland waters, at night", water = "inland",
      recipe = "Gikkix - Steamwheedle Port, Tanaris"},
-    {285, "Baked Salmon", band = {55, 60}, fish = "Raw Whitescale Salmon",
+    {285, "Baked Salmon", band = {55, 60}, fish = "Raw Whitescale Salmon", zones = {["Winterspring"] = true},
      where = "inland waters of Winterspring, Eastern Plaguelands and Deadwind Pass", water = "inland",
      recipe = {A = "Vivianna - Feathermoon Stronghold, Feralas",
                H = "Sheendra Tallgrass - Camp Mojache, Feralas"}}
@@ -628,9 +679,11 @@ ns.FISH_COOKING = {
 
 ns.FISHING_NOTES = {
     {130, "Expert rank: book |cFFFFCC00Expert Fishing - The Bass and You|r - Old Man Heming, Booty Bay",
-     req = 125, gate = 150},
-    {225, "Artisan rank: Nat Pagle quest (Dustwallow Marsh)",
-     req = 225, gate = 225}
+     req = 125, gate = 150, clients = BOOKS},
+    {225, "Artisan rank: Nat Pagle quest (level 35) - Dustwallow Marsh",
+     req = 225, gate = 225, clients = BOOKS},
+    {275, "Master rank (Outland): book |cFFFFCC00Master Fishing - The Art of Angling|r (level 45) - Juno Dufrain, Cenarion Refuge (Zangarmarsh)",
+     req = 275, gate = 300, clients = TBC}
 }
 
 -- Professions the tracker understands (skill line names, English clients)

@@ -9,13 +9,20 @@ local eventFrame = CreateFrame("Frame")
 -- Which game this is, from the interface number: WoW Forever (16001) moved
 -- most skill-up ranges, trainer levels and recipe names, so it has routes
 -- of its own (Data.lua foreverRoute / foreverNotes, ns.FOREVER); TBC
--- renamed a few recipes (a route row's `tbc` / `tbcMats`).
+-- renamed and re-costed a few recipes and teaches more at its trainers (a
+-- route row's `tbc` / `tbcMats` / `tbcSource`). ns.CLIENT names the game
+-- for data that differs: "era", "forever", "tbc" or "later" (Mists).
 do
     local toc = GetBuildInfo and select(4, GetBuildInfo())
     toc = type(toc) == "number" and toc or 0
     ns.IS_FOREVER = toc >= 16000 and toc < 20000
     ns.IS_TBC = toc >= 20000 and toc < 30000
+    ns.CLIENT = ns.IS_FOREVER and "forever" or ns.IS_TBC and "tbc" or toc >= 30000 and "later" or "era"
     ns.HAS_MASTER = toc >= 20000 -- Classic Era and Forever stop at Artisan
+    ns.HAS_LATER_RANKS = toc >= 30000 -- Grand Master and up
+    -- before patch 3.1, Expert and Artisan First Aid, Cooking and Fishing
+    -- came from books and quests, not trainers
+    ns.BOOK_RANKS = toc < 30000
 end
 if ns.IS_FOREVER then
     for _, craft in pairs(ns.CRAFT) do
@@ -37,8 +44,27 @@ end
 function ns.RowName(row)
     return (ns.IS_TBC and row.tbc) or row[2]
 end
-function ns.RowMats(row)
-    return (ns.IS_TBC and row.tbcMats) or row[3]
+-- A row's mats; for a row of alternatives ("A / B", mats "x / y") and a
+-- chosen recipe, only that recipe's part
+function ns.RowMats(row, recipe, known)
+    local mats = (ns.IS_TBC and row.tbcMats) or row[3]
+    if not (mats and recipe) then return mats end
+    local parts, alts = {}, {}
+    for m in mats:gmatch("[^/]+") do parts[#parts + 1] = m:gsub("^%s+", ""):gsub("%s+$", "") end
+    for a in tostring(ns.RowName(row)):gmatch("[^/]+") do alts[#alts + 1] = a:gsub("^%s+", ""):gsub("%s+$", "") end
+    if #parts < 2 or #parts ~= #alts then return mats end
+    for i, a in ipairs(alts) do
+        if a == recipe or (known and ns.ResolveRecipe(known, a) == recipe) then return parts[i] end
+    end
+    return mats
+end
+-- Where to get a row's recipe; TBC's trainers teach some that Era sells
+-- (tbcSource = "" means the trainer has it, nothing to say)
+function ns.RowSource(row)
+    local source = row.source or row.recipe
+    if ns.IS_TBC and row.tbcSource ~= nil then source = row.tbcSource end
+    if source == "" then return nil end
+    return source
 end
 ns.profs = {} -- name -> {rank, maxRank, kind}
 
@@ -346,10 +372,14 @@ local function OpenProfession(api)
     if ok then return prof, info end
 end
 
--- Forever (and retail) keep recipes behind C_TradeSkillUI. Blizzard's
--- window lists GetFilteredRecipeIDs: on Forever the learned recipes only,
--- less whatever the player's filters hide (hence RecordWindow adds, never
--- replaces). GetAllRecipeIDs, where a client has it, is the fallback.
+-- Forever (and retail) keep recipes behind C_TradeSkillUI. GetAllRecipeIDs
+-- lists every recipe of the open profession, learned or not, whatever the
+-- window's filters (measured in game on Forever 1.60.1); Blizzard's window
+-- draws GetFilteredRecipeIDs instead, which leaves out what the player's
+-- "has skill up" / "makeable" / slot filters and search hide - a known
+-- recipe missing from it read as "You don't know this recipe yet!". So the
+-- full list first, the filtered one only where a client lacks it (and then
+-- RecordWindow's adding, never replacing, keeps what was seen before).
 -- Each recipe carries a learned flag and its colour.
 local function ScanTradeSkillUI()
     local api = C_TradeSkillUI
@@ -360,7 +390,7 @@ local function ScanTradeSkillUI()
     local prof, info = OpenProfession(api)
     if not prof then return end
     local ids
-    for _, source in ipairs({"GetFilteredRecipeIDs", "GetAllRecipeIDs"}) do
+    for _, source in ipairs({"GetAllRecipeIDs", "GetFilteredRecipeIDs"}) do
         if not ids and api[source] then
             local okIds, got = pcall(api[source])
             if okIds and type(got) == "table" and #got > 0 then
@@ -385,6 +415,8 @@ local function ScanTradeSkillUI()
     -- nothing known is not the same as nothing learned, so wait for the
     -- next one rather than wipe what was remembered
     if not any then return end
+    ns.db.recipeFiltered = ns.db.recipeFiltered or {}
+    ns.db.recipeFiltered[prof] = ns.recipeAPI == "GetFilteredRecipeIDs" or nil
     RecordWindow(prof, info.skillLevel, list)
     ns.UpdateUI()
     return true
@@ -558,10 +590,12 @@ function ns.BestKnownRecipe(prof, rank)
             if name then rowOf[name] = row end
         end
     end
+    -- only a colour that holds now: pinned down at this skill, or seen at
+    -- most 5 points back (orange seen at 20 says nothing about 98)
     local best, bestO, bestRow
-    for recipe, diff in pairs(known) do
-        local c = ns.RecipeColor(prof, recipe, rank) or (type(diff) == "string" and diff)
-        local o = ORDER[c]
+    for recipe in pairs(known) do
+        local c, sure, _, seenRank = ns.RecipeColor(prof, recipe, rank)
+        local o = c and (sure or (type(rank) == "number" and rank - seenRank <= 5)) and ORDER[c]
         if o and o < 3 then
             local row = rowOf[recipe]
             local better = not bestO or o < bestO or
@@ -620,6 +654,7 @@ function ns.ZoneWaterSpot(entry)
     if not waters then return end
     local spot = entry.water and waters[entry.water]
     if not spot then return end
+    if entry.zones and not entry.zones[zone] then return end
     if entry.band and waters.lvl then
         if waters.lvl < entry.band[1] or waters.lvl > entry.band[2] then
             return
@@ -641,6 +676,7 @@ end
 -- done (maxRank <= gate - a raised cap proves the rank-up already happened).
 -- Notes without them use the old approach-window behavior.
 local function NoteVisible(note, rank, maxRank)
+    if note.clients and not note.clients[ns.CLIENT] then return false end
     if note.req or note.gate then
         if note.req and rank < note.req then return false end
         if note.gate and maxRank > note.gate then return false end
@@ -652,8 +688,9 @@ end
 local function RankInfo(maxRank)
     for _, r in ipairs(ns.RANKS) do
         if maxRank <= r.cap then
-            -- no Master on Classic Era or Forever: Artisan is the last rank
-            if r.fromTBC and not ns.HAS_MASTER then return {cap = r.cap} end
+            -- no Master on Classic Era or Forever (Artisan is the last
+            -- rank), no Grand Master on TBC
+            if (r.fromTBC and not ns.HAS_MASTER) or (r.later and not ns.HAS_LATER_RANKS) then return {cap = r.cap} end
             return r
         end
     end
@@ -663,7 +700,12 @@ end
 -- character level, {how = "book" | "quest", skill = n} where it is not a
 -- trainer's to give (First Aid, Cooking, Fishing)
 function ns.RankRule(name, kind, nextRank)
-    local rules = ns.RANK_RULES[name] or (kind == "craft" and ns.RANK_RULES.craft)
+    local this = ns.RANK_RULES_FOR[ns.CLIENT]
+    local rule = this and this[name] and this[name][nextRank]
+    if rule then return rule end
+    local own = ns.RANK_RULES[name]
+    if own then return ns.BOOK_RANKS and own[nextRank] or {} end
+    local rules = kind == "craft" and ns.RANK_RULES.craft
     return rules and rules[nextRank] or {}
 end
 
@@ -750,9 +792,12 @@ function ns.BuildProfLines(name, p)
     local tooLow = rule.level and level < rule.level and
                        string.format(" - needs character level %d (you're %d)", rule.level, level) or ""
     local fromItem = rule.how and string.format("%s %s comes from a %s - see below", nextRank, name, rule.how)
+    local article = name:find("^[AEIOU]") and "an" or "a"
+    -- the last rank there is on this game, and capped at it
+    local finalCap = capped and rank ~= nil and not nextRank
     if nextRank and p.rank >= (trainAt or math.huge) then
         if capped then
-            add("Capped! " .. (fromItem or string.format("Train %s at a %s trainer", nextRank, name)) .. tooLow, "warn")
+            add("Capped! " .. (fromItem or string.format("Train %s at %s %s trainer", nextRank, article, name)) .. tooLow, "warn")
         elseif tooLow ~= "" then
             add(string.format("%s at %d%s", nextRank, trainAt, tooLow), "warn")
         else
@@ -778,7 +823,9 @@ function ns.BuildProfLines(name, p)
         end
     elseif p.kind == "craft" then
         local craft = ns.CRAFT[name]
-        if craft then
+        if craft and finalCap then
+            add("Nothing left to skill up here - craft only what you need", "dim")
+        elseif craft then
             local route = craft.route
             local fishCombo = name == "Cooking" and ns.FishCookCombo()
             if fishCombo then route = ns.FISH_COOKING end
@@ -810,8 +857,7 @@ function ns.BuildProfLines(name, p)
                     alt = alt:gsub("^%s+", ""):gsub("%s+$", "")
                     local known = ns.ResolveRecipe(knownMap, alt)
                     if known then
-                        local c = ns.RecipeColor(name, known, p.rank) or
-                                      (type(knownMap[known]) == "string" and knownMap[known] or nil)
+                        local c = ns.RecipeColor(name, known, p.rank)
                         if not anyKnown or (ORDER[c] or 9) < (ORDER[routeColor] or 9) then
                             routeName, routeColor = known, c
                         end
@@ -831,9 +877,13 @@ function ns.BuildProfLines(name, p)
                                      (routeO == 3 or (routeO == 2 and ORDER[bestColor] <= 1))
                 if takeBest then
                     add(string.format("Craft: %s (%s)", best, ns.ColorText(name, best, p.rank) or ns.COLOR_WORD[bestColor]), "normal")
-                    add(string.format("(%s is %s for you now - the game moved it, so this beats the route)",
+                    -- grey: the game moved it; green: it only skills up some
+                    -- of the time (many rows end on a few green points)
+                    add(string.format(routeO == 3 and "(%s is %s for you now - the game moved it, so this beats the route)" or
+                                          "(%s is %s for you now and only skills up some of the time, so this beats the route)",
                                       routeName, ns.ColorText(name, routeName, p.rank) or ns.COLOR_WORD[routeColor]), "dim")
-                    if bestRow and ns.RowMats(bestRow) then add("Mats: " .. ns.RowMats(bestRow), "dim") end
+                    local bestMats = bestRow and ns.RowMats(bestRow, best, knownMap)
+                    if bestMats then add("Mats: " .. bestMats, "dim") end
                 else
                     local colorText = routeName and ns.ColorText(name, routeName, p.rank)
                     add(string.format("Craft: %s%s", display, colorText and (" (" .. colorText .. ")") or ""), "normal")
@@ -860,9 +910,9 @@ function ns.BuildProfLines(name, p)
                             add(string.format("(fish: %s)", current.where), "dim")
                         end
                     elseif ns.RowMats(current) then
-                        add("Mats: " .. ns.RowMats(current), "dim")
+                        add("Mats: " .. ns.RowMats(current, routeName, knownMap), "dim")
                     end
-                    local source = current.source or current.recipe
+                    local source = ns.RowSource(current)
                     if type(source) == "table" then
                         local faction = UnitFactionGroup and
                                             UnitFactionGroup("player")
@@ -872,6 +922,10 @@ function ns.BuildProfLines(name, p)
                         local need = ns.RecipeRequirement(name, display)
                         if need and need > p.rank then
                             add(string.format("Learn it at %d from your trainer", need), "warn")
+                        elseif ns.db.recipeFiltered and ns.db.recipeFiltered[name] then
+                            -- the list came through the window's filters
+                            add("Not in your window's list - if you know it, clear the window's filters once", "warn")
+                            add("Get it: " .. (source or "check your trainer / recipe vendors"), "dim")
                         else
                             add("You don't know this recipe yet!", "warn")
                             add("Get it: " ..
@@ -880,7 +934,7 @@ function ns.BuildProfLines(name, p)
                         end
                     elseif not knownMap then
                         if source then
-                            add("Recipe: " .. source, "dim")
+                            add("Get it: " .. source, "dim")
                         end
                         add(string.format("(open your %s window once so I can check these recipes against your game)",
                                           name), "dim")
@@ -888,7 +942,18 @@ function ns.BuildProfLines(name, p)
                 end
             end
             if nextUp then
-                add(string.format("At %d: %s", nextUp[1], ns.RowName(nextUp)), "dim")
+                -- the next row the player can learn, at the skill the
+                -- trainer named if it named one; after a step-back a later
+                -- row can come sooner than the stepped-back one
+                local nextAt, after = ns.RouteRowNeeds(name, nextUp), current == nil
+                for _, tier in ipairs(route) do
+                    if after then
+                        local n = ns.RouteRowNeeds(name, tier)
+                        if n > p.rank and n < nextAt then nextUp, nextAt = tier, n end
+                    end
+                    if tier == current then after = true end
+                end
+                add(string.format("At %d: %s", nextAt, ns.RowName(nextUp)), "dim")
             end
             for _, note in ipairs(craft.notes or {}) do
                 if NoteVisible(note, p.rank, p.maxRank) then
@@ -919,6 +984,8 @@ function ns.BuildProfLines(name, p)
                 add(string.format("Later (Cooking %d): %s", nextUp[1],
                                   nextUp.fish), "dim")
             end
+        elseif finalCap then
+            add("Fishing is maxed - fish wherever your catches are", "normal")
         else
             add("Fish anywhere - each catch can skill up", "normal")
             add("Higher-level zones need higher skill (use lures)", "dim")

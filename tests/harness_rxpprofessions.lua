@@ -67,7 +67,7 @@ local function NewWorld(opts)
     _G.SlashCmdList = {}
     _G.C_Timer = {NewTicker = function(s, fn) table.insert(w.timers, {s, fn}) end, After = function(s, fn) table.insert(w.timers, {s, fn}) end}
     _G.UnitLevel = function() return opts.level or 20 end
-    _G.UnitFactionGroup = function() return "Alliance" end
+    _G.UnitFactionGroup = function() return opts.faction or "Alliance" end
     _G.UnitRace = function() return opts.race or "Human", opts.race or "Human" end
     _G.GetRealZoneText = function() return opts.zone or "Elwynn Forest" end
     _G.RXPProfessionsDB = opts.db
@@ -85,7 +85,7 @@ local function NewWorld(opts)
     -- the game build: a new one starts recipe colours afresh
     w.build = opts.build or "61582"
     -- Forever reports toc 16001; the routes pick its recipe names and mats from that
-    local toc = opts.client == "forever" and 16001 or opts.client == "tbc" and 20505 or 11508
+    local toc = opts.client == "forever" and 16001 or opts.client == "tbc" and 20505 or opts.client == "mists" and 50504 or 11508
     _G.GetBuildInfo = function() return "1.15.8", w.build, "Oct 1 2026", toc end
     local function visible()
         local out = {}
@@ -125,7 +125,7 @@ local function NewWorld(opts)
         return t[1], "", t[2], false
     end
     _G.GetTrainerServiceSkillReq = function(i) local t = w.trainer[i]; return t[3], t[4] end
-    if opts.client == "classic" or opts.client == "tbc" then
+    if opts.client == "classic" or opts.client == "tbc" or opts.client == "mists" then
         _G.GetTradeSkillLine = function() return w.trade and w.trade[1] or "UNKNOWN", w.tradeRank, 75 end
         _G.GetCraftDisplaySkillLine = function() if w.craft then return w.craft[1], w.craft[2], 75 end end
         _G.GetNumCrafts = function() return w.craft and #w.craft[3] or 0 end
@@ -157,10 +157,16 @@ local function NewWorld(opts)
         -- GetChildProfessionInfo always returns a table: professionID 0
         -- when there is no child (w.noChild), and Blizzard then reads the
         -- base; the name players see is parentProfessionName, else
-        -- professionName. GetFilteredRecipeIDs is learned-only on Forever.
+        -- professionName. GetAllRecipeIDs lists every recipe, learned or
+        -- not, whatever the filters (w.noAllIDs: a client without it);
+        -- GetFilteredRecipeIDs is learned-only on Forever, less what the
+        -- window's filters hide (w.hidden[id]) - the recipe stays learned.
+        w.hidden = {}
         local function ids(all)
             local out = {}
-            for id, r in pairs(w.recipes) do if all or r.learned then out[#out + 1] = id end end
+            for id, r in pairs(w.recipes) do
+                if all or (r.learned and not w.hidden[id]) then out[#out + 1] = id end
+            end
             table.sort(out)
             return out
         end
@@ -174,6 +180,7 @@ local function NewWorld(opts)
                 return {professionID = 185, professionName = w.openProf or "Cooking", skillLevel = w.openRank or 20, maxSkillLevel = 75}
             end,
             GetFilteredRecipeIDs = function() return ids(false) end,
+            GetAllRecipeIDs = function() if not w.noAllIDs then return ids(true) end end,
             GetRecipeInfo = function(id) return w.recipes[id] end,
             IsTradeSkillReady = function() return not w.notReady end,
             IsDataSourceChanging = function() return w.changing or false end,
@@ -477,19 +484,22 @@ do
     }
     w.Fire("TRADE_SKILL_LIST_UPDATE")
     local known = w.ns.GetKnownRecipes("Tailoring")
-    check(known and known["Simple Kilt"] == "optimal" and known["Linen Bag"] == "trivial" and not known["Reinforced Linen Cape"] and w.ns.recipeAPI == "GetFilteredRecipeIDs",
-          "forever: recipes read through GetFilteredRecipeIDs; one that can't skill up counts as grey")
-    -- the player ticks "skill-ups only": the list shrinks, nothing known is forgotten
-    w.recipes[1].learned, w.recipes[2].learned = false, false
+    check(known and known["Simple Kilt"] == "optimal" and known["Linen Bag"] == "trivial" and not known["Reinforced Linen Cape"] and w.ns.recipeAPI == "GetAllRecipeIDs",
+          "forever: recipes read through GetAllRecipeIDs (all of them, unfiltered); one that can't skill up counts as grey")
+    -- a client with only the filtered list, and the player ticks "skill-ups only":
+    -- the list shrinks, nothing known is forgotten
+    w.noAllIDs = true
+    w.hidden = {[1] = true, [2] = true}
     w.Fire("TRADE_SKILL_LIST_UPDATE")
     known = w.ns.GetKnownRecipes("Tailoring")
-    check(known["Linen Bag"] and known["Bolt of Linen Cloth"] and known["Simple Kilt"], "forever: a filtered list adds to the known recipes, never replaces them")
+    check(w.ns.recipeAPI == "GetFilteredRecipeIDs" and known["Linen Bag"] and known["Bolt of Linen Cloth"] and known["Simple Kilt"],
+          "forever: a filtered list adds to the known recipes, never replaces them")
     -- a window still loading says skill 0: not a profession learned afresh
     w.openRank = 0
     w.Fire("TRADE_SKILL_LIST_UPDATE")
     check(w.ns.GetKnownRecipes("Tailoring")["Linen Bag"] and w.ns.db.recipeRank.Tailoring == 63, "forever: a window reading skill 0 while it loads does not start the list over")
     w.openRank = 63
-    w.recipes[1].learned, w.recipes[2].learned = true, true
+    w.hidden, w.noAllIDs = {}, nil
     -- a list still being built, a linked window, someone else's: not read
     w.recipes[5] = {name = "Brown Linen Robe", learned = true, relativeDifficulty = 0}
     w.notReady = true; w.Fire("TRADE_SKILL_LIST_UPDATE"); w.notReady = false
@@ -519,7 +529,7 @@ do
     w.Fire("TRAINER_SHOW")
     check(w.ns.RecipeRequirement("Tailoring", "Woolen Cape") == 55 and w.ns.RecipeRequirement("Tailoring", "Linen Belt") == 15, "forever: trainer requirements read in Forever's order")
     w.slash("status")
-    check(Printed("(last through GetFilteredRecipeIDs)"), "forever: /rxpp status names the recipe API")
+    check(Printed("(last through GetAllRecipeIDs)"), "forever: /rxpp status names the recipe API")
 end
 
 -- Classic: a linked profession (someone's [Tailoring] link) is not the player's own
@@ -565,7 +575,7 @@ do
     -- a faction-split source shows the player's side only
     alchemy.rank = 270; alchemy.maxRank = 300; f.Fire("SKILL_LINES_CHANGED")
     text = Lines(f, "Alchemy")
-    check(text:find("Recipe: Recipe (about 1g 20s, limited stock): Ulthir", 1, true) and not text:find("Algernon", 1, true), "sources: a per-faction source shows the player's faction")
+    check(text:find("Get it: Recipe (about 1g 20s, limited stock): Ulthir", 1, true) and not text:find("Algernon", 1, true), "sources: a per-faction source shows the player's faction")
     -- Classic keeps Classic Era's route
     local c = NewWorld({client = "classic", events = CLASSIC_EVENTS, level = 14, extra = {{name = "Tailoring", rank = 63, maxRank = 75}},
                         db = {setupDone = true, chosen = {Tailoring = true}, show = true}})
@@ -650,6 +660,135 @@ do
     local _, _, w = trainerLines("forever", "Human")
     local mine = Lines(w, "Mining")
     check(mine:find("Mine: Copper Vein / Poor Copper Vein", 1, true), "forever: its starter copper nodes are named")
+end
+
+-- The 1.0.0 review's findings, each as the case that showed it
+do
+    local function world(client, profs, opts)
+        opts = opts or {}
+        local chosen = {}
+        for _, p in ipairs(profs) do chosen[p.name] = true end
+        local w = NewWorld({client = client, events = client == "forever" and FOREVER_EVENTS or CLASSIC_EVENTS,
+                            level = opts.level or 60, faction = opts.faction, zone = opts.zone, extra = profs,
+                            db = {setupDone = true, chosen = chosen, show = true}})
+        w.Fire("PLAYER_ENTERING_WORLD")
+        return w
+    end
+    -- an old orange guess (seen at 20) must not beat the route at 98: the
+    -- linen bolts grey at 50 on every client
+    local tail = {name = "Tailoring", rank = 20, maxRank = 75}
+    local w = world("classic", {tail})
+    w.trade, w.tradeRank = {"Tailoring", {{"Bolt of Linen Cloth", "optimal"}}}, 20
+    w.Fire("TRADE_SKILL_SHOW")
+    tail.rank, tail.maxRank = 98, 150; w.Fire("SKILL_LINES_CHANGED")
+    w.trade, w.tradeRank = {"Tailoring", {{"Bolt of Woolen Cloth", "easy"}}}, 98
+    w.Fire("TRADE_SKILL_UPDATE")
+    local text = Lines(w, "Tailoring")
+    check(text:find("Craft: Bolt of Woolen Cloth (green)", 1, true) and not text:find("Craft: Bolt of Linen Cloth", 1, true),
+          "review: a colour seen 78 points ago does not replace the route")
+
+    -- Mists: trainers teach every First Aid / Cooking / Fishing rank, and ranks go on past 375
+    local mf = {name = "First Aid", rank = 150, maxRank = 150}
+    local mt = {name = "Tailoring", rank = 375, maxRank = 375}
+    w = world("mists", {mf, mt})
+    text = Lines(w, "First Aid")
+    check(text:find("Capped! Train Expert at a First Aid trainer", 1, true) and not text:find("book", 1, true),
+          "review: Mists trains Expert First Aid at a trainer, no book")
+    check(Lines(w, "Tailoring"):find("Capped! Train Grand Master at a Tailoring trainer", 1, true), "review: Mists has Grand Master after 375")
+
+    -- TBC: Artisan at any trainer (no Classic-only trainer notes), Master First Aid from a book
+    local te = {name = "Enchanting", rank = 200, maxRank = 225}
+    local tf = {name = "First Aid", rank = 300, maxRank = 300}
+    w = world("tbc", {te, tf}, {level = 40})
+    check(not Lines(w, "Enchanting"):find("Uldaman", 1, true), "review: TBC is not sent into Uldaman for Artisan Enchanting")
+    text = Lines(w, "First Aid")
+    check(text:find("Capped! Master First Aid comes from a book - see below", 1, true) and text:find("Burko, Temple of Telhamat", 1, true),
+          "review: TBC's Master First Aid is a book in Outland")
+
+    -- Era: where Expert is taught, per faction
+    w = world("classic", {{name = "Enchanting", rank = 125, maxRank = 150}}, {level = 25, faction = "Horde"})
+    check(Lines(w, "Enchanting"):find("Expert rank: Hgarth - Sun Rock Retreat", 1, true), "review: Era names the Expert Enchanting trainer")
+
+    -- the fish is only named where it is caught
+    w = world("classic", {{name = "Cooking", rank = 285, maxRank = 300}, {name = "Fishing", rank = 280, maxRank = 300}},
+              {zone = "Western Plaguelands"})
+    check(not Lines(w, "Cooking"):find("In Western Plaguelands", 1, true), "review: no Whitescale Salmon spot in Western Plaguelands")
+
+    -- level gates per game
+    w = world("forever", {{name = "Fishing", rank = 50, maxRank = 75}, {name = "Cooking", rank = 50, maxRank = 75}}, {level = 8})
+    check(Lines(w, "Fishing"):find("needs character level 10", 1, true), "review: Forever's Journeyman Fishing needs level 10")
+    check(Lines(w, "Cooking"):find("Can train Journeyman now (50 needed)", 1, true), "review: Forever's Journeyman Cooking has no level gate")
+    w = world("classic", {{name = "Cooking", rank = 50, maxRank = 75}}, {level = 8})
+    check(Lines(w, "Cooking"):find("needs character level 10", 1, true), "review: Era's Journeyman Cooking needs level 10")
+    w = world("tbc", {{name = "Fishing", rank = 125, maxRank = 150}}, {level = 15})
+    check(not Lines(w, "Fishing"):find("character level", 1, true), "review: TBC's Expert Fishing book has no level gate")
+
+    -- Era sells the top Alchemy recipes; TBC's trainers teach them
+    local ea = {name = "Alchemy", rank = 266, maxRank = 300}
+    w = world("classic", {ea})
+    w.trade, w.tradeRank = {"Alchemy", {{"Elixir of Greater Agility", "easy"}}}, 266
+    w.Fire("TRADE_SKILL_SHOW")
+    check(Lines(w, "Alchemy"):find("Get it: Recipe (limited stock): Ulthir", 1, true), "review: Era names the Superior Mana Potion vendor")
+    w = world("tbc", {ea})
+    w.trade, w.tradeRank = {"Alchemy", {{"Elixir of Greater Agility", "easy"}}}, 266
+    w.Fire("TRADE_SKILL_SHOW")
+    check(Lines(w, "Alchemy"):find("Get it: check your trainer", 1, true), "review: TBC sends you to the trainer for it")
+
+    -- the end of the road: no skill-up advice at the last cap
+    w = world("classic", {{name = "Blacksmithing", rank = 300, maxRank = 300}})
+    text = Lines(w, "Blacksmithing")
+    check(text:find("Nothing left to skill up here", 1, true) and not text:find("Craft:", 1, true) and not text:find("Get it", 1, true),
+          "review: 300/300 on Era gives no skill-up advice")
+
+    -- after a trainer step-back, "At N" is the trainer's number
+    local lw = {name = "Leatherworking", rank = 57, maxRank = 75}
+    w = world("classic", {lw}, {level = 15})
+    w.trainer = {{"Embossed Leather Gloves", "unavailable", "Leatherworking", 60}}
+    w.Fire("TRAINER_SHOW")
+    text = Lines(w, "Leatherworking")
+    check(text:find("needs 60 - your trainer said so", 1, true) and text:find("At 60: Embossed Leather Gloves", 1, true),
+          "review: the 'At' line uses the trainer's number after a step-back")
+
+    -- alternatives: only the known one's mats; green is not "moved"
+    local ck = {name = "Cooking", rank = 100, maxRank = 150}
+    w = world("classic", {ck})
+    w.trade, w.tradeRank = {"Cooking", {{"Crab Cake", "optimal"}}}, 100
+    w.Fire("TRADE_SKILL_SHOW")
+    text = Lines(w, "Cooking")
+    check(text:find("Mats: 1 Crawler Meat + 1 Mild Spices\n", 1, true) or text:sub(-36) == "Mats: 1 Crawler Meat + 1 Mild Spices",
+          "review: a row of alternatives shows only the known recipe's mats")
+    local fa = {name = "First Aid", rank = 77, maxRank = 150}
+    w = world("classic", {fa})
+    w.trade, w.tradeRank = {"First Aid", {{"Heavy Linen Bandage", "easy"}, {"Anti-Venom", "medium"}}}, 77
+    w.Fire("TRADE_SKILL_SHOW")
+    text = Lines(w, "First Aid")
+    check(text:find("(Heavy Linen Bandage is green for you now and only skills up some of the time", 1, true) and not text:find("moved", 1, true),
+          "review: a green route recipe is not said to have been moved")
+
+    -- "an Alchemy trainer"
+    w = world("classic", {{name = "Alchemy", rank = 75, maxRank = 75}}, {level = 20})
+    check(Lines(w, "Alchemy"):find("Capped! Train Journeyman at an Alchemy trainer", 1, true), "review: an Alchemy trainer")
+
+    -- Forever: a known recipe the window's filter hides is still known
+    local fe = {name = "Enchanting", rank = 63, maxRank = 75}
+    w = world("forever", {fe}, {level = 20})
+    w.openProf, w.openRank = "Enchanting", 63
+    w.recipes = {[7420] = {name = "Enchant Chest - Inferior Stamina", learned = true, relativeDifficulty = 3, canSkillUp = false},
+                 [7457] = {name = "Enchant Bracer - Minor Stamina", learned = true, relativeDifficulty = 0, canSkillUp = true}}
+    w.hidden = {[7420] = true}
+    w.Fire("TRADE_SKILL_LIST_UPDATE")
+    text = Lines(w, "Enchanting")
+    check(text:find("Craft: Enchant Bracer - Minor Stamina (orange)", 1, true) and not text:find("don't know", 1, true),
+          "review: Forever - a grey recipe hidden by 'has skill up' is still known, and replaced")
+    -- a client with only the filtered list says the filter may hide it
+    w = world("forever", {fe}, {level = 20})
+    w.openProf, w.openRank, w.noAllIDs = "Enchanting", 63, true
+    w.recipes = {[7457] = {name = "Enchant Bracer - Minor Stamina", learned = true, relativeDifficulty = 0, canSkillUp = true},
+                 [7420] = {name = "Enchant Chest - Inferior Stamina", learned = true, relativeDifficulty = 3}}
+    w.hidden = {[7420] = true}
+    w.Fire("TRADE_SKILL_LIST_UPDATE")
+    check(Lines(w, "Enchanting"):find("Not in your window's list - if you know it, clear the window's filters once", 1, true),
+          "review: with only the filtered list, a missing recipe may be the filter's doing")
 end
 
 -- a secret rank (Forever hides some numbers from addon code) counts as unknown, not an error

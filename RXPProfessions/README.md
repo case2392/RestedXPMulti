@@ -5,21 +5,27 @@ RestedXP leveling guides, instead of switching to a separate profession guide.
 Sister addon to RestedXP Party Sync (both live in this repository).
 
 On first launch a setup window asks **which professions you're leveling**
-(Herbalism, Mining, Skinning, First Aid, Alchemy) and whether you want to
+(any of Herbalism, Mining, Skinning, Alchemy, Blacksmithing, Enchanting,
+Engineering, Leatherworking, Tailoring, Cooking, First Aid and Fishing) and
+whether you want to
 **use the Auction House for materials**. Then a small window — skinned to
 match your RestedXP theme — always shows what to do *right now*:
 
 - **Gathering:** what to gather at your current skill ("Mine: Copper Vein"),
   what unlocks next ("At 65: Tin Vein"), with a chat ping when a new tier
   unlocks.
-- **Trainer reminders:** "Cap soon — train Journeyman at 50", and a warning
-  when you're capped and wasting skill-ups.
+- **Trainer reminders:** "Can train Journeyman now (50 needed)" once you can
+  rank up, and "Capped! Train Journeyman at a Tailoring trainer" when you're
+  capped and wasting skill-ups - with the character level a trainer asks
+  for, and, for First Aid, Cooking and Fishing, the book or quest instead
+  where that is how the game gives the rank.
 - **Pace check:** if your skill falls well behind your character level, it
   tells you to catch up before leaving the zone (roughly 5 skill per level).
-- **First Aid:** which bandage to craft in your bracket, plus early warnings
-  for the Expert book and the Triage quest.
-- **Alchemy:** what to craft in your bracket with the materials needed, vial
-  vendor reminder, and an AH tip if you opted in.
+- **Crafting (Alchemy, Blacksmithing, Enchanting, Engineering,
+  Leatherworking, Tailoring, First Aid, Cooking):** what to craft in your
+  bracket with the materials needed, where to get a recipe a trainer does
+  not teach, the trainers for the higher ranks, and an AH tip if you opted
+  in. Cooking and Fishing together level off your own catches.
 - Professions you picked but haven't learned yet show a "visit a trainer"
   reminder.
 
@@ -58,8 +64,9 @@ present).
   the addon now learns from the game as you play: every trainer window you
   open records what skill each recipe needs, a row the trainer contradicts
   is stepped back to the last recipe you can have, and your profession
-  window's skill-up colours are remembered so "Meanwhile: X (still skills
-  up)" names a recipe you know when the route's is out of reach.
+  window's skill-up colours are remembered so "Meanwhile: Handstitched
+  Leather Boots (orange)" names a recipe you know, with its colour, when the
+  route's is out of reach.
 - A skill stuck at an old value (a report: Skinning still 61 after
   levelling it to 105, reload or not): 0.6.1 read the profession list
   first and let the first source win, so a source that lagged behind
@@ -94,5 +101,5 @@ retail-style one.
 - English-language clients only for now (professions are matched by name).
 - Craft routes are the standard approximate ones; skill-up RNG means brackets
   can shift by a few points.
-- Planned next: more crafting professions, recipe/vendor locations, and
-  shopping lists ("gather 15 Silverleaf before hitting town").
+- Planned next: shopping lists ("gather 15 Silverleaf before hitting town")
+  and Outland routes for TBC.
