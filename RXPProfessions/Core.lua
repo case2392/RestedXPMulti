@@ -282,6 +282,7 @@ local function Plain(v)
     local ok = pcall(function() return v == 0 end)
     if ok then return v end
 end
+ns.Plain = Plain
 
 -- Three clients, three skill APIs:
 --   Classic Era / TBC / Mists: GetNumSkillLines + GetSkillLineInfo
@@ -551,6 +552,8 @@ local function RecordWindow(prof, given, list)
     -- with the colours it was given
     local p = ns.profs and ns.profs[prof]
     if p and type(rank) == "number" and rank > p.rank then p.rank = rank end
+    -- the item tooltips (Inventory.lua) build their plan again
+    ns.dataVersion = (ns.dataVersion or 0) + 1
 end
 
 -- true when an optional game function exists and says yes
@@ -689,6 +692,7 @@ function ns.ScanTrainer()
     end
     if seen == 0 then return end
     ns.db.recipeReq = reqs
+    ns.dataVersion = (ns.dataVersion or 0) + 1 -- the item tooltips' plan too
     ns.UpdateUI()
     return seen
 end
@@ -973,6 +977,89 @@ function ns.RankRule(name, kind, nextRank)
     return rules and rules[nextRank] or {}
 end
 
+-- Capped at the last rank this game has: nothing is left to skill up.
+function ns.IsFinalCap(p)
+    local rank = RankInfo(p.maxRank)
+    return p.rank >= p.maxRank and rank ~= nil and not rank.nextRank
+end
+
+-- Where the player stands on a profession's craft route: the row to craft
+-- now, the next row they can learn and the skill it starts at, and a row
+-- the trainer said comes later than the route claims. The window and the
+-- item tooltips (Inventory.lua) both read this, so they never disagree.
+-- nil for a profession without a craft route (gathering, Fishing).
+--   {route, current, nextUp, nextAt, tooEarly, fishCombo}
+-- needs = ns.RouteRowNeeds or a stand-in for it (the tooltips pass one
+-- that remembers its answers while they walk the route)
+function ns.RoutePosition(name, p, needs)
+    local Needs = needs or ns.RouteRowNeeds
+    local craft = ns.CRAFT[name]
+    if not craft then return nil end
+    local route = craft.route
+    local fishCombo = name == "Cooking" and ns.FishCookCombo()
+    if fishCombo then route = ns.FISH_COOKING end
+    local current, nextUp = CurrentAndNext(route, p.rank)
+    -- a row whose recipe the trainer sells only at a higher skill
+    -- than the row claims is a tier early: step back to the last
+    -- row the player can actually have learned
+    local tooEarly
+    while current and Needs(name, current) > p.rank do
+        tooEarly = tooEarly or current
+        local prev
+        for _, tier in ipairs(route) do
+            if tier == current then break end
+            prev = tier
+        end
+        if not prev then break end
+        nextUp = current
+        current = prev
+    end
+    -- the next row the player can learn, at the skill the trainer named
+    -- if it named one; after a step-back a later row can come sooner than
+    -- the stepped-back one
+    local nextAt
+    if nextUp then
+        nextAt = Needs(name, nextUp)
+        local after = current == nil
+        for _, tier in ipairs(route) do
+            if after then
+                local n = Needs(name, tier)
+                if n > p.rank and n < nextAt then nextUp, nextAt = tier, n end
+            end
+            if tier == current then after = true end
+        end
+    end
+    return {route = route, current = current, nextUp = nextUp, nextAt = nextAt, tooEarly = tooEarly,
+            fishCombo = fishCombo}
+end
+
+-- What to craft at the route's current row. The row's alternatives the
+-- player knows, the best-coloured one first, with its colour at the skill
+-- they are at now. And whether the game outranks the route: when it shows
+-- the route's recipe grey (no skill-ups), or green while the player knows
+-- something orange or yellow, the better recipe is the one to craft. (A
+-- report: Linen Bag at 63 Tailoring and Enchant Bracer - Minor Stamina at
+-- 63 Enchanting, both past their skill-ups after a patch, still
+-- recommended.) The window and the item tooltips both read this.
+function ns.CraftNow(name, p, current)
+    local now = {knownMap = ns.GetKnownRecipes(name), anyKnown = false}
+    for _, alt in ipairs(ns.RowAlts(current)) do
+        local known = ns.ResolveRecipe(now.knownMap, alt)
+        if known then
+            local c = ns.RecipeColor(name, known, p.rank)
+            if not now.anyKnown or (ORDER[c] or 9) < (ORDER[now.routeColor] or 9) then
+                now.routeName, now.routeColor = known, c
+            end
+            now.anyKnown = true
+        end
+    end
+    now.routeO = ORDER[now.routeColor]
+    now.best, now.bestColor, now.bestRow = ns.BestKnownRecipe(name, p.rank)
+    now.takeBest = (now.anyKnown and now.routeO and now.best and now.best ~= now.routeName and
+                       (now.routeO == 3 or (now.routeO == 2 and ORDER[now.bestColor] <= 1))) and true or false
+    return now
+end
+
 -- Returns a list of {text, style} lines for one profession.
 -- style: "head" | "normal" | "good" | "warn" | "dim"
 function ns.BuildProfLines(name, p)
@@ -1094,54 +1181,20 @@ function ns.BuildProfLines(name, p)
         if craft and finalCap then
             add(L["Nothing left to skill up here - craft only what you need"], "dim")
         elseif craft then
-            local route = craft.route
-            local fishCombo = name == "Cooking" and ns.FishCookCombo()
-            if fishCombo then route = ns.FISH_COOKING end
-            local current, nextUp = CurrentAndNext(route, p.rank)
+            -- where the player stands on the route, the same answer the
+            -- item tooltips give (Inventory.lua)
+            local pos = ns.RoutePosition(name, p)
+            local current, nextUp, tooEarly, fishCombo = pos.current, pos.nextUp, pos.tooEarly, pos.fishCombo
             if fishCombo then
                 add(L["Combo: cooking your Fishing catches"], "good")
             end
-            -- a row whose recipe the trainer sells only at a higher skill
-            -- than the row claims is a tier early: step back to the last
-            -- row the player can actually have learned
-            local tooEarly
-            while current and ns.RouteRowNeeds(name, current) > p.rank do
-                tooEarly = tooEarly or current
-                local prev
-                for _, tier in ipairs(route) do
-                    if tier == current then break end
-                    prev = tier
-                end
-                if not prev then break end
-                nextUp = current
-                current = prev
-            end
             if current then
-                local knownMap = ns.GetKnownRecipes(name)
-                -- the row's alternatives the player knows, the best-coloured
-                -- one first, with its colour at the skill they are at now
-                local routeName, routeColor, anyKnown = nil, nil, false
-                for _, alt in ipairs(ns.RowAlts(current)) do
-                    local known = ns.ResolveRecipe(knownMap, alt)
-                    if known then
-                        local c = ns.RecipeColor(name, known, p.rank)
-                        if not anyKnown or (ORDER[c] or 9) < (ORDER[routeColor] or 9) then
-                            routeName, routeColor = known, c
-                        end
-                        anyKnown = true
-                    end
-                end
+                local now = ns.CraftNow(name, p, current)
+                local knownMap, routeName, routeColor, anyKnown = now.knownMap, now.routeName, now.routeColor, now.anyKnown
                 local display = routeName or ns.RowName(current)
-                local routeO = ORDER[routeColor]
-                -- The game outranks the route: when it shows the route's
-                -- recipe grey (no skill-ups), or green while the player knows
-                -- something orange or yellow, the better recipe is the one
-                -- to craft. (A report: Linen Bag at 63 Tailoring and Enchant
-                -- Bracer - Minor Stamina at 63 Enchanting, both past their
-                -- skill-ups after a patch, still recommended.)
-                local best, bestColor, bestRow = ns.BestKnownRecipe(name, p.rank)
-                local takeBest = anyKnown and routeO and best and best ~= routeName and
-                                     (routeO == 3 or (routeO == 2 and ORDER[bestColor] <= 1))
+                local routeO = now.routeO
+                local best, bestColor, bestRow = now.best, now.bestColor, now.bestRow
+                local takeBest = now.takeBest
                 if takeBest then
                     add(string.format(L["Craft: %s (%s)"], best, ns.ColorText(name, best, p.rank) or L[ns.COLOR_WORD[bestColor]]), "normal")
                     -- grey: the game moved it; green: it only skills up some
@@ -1207,18 +1260,7 @@ function ns.BuildProfLines(name, p)
                 end
             end
             if nextUp then
-                -- the next row the player can learn, at the skill the
-                -- trainer named if it named one; after a step-back a later
-                -- row can come sooner than the stepped-back one
-                local nextAt, after = ns.RouteRowNeeds(name, nextUp), current == nil
-                for _, tier in ipairs(route) do
-                    if after then
-                        local n = ns.RouteRowNeeds(name, tier)
-                        if n > p.rank and n < nextAt then nextUp, nextAt = tier, n end
-                    end
-                    if tier == current then after = true end
-                end
-                add(string.format(L["At %d: %s"], nextAt, ns.RowName(nextUp)), "dim")
+                add(string.format(L["At %d: %s"], pos.nextAt, ns.RowName(nextUp)), "dim")
             end
             for _, note in ipairs(craft.notes or {}) do
                 if NoteVisible(note, p.rank, p.maxRank) then
@@ -1428,6 +1470,10 @@ SlashCmdList["RXPPROFESSIONS"] = function(input)
         ns.ToggleUI(input)
     elseif input == "setup" then
         ns.ShowSetup()
+    elseif input == "tooltip" or input == "tooltiplater" or input == "tooltipothers" then
+        ns.ToggleTooltipSetting(input)
+    elseif input:sub(1, 4) == "need" and ns.PrintNeeds then
+        ns.PrintNeeds(input:sub(5))
     elseif input == "status" then
         ns.Refresh()
         local names = {}
@@ -1463,7 +1509,9 @@ SlashCmdList["RXPPROFESSIONS"] = function(input)
         if #ns.missingEvents > 0 then
             ns.Print("events this client lacks (skipped): %s", table.concat(ns.missingEvents, ", "))
         end
+        if ns.TooltipStatus then ns.Print("%s", ns.TooltipStatus()) end
     else
         ns.Print(L["commands: |cFFFFCC00/rxpp|r toggle the window, |cFFFFCC00/rxpp setup|r choose professions, |cFFFFCC00/rxpp status|r what the client gives us"])
+        ns.Print(L["item tooltips: |cFFFFCC00/rxpp tooltip|r on or off, |cFFFFCC00/rxpp tooltip later|r the spans after the one you are in, |cFFFFCC00/rxpp tooltip others|r the professions you did not pick"])
     end
 end

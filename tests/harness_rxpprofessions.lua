@@ -227,7 +227,7 @@ local function NewWorld(opts)
     end
 
     local ns = {}
-    for _, f in ipairs({"Locales.lua", "Data.lua", "Core.lua", "UI.lua"}) do
+    for _, f in ipairs({"Locales.lua", "Data.lua", "Core.lua", "UI.lua", "Inventory.lua"}) do
         local chunk = assert(loadfile(root .. "/RXPProfessions/" .. f))
         chunk("RXPProfessions", ns)
     end
@@ -1034,6 +1034,621 @@ do
     local w = NewWorld({client = "none", events = FOREVER_EVENTS, db = {setupDone = true, chosen = {Mining = true}, show = true}})
     local ok = pcall(w.Fire, "PLAYER_ENTERING_WORLD")
     check(ok and next(w.ns.profs) == nil and w.ns.skillAPI == "none", "no skill API: tracks nothing, no error")
+end
+
+--------------------------------------------------------------------------
+-- Item tooltips (Inventory.lua): what the plan needs, span by span, against
+-- what you have in bags and bank. A span is a route row, from its skill to
+-- the next row's; the one you are in counts from your skill.
+--------------------------------------------------------------------------
+
+-- a world with the modern tooltip pipeline (TooltipDataProcessor, as WoW
+-- Forever has it) and an item count that knows bags and bank apart:
+-- counts[id] = {bags = n, bank = n}, or anything else for a secret value
+local postCalls = {}
+local function TooltipWorld(opts, counts)
+    _G.Enum = {TooltipDataType = {Item = 0}, PlayerInteractionType = {Banker = 8}}
+    _G.TooltipDataProcessor = {AddTooltipPostCall = function(kind, fn) postCalls[#postCalls + 1] = {kind, fn} end}
+    local w = NewWorld(opts)
+    w.post = postCalls[#postCalls]
+    w.counts = counts or {}
+    w.bankVisible = true
+    _G.C_Item = _G.C_Item or {}
+    _G.C_Item.GetItemCount = function(id, includeBank)
+        local c = w.counts[id]
+        if c == nil then return 0 end
+        if type(c) ~= "table" or c.bags == nil then return c end
+        if includeBank and w.bankVisible then return c.bags + c.bank end
+        return c.bags
+    end
+    w.Fire("PLAYER_ENTERING_WORLD")
+    return w
+end
+-- the lines a tooltip gets for an item, joined: the game's own tooltip
+-- unless `which` names another (ItemRefTooltip, a comparison tooltip, an
+-- addon's hidden scanning one); forbidden = one the game locks away
+local function Tip(w, id, which, forbidden)
+    which = which or "GameTooltip"
+    local tip = {lines = {}}
+    function tip:AddLine(text) table.insert(self.lines, text) end
+    function tip:GetName() return which end
+    function tip:IsForbidden() return forbidden or false end
+    local saved = {GameTooltip = _G.GameTooltip, ItemRefTooltip = _G.ItemRefTooltip}
+    if which == "GameTooltip" or which == "ItemRefTooltip" then _G[which] = tip end
+    w.post[2](tip, {id = id})
+    _G.GameTooltip, _G.ItemRefTooltip = saved.GameTooltip, saved.ItemRefTooltip
+    return table.concat(tip.lines, "\n")
+end
+-- the inventory frame: the one listening for the bank
+local function FireInventory(w, event, ...)
+    for _, f in ipairs(w.frames) do
+        if f.events.BANKFRAME_OPENED and f.scripts.OnEvent then f.scripts.OnEvent(f, event, ...) end
+    end
+end
+-- the timers set for a moment later (C_Timer.After), run now; the
+-- window's 15-second ticker stays
+local function RunSoon(w)
+    local due, keep = {}, {}
+    for _, t in ipairs(w.timers) do
+        if t[1] < 15 then due[#due + 1] = t else keep[#keep + 1] = t end
+    end
+    w.timers = keep
+    for _, t in ipairs(due) do t[2]() end
+    return #due
+end
+local BANK_EVENTS = {"BANKFRAME_OPENED", "BANKFRAME_CLOSED", "BAG_UPDATE_DELAYED", "PLAYERBANKSLOTS_CHANGED",
+                     "PLAYER_INTERACTION_MANAGER_FRAME_SHOW", "PLAYER_INTERACTION_MANAGER_FRAME_HIDE"}
+local function With(list, extra)
+    local out = {}
+    for _, e in ipairs(list) do out[#out + 1] = e end
+    for _, e in ipairs(extra) do out[#out + 1] = e end
+    return out
+end
+
+-- Forever, Tailoring 63: the bolt row 55-70 is "now"; the bolts go into
+-- Woolen Cape (70-100) and Double-Stitched Woolen Shoulders (110-120)
+do
+    local tailor = {name = "Tailoring", rank = 63, maxRank = 75}
+    local w = TooltipWorld({client = "forever", events = FOREVER_EVENTS, level = 14, extra = {tailor},
+                            db = {setupDone = true, chosen = {Tailoring = true}, show = true}},
+                           {[2592] = {bags = 25, bank = 15}})
+    check(w.post and w.post[1] == 0 and w.ns.tooltipAPI == "TooltipDataProcessor", "tooltips: item tooltips through TooltipDataProcessor where the client has it")
+    local wool = Tip(w, 2592)
+    check(wool:find(" \nRXP Professions\nTailoring\n", 1, true), "tooltips: a gap, a header, then the profession")
+    check(wool:find("  Now 63-70 · 21 (bags 21) of ~21 · Bolt of Woolen Cloth\n", 1, true),
+          "tooltips: the span you are in counts from your skill (7 crafts x 3 Wool Cloth), and gets what you have first, from the bags")
+    check(wool:find("  70-100 · 19 (bags 4 · bank 15) of ~69 · Woolen Cape (via Bolt of Woolen Cloth)\n", 1, true),
+          "tooltips: a later span through the bolts, less the 7 the span before makes ((30 - 7) x 3), with the rest of the bags and the bank")
+    check(wool:find("  110-120 · 0 of ~90 · Double-Stitched Woolen Shoulders (via Bolt of Woolen Cloth)\n", 1, true), "tooltips: and the next span that uses the bolts (30 x 3), nothing left for it")
+    check(wool:find("\nYou have 40 (bags 25 · bank 15) · ~140 short", 1, true), "tooltips: the total, bags and bank apart, and what is short")
+    check(Tip(w, 2997):find("  70-100 · 0 of ~30 · Woolen Cape\n", 1, true), "tooltips: the bolt itself shows the spans that use it")
+    check(Tip(w, 4306):find("  100-110 · 0 of ~40 · Bolt of Silk Cloth\n", 1, true), "tooltips: Silk Cloth from its own span on (10 crafts x 4)")
+    check(Tip(w, 4306):find("You have 0 (bags 0 · bank 0) · ~620 short", 1, true), "tooltips: none in the bags, nothing needed now: what the later spans need")
+    check(Tip(w, 2589) == "", "tooltips: Linen Cloth is behind you at Tailoring 63 - no block at all")
+    check(Tip(w, 12345) == "", "tooltips: an item the plan does not name gets nothing")
+    check(Lines(w, "Tailoring"):find("Craft: Bolt of Woolen Cloth\n", 1, true), "tooltips: the window names the same row")
+
+    -- what you have in the bags of a made reagent comes off what it is made of
+    w.counts[2997] = {bags = 10, bank = 0}
+    w.ns.planDirty = true
+    check(Tip(w, 2592):find("  70-100 · 19 (bags 4 · bank 15) of ~39 · Woolen Cape (via Bolt of Woolen Cloth)\n", 1, true),
+          "tooltips: 10 bolts in the bags take 30 Wool Cloth off ((30 - 7 - 10) x 3)")
+    w.counts[2997] = nil
+    w.ns.planDirty = true
+
+    -- a long list is cut short with a sum
+    w.ns.TOOLTIP_MAX_SPANS = 1
+    check(Tip(w, 2592):find("  70-100 · 19 (bags 4 · bank 15) of ~69 · Woolen Cape (via Bolt of Woolen Cloth)\n  +1 more span · 0 of ~90\n", 1, true),
+          "tooltips: spans past the limit are summed on one line")
+    w.ns.TOOLTIP_MAX_SPANS = 5
+
+    -- the professions you did not pick: off, then on under their own heading
+    check(not wool:find("First Aid", 1, true), "tooltips: a profession you did not pick stays out by default")
+    w.slash("tooltip others")
+    local text = Tip(w, 2592)
+    local head = text:find("Other professions (not in your setup)", 1, true)
+    check(head and text:find("First Aid (not learned yet)\n  80-115 · ~35 · Wool Bandage\n  115-150 · ~70 · Heavy Wool Bandage", head, true),
+          "tooltips: with others on, First Aid shows under its own heading, after yours, with what it needs alone")
+    check(head and text:find("You have 40 (bags 25 · bank 15) · ~140 short", 1, true) < head, "tooltips: the others leave what your bags cover alone")
+    w.slash("tooltip others")
+    check(not Tip(w, 2592):find("First Aid", 1, true), "tooltips: /rxpp tooltip others turns them off again")
+
+    -- later spans off, then the whole block
+    w.slash("tooltip later")
+    text = Tip(w, 2592)
+    check(text:find("  Now 63-70", 1, true) and not text:find("  70-100 ", 1, true), "tooltips: /rxpp tooltip later hides the spans after the one you are in")
+    w.slash("tooltip later")
+    w.slash("tooltip")
+    check(Tip(w, 2592) == "", "tooltips: /rxpp tooltip turns them off")
+    w.slash("tooltip")
+    check(Tip(w, 2592) ~= "", "tooltips: and on")
+end
+
+-- Classic Era, Tailoring 63: Linen Bag (45-70) uses the bolts, the bolts
+-- the cloth
+do
+    local c = TooltipWorld({client = "classic", events = CLASSIC_EVENTS, level = 14, extra = {{name = "Tailoring", rank = 63, maxRank = 75}},
+                            db = {setupDone = true, chosen = {Tailoring = true}, show = true}})
+    check(Tip(c, 2996):find("  Now 63-70 · 0 of ~21 · Linen Bag\n", 1, true), "tooltips, Classic Era: Bolt of Linen Cloth now for Linen Bag (7 crafts x 3)")
+    check(Tip(c, 2589):find("  Now 63-70 · 0 of ~42 · Linen Bag (via Bolt of Linen Cloth)\n", 1, true), "tooltips, Classic Era: Linen Cloth through the bolts (21 x 2)")
+    check(Tip(c, 2996):find("You have 0 (bags 0 · bank 0) · ~31 short", 1, true), "tooltips, Classic Era: none in the bags - short")
+end
+
+-- the trainer said Woolen Cape needs 75: the window steps back to the
+-- bolts at 72, and the tooltip with it
+do
+    local w = TooltipWorld({client = "forever", events = FOREVER_EVENTS, level = 14, extra = {{name = "Tailoring", rank = 72, maxRank = 75}},
+                            db = {setupDone = true, chosen = {Tailoring = true}, show = true, recipeReq = {Tailoring = {["Woolen Cape"] = 75}}}})
+    local window = Lines(w, "Tailoring")
+    check(window:find("Craft: Bolt of Woolen Cloth", 1, true) and window:find("At 75: Woolen Cape", 1, true), "tooltips: the window steps back to the bolts")
+    check(Tip(w, 2592):find("  Now 72-75 · 0 of ~9 · Bolt of Woolen Cloth\n  75-100 · 0 of ~66 · Woolen Cape (via Bolt of Woolen Cloth)", 1, true),
+          "tooltips: and the tooltip with it - now 72-75, Woolen Cape from 75")
+end
+
+-- a client that sees the bank only while it is open: the count taken at
+-- the last visit stands in, and says so
+do
+    local w = TooltipWorld({client = "forever", events = With(FOREVER_EVENTS, BANK_EVENTS), level = 14, extra = {{name = "Tailoring", rank = 63, maxRank = 75}},
+                            db = {setupDone = true, chosen = {Tailoring = true}, show = true}},
+                           {[2592] = {bags = 5, bank = 20}})
+    w.bankVisible = false
+    check(Tip(w, 2592):find("  Now 63-70 · 5 (bags 5) of ~21 · Bolt of Woolen Cloth\n", 1, true) and
+              Tip(w, 2592):find("You have 5 (bags 5 · bank 0) · ~175 short", 1, true), "tooltips: away from a bank the client cannot see, the bags alone")
+    w.bankVisible = true
+    FireInventory(w, "BANKFRAME_OPENED")
+    check(w.ns.db.bankSeen and w.ns.db.bankSeen[2592] == 20, "tooltips: the bank is counted while it is open")
+    FireInventory(w, "BANKFRAME_CLOSED")
+    w.bankVisible = false
+    check(Tip(w, 2592):find("  Now 63-70 · 21 (bags 5 · bank 16) of ~21 · Bolt of Woolen Cloth\n  70-100 · 4 (bank 4) of ~69", 1, true) and
+              Tip(w, 2592):find("You have 25 (bags 5 · bank 20) · ~155 short\n(bank as counted at your last visit)", 1, true),
+          "tooltips: the bank as counted at the last visit, and saying so")
+end
+
+-- Fishing + Cooking: the raw fish feeds the Cooking span you are in
+do
+    local w = TooltipWorld({client = "classic", events = CLASSIC_EVENTS, level = 14,
+                            db = {setupDone = true, chosen = {Cooking = true, Fishing = true}, show = true}})
+    check(Tip(w, 6291):find("Cooking\n  Now 20-50 · 0 of ~30 · Brilliant Smallfish\n", 1, true), "tooltips: Fishing + Cooking - the fish for the dish you are cooking now")
+end
+
+-- nothing left to skill up: no needs
+do
+    local w = TooltipWorld({client = "classic", events = CLASSIC_EVENTS, level = 60, extra = {{name = "Tailoring", rank = 300, maxRank = 300}},
+                            db = {setupDone = true, chosen = {Tailoring = true}, show = true}})
+    check(Tip(w, 14047) == "", "tooltips: at the last cap the plan needs nothing more")
+end
+
+-- a secret item count (Forever hides some numbers from addon code) reads
+-- as none instead of taking the tooltip down
+do
+    local secret = setmetatable({}, {__eq = function() error("attempt to compare a secret number value") end})
+    local w = TooltipWorld({client = "forever", events = FOREVER_EVENTS, level = 14, extra = {{name = "Tailoring", rank = 63, maxRank = 75}},
+                            db = {setupDone = true, chosen = {Tailoring = true}, show = true}}, {[2592] = secret})
+    local ok, text = pcall(Tip, w, 2592)
+    check(ok and text:find("You have 0 (bags 0 · bank 0)", 1, true), "tooltips: a secret count reads as none, no error")
+end
+
+-- older clients: OnTooltipSetItem, which can fire twice for one showing
+do
+    _G.TooltipDataProcessor = nil
+    local hooks = {}
+    local tip = {lines = {}, shown = 0}
+    function tip:HookScript(event, fn) hooks[event] = fn end
+    function tip:AddLine(text) table.insert(self.lines, text) end
+    function tip:GetItem() return "Bolt of Linen Cloth", "|cffffffff|Hitem:2996::::::::14:::::|h[Bolt of Linen Cloth]|h|r" end
+    function tip:GetName() return "GameTooltip" end
+    function tip:Show() self.shown = self.shown + 1 end
+    _G.GameTooltip = tip
+    local w = NewWorld({client = "classic", events = CLASSIC_EVENTS, level = 14, extra = {{name = "Tailoring", rank = 63, maxRank = 75}},
+                        db = {setupDone = true, chosen = {Tailoring = true}, show = true}})
+    w.Fire("PLAYER_ENTERING_WORLD")
+    check(w.ns.tooltipAPI == "OnTooltipSetItem" and hooks.OnTooltipSetItem and hooks.OnTooltipCleared, "tooltips: older clients hook OnTooltipSetItem")
+    hooks.OnTooltipSetItem(tip)
+    local n = #tip.lines
+    hooks.OnTooltipSetItem(tip)
+    check(n > 0 and #tip.lines == n and tip.shown == 1, "tooltips: the lines go in once per showing, read from the item link")
+    hooks.OnTooltipCleared(tip)
+    tip.lines = {}
+    hooks.OnTooltipSetItem(tip)
+    check(#tip.lines == n, "tooltips: and again once the tooltip is cleared")
+    local cmp = {lines = {}}
+    function cmp:AddLine(text) table.insert(self.lines, text) end
+    function cmp:GetItem() return tip:GetItem() end
+    function cmp:GetName() return "ShoppingTooltip1" end
+    hooks.OnTooltipSetItem(cmp)
+    check(#cmp.lines == 0, "tooltips: comparison tooltips get nothing")
+    _G.GameTooltip = nil
+    -- a client that refuses the hook: the addon still loads, without tooltips
+    _G.GameTooltip = {HookScript = function() error("no such script") end}
+    local ok2, w2 = pcall(NewWorld, {client = "classic", events = CLASSIC_EVENTS, level = 14, db = {setupDone = true, chosen = {Tailoring = true}, show = true}})
+    check(ok2 and w2.ns.tooltipAPI == "none", "tooltips: a refused hook leaves the addon running, tooltips off")
+    _G.GameTooltip = nil
+end
+
+-- the game outranks the route: Bolt of Woolen Cloth is grey for you and
+-- Woolen Cape orange, so the window says Woolen Cape - and "Now" is the
+-- cape's mats, the bolts and through them the cloth
+do
+    local w = TooltipWorld({client = "forever", events = FOREVER_EVENTS, level = 14, extra = {{name = "Tailoring", rank = 63, maxRank = 75}},
+                            db = {setupDone = true, chosen = {Tailoring = true}, show = true}})
+    w.openProf, w.openRank = "Tailoring", 63
+    w.recipes = {[2964] = {name = "Bolt of Woolen Cloth", learned = true, relativeDifficulty = 3, canSkillUp = false},
+                 [2402] = {name = "Woolen Cape", learned = true, relativeDifficulty = 0, canSkillUp = true}}
+    w.Fire("TRADE_SKILL_LIST_UPDATE")
+    check(Lines(w, "Tailoring"):find("Craft: Woolen Cape (orange)", 1, true), "tooltips: the window takes the orange recipe over the grey route row")
+    check(Tip(w, 2592):find("  Now 63-70 · 0 of ~21 · Woolen Cape (via Bolt of Woolen Cloth)\n  70-100 · 0 of ~90 · Woolen Cape (via Bolt of Woolen Cloth)\n", 1, true),
+          "tooltips: and so does the tooltip - now is the cape, through the bolts")
+end
+
+-- the trainer moved rows past the rows after them (Woolen Cape to 105,
+-- Bolt of Silk Cloth to 115): the window goes bolts until 105, the cape
+-- until 110 (where Double-Stitched Woolen Shoulders start) and never
+-- shows the silk bolts. The spans follow the window, one after another.
+do
+    local w = TooltipWorld({client = "forever", events = FOREVER_EVENTS, level = 20, extra = {{name = "Tailoring", rank = 63, maxRank = 150}},
+                            db = {setupDone = true, chosen = {Tailoring = true}, show = true,
+                                  recipeReq = {Tailoring = {["Woolen Cape"] = 105, ["Bolt of Silk Cloth"] = 115}}}})
+    check(Lines(w, "Tailoring"):find("At 105: Woolen Cape", 1, true), "tooltips: the window moves on to the cape at 105")
+    local bolt = Tip(w, 2997)
+    check(bolt:find("  105-110 · 0 of ~5 · Woolen Cape\n  110-120 · 0 of ~30 · Double-Stitched Woolen Shoulders\n", 1, true),
+          "tooltips: the cape for as long as the window shows it (105-110), then the shoulders")
+    check(not bolt:find("115", 1, true), "tooltips: no span runs into the next one")
+    check(Tip(w, 2592):find("  Now 63-105 · 0 of ~126 · Bolt of Woolen Cloth\n", 1, true) and not Tip(w, 2592):find("Woolen Cape", 1, true),
+          "tooltips: now runs to 105 (42 bolts), which cover the cape and the shoulders")
+    local spans = w.ns.PlanSpans("Tailoring", w.ns.GetTracked().Tailoring)
+    local rows = {}
+    for _, sp in ipairs(spans) do rows[#rows + 1] = sp.row[2] .. " " .. sp.from .. "-" .. sp.to end
+    check(table.concat(rows, ", "):find("^Bolt of Woolen Cloth 63%-105, Woolen Cape 105%-110, Double%-Stitched Woolen Shoulders 110%-120, Azure Silk Hood 120%-135"),
+          "tooltips: the spans in the window's order: " .. table.concat(rows, ", "):sub(1, 120))
+end
+
+-- what the hooks saw, in /rxpp status, and /rxpp need <link or ID>: the
+-- tooltip's lines in chat, or which professions the plan reads
+do
+    local w = TooltipWorld({client = "forever", events = FOREVER_EVENTS, level = 14, extra = {{name = "Tailoring", rank = 63, maxRank = 75}},
+                            db = {setupDone = true, chosen = {Tailoring = true}, show = true}}, {[2592] = {bags = 25, bank = 15}})
+    local shown = 0
+    local tip = {lines = {}}
+    function tip:AddLine(text) table.insert(self.lines, text) end
+    function tip:GetName() return "GameTooltip" end
+    function tip:Show() shown = shown + 1 end
+    _G.GameTooltip = tip
+    w.post[2](tip, {id = 2592})
+    w.post[2](tip, {hyperlink = "|cffffffff|Hitem:2997::::::::14:::::|h[Bolt of Woolen Cloth]|h|r"})
+    w.post[2](tip, {})
+    w.post[2]({GetName = function() return "ShoppingTooltip1" end, AddLine = function() end}, {id = 2592})
+    _G.GameTooltip = nil
+    check(shown == 2, "tooltips: the tooltip is shown again to fit the new lines (" .. shown .. ")")
+    printed = {}
+    w.slash("status")
+    check(Printed("item tooltips: on through TooltipDataProcessor; 4 item tooltips seen, 3 ours, 1 without an item ID, 2 with lines; last item nil on ShoppingTooltip1"),
+          "tooltips: /rxpp status says what the hooks saw: " .. tostring(printed[#printed]))
+    printed = {}
+    w.slash("need |cffffffff|Hitem:2592::::::::14:::::|h[Wool Cloth]|h|r")
+    check(Printed("item 2592:") and Printed("  Now 63-70 · 21 (bags 21) of ~21 · Bolt of Woolen Cloth"), "tooltips: /rxpp need with a link prints the lines")
+    printed = {}
+    w.slash("need 2771")
+    check(Printed("item 2771: the plan names nothing (craft professions picked: Tailoring)"), "tooltips: /rxpp need for an item the plan does not name says what it reads")
+end
+
+-- what the professions make from what you gather (Data.lua's REFINE):
+-- ore through the bars it smelts into (with Mining picked), cloth through
+-- the bolts Forever's route uses without a row for them, hides through
+-- the cured hides
+do
+    local function world(client, profs, chosen, counts)
+        local c = {}
+        for _, n in ipairs(chosen) do c[n] = true end
+        return TooltipWorld({client = client, events = With(client == "forever" and FOREVER_EVENTS or CLASSIC_EVENTS, BANK_EVENTS), level = 40,
+                             extra = profs, db = {setupDone = true, chosen = c, show = true}}, counts)
+    end
+    local w = world("classic", {{name = "Engineering", rank = 30, maxRank = 75}}, {"Engineering", "Mining"})
+    check(Tip(w, 2770):find("  Now 30-50 · 0 of ~20 · Handful of Copper Bolts (via Copper Bar)\n", 1, true),
+          "refine: Copper Ore through the bars it smelts into")
+    check(Tip(w, 2771):find("  105-125 · 0 of ~20 · Bronze Tube (via Bronze Bar)\n", 1, true), "refine: Tin Ore through Bronze Bar, two bars a smelt")
+    w.bankVisible = true
+    w.counts[2770] = {bags = 0, bank = 12}
+    FireInventory(w, "BANKFRAME_OPENED")
+    check(w.ns.db.bankSeen[2770] == 12, "refine: the bank count covers ore too")
+    check(Tip(world("classic", {{name = "Engineering", rank = 30, maxRank = 75}}, {"Engineering"}), 2770) == "",
+          "refine: no Mining picked - ore is not kept for bars")
+    local bs = world("classic", {{name = "Blacksmithing", rank = 100, maxRank = 150}}, {"Blacksmithing", "Mining"}, {[2841] = {bags = 10, bank = 0}})
+    check(Tip(bs, 2771):find("  105-125 · 0 of ~55 · Rough Bronze Leggings (via Bronze Bar)\n", 1, true),
+          "refine: 10 Bronze Bar in the bags come off, two bars a smelt ((120 - 10) / 2)")
+    check(Tip(bs, 2838):find("  190-215 · 0 of ~144 · Golden Scale Bracers (via Heavy Grinding Stone)\n", 1, true), "refine: Heavy Stone through the grinding stones")
+    local tail = world("forever", {{name = "Tailoring", rank = 165, maxRank = 225}}, {"Tailoring"})
+    check(Tip(tail, 4338):find("  170-185 · 0 of ~150 · Black Mageweave Leggings / Black Mageweave Vest (via Bolt of Mageweave)\n", 1, true),
+          "refine: Forever's Mageweave Cloth through the bolts its route has no row for (15 x 2 x 5)")
+    local lw = world("forever", {{name = "Leatherworking", rank = 110, maxRank = 150}}, {"Leatherworking"})
+    check(Tip(lw, 4232):find("  115-137 · 0 of ~22 · Dark Leather Belt (via Cured Medium Hide)\n", 1, true), "refine: Medium Hide through Cured Medium Hide")
+    check(Tip(lw, 4289):find("  155-180 · 0 of ~75 · Barbaric Shoulders (via Cured Heavy Hide)\n", 1, true), "refine: three Salt a Cured Heavy Hide")
+end
+
+-- a later row of alternatives counts the ones you know: Forever's
+-- Tailoring 265 is Runecloth Shoulders (Rugged Leather in it) or
+-- Runecloth Headband (none); knowing only the headband, the leather is
+-- not kept for 265-300
+do
+    local function world(known)
+        return TooltipWorld({client = "forever", events = FOREVER_EVENTS, level = 55, extra = {{name = "Tailoring", rank = 240, maxRank = 300}},
+                             db = {setupDone = true, chosen = {Tailoring = true}, show = true, knownRecipes = known}})
+    end
+    check(Tip(world(nil), 8170):find("  265-300 · 0 of ~140 · Runecloth Shoulders\n", 1, true), "tooltips: neither known - both alternatives count (35 x 4 leather)")
+    local text = Tip(world({Tailoring = {["Runecloth Headband"] = "optimal"}}), 8170)
+    check(text:find("  250-265 ", 1, true) and not text:find("265-300", 1, true), "tooltips: the headband known - no leather for 265-300")
+    check(Tip(world({Tailoring = {["Runecloth Headband"] = "optimal"}}), 14048):find("  265-300 · 0 of ~140 · Runecloth Headband\n", 1, true),
+          "tooltips: and the bolts for the headband alone (35 x 4)")
+end
+
+-- the hovered tooltip only: the game's own and the chat link's get the
+-- lines; comparison, forbidden and addons' hidden scanning tooltips do not
+do
+    local w = TooltipWorld({client = "forever", events = FOREVER_EVENTS, level = 14, extra = {{name = "Tailoring", rank = 63, maxRank = 75}},
+                            db = {setupDone = true, chosen = {Tailoring = true}, show = true}},
+                           {[2592] = {bags = 25, bank = 15}})
+    check(Tip(w, 2592, "ItemRefTooltip"):find("Now 63-70", 1, true), "tooltips: a chat link's tooltip gets the lines")
+    check(Tip(w, 2592, "ShoppingTooltip1") == "" and Tip(w, 2592, "ItemRefShoppingTooltip1") == "", "tooltips: the comparison tooltips do not")
+    check(Tip(w, 2592, "SomeAddonScanningTooltip") == "", "tooltips: nor an addon's hidden scanning tooltip")
+    check(Tip(w, 2592, "GameTooltip", true) == "", "tooltips: nor a forbidden one")
+
+    -- the later spans off: what you have against now alone, and an item
+    -- needed only later shows nothing (no profession with nothing under it)
+    w.slash("tooltip later")
+    check(Tip(w, 2592):find("Tailoring\n  Now 63-70 · 21 (bags 21) of ~21 · Bolt of Woolen Cloth\nYou have 40 (bags 25 · bank 15) · ~19 to spare", 1, true),
+          "tooltips: later off - now against what you have")
+    check(Tip(w, 4306) == "", "tooltips: later off - Silk Cloth, needed only later, shows nothing")
+    w.slash("tooltip later")
+end
+
+-- the plan is built once and kept while nothing it is built from changes:
+-- a hover, a zone change or the window's 15-second refresh does not
+-- rebuild it; a skill-up, a trainer visit or a bolt more in the bags does
+do
+    local tailor = {name = "Tailoring", rank = 63, maxRank = 75}
+    local w = TooltipWorld({client = "forever", events = With(FOREVER_EVENTS, BANK_EVENTS), level = 14, extra = {tailor},
+                            db = {setupDone = true, chosen = {Tailoring = true}, show = true}},
+                           {[2592] = {bags = 25, bank = 15}})
+    local builds, real = 0, w.ns.BuildNeedIndex
+    w.ns.BuildNeedIndex = function() builds = builds + 1; return real() end
+    Tip(w, 2592)
+    Tip(w, 2592)
+    Tip(w, 4306)
+    check(builds == 1, "tooltips: built once for three hovers (" .. builds .. ")")
+    w.Fire("ZONE_CHANGED_NEW_AREA")
+    for _, t in ipairs(w.timers) do if t[1] == 15 then t[2]() end end
+    Tip(w, 2592)
+    check(builds == 1, "tooltips: a zone change and the window's refresh leave it (" .. builds .. ")")
+    w.counts[2592] = {bags = 30, bank = 15}
+    FireInventory(w, "BAG_UPDATE_DELAYED")
+    local text = Tip(w, 2592)
+    check(builds == 1 and text:find("You have 45 (bags 30 · bank 15)", 1, true), "tooltips: more Wool Cloth is counted without a rebuild")
+    w.counts[2997] = {bags = 10, bank = 0}
+    text = Tip(w, 2592)
+    check(builds == 2 and text:find("  70-100 · 24 (bags 9 · bank 15) of ~39 · Woolen Cape (via Bolt of Woolen Cloth)\n", 1, true), "tooltips: 10 bolts in the bags rebuild it")
+    tailor.rank = 64
+    w.Fire("SKILL_LINES_CHANGED")
+    text = Tip(w, 2592)
+    check(builds == 3 and text:find("  Now 64-70 · 18 (bags 18) of ~18 · Bolt of Woolen Cloth\n", 1, true), "tooltips: a skill-up rebuilds it")
+    w.trainer = {{"Woolen Cape", "available", "Tailoring", 75}}
+    w.Fire("TRAINER_SHOW")
+    text = Tip(w, 2592)
+    check(builds == 4 and text:find("  Now 64-75 · 33 (bags 30 · bank 3) of ~33 · Bolt of Woolen Cloth\n", 1, true), "tooltips: what a trainer said rebuilds it")
+    FireInventory(w, "SPELL_DATA_LOAD_RESULT")
+    Tip(w, 2592)
+    check(builds == 5, "tooltips: a recipe name the game hands over late rebuilds it (" .. builds .. ")")
+end
+
+-- two professions you picked share Wool Cloth: what you have against both
+do
+    local w = TooltipWorld({client = "forever", events = FOREVER_EVENTS, level = 20,
+                            extra = {{name = "Tailoring", rank = 63, maxRank = 75}, {name = "First Aid", rank = 85, maxRank = 150}},
+                            db = {setupDone = true, chosen = {Tailoring = true, ["First Aid"] = true}, show = true}},
+                           {[2592] = {bags = 40, bank = 20}})
+    local text = Tip(w, 2592)
+    check(text:find("RXP Professions\nFirst Aid\n  Now 85-115 · 30 (bags 30) of ~30 · Wool Bandage\n  115-150 · 9 (bank 9) of ~70 · Heavy Wool Bandage\n" ..
+                        "Tailoring\n  Now 63-70 · 21 (bags 10 · bank 11) of ~21", 1, true),
+          "tooltips: two professions, each with its spans; both spans you are in get theirs first, then the rest top down")
+    check(text:find("You have 60 (bags 40 · bank 20) · ~220 short", 1, true), "tooltips: two professions - the total over both")
+    w.counts[2592] = {bags = 45, bank = 0}
+    check(Tip(w, 2592):find("  Now 63-70 · 15 (bags 15) of ~21", 1, true), "tooltips: two professions - short for now")
+end
+
+-- Forever's Leatherworking uses Elixir of Defense, which Alchemy makes on
+-- its own route: with both picked, the elixirs Alchemy makes go first, and
+-- only the rest counts its herbs again
+do
+    local w = TooltipWorld({client = "forever", events = FOREVER_EVENTS, level = 40,
+                            extra = {{name = "Alchemy", rank = 200, maxRank = 225}, {name = "Leatherworking", rank = 200, maxRank = 225}},
+                            db = {setupDone = true, chosen = {Alchemy = true, Leatherworking = true}, show = true}})
+    check(Tip(w, 3355):find("Alchemy\n  210-230 · 0 of ~20 · Elixir of Defense\nLeatherworking\n  210-235 · 0 of ~5 · Thick Leather Ammo Pouch (via Elixir of Defense)\n", 1, true),
+          "tooltips: 25 elixirs for the ammo pouches, 20 of them from Alchemy's span")
+    check(Tip(w, 8951):find("Leatherworking\n  210-235 · 0 of ~25 · Thick Leather Ammo Pouch\n", 1, true), "tooltips: the elixir itself, all 25")
+    local lw = TooltipWorld({client = "forever", events = FOREVER_EVENTS, level = 40,
+                             extra = {{name = "Alchemy", rank = 200, maxRank = 225}, {name = "Leatherworking", rank = 200, maxRank = 225}},
+                             db = {setupDone = true, chosen = {Leatherworking = true}, show = true}})
+    check(Tip(lw, 3355) == "" and Tip(lw, 8951):find("of ~25 · Thick Leather Ammo Pouch", 1, true),
+          "tooltips: Alchemy not picked - the elixir is bought, its herbs are not counted")
+end
+
+-- the bank: the interaction manager's banker opens it (a merchant does
+-- not), what moves there is counted, and a close after the client dropped
+-- the contents wipes nothing
+do
+    local w = TooltipWorld({client = "forever", events = With(FOREVER_EVENTS, BANK_EVENTS), level = 14, extra = {{name = "Tailoring", rank = 63, maxRank = 75}},
+                            db = {setupDone = true, chosen = {Tailoring = true}, show = true}},
+                           {[2592] = {bags = 5, bank = 20}})
+    FireInventory(w, "PLAYER_INTERACTION_MANAGER_FRAME_SHOW", 5)
+    check(not w.ns.bankOpen, "tooltips: a merchant is not the bank")
+    FireInventory(w, "PLAYER_INTERACTION_MANAGER_FRAME_SHOW", 8)
+    check(w.ns.bankOpen and w.ns.db.bankSeen[2592] == 20, "tooltips: the banker opens it, and it is counted")
+    w.counts[2592] = {bags = 25, bank = 0}
+    for _ = 1, 5 do FireInventory(w, "BAG_UPDATE_DELAYED") end
+    check(w.ns.db.bankSeen[2592] == 20 and RunSoon(w) == 2 and w.ns.db.bankSeen[2592] == nil,
+          "tooltips: what you take out at the bank is counted out, once a moment later however many events come")
+    FireInventory(w, "PLAYER_INTERACTION_MANAGER_FRAME_HIDE", 8)
+    w.bankVisible = false
+    check(not w.ns.bankOpen and Tip(w, 2592):find("You have 25 (bags 25 · bank 0)", 1, true), "tooltips: and stays out after")
+    w.bankVisible = true
+    FireInventory(w, "BANKFRAME_OPENED")
+    w.counts[2592] = {bags = 15, bank = 10}
+    FireInventory(w, "PLAYERBANKSLOTS_CHANGED")
+    RunSoon(w)
+    w.bankVisible = false
+    FireInventory(w, "BANKFRAME_CLOSED")
+    check(w.ns.db.bankSeen[2592] == 10 and Tip(w, 2592):find("You have 25 (bags 15 · bank 10) · ~155 short\n(bank as counted at your last visit)", 1, true),
+          "tooltips: a close the client sees nothing at keeps the count")
+    w.bankVisible = true
+    check(Tip(w, 2592):find("You have 25 (bags 15 · bank 10) · ~155 short", 1, true) and not Tip(w, 2592):find("last visit", 1, true),
+          "tooltips: a client that sees the closed bank is read as it is")
+    -- and from then on its own count stands, none included: a client that
+    -- crafts from the bank takes things out of it while it is closed
+    w.counts[2592] = {bags = 15, bank = 0}
+    check(Tip(w, 2592):find("You have 15 (bags 15 · bank 0) · ~165 short", 1, true) and not Tip(w, 2592):find("last visit", 1, true),
+          "tooltips: once the closed bank has been seen, the client's count stands")
+    FireInventory(w, "BANKFRAME_OPENED")
+    FireInventory(w, "PLAYER_ENTERING_WORLD")
+    check(not w.ns.bankOpen, "tooltips: a loading screen ends a visit whose close was missed")
+end
+
+-- the tooltips in every translated language: each of their sentences
+-- translated, and every translation (theirs and the window's) keeps its
+-- key's %d / %s in the same order, which string.format needs
+do
+    local keys = {"Now %d-%d · %d (%s) of ~%d · %s", "%d-%d · %d (%s) of ~%d · %s", "Now %d-%d · %d of ~%d · %s",
+                  "%d-%d · %d of ~%d · %s", "Now %d-%d · ~%d · %s", "%d-%d · ~%d · %s", "%s (via %s)", "bags %d · bank %d",
+                  "bags %d", "bank %d", "+1 more span · %d of ~%d", "+%d more spans · %d of ~%d", "+1 more span · ~%d",
+                  "+%d more spans · ~%d", "You have %d (bags %d · bank %d) · ~%d to spare", "You have %d (bags %d · bank %d) · ~%d short",
+                  "You have %d (bags %d · bank %d) · just enough", "(bank as counted at your last visit)", "%s (not learned yet)",
+                  "Other professions (not in your setup)", "item tooltips on", "item tooltips off",
+                  "item tooltips show the spans after the one you are in", "item tooltips show only the span you are in",
+                  "item tooltips also show the professions you did not pick, apart", "item tooltips show only the professions you picked",
+                  "item tooltips: |cFFFFCC00/rxpp tooltip|r on or off, |cFFFFCC00/rxpp tooltip later|r the spans after the one you are in, |cFFFFCC00/rxpp tooltip others|r the professions you did not pick"}
+    local function specs(text)
+        local out = {}
+        for sp in text:gsub("%%%%", ""):gmatch("%%[%-%d%.]*[dsfx]") do out[#out + 1] = sp end
+        return table.concat(out, " ")
+    end
+    local missing, mismatched, entries = {}, {}, 0
+    for _, locale in ipairs({"frFR", "deDE", "esES", "esMX", "ptBR", "itIT", "ruRU", "koKR", "zhCN", "zhTW"}) do
+        local w = NewWorld({client = "classic", locale = locale, events = CLASSIC_EVENTS, db = {setupDone = true, chosen = {Mining = true}, show = true}})
+        for _, k in ipairs(keys) do
+            if rawget(w.ns.L, k) == nil then missing[#missing + 1] = locale .. ": " .. k end
+        end
+        for k, v in pairs(w.ns.L) do
+            entries = entries + 1
+            if specs(k) ~= specs(v) then mismatched[#mismatched + 1] = locale .. ": " .. k end
+        end
+    end
+    check(#missing == 0, "tooltips: every tooltip sentence is translated (" .. (missing[1] or "all") .. ")")
+    check(#mismatched == 0 and entries > 1000, ("tooltips: %d translations keep their %%d / %%s (%s)"):format(entries, mismatched[1] or "all"))
+    local fr = TooltipWorld({client = "forever", locale = "frFR", events = FOREVER_EVENTS, level = 14, extra = {{name = "Tailoring", rank = 63, maxRank = 75}},
+                             db = {setupDone = true, chosen = {Tailoring = true}, show = true}},
+                            {[2592] = {bags = 25, bank = 15}})
+    check(Tip(fr, 2592):find("  Maintenant 63-70 · 21 (sacs 21) sur ~21 · Bolt of Woolen Cloth\n", 1, true) and
+              Tip(fr, 2592):find("Vous en avez 40 (sacs 25 · banque 15) · il en manque ~140", 1, true),
+          "tooltips: in French")
+end
+
+-- every craft profession, every 25 skill, on Classic Era, TBC and Forever:
+-- the index builds without an error, every span runs forward with
+-- something in it, and every item's lines come out
+do
+    local profs = {"Alchemy", "Blacksmithing", "Enchanting", "Engineering", "Leatherworking", "Tailoring", "First Aid", "Cooking"}
+    local clients = {{"classic", CLASSIC_EVENTS}, {"tbc", CLASSIC_EVENTS}, {"forever", FOREVER_EVENTS}}
+    local built, bad, items = 0, 0, 0
+    for _, client in ipairs(clients) do
+        for _, prof in ipairs(profs) do
+            for rank = 1, 300, 25 do
+                local maxRank = rank < 75 and 75 or rank < 150 and 150 or rank < 225 and 225 or 300
+                local w = TooltipWorld({client = client[1], events = client[2], level = 60, extra = {{name = prof, rank = rank, maxRank = maxRank}},
+                                        db = {setupDone = true, chosen = {[prof] = true}, show = true, tooltipOthers = true}})
+                local index = w.ns.BuildNeedIndex()
+                built = built + 1
+                if w.ns.lastError then
+                    bad = bad + 1
+                    realPrint("index: " .. client[1] .. " " .. prof .. " " .. rank .. ": " .. tostring(w.ns.lastError))
+                end
+                for id, entries in pairs(index) do
+                    items = items + 1
+                    for _, e in ipairs(entries) do
+                        if not (e.to > e.from and e.need > 0 and e.need == math.floor(e.need)) then bad = bad + 1 end
+                    end
+                    local ok, lines = pcall(w.ns.TooltipLines, id)
+                    if not ok or #lines == 0 then
+                        bad = bad + 1
+                        realPrint("lines: " .. client[1] .. " " .. prof .. " " .. rank .. " item " .. id .. ": " .. tostring(lines))
+                    end
+                end
+            end
+        end
+    end
+    check(built == 3 * 8 * 12 and items > 1000 and bad == 0,
+          ("tooltips: every craft profession every 25 skill on three clients - %d plans, %d item tooltips, %d problems"):format(built, items, bad))
+end
+
+-- the same sweep with a trainer that moved rows (about a third of them,
+-- by 1-60 points; random, the same every run): the spans never overlap,
+-- run to the route's end, and each is the row the window shows from its
+-- first skill to its last - "now" the row the window says to craft
+do
+    local profs = {"Alchemy", "Blacksmithing", "Enchanting", "Engineering", "Leatherworking", "Tailoring", "First Aid", "Cooking"}
+    local clients = {{"classic", CLASSIC_EVENTS}, {"tbc", CLASSIC_EVENTS}, {"forever", FOREVER_EVENTS}}
+    math.randomseed(2392)
+    local plans, spansSeen, bad = 0, 0, 0
+    local function Bad(what)
+        bad = bad + 1
+        if bad <= 10 then realPrint("trainer sweep: " .. what) end
+    end
+    for _, client in ipairs(clients) do
+        for _, prof in ipairs(profs) do
+            for rank = 1, 300, 25 do
+                local maxRank = rank < 75 and 75 or rank < 150 and 150 or rank < 225 and 225 or 300
+                local w = TooltipWorld({client = client[1], events = client[2], level = 60, extra = {{name = prof, rank = rank, maxRank = maxRank}},
+                                        db = {setupDone = true, chosen = {[prof] = true}, show = true}})
+                local ns = w.ns
+                local req = {}
+                for _, row in ipairs(ns.RoutePosition(prof, {rank = 1}).route) do
+                    if math.random() < 0.35 then
+                        local need = row[1] + math.random(1, 60)
+                        for _, alt in ipairs(ns.RowAlts(row)) do req[alt] = need end
+                    end
+                end
+                ns.db.recipeReq = {[prof] = req}
+                ns.dataVersion = (ns.dataVersion or 0) + 1
+                local p = ns.GetTracked()[prof]
+                local where = client[1] .. " " .. prof .. " " .. rank
+                local spans = ns.IsFinalCap(p) and {} or ns.PlanSpans(prof, p)
+                plans = plans + 1
+                local prevTo
+                for _, sp in ipairs(spans) do
+                    spansSeen = spansSeen + 1
+                    if prevTo and sp.from < prevTo then Bad(where .. ": " .. sp.from .. " starts before " .. prevTo) end
+                    local last = ns.RoutePosition(prof, {rank = sp.to - 1}).current
+                    if sp.now then
+                        local pos = ns.RoutePosition(prof, p)
+                        local craft = ns.CraftNow(prof, p, pos.current)
+                        if sp.row ~= (craft.takeBest and craft.bestRow or pos.current) then Bad(where .. ": now is not the window's row") end
+                        if last ~= pos.current then Bad(where .. ": the window moves on before now ends at " .. sp.to) end
+                    else
+                        local first = ns.RoutePosition(prof, {rank = sp.from}).current
+                        if first ~= sp.row or last ~= sp.row then
+                            Bad(("%s: %d-%d %s, the window shows %s / %s"):format(where, sp.from, sp.to, sp.row[2], first and first[2] or "-", last and last[2] or "-"))
+                        end
+                    end
+                    prevTo = sp.to
+                end
+                if #spans > 0 and spans[#spans].to ~= 300 then Bad(where .. ": the last span ends at " .. spans[#spans].to) end
+                local index = ns.BuildNeedIndex()
+                if ns.lastError then Bad(where .. ": " .. tostring(ns.lastError)) end
+                for id in pairs(index) do
+                    local ok, lines = pcall(ns.TooltipLines, id)
+                    if not ok or #lines == 0 then Bad(where .. " item " .. id .. ": " .. tostring(lines)) end
+                end
+            end
+        end
+    end
+    check(plans == 3 * 8 * 12 and spansSeen > 1500 and bad == 0,
+          ("tooltips: with a trainer that moved rows - %d plans, %d spans, %d problems"):format(plans, spansSeen, bad))
 end
 
 realPrint(("RestedXP Professions harness: %d passed, %d failed"):format(passed, failed))
