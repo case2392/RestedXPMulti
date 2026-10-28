@@ -1031,6 +1031,40 @@ ns.FOREVER = {
     }
 }
 
+-- Materials the routes use that no route row makes, but a profession
+-- does from what you gather: bars smelted from ore, the bolts Forever's
+-- Tailoring route uses without a row for them, cured hides, grinding
+-- stones and two Engineering parts. The item tooltips (Inventory.lua)
+-- follow a route's reagent down to these, when the profession that makes
+-- it is one you picked (no Mining picked: ore is not kept for bars).
+-- Classic Era's counts; a route row that makes the same item wins.
+--   {item, "English name", profession, {{reagent, count}, ...}, makes = n}
+-- (Leather is not combined here: skinning gives the heavier leather, so
+-- light leather kept for medium would mostly be kept for nothing.)
+ns.REFINE = {
+    {2840, "Copper Bar", "Mining", {{2770, 1}}},
+    {3576, "Tin Bar", "Mining", {{2771, 1}}},
+    {2841, "Bronze Bar", "Mining", {{2840, 1}, {3576, 1}}, makes = 2},
+    {3575, "Iron Bar", "Mining", {{2772, 1}}},
+    {3859, "Steel Bar", "Mining", {{3575, 1}, {3857, 1}}},
+    {3577, "Gold Bar", "Mining", {{2776, 1}}},
+    {3860, "Mithril Bar", "Mining", {{3858, 1}}},
+    {12359, "Thorium Bar", "Mining", {{10620, 1}}},
+    {2996, "Bolt of Linen Cloth", "Tailoring", {{2589, 2}}},
+    {2997, "Bolt of Woolen Cloth", "Tailoring", {{2592, 3}}},
+    {4305, "Bolt of Silk Cloth", "Tailoring", {{4306, 4}}},
+    {4339, "Bolt of Mageweave", "Tailoring", {{4338, 5}}},
+    {14048, "Bolt of Runecloth", "Tailoring", {{14047, 5}}},
+    {4233, "Cured Medium Hide", "Leatherworking", {{4232, 1}, {4289, 1}}},
+    {4236, "Cured Heavy Hide", "Leatherworking", {{4235, 1}, {4289, 3}}},
+    {8172, "Cured Thick Hide", "Leatherworking", {{8169, 1}, {8150, 1}}},
+    {3478, "Coarse Grinding Stone", "Blacksmithing", {{2836, 2}}},
+    {3486, "Heavy Grinding Stone", "Blacksmithing", {{2838, 3}}},
+    {7966, "Solid Grinding Stone", "Blacksmithing", {{7912, 4}}},
+    {10558, "Gold Power Core", "Engineering", {{3577, 1}}},
+    {10560, "Unstable Trigger", "Engineering", {{3860, 1}, {4338, 1}, {10505, 1}}}
+}
+
 -- shown in the first-launch setup window, in this order
 ns.CHOOSABLE = {
     "Herbalism", "Mining", "Skinning", "Alchemy", "Blacksmithing",

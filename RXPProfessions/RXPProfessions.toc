@@ -13,3 +13,4 @@ Locales.lua
 Data.lua
 Core.lua
 UI.lua
+Inventory.lua

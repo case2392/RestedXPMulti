@@ -60,10 +60,73 @@ Copy the `RXPProfessions` folder into `Interface/AddOns/` so you have
 Works with or without RestedXP installed (it borrows RestedXP's theme when
 present).
 
+## Item tooltips
+
+Hover an item and RXPP says what your profession plan needs of it, span
+by span, so you can tell what to keep for now, what to keep for later and
+what you can sell. A span is a row of the route for as long as the window
+shows that row; the one you are in reads "Now" and counts from your skill.
+Each span says how many of what you have go to it, and from where, against
+what it needs (Wool Cloth at Tailoring 63 on Forever, 25 in the bags and 15
+in the bank):
+
+```
+RXP Professions
+Tailoring
+  Now 63-70 · 21 (bags 21) of ~21 · Bolt of Woolen Cloth
+  70-100 · 19 (bags 4 · bank 15) of ~69 · Woolen Cape (via Bolt of Woolen Cloth)
+  110-120 · 0 of ~90 · Double-Stitched Woolen Shoulders (via Bolt of Woolen Cloth)
+You have 40 (bags 25 · bank 15) · ~140 short
+```
+
+- Counts assume one craft per skill point, which orange recipes give,
+  hence the "~".
+- A reagent the route itself makes (bolts, grinding stones, blasting
+  powder, Handful of Copper Bolts) is followed to what it is made of.
+  What an earlier span makes, and what you already have of it, is used
+  first, so nothing is counted twice. Another profession's product is
+  followed only when that profession is one you picked, and what its own
+  route makes of it goes first (Forever's Elixir of Defense, which Alchemy
+  makes and Leatherworking's ammo pouches use).
+- What you have is your bags (with the reagent bag) and your bank. It goes
+  to "Now" first, then to the spans after it from the top down, the bags
+  before the bank; the last line gives the total and what is short or to
+  spare. Away from the bank, a client that does not see it is answered
+  from the count taken at your last bank visit, and says so; once a client
+  has been seen counting the closed bank, its own count stands.
+- A row of alternatives ("Runecloth Shoulders / Runecloth Headband")
+  counts the ones you already know, as the window would; all of them when
+  you know none.
+- Only the professions you picked in `/rxpp setup` count, the ones you
+  have not learned yet from skill 1. `/rxpp tooltip others` adds the rest
+  under a grey heading of their own, with what they need and nothing of
+  yours handed out. With `/rxpp tooltip later` off, only "Now" shows and
+  is counted.
+- The tooltip reads the route as the window does, at your skill and at
+  the skill each span ends at: trainer corrections and "the game outranks
+  the route" included, and a row a trainer moved past the rows after it
+  skipped, as the window skips it. The two never name different rows.
+- The lines go on the game's item tooltip and on chat links only: not on
+  the comparison tooltips beside them, nor on the hidden tooltips other
+  addons read items with. They are translated like the window.
+- The plan is built when a tooltip first needs it and kept until your
+  skills, your picks, the recipes and trainer data the window keeps, or
+  your count of a reagent the routes make change. A hover costs a few
+  reads, not a rebuild.
+- Materials no route row makes are followed too, to what you gather:
+  ore through the bars it smelts into (when you picked Mining), cloth
+  through the bolts Forever's route has no row for, hides through the
+  cured hides, stone through grinding stones (Data.lua's `REFINE`).
+  Leather is not combined: skinning gives the heavier leather itself.
+
 ## Commands
 
 - `/rxpp` — show/hide the window
 - `/rxpp setup` — reopen the profession/AH setup
+- `/rxpp tooltip` — item tooltips on/off
+- `/rxpp tooltip later` — show/hide the spans after the one you are in
+- `/rxpp tooltip others` — also show the professions you did not pick
+- `/rxpp need <item link or ID>` — what the item tooltip would say, in chat
 
 ## Notes & roadmap
 
