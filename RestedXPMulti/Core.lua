@@ -492,7 +492,7 @@ SlashCmdList["RXPMULTI"] = function(input)
     if cmd == "" or cmd == "show" or cmd == "hide" then
         ns.ToggleUI(cmd)
     elseif cmd == "sync" then
-        rest = rest:gsub("%s+", "")
+        rest = rest:gsub("^%s+", ""):gsub("%s+$", "")
         if rest ~= "" then
             ns.AcceptPair(ResolveName(rest))
         else
