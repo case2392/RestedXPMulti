@@ -385,6 +385,7 @@ local function makePlayer(name, stepLines, guideVersion, guideKey, idShift, opts
     function Multi:Serialize(t) return deepcopy(t) end
     function Multi:Deserialize(t) return true, deepcopy(t) end
     function Multi:SendCommMessage(prefix, payload, channel, target)
+        if P.silent then return end -- disconnected, still in the party
         table.insert(P.sent, payload)
         if channel == "WHISPER" and P.dropWhispers then return end
         for otherName, other in pairs(players) do
@@ -886,6 +887,28 @@ end
 check(synced(Kai, Lea) and synced(Kai, Max) and synced(Lea, Max) and
           synced(Lea, Kai) and synced(Max, Kai) and synced(Max, Lea),
       "all three pairs sync")
+
+print("\n=== the partner on screen leaves or goes quiet: the next is asked ===")
+for _, how in ipairs({"leaves", "goes quiet"}) do
+    soloAll()
+    local Kim = makePlayer("Kim", {10, 20, 30})
+    local Lou = makePlayer("Lou", {10, 20, 30})
+    local Mo = makePlayer("Mo", {10, 20, 30})
+    enter(Kim, Lou, Mo)
+    local gone = players[Kim.popups[1].data]
+    local stays = gone == Lou and Mo or Lou
+    if how == "leaves" then
+        gone.inGroup = false
+        Kim.events["GROUP_ROSTER_UPDATE"]("GROUP_ROSTER_UPDATE")
+        advanceTime(2)
+    else
+        gone.silent = true
+        advanceTime(100)
+    end
+    check(#Kim.popups == 1 and Kim.popups[1].data == stays.name,
+          "the partner on screen " .. how .. ": Kim is asked about " .. stays.name .. " instead")
+    gone.silent = nil
+end
 
 print("\n=== five players: the game's popups still get frames ===")
 soloAll()

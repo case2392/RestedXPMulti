@@ -386,14 +386,23 @@ local function InGroup(name)
 end
 
 local function PruneParted()
+    local closed = false
     for name, p in pairs(ns.partners) do
         -- the short name can miss a cross-realm or two-part name; the full
         -- sender name is the second try
         if not (InGroup(name) or (p.fullSender and InGroup(p.fullSender))) then
             ns.partners[name] = nil
             ns.prompted[name] = nil -- re-prompt if they rejoin later
+            -- their question goes too: the one sync popup on screen must not
+            -- be held by someone who left while the others wait
+            if StaticPopup_FindVisible and
+                StaticPopup_FindVisible("RXPMULTI_PAIR", name) then
+                HidePrompt(name)
+                closed = true
+            end
         end
     end
+    if closed then ns.PromptNext() end
 end
 
 local function OnTick()
@@ -403,12 +412,22 @@ local function OnTick()
     if ns.TickStats then ns.TickStats(8) end
 
     local now = GetTime()
+    local closed = false
     for name, p in pairs(ns.partners) do
-        if now - (p.lastSeen or 0) > ns.PRUNE_SECONDS then
+        local silent = now - (p.lastSeen or 0)
+        -- gone quiet (offline?): put their question away so the next
+        -- partner can be asked; it comes back when they speak again
+        if silent >= ns.STALE_SECONDS and StaticPopup_FindVisible and
+            StaticPopup_FindVisible("RXPMULTI_PAIR", name) then
+            HidePrompt(name)
+            closed = true
+        end
+        if silent > ns.PRUNE_SECONDS then
             ns.partners[name] = nil
             ns.prompted[name] = nil
         end
     end
+    if closed then ns.PromptNext() end
 
     if IsInGroup() then
         -- flush pending changes, and send a keepalive every ~24s so partners
