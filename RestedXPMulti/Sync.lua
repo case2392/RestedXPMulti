@@ -162,6 +162,30 @@ function ns.Unpair(name)
     ns.UpdateUI()
 end
 
+-- sync popups on screen. One at a time: the game has only four popup
+-- frames, and a question that waits for a click must never crowd out the
+-- game's own (Release Spirit, a resurrection, a summon, loot binding).
+-- The window's "Sync with <name>" buttons answer for anyone else meanwhile.
+local function PromptsShown()
+    local n = 0
+    if StaticPopup_ForEachShownDialog then
+        pcall(StaticPopup_ForEachShownDialog, function(dialog)
+            if dialog.which == "RXPMULTI_PAIR" then n = n + 1 end
+        end)
+    end
+    return n
+end
+
+-- a partner we still have to ask
+local function WantsPrompt(name)
+    local p = ns.partners[name]
+    return p and not ns.db.paired[name] and not ns.sessionDeclined[name] and
+               not ns.prompted[name] and
+               GetTime() - (p.lastSeen or 0) < ns.STALE_SECONDS
+end
+
+local retryPending = {}
+
 function ns.ShowPairPrompt(name)
     ns.prompted[name] = true
     if not StaticPopup_Show then return end
@@ -171,17 +195,33 @@ function ns.ShowPairPrompt(name)
         StaticPopup_FindVisible("RXPMULTI_PAIR", name) then
         return
     end
+    if PromptsShown() > 0 then
+        -- another partner's question is up; this one follows it
+        ns.prompted[name] = nil
+        return
+    end
     local dialog = StaticPopup_Show("RXPMULTI_PAIR", name, nil, name)
     if not dialog then
-        -- all popup slots busy; retry shortly
+        -- every popup frame is busy with the game's own: try again shortly,
+        -- one retry per partner at a time
         ns.prompted[name] = nil
+        if retryPending[name] then return end
+        retryPending[name] = true
         C_Timer.After(5, function()
-            if not ns.db.paired[name] and not ns.sessionDeclined[name] and
-                not ns.prompted[name] and ns.partners[name] then
-                ns.ShowPairPrompt(name)
-            end
+            retryPending[name] = nil
+            if WantsPrompt(name) then ns.ShowPairPrompt(name) end
         end)
     end
+end
+
+-- after a question is answered: ask the next partner waiting for one
+function ns.PromptNext()
+    local names = {}
+    for name in pairs(ns.partners) do
+        if WantsPrompt(name) then table.insert(names, name) end
+    end
+    table.sort(names)
+    if names[1] then ns.ShowPairPrompt(names[1]) end
 end
 
 --------------------------------------------------------------------------
@@ -410,9 +450,14 @@ function ns.SetupSync()
         -- A click runs OnAccept/OnCancel before the hide, so a real answer
         -- is already recorded here.
         OnHide = function(self, data)
-            if data and not ns.db.paired[data] and
-                not ns.sessionDeclined[data] then
+            if not data then return end
+            if not ns.db.paired[data] and not ns.sessionDeclined[data] then
                 ns.prompted[data] = nil
+            elseif C_Timer then
+                -- answered: the next partner's question follows (never
+                -- straight after an unanswered hide, so a popup another
+                -- addon keeps closing can't loop)
+                C_Timer.After(0.5, ns.PromptNext)
             end
         end,
         timeout = 0,
@@ -420,7 +465,8 @@ function ns.SetupSync()
         -- Escape counts as a "Not now" click in Blizzard's code, so a player
         -- closing their bags would decline: Escape leaves this popup alone
         hideOnEscape = false,
-        -- one popup per partner, so three players each get their own
+        -- one popup per partner (shown one at a time, see PromptsShown), so
+        -- answering one never answers another
         multiple = true
     }
 

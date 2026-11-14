@@ -54,7 +54,9 @@ local function ApplyEUISkin()
     if tb.ClearBackdrop then tb:ClearBackdrop() end
     tb.bg:SetTexture(nil)
     EUI("Panel", frame)
-    EUI("Panel", tb, {inset = true, noBorder = true})
+    -- the title bar is a child frame drawn over the window's own border,
+    -- so it carries a border of its own that lines up with it
+    EUI("Panel", tb, {inset = true})
     -- a 1px line in the player's accent color under the title. On a child
     -- frame of its own: EllesmereUI re-fades the textures of the frames it
     -- skinned now and then, and this one has to stay.

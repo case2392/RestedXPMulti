@@ -154,8 +154,15 @@ local function makePlayer(name, stepLines, guideVersion, guideKey, idShift, opts
         return P.inGroup
     end
     env.IsInRaid = function() return false end
+    -- a name with a -Suffix is found only by its full name, as the game
+    -- needs Name-Realm for a cross-realm member
     env.UnitInParty = function(n)
-        local other = findPlayer(n)
+        local other
+        for _, o in pairs(players) do
+            if o.wire == n or (o.name == n and not o.wire:find("-", 1, true)) then
+                other = o
+            end
+        end
         return other and other.inGroup and P.inGroup
     end
     env.UnitInRaid = function() return nil end
@@ -218,8 +225,22 @@ local function makePlayer(name, stepLines, guideVersion, guideKey, idShift, opts
         for i, v in ipairs(t) do c[i] = v end
         return c
     end
+    -- the game's own popups on screen (P.gamePopups) share the four
+    -- frames StaticPopup1-4 with ours
+    P.gamePopups = {}
+    P.showCalls = 0
+    local function framesUsed() return #P.popups + #P.gamePopups end
+    P.gamePopup = function(which)
+        if framesUsed() >= 4 then return false end
+        table.insert(P.gamePopups, {which = which})
+        return true
+    end
+    env.StaticPopup_ForEachShownDialog = function(fn)
+        for _, d in ipairs(copy(P.popups)) do fn(d) end
+        for _, d in ipairs(copy(P.gamePopups)) do fn(d) end
+    end
     env.StaticPopup_Show = function(which, arg1, arg2, data)
-        if P.popupSlotsFull then return nil end
+        P.showCalls = P.showCalls + 1
         local info = env.StaticPopupDialogs[which]
         if not info.multiple then
             -- one dialog per kind: a new show replaces the old one
@@ -229,6 +250,11 @@ local function makePlayer(name, stepLines, guideVersion, guideKey, idShift, opts
                     hideDialog(d)
                 end
             end
+        end
+        if framesUsed() >= 4 then
+            -- no free frame: refused, OnCancel(nil, data)
+            if info.OnCancel then info.OnCancel(nil, data) end
+            return nil
         end
         local d = {which = which, data = data, hideOnEscape = info.hideOnEscape}
         table.insert(P.popups, d)
@@ -835,24 +861,78 @@ Jon2.answerPopup(true)
 advanceTime(1)
 check(synced(Ida, Jon2) and synced(Jon2, Ida), "Ida and Jon sync")
 
-print("\n=== three players: one popup per partner ===")
+print("\n=== three players: one question at a time, each its own ===")
 soloAll()
 local Kai = makePlayer("Kai", {10, 20, 30})
 local Lea = makePlayer("Lea", {10, 20, 30})
 local Max = makePlayer("Max", {10, 20, 30})
 enter(Kai, Lea, Max)
-check(#Kai.popups == 2 and Kai.popups[1].data ~= Kai.popups[2].data,
-      "Kai has a popup for each partner")
+check(#Kai.popups == 1 and #Lea.popups == 1 and #Max.popups == 1,
+      "one sync popup each, not one per partner")
 advanceTime(120)
-check(#Kai.popups == 2 and #Lea.popups == 2 and #Max.popups == 2,
-      "no extra popups while they are up")
-for _, P in ipairs({Kai, Lea, Max}) do
-    while #P.popups > 0 do P.answerPopup(true) end
+check(#Kai.popups == 1 and #Lea.popups == 1 and #Max.popups == 1,
+      "no extra popups while it is up")
+local first = Kai.popups[1].data
+Kai.answerPopup(true)
+advanceTime(1)
+check(#Kai.popups == 1 and Kai.popups[1].data ~= first,
+      "the next partner's question follows right after")
+for _ = 1, 4 do
+    for _, P in ipairs({Kai, Lea, Max}) do
+        while #P.popups > 0 do P.answerPopup(true) end
+    end
+    advanceTime(1)
 end
-advanceTime(2)
 check(synced(Kai, Lea) and synced(Kai, Max) and synced(Lea, Max) and
           synced(Lea, Kai) and synced(Max, Kai) and synced(Max, Lea),
       "all three pairs sync")
+
+print("\n=== five players: the game's popups still get frames ===")
+soloAll()
+local five = {}
+for _, n in ipairs({"Ann", "Ben", "Cat", "Dan", "Eli"}) do
+    table.insert(five, makePlayer(n, {10, 20, 30}))
+end
+enter(unpack(five))
+advanceTime(30)
+local oneEach = true
+for _, P in ipairs(five) do
+    if #P.popups ~= 1 then oneEach = false end
+end
+check(oneEach, "a full party: one sync popup on each screen")
+check(five[1].gamePopup("DEATH") and five[1].gamePopup("RESURRECT") and
+          five[1].gamePopup("CONFIRM_SUMMON"),
+      "Release Spirit, a resurrection and a summon still get frames")
+five[1].gamePopups = {}
+for _ = 1, 12 do
+    for _, P in ipairs(five) do
+        while #P.popups > 0 do P.answerPopup(true) end
+    end
+    advanceTime(1)
+end
+local allPairs = true
+for _, P in ipairs(five) do
+    for _, Q in ipairs(five) do
+        if P ~= Q and not synced(P, Q) then allPairs = false end
+    end
+end
+check(allPairs, "answering one by one syncs all ten pairs")
+
+print("\n=== every frame busy: one retry per partner, no pile-up ===")
+soloAll()
+local Rae = makePlayer("Rae", {10, 20, 30})
+local Sol = makePlayer("Sol", {10, 20, 30})
+for _, which in ipairs({"A", "B", "C", "D"}) do Sol.gamePopup(which) end
+enter(Rae, Sol)
+check(#Sol.popups == 0, "no frame free: no sync popup yet")
+advanceTime(60)
+local timersAt, callsAt = #timers, Sol.showCalls
+advanceTime(600)
+check(#timers - timersAt <= 2, "pending timers don't grow while the frames stay full")
+check(Sol.showCalls - callsAt <= 200, "show attempts stay at the message and retry rate")
+Sol.gamePopups = {}
+advanceTime(6)
+check(#Sol.popups == 1, "a frame frees up: the popup shows within a retry")
 
 print("\n=== partner leaves and rejoins while the popup is up ===")
 soloAll()
@@ -901,9 +981,15 @@ for _, form in ipairs({" ", "-"}) do
           label .. ": Bane doesn't list himself as a partner")
     check(#Bane.popups == 1 and #Cora.popups == 1, label .. ": each asked once")
     Bane.answerPopup(true)
+    advanceTime(1)
+    Bane.ns.UpdateUI()
+    check(Bane.windowText():find("/rxpm sync " .. (form == " " and "Bane Battlehammer" or "Bane"), 1, true) ~= nil,
+          label .. ": the waiting hint names Bane the way Cora files him")
     Cora.answerPopup(true)
     advanceTime(1)
     check(synced(Bane, Cora) and synced(Cora, Bane), label .. ": they sync")
+    Bane.events["GROUP_ROSTER_UPDATE"]("GROUP_ROSTER_UPDATE")
+    check(synced(Bane, Cora), label .. ": a roster update keeps Cora (found by her full name)")
 end
 
 print("\n=== older clients call OnCancel() bare ===")
@@ -935,6 +1021,11 @@ local umaTitle = Uma.frames["$parentTitle"]
 check(logged(Uma, "Panel", umaFrame) and logged(Uma, "Panel", umaTitle),
       "window and title bar get EllesmereUI panels")
 check(umaTitle.bg.tex == nil, "RestedXP's banner is cleared")
+do
+    local c = logged(Uma, "Panel", umaTitle)
+    check(c and not (c.args[1] and c.args[1].noBorder),
+          "the title bar keeps a border, so the window's outline runs over it")
+end
 check(logged(Uma, "CloseButton") and count(Uma, "Checkbox") == 2,
       "close button and both checkboxes skinned")
 local skipLogged = false
@@ -957,7 +1048,7 @@ local allFonted = true
 for _, fs in ipairs(Uma.fontStrings) do
     if not fonted[fs] then allFonted = false end
 end
-check(allFonted, "every text in the window, lines made later included, uses EllesmereUI's font")
+check(allFonted, "every text in the window uses EllesmereUI's font")
 local vicButton = findButton(Uma, "Sync with Vic")
 check(vicButton and logged(Uma, "Button", vicButton),
       "Sync buttons made later are skinned too")
@@ -965,6 +1056,15 @@ soloAll()
 local Wes = makePlayer("Wes", {10, 20, 30}, nil, nil, nil, {eui = "late"})
 check(logged(Wes, "Panel", Wes.frames["RXPMultiFrame"]) ~= nil,
       "callback before the window exists: the window is skinned when made")
+do
+    local fontedWes = {}
+    for _, c in ipairs(Wes.euiLog) do if c.fn == "Font" then fontedWes[c.obj] = true end end
+    local all = #Wes.fontStrings > 0
+    for _, fs in ipairs(Wes.fontStrings) do
+        if not fontedWes[fs] then all = false end
+    end
+    check(all, "and every line it makes later uses EllesmereUI's font")
+end
 
 print(string.format("\n==== %s ====", failures == 0 and "ALL TESTS PASSED" or
                         failures .. " FAILURES"))

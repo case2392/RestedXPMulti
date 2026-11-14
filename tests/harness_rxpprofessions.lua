@@ -19,7 +19,7 @@ end
 
 -- a widget that accepts any method; the ones with state are real
 local function Widget()
-    local w = {shown = false, children = {}, events = {}, texts = {}, scripts = {}}
+    local w = {shown = false, children = {}, events = {}, mockTexts = {}, scripts = {}}
     -- methods are CamelCase and all accepted; data fields read nil as usual
     setmetatable(w, {__index = function(_, k)
         if type(k) == "string" and k:match("^%u") then return function() end end
@@ -35,7 +35,7 @@ local function Widget()
     function w:SetChecked(v) self.checked = v and true or false end
     function w:GetChecked() return self.checked end
     function w:GetPoint() return "CENTER", nil, "CENTER", 0, 0 end
-    function w:CreateFontString() local fs = Widget(); table.insert(self.texts, fs); return fs end
+    function w:CreateFontString() local fs = Widget(); table.insert(self.mockTexts, fs); return fs end
     function w:CreateTexture() return Widget() end
     function w:SetTexture(t) self.tex = t end
     return w
@@ -335,7 +335,7 @@ do
     -- the window draws
     check(w.ns.UpdateUI ~= nil, "forever: UI present")
     local anyLine = false
-    for _, f in ipairs(w.frames) do for _, t in ipairs(f.texts) do if t.text and t.text:find("Mining  45/75", 1, true) then anyLine = true end end end
+    for _, f in ipairs(w.frames) do for _, t in ipairs(f.mockTexts) do if t.text and t.text:find("Mining  45/75", 1, true) then anyLine = true end end end
     check(anyLine, "forever: the window shows the skill line")
     -- the same fold on Forever's skills tab, through C_SkillInfo's expand/collapse
     local wf = NewWorld({client = "forever", events = FOREVER_EVENTS, folded = true, db = {setupDone = true, chosen = {Mining = true}, show = true}})
@@ -1709,7 +1709,7 @@ do
         for _, c in ipairs(w.euiLog) do if c.fn == "Font" then fonted[c.obj] = true end end
         local n = 0
         for _, f in ipairs({...}) do
-            for _, fs in ipairs(f.texts) do
+            for _, fs in ipairs(f.mockTexts) do
                 n = n + 1
                 if not fonted[fs] then return false end
             end
@@ -1737,6 +1737,9 @@ do
     check(Logged(w, "Panel", main) and Logged(w, "Panel", tb) and Logged(w, "CloseButton"),
           "eui: window, title bar and close button skinned")
     check(tb.bg.tex == nil, "eui: RestedXP's banner cleared")
+    local tbPanel = Logged(w, "Panel", tb)
+    check(tbPanel and not (tbPanel.args[1] and tbPanel.args[1].noBorder),
+          "eui: the title bar keeps a border, so the window's outline runs over it")
     check(Logged(w, "OnLooksChanged") ~= nil, "eui: the accent line follows live accent changes")
     local before = main.backdropCalls
     rxp.colors = {background = {0, 0, 1, 1}, textColor = {1, 0, 0}, font = "x.ttf"}
