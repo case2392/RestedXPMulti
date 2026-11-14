@@ -33,6 +33,75 @@ function ns.GetStepText(index)
     end
 end
 
+local syncButtons = {}
+
+--------------------------------------------------------------------------
+-- EllesmereUI look. EllesmereUI (retail 12.1+ and WoW Forever) has a skin
+-- API for other addons: once the player is logged in it hands us its skin
+-- functions, unless they turned third-party skins off for us in its
+-- options. The window then takes EllesmereUI's flat panel, font, close
+-- button and accent color instead of RestedXP's theme.
+--------------------------------------------------------------------------
+
+-- one skin call, never allowed to break the window
+local function EUI(fnName, ...)
+    local S = ns.euiSkin
+    local fn = S and S[fnName]
+    if fn then pcall(fn, ...) end
+end
+
+local function SkinButtonEUI(button)
+    EUI("Button", button)
+    EUI("WhiteButtonLabel", button)
+end
+
+local function ApplyEUISkin()
+    if not (ns.euiSkin and frame) or frame.euiSkinned then return end
+    frame.euiSkinned = true
+    ns.skinFont = nil
+    local tb = frame.titleBar
+    if frame.ClearBackdrop then frame:ClearBackdrop() end
+    if tb.ClearBackdrop then tb:ClearBackdrop() end
+    tb.bg:SetTexture(nil)
+    EUI("Panel", frame)
+    EUI("Panel", tb, {inset = true, noBorder = true})
+    -- a 1px line in the player's accent color under the title. On a child
+    -- frame of its own: EllesmereUI re-fades the textures of the frames it
+    -- skinned now and then, and this one has to stay.
+    local holder = CreateFrame("Frame", nil, tb)
+    holder:SetAllPoints(tb)
+    local accent = holder:CreateTexture(nil, "ARTWORK")
+    accent:SetHeight(1)
+    accent:SetPoint("BOTTOMLEFT", tb, "BOTTOMLEFT", 1, 0)
+    accent:SetPoint("BOTTOMRIGHT", tb, "BOTTOMRIGHT", -1, 0)
+    frame.euiAccent = accent
+    local function Recolor()
+        local S = ns.euiSkin
+        local ok, r, g, b = pcall(S.GetAccentColor)
+        if ok and r then accent:SetColorTexture(r, g, b, 1) end
+    end
+    Recolor()
+    EUI("OnLooksChanged", Recolor)
+    EUI("Font", frame.title, 1, 1, 1)
+    EUI("CloseButton", frame.closeButton)
+    SkinButtonEUI(frame.skipButton)
+    EUI("Checkbox", frame.lockCheck)
+    EUI("Checkbox", frame.autoSkipCheck)
+    EUI("Font", frame.lockLabel)
+    EUI("Font", frame.autoSkipLabel)
+    for _, line in ipairs(lines) do EUI("Font", line) end
+    for _, button in ipairs(syncButtons) do SkinButtonEUI(button) end
+end
+
+-- RestedXP renamed its texture lookup (GetTexture became GetV1Texture in
+-- 2026): try both, so the title banner draws on old and new versions
+local function RXPTexture(RXP, name)
+    local get = RXP and (RXP.GetV1Texture or RXP.GetTexture)
+    if not get then return false end
+    local ok, tex = pcall(get, name)
+    return true, ok and tex or nil
+end
+
 -- Pull RestedXP's current theme onto our frame; falls back to a plain dark
 -- tooltip look if anything is missing.
 local function ApplySkin()
@@ -40,6 +109,8 @@ local function ApplySkin()
     local theme = RXP and (RXP.colors or RXP.activeTheme)
     local backdrop = RXP and RXP.RXPFrame and RXP.RXPFrame.backdrop
     ns.appliedTheme = theme
+    -- EllesmereUI's look replaces RestedXP's theme entirely
+    if ns.euiSkin then return ApplyEUISkin() end
     local bgColor = theme and theme.background or {0.05, 0.05, 0.08, 0.92}
 
     if frame.SetBackdrop then
@@ -65,9 +136,8 @@ local function ApplySkin()
             tb:SetBackdropColor(unpack(bgColor))
         end
     end
-    if RXP and RXP.GetTexture then
-        tb.bg:SetTexture(RXP.GetTexture("rxp-banner"))
-    end
+    local found, banner = RXPTexture(RXP, "rxp-banner")
+    if found then tb.bg:SetTexture(banner) end
 
     ns.skinFont = theme and theme.font
     if ns.skinFont then
@@ -118,6 +188,7 @@ local function CreateWindow()
     frame.title:SetText("RestedXP Party Sync")
 
     local close = CreateFrame("Button", nil, tb, "UIPanelCloseButton")
+    frame.closeButton = close
     close:SetPoint("RIGHT", 3, 0)
     close:SetScale(0.75)
     close:SetScript("OnClick", function()
@@ -201,11 +272,32 @@ local function GetLine(i)
         line:SetWordWrap(true)
         line:SetNonSpaceWrap(false)
         line:SetHeight(0)
-        if ns.skinFont then line:SetFont(ns.skinFont, 10, "") end
+        if ns.euiSkin then
+            EUI("Font", line)
+        elseif ns.skinFont then
+            line:SetFont(ns.skinFont, 10, "")
+        end
         lines[i] = line
     end
     line:Show()
     return line
+end
+
+-- "Sync with <name>" buttons under partner rows that aren't synced yet: a
+-- click answers the question without hunting for the popup
+local function GetSyncButton(i)
+    local button = syncButtons[i]
+    if not button then
+        button = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+        button:SetWidth(WIDTH - PADDING * 2 - 12)
+        button:SetHeight(18)
+        button:SetScript("OnClick", function(self)
+            if self.partner then ns.AcceptPair(self.partner) end
+        end)
+        if ns.euiSkin then SkinButtonEUI(button) end
+        syncButtons[i] = button
+    end
+    return button
 end
 
 local function AddLine(index, yOffset, text, r, g, b)
@@ -246,7 +338,8 @@ function ns.UpdateUI()
     -- restyle if RestedXP's theme changed since we last drew
     local currentTheme = ns.RXP and (ns.RXP.colors or ns.RXP.activeTheme)
     if currentTheme ~= ns.appliedTheme then ApplySkin() end
-    local tc = (currentTheme and currentTheme.textColor) or {1, 1, 1}
+    local tc = (not ns.euiSkin and currentTheme and currentTheme.textColor) or
+                   {1, 1, 1}
 
     for _, line in ipairs(lines) do line:Hide() end
 
@@ -255,6 +348,17 @@ function ns.UpdateUI()
     local function Line(text, r, g, b)
         i = i + 1
         y = AddLine(i, y, text, r, g, b)
+    end
+    local buttonsUsed = 0
+    local function SyncButton(name)
+        buttonsUsed = buttonsUsed + 1
+        local button = GetSyncButton(buttonsUsed)
+        button.partner = name
+        button:SetText("Sync with " .. name)
+        button:ClearAllPoints()
+        button:SetPoint("TOPLEFT", PADDING + 12, -y)
+        button:Show()
+        y = y + 22
     end
 
     -- our own row
@@ -300,14 +404,26 @@ function ns.UpdateUI()
             if p.theyDeclined then
                 Line(string.format("%s  -  |cFFFF6666declined sync|r", name),
                      0.7, 0.55, 0.55)
+                Line("    to sync after all they type /rxpm sync " ..
+                         ns.MyName(), 0.5, 0.5, 0.5)
             elseif ns.db.paired[name] then
+                -- say what the other player has to do: the report was a
+                -- window stuck on this line with nobody knowing why
                 Line(string.format(
                          "%s  -  |cFFFFCC00waiting for their accept|r", name),
                      0.9, 0.85, 0.6)
+                Line("    they click Sync on their popup or window, or type /rxpm sync " ..
+                         ns.MyName(), 0.5, 0.5, 0.5)
+            elseif p.pairedBack then
+                -- they said yes, we haven't answered yet
+                Line(string.format(
+                         "%s  -  |cFF66FF66wants to sync with you|r", name),
+                     0.7, 0.9, 0.7)
+                SyncButton(name)
             else
                 Line(string.format("%s  -  |cFF888888not synced|r", name),
                      0.65, 0.65, 0.65)
-                Line("    /rxpm sync " .. name .. " to sync up", 0.5, 0.5, 0.5)
+                SyncButton(name)
             end
         elseif p.key == "" then
             Line(string.format("%s  -  no guide loaded", name), 0.7, 0.7, 0.7)
@@ -487,10 +603,27 @@ function ns.UpdateUI()
     -- footer
     Line("/rxpm help", 0.45, 0.45, 0.5)
 
+    for n = buttonsUsed + 1, #syncButtons do
+        syncButtons[n].partner = nil
+        syncButtons[n]:Hide()
+    end
+
     frame:SetHeight(y + PADDING - LINE_GAP)
 end
 
 function ns.SetupUI()
     CreateWindow()
     ns.UpdateUI()
+end
+
+-- Registered at load: EllesmereUI calls back at login (or right away if
+-- it's already past that), before or after our window exists
+if EllesmereUI and EllesmereUI.RegisterSkin then
+    EllesmereUI.RegisterSkin(addonName, function(S)
+        ns.euiSkin = S
+        if frame then
+            ApplyEUISkin()
+            ns.UpdateUI()
+        end
+    end)
 end

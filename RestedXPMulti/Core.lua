@@ -10,7 +10,7 @@ local Multi = AceAddon:NewAddon("RestedXPMulti", "AceEvent-3.0", "AceComm-3.0",
                                 "AceSerializer-3.0")
 ns.Multi = Multi
 
-ns.VERSION = 4
+ns.VERSION = 5
 ns.PREFIX = "RXPMulti"
 ns.STALE_SECONDS = 90 -- partner counts as offline after this long without a message
 ns.PRUNE_SECONDS = 600 -- partner removed from the window after this long
@@ -470,13 +470,30 @@ local function ShowHelp()
     print("  |cFFFFCC00/rxpm duo|r - group quests in your log that the solo route skips")
 end
 
--- case-insensitive match against detected partners
-local function ResolveName(input)
-    for name in pairs(ns.partners) do
-        if name:lower() == input:lower() then return name end
+-- case-insensitive, and the game's own compare where it has one: string
+-- lower() only folds A-Z, so accented and Cyrillic names need it
+local function SameName(a, b)
+    if a == b then return true end
+    if strcmputf8i then
+        local ok, res = pcall(strcmputf8i, a, b)
+        if ok and type(res) == "number" then return res == 0 end
     end
-    for name in pairs(ns.db.paired) do
-        if name:lower() == input:lower() then return name end
+    return a:lower() == b:lower()
+end
+
+-- match a typed name against detected partners and remembered ones: also
+-- "Name-Realm" and the full name a partner's messages come from, so the
+-- name is always stored the way partners are filed
+local function ResolveName(input)
+    local short = Ambiguate and Ambiguate(input, "short") or input
+    for _, list in ipairs({ns.partners, ns.db.paired}) do
+        for name, v in pairs(list) do
+            local full = type(v) == "table" and v.fullSender
+            if SameName(name, input) or SameName(name, short) or
+                (full and SameName(full, input)) then
+                return name
+            end
+        end
     end
     return input:sub(1, 1):upper() .. input:sub(2)
 end
@@ -492,7 +509,7 @@ SlashCmdList["RXPMULTI"] = function(input)
     if cmd == "" or cmd == "show" or cmd == "hide" then
         ns.ToggleUI(cmd)
     elseif cmd == "sync" then
-        rest = rest:gsub("%s+", "")
+        rest = rest:gsub("%s+", " ")
         if rest ~= "" then
             ns.AcceptPair(ResolveName(rest))
         else
@@ -508,7 +525,8 @@ SlashCmdList["RXPMULTI"] = function(input)
             end
         end
     elseif cmd == "unsync" then
-        rest = rest:gsub("%s+", "")
+        -- keep the space inside WoW Forever's two-part names
+        rest = rest:gsub("%s+", " ")
         if rest ~= "" then
             ns.Unpair(ResolveName(rest))
         else

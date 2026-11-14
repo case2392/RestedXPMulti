@@ -5,8 +5,8 @@
 ## Title: RestedXP Professions
 ## Notes: Keep your professions leveled while you follow RestedXP guides - live gathering targets, trainer reminders, and First Aid brackets
 ## Author: case2392
-## Version: 1.1.0
-## OptionalDeps: RXPGuides
+## Version: 1.2.0
+## OptionalDeps: RXPGuides, EllesmereUI
 ## SavedVariablesPerCharacter: RXPProfessionsDB
 
 Locales.lua

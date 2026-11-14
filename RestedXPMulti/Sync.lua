@@ -23,9 +23,15 @@ local function BuildPayload(msgType)
     -- never get stuck on a single lost handshake message this way
     local pd = {}
     for pname in pairs(ns.db.paired) do table.insert(pd, pname) end
+    -- and who we said no to this session, so a lost DECLINE whisper can't
+    -- leave the other side on "waiting for their accept"
+    local dn = {}
+    for pname in pairs(ns.sessionDeclined) do table.insert(dn, pname) end
     return {
         t = msgType,
         v = ns.VERSION,
+        id = ns.sid,
+        dn = dn,
         k = my.key or "",
         g = my.guideName or "",
         gv = my.version or 0,
@@ -87,9 +93,39 @@ end
 
 function ns.SendDecline(name) SendTo(name, "DECLINE") end
 
+-- close a sync popup still on screen once the question is answered another
+-- way (the window's button, /rxpm sync). Called after the state change, so
+-- the popup's OnHide sees it settled.
+local function HidePrompt(name)
+    if StaticPopup_Hide then StaticPopup_Hide("RXPMULTI_PAIR", name) end
+end
+
+-- Is this name from a partner's pd/dn list us? Partners file us under
+-- Ambiguate(sender, "short"); ns.myWire is that exact string, learnt from
+-- our own broadcast coming back. On WoW Forever it can differ from
+-- UnitName("player"), which there returns the first name only.
+local function IsMe(pname)
+    return pname == ns.myWire or pname == UnitName("player")
+end
+
+-- nil when the list is missing (an older Party Sync), else true/false
+local function ListHasMe(list)
+    if type(list) ~= "table" then return nil end
+    for _, pname in ipairs(list) do
+        if IsMe(pname) then return true end
+    end
+    return false
+end
+
+-- the name partners know us by, for "/rxpm sync <name>" hints
+function ns.MyName()
+    return ns.myWire or UnitName("player")
+end
+
 function ns.AcceptPair(name)
     ns.db.paired[name] = true
     ns.sessionDeclined[name] = nil
+    HidePrompt(name)
     ns.SendPair(name)
     local p = ns.partners[name]
     if p and p.pairedBack then
@@ -106,7 +142,9 @@ end
 function ns.DeclinePair(name)
     ns.sessionDeclined[name] = true
     ns.db.paired[name] = nil
+    HidePrompt(name)
     ns.SendDecline(name)
+    ns.BroadcastState() -- carries the refusal (dn) too
     ns.Print("not syncing with %s. Use /rxpm sync %s if you change your mind.",
              name, name)
     ns.TryRelease()
@@ -116,7 +154,9 @@ end
 function ns.Unpair(name)
     ns.db.paired[name] = nil
     ns.sessionDeclined[name] = true
+    HidePrompt(name)
     ns.SendDecline(name)
+    ns.BroadcastState()
     ns.Print("stopped syncing with |cFFFFCC00%s|r.", name)
     ns.TryRelease()
     ns.UpdateUI()
@@ -125,6 +165,12 @@ end
 function ns.ShowPairPrompt(name)
     ns.prompted[name] = true
     if not StaticPopup_Show then return end
+    -- already on screen: showing it again would replace it and flicker it
+    -- on every message the partner sends
+    if StaticPopup_FindVisible and
+        StaticPopup_FindVisible("RXPMULTI_PAIR", name) then
+        return
+    end
     local dialog = StaticPopup_Show("RXPMULTI_PAIR", name, nil, name)
     if not dialog then
         -- all popup slots busy; retry shortly
@@ -146,10 +192,22 @@ local function OnCommReceived(prefix, message, distribution, sender)
     if prefix ~= ns.PREFIX then return end
 
     local name = Ambiguate(sender, "short")
-    if name == UnitName("player") then return end
 
     local ok, msg = Multi:Deserialize(message)
     if not ok or type(msg) ~= "table" then return end
+
+    -- our own party broadcast coming back. Known by session id, not by
+    -- name: WoW Forever's two-part names (and two same-named players from
+    -- different realms) break a name test. It also tells us the exact
+    -- name partners file us under.
+    if msg.id ~= nil then
+        if msg.id == ns.sid then
+            ns.myWire = name
+            return
+        end
+    elseif name == UnitName("player") then
+        return -- older Party Sync without a session id
+    end
 
     local p = ns.partners[name]
     if not p then
@@ -196,14 +254,7 @@ local function OnCommReceived(prefix, message, distribution, sender)
         -- accepted us: if our name is in their paired list, we're in
         if type(msg.pd) == "table" then
             local wasPairedBack = p.pairedBack
-            local myName = UnitName("player")
-            local mePaired = false
-            for _, pname in ipairs(msg.pd) do
-                if pname == myName then
-                    mePaired = true
-                    break
-                end
-            end
+            local mePaired = ListHasMe(msg.pd)
             p.pairedBack = mePaired
             if mePaired then
                 p.theyDeclined = nil
@@ -211,6 +262,14 @@ local function OnCommReceived(prefix, message, distribution, sender)
                     ns.Print("now syncing with |cFFFFCC00%s|r!", name)
                 end
             end
+        end
+        -- their refusals ride along the same way (not sent by older versions)
+        local meDeclined = ListHasMe(msg.dn)
+        if meDeclined then
+            p.theyDeclined = true
+            p.pairedBack = false
+        elseif meDeclined == false and not p.pairedBack then
+            p.theyDeclined = nil -- they reloaded or changed their mind
         end
 
         if ns.db.paired[name] then
@@ -282,9 +341,15 @@ local function OnObjectiveProgress()
     ns.UpdateUI()
 end
 
+local function InGroup(name)
+    return UnitInParty(name) or UnitInRaid(name)
+end
+
 local function PruneParted()
-    for name in pairs(ns.partners) do
-        if not (UnitInParty(name) or UnitInRaid(name)) then
+    for name, p in pairs(ns.partners) do
+        -- the short name can miss a cross-realm or two-part name; the full
+        -- sender name is the second try
+        if not (InGroup(name) or (p.fullSender and InGroup(p.fullSender))) then
             ns.partners[name] = nil
             ns.prompted[name] = nil -- re-prompt if they rejoin later
         end
@@ -317,25 +382,46 @@ end
 
 function ns.SetupSync()
     Multi = ns.Multi
+    -- this session's id: recognises our own broadcasts when they come back
+    ns.sid = string.format("%d.%d", math.random(1, 2147483646),
+                           math.floor(GetTime() * 1000) % 1000000)
 
     StaticPopupDialogs["RXPMULTI_PAIR"] = {
         text = "%s is also using RestedXP Party Sync.\n\nSync your RestedXP guide progress with them?",
         button1 = "Sync",
         button2 = "Not now",
-        OnAccept = function(self, data) ns.AcceptPair(data) end,
+        OnAccept = function(self, data)
+            if data then ns.AcceptPair(data) end
+        end,
         OnCancel = function(self, data, reason)
-            -- only a real "Not now" click declines; the popup can also be
-            -- dismissed by other dialogs overriding it or by Escape
+            -- older clients call OnCancel() bare when they refuse a show
+            if not data then return end
+            -- only a real "Not now" click declines; a popup replaced by
+            -- another or refused by the game asks again later
             if reason == "clicked" then
                 ns.DeclinePair(data)
             else
-                ns.prompted[data] = nil -- allow the prompt to come back
+                ns.prompted[data] = nil
+            end
+        end,
+        -- hidden without an answer (RestedXP closes the first popup slot on
+        -- its set-hearthstone steps; other addons can too): let it come
+        -- back on the partner's next message instead of never asking again.
+        -- A click runs OnAccept/OnCancel before the hide, so a real answer
+        -- is already recorded here.
+        OnHide = function(self, data)
+            if data and not ns.db.paired[data] and
+                not ns.sessionDeclined[data] then
+                ns.prompted[data] = nil
             end
         end,
         timeout = 0,
         whileDead = true,
-        hideOnEscape = true,
-        preferredIndex = 3
+        -- Escape counts as a "Not now" click in Blizzard's code, so a player
+        -- closing their bags would decline: Escape leaves this popup alone
+        hideOnEscape = false,
+        -- one popup per partner, so three players each get their own
+        multiple = true
     }
 
     Multi:RegisterComm(ns.PREFIX, OnCommReceived)

@@ -37,6 +37,7 @@ local function Widget()
     function w:GetPoint() return "CENTER", nil, "CENTER", 0, 0 end
     function w:CreateFontString() local fs = Widget(); table.insert(self.texts, fs); return fs end
     function w:CreateTexture() return Widget() end
+    function w:SetTexture(t) self.tex = t end
     return w
 end
 
@@ -45,7 +46,7 @@ local function NewWorld(opts)
     for _, k in ipairs({"GetNumSkillLines", "GetSkillLineInfo", "C_SkillInfo", "GetProfessions", "GetProfessionInfo",
                         "GetTradeSkillLine", "GetNumTradeSkills", "GetTradeSkillInfo", "C_TradeSkillUI",
                         "GetCraftDisplaySkillLine", "GetNumCrafts", "GetCraftInfo", "LibStub", "RXPProfessionsDB", "GetBuildInfo",
-                        "GetLocale", "GetSpellInfo", "GetItemInfo", "C_Map", "C_Item", "C_Spell"}) do
+                        "GetLocale", "GetSpellInfo", "GetItemInfo", "C_Map", "C_Item", "C_Spell", "EllesmereUI"}) do
         _G[k] = nil
     end
     _G.print = function(...) local t = {} for i = 1, select("#", ...) do t[i] = tostring(select(i, ...)) end table.insert(printed, table.concat(t, " ")) end
@@ -55,6 +56,8 @@ local function NewWorld(opts)
     _G.CreateFrame = function(kind, name, parent, template)
         local f = Widget()
         f.kind, f.template, f.name = kind, template, name
+        f.backdropCalls = 0
+        function f:SetBackdrop() self.backdropCalls = self.backdropCalls + 1 end
         function f:RegisterEvent(e)
             -- the client throws on an event it does not have
             if not known[e] then error('Frame:RegisterEvent(): Attempt to register unknown event "' .. e .. '"') end
@@ -86,6 +89,31 @@ local function NewWorld(opts)
                     GetMapInfo = function(id) return {name = (opts.mapNames or {})[id] or "?", parentMapID = (opts.mapParents or {})[id]} end}
     end
     _G.RXPProfessionsDB = opts.db
+    -- opts.rxp: a RestedXP to skin from (found through AceAddon)
+    if opts.rxp then
+        _G.LibStub = function(lib)
+            if lib == "AceAddon-3.0" then
+                return {GetAddon = function(_, n) if n == "RXPGuides" then return opts.rxp end end}
+            end
+        end
+    end
+    -- opts.eui: EllesmereUI's skin API, its S recording every call;
+    -- "login" = the test fires the callback, "late" = fired on register
+    if opts.eui then
+        w.euiLog = {}
+        local S = {apiVersion = 4}
+        for _, fn in ipairs({"Panel", "Font", "CloseButton", "Checkbox", "Button", "WhiteButtonLabel", "OnLooksChanged"}) do
+            S[fn] = function(obj, ...) table.insert(w.euiLog, {fn = fn, obj = obj, args = {...}}) end
+        end
+        S.GetAccentColor = function() return 0.86, 0.65, 0.5 end
+        S.IsEnabled = function() return true end
+        w.euiS = S
+        _G.EllesmereUI = {RegisterSkin = function(n, fn)
+            w.euiName, w.euiCallback = n, fn
+            if opts.eui == "late" then fn(S) end
+            return true
+        end}
+    end
 
     -- the skills tab's list: headers with children that vanish from the
     -- list while the header is folded (opts.folded folds "Professions")
@@ -1649,6 +1677,92 @@ do
     end
     check(plans == 3 * 8 * 12 and spansSeen > 1500 and bad == 0,
           ("tooltips: with a trainer that moved rows - %d plans, %d spans, %d problems"):format(plans, spansSeen, bad))
+end
+
+--------------------------------------------------------------------------
+-- RestedXP's title banner, and the EllesmereUI skin
+--------------------------------------------------------------------------
+do
+    local function FakeRXP(old)
+        local rxp = {colors = {background = {0.1, 0, 0, 1}, textColor = {1, 1, 1}, font = "Fonts/FRIZQT__.TTF"},
+                     RXPFrame = {backdrop = {edge = {}, guideName = {}}}}
+        -- RestedXP renamed GetTexture to GetV1Texture in 2026
+        if old then rxp.GetTexture = function(n) return "tex/" .. n end
+        else rxp.GetV1Texture = function(n) return "tex/" .. n end end
+        return rxp
+    end
+    local function ByName(w, name)
+        for _, f in ipairs(w.frames) do if f.name == name then return f end end
+    end
+    local function Logged(w, fn, obj)
+        for _, c in ipairs(w.euiLog) do
+            if c.fn == fn and (obj == nil or c.obj == obj) then return c end
+        end
+    end
+    local function Count(w, fn)
+        local n = 0
+        for _, c in ipairs(w.euiLog) do if c.fn == fn then n = n + 1 end end
+        return n
+    end
+    local function AllFonted(w, ...)
+        local fonted = {}
+        for _, c in ipairs(w.euiLog) do if c.fn == "Font" then fonted[c.obj] = true end end
+        local n = 0
+        for _, f in ipairs({...}) do
+            for _, fs in ipairs(f.texts) do
+                n = n + 1
+                if not fonted[fs] then return false end
+            end
+        end
+        return n > 0
+    end
+    local db = {setupDone = true, chosen = {Mining = true, Cooking = true}, show = true}
+
+    for _, old in ipairs({false, true}) do
+        local w = NewWorld({client = "classic", events = CLASSIC_EVENTS, rxp = FakeRXP(old), db = db})
+        w.Fire("PLAYER_ENTERING_WORLD")
+        local tb = ByName(w, "$parentTitle")
+        check(tb and tb.bg.tex == "tex/rxp-banner",
+              "banner: RestedXP's title banner draws (" .. (old and "old GetTexture" or "GetV1Texture") .. ")")
+    end
+
+    local rxp = FakeRXP()
+    local w = NewWorld({client = "forever", events = FOREVER_EVENTS, rxp = rxp, eui = "login",
+                        db = {setupDone = true, chosen = {Mining = true, Cooking = true}, show = true}})
+    w.Fire("PLAYER_ENTERING_WORLD")
+    local main, tb = ByName(w, "RXPProfessionsFrame"), ByName(w, "$parentTitle")
+    check(w.euiName == "RXPProfessions", "eui: registers with EllesmereUI under its folder name")
+    check(#w.euiLog == 0 and main.backdropCalls > 0, "eui: RestedXP's theme until EllesmereUI calls back")
+    w.euiCallback(w.euiS) -- EllesmereUI at PLAYER_LOGIN
+    check(Logged(w, "Panel", main) and Logged(w, "Panel", tb) and Logged(w, "CloseButton"),
+          "eui: window, title bar and close button skinned")
+    check(tb.bg.tex == nil, "eui: RestedXP's banner cleared")
+    check(Logged(w, "OnLooksChanged") ~= nil, "eui: the accent line follows live accent changes")
+    local before = main.backdropCalls
+    rxp.colors = {background = {0, 0, 1, 1}, textColor = {1, 0, 0}, font = "x.ttf"}
+    w.ns.UpdateUI()
+    check(main.backdropCalls == before, "eui: a RestedXP theme change doesn't paint over EllesmereUI's look")
+    check(AllFonted(w, main, tb), "eui: every text in the window uses EllesmereUI's font")
+    w.slash("setup")
+    local setup = ByName(w, "RXPProfessionsSetup")
+    check(setup and Logged(w, "Panel", setup) and Count(w, "Checkbox") == #w.ns.CHOOSABLE + 1 and
+              Logged(w, "Button", setup.okButton) and AllFonted(w, setup),
+          "eui: the setup dialog made later is skinned: panel, every checkbox, Save, texts")
+
+    -- first launch: the setup dialog is up before EllesmereUI calls back
+    local w2 = NewWorld({client = "forever", events = FOREVER_EVENTS, eui = "login", db = {}})
+    w2.Fire("PLAYER_ENTERING_WORLD")
+    local setup2 = ByName(w2, "RXPProfessionsSetup")
+    check(setup2 and not Logged(w2, "Panel", setup2), "eui: setup dialog shown at first launch")
+    w2.euiCallback(w2.euiS)
+    check(Logged(w2, "Panel", setup2) and Logged(w2, "Button", setup2.okButton),
+          "eui: and skinned when EllesmereUI calls back")
+
+    -- registered after login: the callback runs before any window exists
+    local w3 = NewWorld({client = "forever", events = FOREVER_EVENTS, eui = "late", db = db})
+    w3.Fire("PLAYER_ENTERING_WORLD")
+    check(Logged(w3, "Panel", ByName(w3, "RXPProfessionsFrame")) ~= nil,
+          "eui: callback before the window exists: skinned when it's made")
 end
 
 realPrint(("RestedXP Professions harness: %d passed, %d failed"):format(passed, failed))

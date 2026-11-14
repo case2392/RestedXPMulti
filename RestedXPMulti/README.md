@@ -11,6 +11,9 @@ the [root README](../README.md).)
   you get a popup: *"«Name» is also using RestedXP Party Sync. Sync your RestedXP
   guide progress with them?"* Both click **Sync** and you're linked. Your
   choice is remembered, so the same friend never has to be confirmed again.
+  Missed the popup? The Party Sync window has a **Sync with «Name»** button
+  under anyone you aren't synced with yet, and while you wait on a friend it
+  says what they need to do.
 - **See each other's steps, with live progress** — a window (skinned to match
   your RestedXP theme) shows every synced partner's current guide, step
   number, and the step text exactly as *their* RestedXP renders it, running
@@ -31,6 +34,13 @@ the [root README](../README.md).)
 It does **not** modify RestedXP itself — it hooks in from the outside, so you
 can keep updating RestedXP normally. The window adopts whatever RestedXP theme
 you use (RXP Red, RXP Blue, Gold, custom...) automatically.
+
+With **EllesmereUI** installed (retail Midnight 12.1+ and WoW Forever) the
+window takes EllesmereUI's look instead: its flat dark panel, your
+EllesmereUI font, its close button and checkboxes, and a line in your accent
+color under the title. This goes through EllesmereUI's own skin API, so it
+follows your accent color live, and you can turn it off for this addon in
+EllesmereUI's options (Blizzard Skins+ > Window Skins > Third-Party Addons).
 
 ## Requirements
 
@@ -58,8 +68,9 @@ or download it from the project page. Both players need it installed.
 1. Both install the addon (see above) and pick the same RestedXP guide.
 2. Invite each other to a party.
 3. Within a few seconds you'll both get the sync popup — click **Sync** on
-   both screens. Done: the Party Sync window shows both of you, and the step
-   lock keeps you together from then on.
+   both screens (or **Sync with «Name»** in the Party Sync window). Done: the
+   window shows both of you, and the step lock keeps you together from then
+   on.
 
 ## Commands
 
@@ -131,6 +142,12 @@ turning the lock off, or by jumping to a step from RestedXP's own step menu.
 - Declining the popup lasts for the current session; the popup returns next
   session (or use `/rxpm sync <name>` any time). Accepting is remembered
   permanently until you `/rxpm unsync` them.
+- The sync popup ignores Escape, so closing your bags or map can't decline
+  it by accident. If something else closes it unanswered (RestedXP does on
+  its set-hearthstone steps), it comes back on your partner's next message
+  (1.8.0). Before 1.8.0 that left your partner stuck on "waiting for their
+  accept"; the waiting side should update too, so its window explains what
+  to do.
 - Sticky steps (RestedXP's "do this later" steps) are never gated, since
   RestedXP skips through them as part of its own bookkeeping.
 - Works with any number of partners, not just two — everyone who accepts the

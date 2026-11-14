@@ -63,23 +63,30 @@ end
 local function makeTexture()
     local t = {}
     local noop = function() end
-    for _, m in ipairs({"SetTexture", "SetPoint", "SetAllPoints",
-                        "SetVertexColor", "SetTexCoord", "Show", "Hide"}) do
+    for _, m in ipairs({"SetPoint", "SetAllPoints", "SetVertexColor",
+                        "SetTexCoord", "Show", "Hide", "SetHeight",
+                        "SetAlpha"}) do
         t[m] = noop
     end
+    function t:SetTexture(tex) self.tex = tex end
+    function t:SetColorTexture(r, g, b, a) self.color = {r, g, b, a} end
     return t
 end
 
-local function makeFrame()
-    local f = {shown = false, checked = false}
+local function makeFrame(ftype, fname, template)
+    local f = {shown = false, checked = false, scripts = {}, ftype = ftype,
+               fname = fname, template = template, backdropCalls = 0}
     local noop = function() end
     for _, m in ipairs({
         "SetWidth", "SetHeight", "SetFrameStrata", "SetClampedToScreen",
-        "EnableMouse", "SetMovable", "RegisterForDrag", "SetScript",
-        "SetBackdrop", "SetBackdropColor", "SetBackdropBorderColor",
+        "EnableMouse", "SetMovable", "RegisterForDrag",
+        "SetBackdropColor", "SetBackdropBorderColor",
         "SetPoint", "StartMoving", "StopMovingOrSizing", "ClearBackdrop",
-        "SetScale", "SetText", "ClearAllPoints", "RegisterEvent"
+        "SetScale", "ClearAllPoints", "RegisterEvent", "SetAllPoints"
     }) do f[m] = noop end
+    function f:SetScript(k, fn) self.scripts[k] = fn end
+    function f:SetBackdrop(b) self.backdropCalls = self.backdropCalls + 1 end
+    function f:SetText(t) self.text = t end
     function f:GetPoint() return "CENTER", nil, "CENTER", 0, 0 end
     function f:Show() self.shown = true end
     function f:Hide() self.shown = false end
@@ -95,8 +102,24 @@ end
 -- idShift: this player's copy of the guide file has that many extra lines
 -- before every step (same content, different stepIds), as when a guide is
 -- edited without its version bumped
-local function makePlayer(name, stepLines, guideVersion, guideKey, idShift)
-    local P = {name = name, sent = {}, printed = {}, popups = {}, fontStrings = {}}
+-- the player a name or wire name (the sender other clients see) belongs to
+local function findPlayer(n)
+    if players[n] then return players[n] end
+    for _, other in pairs(players) do
+        if other.wire == n then return other end
+    end
+end
+
+-- opts: wire = the sender name others see (WoW Forever: "First Surname"),
+-- surname = UnitName's second return there, savedDB = saved variables kept
+-- over a reload, oldTexture = RestedXP's pre-rename GetTexture, eui =
+-- "login" (EllesmereUI skin callback fired by the test) or "late" (fired
+-- the moment we register, as for a registration after login)
+local function makePlayer(name, stepLines, guideVersion, guideKey, idShift, opts)
+    opts = opts or {}
+    local P = {name = name, sent = {}, printed = {}, popups = {}, fontStrings = {},
+               frames = {}, allFrames = {}, stepLines = stepLines, opts = opts,
+               wire = opts.wire or name}
     players[name] = P
 
     local env = {}
@@ -118,9 +141,13 @@ local function makePlayer(name, stepLines, guideVersion, guideKey, idShift)
     end
 
     env.GetTime = function() return clock end
-    env.UnitName = function() return name end
+    env.UnitName = function() return name, opts.surname end
     env.UnitLevel = function() return P.level or 20 end
-    env.Ambiguate = function(s) return s end
+    -- "short" drops a -Realm suffix, as the game does
+    env.Ambiguate = function(s, mode)
+        if mode == "short" then return (s:gsub("%-.*$", "")) end
+        return s
+    end
     env.LE_PARTY_CATEGORY_INSTANCE = 2
     env.IsInGroup = function(cat)
         if cat then return false end
@@ -128,7 +155,7 @@ local function makePlayer(name, stepLines, guideVersion, guideKey, idShift)
     end
     env.IsInRaid = function() return false end
     env.UnitInParty = function(n)
-        local other = players[n]
+        local other = findPlayer(n)
         return other and other.inGroup and P.inGroup
     end
     env.UnitInRaid = function() return nil end
@@ -150,8 +177,10 @@ local function makePlayer(name, stepLines, guideVersion, guideKey, idShift)
         After = function(d, fn) schedule(d, fn) end,
         NewTicker = function(period, fn) schedule(period, fn, period) end
     }
-    env.CreateFrame = function()
-        local f = makeFrame()
+    env.CreateFrame = function(ftype, fname, parent, template)
+        local f = makeFrame(ftype, fname, template)
+        if fname then P.frames[fname] = f end
+        table.insert(P.allFrames, f)
         -- every line the window draws, so a test can read the window
         local orig = f.CreateFontString
         f.CreateFontString = function(self)
@@ -171,20 +200,88 @@ local function makePlayer(name, stepLines, guideVersion, guideKey, idShift)
     env.BackdropTemplateMixin = {}
     env.UIParent = makeFrame()
     env.SlashCmdList = {}
+    -- StaticPopup model, after Blizzard's StaticPopup.lua: P.popups holds
+    -- the dialogs on screen; a hide of any kind runs the dialog's OnHide
     env.StaticPopupDialogs = {}
-    env.StaticPopup_Show = function(which, arg1, arg2, data)
-        table.insert(P.popups, {which = which, data = data})
-        return {}
-    end
-    P.answerPopup = function(accept)
-        local popup = table.remove(P.popups, 1)
-        assert(popup, name .. " has no pending popup")
-        local dialog = env.StaticPopupDialogs[popup.which]
-        if accept then
-            dialog.OnAccept(nil, popup.data)
-        else
-            dialog.OnCancel(nil, popup.data, "clicked")
+    local function hideDialog(d)
+        for i, shown in ipairs(P.popups) do
+            if shown == d then
+                table.remove(P.popups, i)
+                local info = env.StaticPopupDialogs[d.which]
+                if info and info.OnHide then info.OnHide(d, d.data) end
+                return
+            end
         end
+    end
+    local function copy(t)
+        local c = {}
+        for i, v in ipairs(t) do c[i] = v end
+        return c
+    end
+    env.StaticPopup_Show = function(which, arg1, arg2, data)
+        if P.popupSlotsFull then return nil end
+        local info = env.StaticPopupDialogs[which]
+        if not info.multiple then
+            -- one dialog per kind: a new show replaces the old one
+            for _, d in ipairs(copy(P.popups)) do
+                if d.which == which then
+                    if info.OnCancel then info.OnCancel(d, d.data, "override") end
+                    hideDialog(d)
+                end
+            end
+        end
+        local d = {which = which, data = data, hideOnEscape = info.hideOnEscape}
+        table.insert(P.popups, d)
+        return d
+    end
+    env.StaticPopup_FindVisible = function(which, data)
+        local info = env.StaticPopupDialogs[which]
+        for _, d in ipairs(P.popups) do
+            if d.which == which and (not info.multiple or d.data == data) then
+                return d
+            end
+        end
+    end
+    env.StaticPopup_Hide = function(which, data)
+        for _, d in ipairs(copy(P.popups)) do
+            if d.which == which and (not data or d.data == data) then
+                hideDialog(d)
+            end
+        end
+    end
+    -- a click: OnAccept/OnCancel("clicked"), then the hide
+    P.answerPopup = function(accept)
+        local d = P.popups[1]
+        assert(d, name .. " has no pending popup")
+        local info = env.StaticPopupDialogs[d.which]
+        if accept then
+            info.OnAccept(d, d.data)
+        else
+            info.OnCancel(d, d.data, "clicked")
+        end
+        hideDialog(d)
+    end
+    -- Escape, as StaticPopup_EscapePressed: a "clicked" cancel
+    P.pressEscape = function()
+        local closed = false
+        for i = #P.popups, 1, -1 do
+            local d = P.popups[i]
+            if d.hideOnEscape then
+                local info = env.StaticPopupDialogs[d.which]
+                if info.OnCancel and not info.noCancelOnEscape then
+                    info.OnCancel(d, d.data, "clicked")
+                end
+                hideDialog(d)
+                closed = true
+            end
+        end
+        return closed
+    end
+    -- another addon's StaticPopup1:Hide(), as RestedXP's set-hearthstone
+    -- automation does: no OnCancel, only the frame's OnHide
+    P.silentHide = function()
+        local d = P.popups[1]
+        if d then hideDialog(d) end
     end
 
     -- fake RestedXP guide; stepIds derive from shared source line numbers,
@@ -221,9 +318,14 @@ local function makePlayer(name, stepLines, guideVersion, guideKey, idShift)
             textColor = {1, 1, 1},
             font = "Fonts/FRIZQT__.TTF"
         },
-        RXPFrame = {backdrop = {edge = {}, guideName = {}}},
-        GetTexture = function(n) return "tex/" .. n end
+        RXPFrame = {backdrop = {edge = {}, guideName = {}}}
     }
+    -- RestedXP renamed GetTexture to GetV1Texture in 2026
+    if opts.oldTexture then
+        RXP.GetTexture = function(n) return "tex/" .. n end
+    else
+        RXP.GetV1Texture = function(n) return "tex/" .. n end
+    end
     P.RXP = RXP
     RXP.SetStep = function(n)
         if n > #guide.steps then return end
@@ -258,14 +360,21 @@ local function makePlayer(name, stepLines, guideVersion, guideKey, idShift)
     function Multi:Deserialize(t) return true, deepcopy(t) end
     function Multi:SendCommMessage(prefix, payload, channel, target)
         table.insert(P.sent, payload)
+        if channel == "WHISPER" and P.dropWhispers then return end
         for otherName, other in pairs(players) do
-            local isTarget = channel ~= "WHISPER" or otherName == target
+            local isTarget = channel ~= "WHISPER" or otherName == target or
+                                 other.wire == target
             if otherName ~= name and isTarget and other.inGroup and
                 P.inGroup and other.commCallback then
                 local cb = other.commCallback
                 schedule(0.1,
-                         function() cb(prefix, payload, channel, name) end)
+                         function() cb(prefix, payload, channel, P.wire) end)
             end
+        end
+        -- the game hands a party/raid broadcast back to its sender too
+        if channel ~= "WHISPER" and P.inGroup and P.commCallback then
+            local cb = P.commCallback
+            schedule(0.1, function() cb(prefix, payload, channel, P.wire) end)
         end
     end
 
@@ -281,6 +390,28 @@ local function makePlayer(name, stepLines, guideVersion, guideKey, idShift)
         error("unexpected LibStub: " .. tostring(lib))
     end
 
+    -- EllesmereUI's skin API: S records every call it gets
+    if opts.eui then
+        P.euiLog = {}
+        local S = {apiVersion = 4}
+        for _, fn in ipairs({"Panel", "Font", "CloseButton", "Checkbox",
+                             "Button", "WhiteButtonLabel", "OnLooksChanged"}) do
+            S[fn] = function(obj, ...)
+                table.insert(P.euiLog, {fn = fn, obj = obj, args = {...}})
+            end
+        end
+        S.GetAccentColor = function() return 0.05, 0.82, 0.62 end
+        S.IsEnabled = function() return true end
+        P.euiS = S
+        env.EllesmereUI = {
+            RegisterSkin = function(n, fn)
+                P.euiName, P.euiCallback = n, fn
+                if opts.eui == "late" then fn(S) end
+                return true
+            end
+        }
+    end
+
     local ns = {}
     P.ns = ns
     for _, file in ipairs({"Core.lua", "Sync.lua", "Duo.lua", "UI.lua"}) do
@@ -291,6 +422,7 @@ local function makePlayer(name, stepLines, guideVersion, guideKey, idShift)
     end
 
     P.inGroup = true
+    if opts.savedDB then env.RestedXPMultiDB = opts.savedDB end
     Multi:OnInitialize()
     Multi:OnEnable()
     return P
@@ -594,6 +726,245 @@ Pam.env.SlashCmdList["RXPMULTI"]("status")
 Pam.env.SlashCmdList["RXPMULTI"]("help")
 Pam.env.SlashCmdList["RXPMULTI"]("autoskip banana")
 check(true, "status/help/bad-args ran without errors")
+
+--------------------------------------------------------------------------
+-- Pairing: the "waiting for their accept" report and its causes
+--------------------------------------------------------------------------
+
+local function soloAll()
+    for _, P in pairs(players) do P.inGroup = false end
+end
+local function enter(...)
+    for _, P in ipairs({...}) do
+        P.events["PLAYER_ENTERING_WORLD"]("PLAYER_ENTERING_WORLD")
+    end
+    advanceTime(10)
+end
+local function synced(P, Q)
+    local key = Q.wire:gsub("%-.*$", "")
+    return P.ns.IsSynced(key, P.ns.partners[key] or {})
+end
+local function findButton(P, text)
+    for _, f in ipairs(P.allFrames) do
+        if f.shown and f.text == text then return f end
+    end
+end
+-- a /reload: same name and saved variables, fresh session
+local function reload(P)
+    P.inGroup = false
+    local db = P.env.RestedXPMultiDB
+    local opts = {}
+    for k, v in pairs(P.opts) do opts[k] = v end
+    opts.savedDB = db
+    local Q = makePlayer(P.name, P.stepLines, nil, nil, nil, opts)
+    Q.events["PLAYER_ENTERING_WORLD"]("PLAYER_ENTERING_WORLD")
+    return Q
+end
+
+print("\n=== sync popup closed by another addon comes back (RestedXP .home) ===")
+soloAll()
+local Eve = makePlayer("Eve", {10, 20, 30})
+local Finn = makePlayer("Finn", {10, 20, 30})
+enter(Eve, Finn)
+check(#Eve.popups == 1 and #Finn.popups == 1, "both asked once")
+Eve.answerPopup(true)
+advanceTime(1)
+-- RestedXP's set-hearthstone automation: StaticPopup1:Hide() on CONFIRM_BINDER
+Finn.silentHide()
+check(#Finn.popups == 0 and not Finn.ns.prompted["Eve"],
+      "Finn's popup closed unanswered, and he can be asked again")
+Eve.ns.UpdateUI()
+local eveText = Eve.windowText()
+check(eveText:find("Finn  -  |cFFFFCC00waiting for their accept|r", 1, true) and
+          eveText:find("/rxpm sync Eve", 1, true),
+      "Eve's window says what Finn has to do")
+Finn.ns.UpdateUI()
+check(Finn.windowText():find("Eve  -  |cFF66FF66wants to sync with you|r", 1, true) and
+          findButton(Finn, "Sync with Eve"),
+      "Finn's window: Eve wants to sync, with a Sync button")
+advanceTime(30)
+check(#Finn.popups == 1, "the popup came back on Eve's next message")
+Finn.answerPopup(true)
+advanceTime(1)
+check(synced(Eve, Finn) and synced(Finn, Eve), "Eve and Finn sync")
+check(Eve.frames["$parentTitle"].bg.tex == "tex/rxp-banner",
+      "title banner drawn through RestedXP's current GetV1Texture")
+
+print("\n=== the window's Sync button answers the question too ===")
+soloAll()
+local Gil = makePlayer("Gil", {10, 20, 30}, nil, nil, nil, {oldTexture = true})
+local Hana = makePlayer("Hana", {10, 20, 30})
+enter(Gil, Hana)
+check(Gil.frames["$parentTitle"].bg.tex == "tex/rxp-banner",
+      "title banner still drawn on a RestedXP with the old GetTexture name")
+Gil.answerPopup(true)
+advanceTime(1)
+Hana.ns.UpdateUI()
+local button = findButton(Hana, "Sync with Gil")
+check(button ~= nil, "Hana has a 'Sync with Gil' button")
+if button then button.scripts.OnClick(button) end
+advanceTime(1)
+check(#Hana.popups == 0, "clicking it closed her popup")
+check(synced(Gil, Hana) and synced(Hana, Gil), "Gil and Hana sync")
+Hana.ns.UpdateUI()
+check(not findButton(Hana, "Sync with Gil"), "the button goes once synced")
+
+print("\n=== Escape leaves the popup alone; a lost decline still arrives ===")
+soloAll()
+local Ida = makePlayer("Ida", {10, 20, 30})
+local Jon = makePlayer("Jon", {10, 20, 30})
+enter(Ida, Jon)
+Ida.answerPopup(true)
+advanceTime(1)
+check(not Jon.pressEscape() and #Jon.popups == 1 and not Jon.ns.sessionDeclined["Ida"],
+      "Escape (closing bags) neither closes nor declines the sync popup")
+Jon.dropWhispers = true
+Jon.answerPopup(false) -- "Not now", and the DECLINE whisper is lost
+Jon.dropWhispers = false
+advanceTime(25)
+check(Ida.ns.partners["Jon"].theyDeclined,
+      "Ida learns of the decline from Jon's broadcasts")
+Ida.ns.UpdateUI()
+check(Ida.windowText():find("Jon  -  |cFFFF6666declined sync|r", 1, true) ~= nil,
+      "Ida's window says declined, not waiting")
+local Jon2 = reload(Jon) -- a decline lasts one session
+advanceTime(10)
+check(#Jon2.popups == 1, "after a reload Jon is asked again")
+check(not Ida.ns.partners["Jon"].theyDeclined, "and Ida's window drops 'declined'")
+Jon2.answerPopup(true)
+advanceTime(1)
+check(synced(Ida, Jon2) and synced(Jon2, Ida), "Ida and Jon sync")
+
+print("\n=== three players: one popup per partner ===")
+soloAll()
+local Kai = makePlayer("Kai", {10, 20, 30})
+local Lea = makePlayer("Lea", {10, 20, 30})
+local Max = makePlayer("Max", {10, 20, 30})
+enter(Kai, Lea, Max)
+check(#Kai.popups == 2 and Kai.popups[1].data ~= Kai.popups[2].data,
+      "Kai has a popup for each partner")
+advanceTime(120)
+check(#Kai.popups == 2 and #Lea.popups == 2 and #Max.popups == 2,
+      "no extra popups while they are up")
+for _, P in ipairs({Kai, Lea, Max}) do
+    while #P.popups > 0 do P.answerPopup(true) end
+end
+advanceTime(2)
+check(synced(Kai, Lea) and synced(Kai, Max) and synced(Lea, Max) and
+          synced(Lea, Kai) and synced(Max, Kai) and synced(Max, Lea),
+      "all three pairs sync")
+
+print("\n=== partner leaves and rejoins while the popup is up ===")
+soloAll()
+local Ned = makePlayer("Ned", {10, 20, 30})
+local Ola = makePlayer("Ola", {10, 20, 30})
+enter(Ned, Ola)
+check(#Ola.popups == 1, "Ola asked about Ned")
+Ned.inGroup = false
+Ola.events["GROUP_ROSTER_UPDATE"]("GROUP_ROSTER_UPDATE")
+Ned.inGroup = true
+Ola.events["GROUP_ROSTER_UPDATE"]("GROUP_ROSTER_UPDATE")
+advanceTime(30)
+check(#Ola.popups == 1, "still one popup, not a second copy")
+
+print("\n=== /rxpm sync with a realm suffix or an accented name ===")
+soloAll()
+local Pia = makePlayer("Pia", {10, 20, 30})
+local Elo = makePlayer("\195\137lodie", {10, 20, 30})
+local Quo = makePlayer("Quo", {10, 20, 30})
+-- the game's case-blind UTF-8 compare (string.lower only folds A-Z)
+Quo.env.strcmputf8i = function(a, b)
+    local function fold(x) return (x:gsub("\195\137", "\195\169"):lower()) end
+    return fold(a) == fold(b) and 0 or 1
+end
+enter(Pia, Elo, Quo)
+Quo.env.SlashCmdList["RXPMULTI"]("sync pia-OtherRealm")
+Quo.env.SlashCmdList["RXPMULTI"]("sync \195\169lodie")
+check(Quo.ns.db.paired["Pia"] and not Quo.ns.db.paired["Pia-OtherRealm"] and
+          not Quo.ns.db.paired["pia-OtherRealm"],
+      "'/rxpm sync pia-OtherRealm' stores Pia the way she's filed")
+check(Quo.ns.db.paired["\195\137lodie"] and not Quo.ns.db.paired["\195\169lodie"],
+      "'/rxpm sync \195\169lodie' finds \195\137lodie")
+
+print("\n=== WoW Forever two-part names ===")
+for _, form in ipairs({" ", "-"}) do
+    soloAll()
+    local Bane = makePlayer("Bane", {10, 20, 30}, nil, nil, nil,
+                            {wire = "Bane" .. form .. "Battlehammer",
+                             surname = "Battlehammer"})
+    local Cora = makePlayer("Cora", {10, 20, 30}, nil, nil, nil,
+                            {wire = "Cora" .. form .. "Stonefist",
+                             surname = "Stonefist"})
+    enter(Bane, Cora)
+    local label = form == " " and "'First Surname'" or "'First-Surname'"
+    check(Bane.ns.partners[Bane.wire] == nil and Bane.ns.partners["Bane"] == nil,
+          label .. ": Bane doesn't list himself as a partner")
+    check(#Bane.popups == 1 and #Cora.popups == 1, label .. ": each asked once")
+    Bane.answerPopup(true)
+    Cora.answerPopup(true)
+    advanceTime(1)
+    check(synced(Bane, Cora) and synced(Cora, Bane), label .. ": they sync")
+end
+
+print("\n=== older clients call OnCancel() bare ===")
+do
+    local info = Quo.env.StaticPopupDialogs["RXPMULTI_PAIR"]
+    check(pcall(info.OnCancel) and pcall(info.OnAccept) and pcall(info.OnHide),
+          "OnCancel()/OnAccept()/OnHide() with no arguments raise no error")
+end
+
+print("\n=== EllesmereUI skin ===")
+local function logged(P, fn, obj)
+    for _, c in ipairs(P.euiLog) do
+        if c.fn == fn and (obj == nil or c.obj == obj) then return c end
+    end
+end
+local function count(P, fn)
+    local n = 0
+    for _, c in ipairs(P.euiLog) do if c.fn == fn then n = n + 1 end end
+    return n
+end
+soloAll()
+local Uma = makePlayer("Uma", {10, 20, 30}, nil, nil, nil, {eui = "login"})
+local umaFrame = Uma.frames["RXPMultiFrame"]
+check(Uma.euiName == "RestedXPMulti", "registers with EllesmereUI under its folder name")
+check(umaFrame.backdropCalls > 0 and #Uma.euiLog == 0,
+      "RestedXP's theme until EllesmereUI calls back")
+Uma.euiCallback(Uma.euiS) -- EllesmereUI at PLAYER_LOGIN
+local umaTitle = Uma.frames["$parentTitle"]
+check(logged(Uma, "Panel", umaFrame) and logged(Uma, "Panel", umaTitle),
+      "window and title bar get EllesmereUI panels")
+check(umaTitle.bg.tex == nil, "RestedXP's banner is cleared")
+check(logged(Uma, "CloseButton") and count(Uma, "Checkbox") == 2,
+      "close button and both checkboxes skinned")
+local skipLogged = false
+for _, c in ipairs(Uma.euiLog) do
+    if c.fn == "Button" and c.obj.text == "Skip wait" then skipLogged = true end
+end
+check(skipLogged, "Skip wait button skinned")
+check(logged(Uma, "OnLooksChanged") ~= nil, "accent line follows live accent changes")
+local backdropsBefore = umaFrame.backdropCalls
+Uma.RXP.colors = {background = {0, 0, 1, 1}, textColor = {1, 0, 0}, font = "x.ttf"}
+Uma.ns.UpdateUI()
+check(umaFrame.backdropCalls == backdropsBefore,
+      "a RestedXP theme change doesn't paint over EllesmereUI's look")
+local Vic = makePlayer("Vic", {10, 20, 30})
+enter(Uma, Vic)
+Uma.ns.UpdateUI()
+local fonted = {}
+for _, c in ipairs(Uma.euiLog) do if c.fn == "Font" then fonted[c.obj] = true end end
+local allFonted = true
+for _, fs in ipairs(Uma.fontStrings) do
+    if not fonted[fs] then allFonted = false end
+end
+check(allFonted, "every text in the window, lines made later included, uses EllesmereUI's font")
+local vicButton = findButton(Uma, "Sync with Vic")
+check(vicButton and logged(Uma, "Button", vicButton),
+      "Sync buttons made later are skinned too")
+soloAll()
+local Wes = makePlayer("Wes", {10, 20, 30}, nil, nil, nil, {eui = "late"})
+check(logged(Wes, "Panel", Wes.frames["RXPMultiFrame"]) ~= nil,
+      "callback before the window exists: the window is skinned when made")
 
 print(string.format("\n==== %s ====", failures == 0 and "ALL TESTS PASSED" or
                         failures .. " FAILURES"))

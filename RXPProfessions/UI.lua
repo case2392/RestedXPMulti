@@ -1,6 +1,7 @@
 -- RestedXP Professions - window
--- Same look as RestedXP Party Sync: skinned live from RestedXP's active
--- theme when RestedXP is installed, plain dark tooltip style otherwise.
+-- Same look as RestedXP Party Sync: EllesmereUI's look when EllesmereUI is
+-- installed, else skinned live from RestedXP's active theme when RestedXP
+-- is installed, plain dark tooltip style otherwise.
 
 local addonName, ns = ...
 
@@ -27,11 +28,84 @@ local function GetRXP()
     end
 end
 
+local setupFrame
+
+--------------------------------------------------------------------------
+-- EllesmereUI look. EllesmereUI (retail 12.1+ and WoW Forever) has a skin
+-- API for other addons: once the player is logged in it hands us its skin
+-- functions, unless they turned third-party skins off for us in its
+-- options. The windows then take EllesmereUI's flat panel, font, close
+-- button, checkboxes and accent color instead of RestedXP's theme.
+--------------------------------------------------------------------------
+
+-- one skin call, never allowed to break the window
+local function EUI(fnName, ...)
+    local S = ns.euiSkin
+    local fn = S and S[fnName]
+    if fn then pcall(fn, ...) end
+end
+
+local function ApplyEUISkin()
+    if not (ns.euiSkin and frame) or frame.euiSkinned then return end
+    frame.euiSkinned = true
+    ns.skinFont = nil
+    local tb = frame.titleBar
+    if frame.ClearBackdrop then frame:ClearBackdrop() end
+    if tb.ClearBackdrop then tb:ClearBackdrop() end
+    tb.bg:SetTexture(nil)
+    EUI("Panel", frame)
+    EUI("Panel", tb, {inset = true, noBorder = true})
+    -- a 1px line in the player's accent color under the title. On a child
+    -- frame of its own: EllesmereUI re-fades the textures of the frames it
+    -- skinned now and then, and this one has to stay.
+    local holder = CreateFrame("Frame", nil, tb)
+    holder:SetAllPoints(tb)
+    local accent = holder:CreateTexture(nil, "ARTWORK")
+    accent:SetHeight(1)
+    accent:SetPoint("BOTTOMLEFT", tb, "BOTTOMLEFT", 1, 0)
+    accent:SetPoint("BOTTOMRIGHT", tb, "BOTTOMRIGHT", -1, 0)
+    frame.euiAccent = accent
+    local function Recolor()
+        local S = ns.euiSkin
+        local ok, r, g, b = pcall(S.GetAccentColor)
+        if ok and r then accent:SetColorTexture(r, g, b, 1) end
+    end
+    Recolor()
+    EUI("OnLooksChanged", Recolor)
+    EUI("Font", frame.title, 1, 1, 1)
+    EUI("CloseButton", frame.closeButton)
+    for _, line in ipairs(lines) do EUI("Font", line) end
+end
+
+-- the first-launch setup dialog, whenever it exists
+local function SkinSetupEUI()
+    local f = setupFrame
+    if not (ns.euiSkin and f) or f.euiSkinned then return end
+    f.euiSkinned = true
+    if f.ClearBackdrop then f:ClearBackdrop() end
+    EUI("Panel", f)
+    for _, fs in ipairs(f.texts) do EUI("Font", fs) end
+    for _, cb in ipairs(f.checks) do EUI("Checkbox", cb) end
+    EUI("Button", f.okButton)
+    EUI("WhiteButtonLabel", f.okButton)
+end
+
+-- RestedXP renamed its texture lookup (GetTexture became GetV1Texture in
+-- 2026): try both, so the title banner draws on old and new versions
+local function RXPTexture(RXP, name)
+    local get = RXP and (RXP.GetV1Texture or RXP.GetTexture)
+    if not get then return false end
+    local ok, tex = pcall(get, name)
+    return true, ok and tex or nil
+end
+
 local function ApplySkin()
     local RXP = GetRXP()
     local theme = RXP and (RXP.colors or RXP.activeTheme)
     local backdrop = RXP and RXP.RXPFrame and RXP.RXPFrame.backdrop
     ns.appliedTheme = theme
+    -- EllesmereUI's look replaces RestedXP's theme entirely
+    if ns.euiSkin then return ApplyEUISkin() end
     local bgColor = theme and theme.background or {0.05, 0.05, 0.08, 0.92}
 
     if frame.SetBackdrop then
@@ -57,9 +131,8 @@ local function ApplySkin()
             tb:SetBackdropColor(unpack(bgColor))
         end
     end
-    if RXP and RXP.GetTexture then
-        tb.bg:SetTexture(RXP.GetTexture("rxp-banner"))
-    end
+    local found, banner = RXPTexture(RXP, "rxp-banner")
+    if found then tb.bg:SetTexture(banner) end
 
     ns.skinFont = theme and theme.font
     if ns.skinFont then
@@ -109,6 +182,7 @@ local function CreateWindow()
     frame.title:SetText("RestedXP Professions")
 
     local close = CreateFrame("Button", nil, tb, "UIPanelCloseButton")
+    frame.closeButton = close
     close:SetPoint("RIGHT", 3, 0)
     close:SetScale(0.75)
     close:SetScript("OnClick", function()
@@ -131,7 +205,11 @@ local function GetLine(i)
         line:SetWordWrap(true)
         line:SetNonSpaceWrap(false)
         line:SetHeight(0)
-        if ns.skinFont then line:SetFont(ns.skinFont, 10, "") end
+        if ns.euiSkin then
+            EUI("Font", line)
+        elseif ns.skinFont then
+            line:SetFont(ns.skinFont, 10, "")
+        end
         lines[i] = line
     end
     line:Show()
@@ -170,7 +248,8 @@ function ns.UpdateUI()
     local RXP = GetRXP()
     local currentTheme = RXP and (RXP.colors or RXP.activeTheme)
     if currentTheme ~= ns.appliedTheme then ApplySkin() end
-    local tc = (currentTheme and currentTheme.textColor) or {1, 1, 1}
+    local tc = (not ns.euiSkin and currentTheme and currentTheme.textColor) or
+                   {1, 1, 1}
 
     for _, line in ipairs(lines) do line:Hide() end
 
@@ -209,8 +288,6 @@ end
 -- First-launch setup: pick professions to track + Auction House question
 --------------------------------------------------------------------------
 
-local setupFrame
-
 function ns.ShowSetup()
     if setupFrame then
         setupFrame:Show()
@@ -220,6 +297,7 @@ function ns.ShowSetup()
     local f = CreateFrame("Frame", "RXPProfessionsSetup", UIParent,
                           BackdropTemplateMixin and "BackdropTemplate" or nil)
     setupFrame = f
+    f.texts, f.checks = {}, {}
     f:SetWidth(320)
     f:SetFrameStrata("DIALOG")
     f:SetPoint("CENTER")
@@ -241,10 +319,12 @@ function ns.ShowSetup()
     local title = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     title:SetPoint("TOP", 0, -12)
     title:SetText("|cFF66CCFFRestedXP Professions|r")
+    table.insert(f.texts, title)
 
     local sub = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     sub:SetPoint("TOP", 0, -30)
     sub:SetText(ns.L["Which professions are you leveling?"])
+    table.insert(f.texts, sub)
 
     local learned = ns.ScanSkills()
     local boxes = {}
@@ -266,6 +346,8 @@ function ns.ShowSetup()
                           (not ns.db.chosen and learned[name] and true) or
                           false)
         boxes[name] = cb
+        table.insert(f.checks, cb)
+        table.insert(f.texts, label)
         if yOff < bottomY then bottomY = yOff end
     end
     local yOff = bottomY - 26
@@ -273,6 +355,7 @@ function ns.ShowSetup()
     local hint = f:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
     hint:SetPoint("TOPLEFT", 24, yOff)
     hint:SetText(ns.L["|cFF66FF66*|r = already learned"])
+    table.insert(f.texts, hint)
     yOff = yOff - 22
     local ahBox = CreateFrame("CheckButton", nil, f, "UICheckButtonTemplate")
     ahBox:SetPoint("TOPLEFT", 24, yOff)
@@ -282,8 +365,11 @@ function ns.ShowSetup()
     ahLabel:SetPoint("LEFT", ahBox, "RIGHT", 4, 0)
     ahLabel:SetText(ns.L["Use the Auction House for materials"])
     ahBox:SetChecked(ns.db.useAH and true or false)
+    table.insert(f.checks, ahBox)
+    table.insert(f.texts, ahLabel)
 
     local ok = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
+    f.okButton = ok
     ok:SetWidth(100)
     ok:SetHeight(22)
     ok:SetPoint("BOTTOM", 0, 12)
@@ -303,10 +389,24 @@ function ns.ShowSetup()
     end)
 
     f:SetHeight(-yOff + 70)
+    SkinSetupEUI()
     f:Show()
 end
 
 function ns.SetupUI()
     CreateWindow()
     if ns.db.show then frame:Show() else frame:Hide() end
+end
+
+-- Registered at load: EllesmereUI calls back at login (or right away if
+-- it's already past that), before or after our windows exist
+if EllesmereUI and EllesmereUI.RegisterSkin then
+    EllesmereUI.RegisterSkin(addonName, function(S)
+        ns.euiSkin = S
+        SkinSetupEUI()
+        if frame then
+            ApplyEUISkin()
+            ns.UpdateUI()
+        end
+    end)
 end

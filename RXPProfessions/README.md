@@ -60,6 +60,14 @@ Copy the `RXPProfessions` folder into `Interface/AddOns/` so you have
 Works with or without RestedXP installed (it borrows RestedXP's theme when
 present).
 
+With **EllesmereUI** installed (WoW Forever; EllesmereUI doesn't run on
+Classic Era, TBC or Mists) the window and the setup dialog take
+EllesmereUI's look instead: its flat dark panel, your EllesmereUI font, its
+close button and checkboxes, and a line in your accent color under the
+title. This goes through EllesmereUI's own skin API, so it follows your
+accent color live, and you can turn it off for this addon in EllesmereUI's
+options (Blizzard Skins+ > Window Skins > Third-Party Addons).
+
 ## Item tooltips
 
 Hover an item and RXPP says what your profession plan needs of it, span

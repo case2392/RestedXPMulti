@@ -5,8 +5,9 @@
 ## Title: RestedXP Party Sync
 ## Notes: Party sync for RestedXP guides - see your friends' current step and stay in lockstep while leveling together
 ## Author: case2392
-## Version: 1.7.3
+## Version: 1.8.0
 ## Dependencies: RXPGuides
+## OptionalDeps: EllesmereUI
 ## SavedVariables: RestedXPMultiDB
 
 Core.lua
