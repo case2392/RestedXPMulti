@@ -15,7 +15,8 @@ list's gear menu has **Track all quests** / **Untrack all quests**.
 
 The game tracks at most 25 quests at once (the quest log holds 40), so
 "track all" fills up to 25 - the zones on the open map first - and says
-how many didn't fit.
+how many didn't fit. A box that has filled what it can counts as full:
+its next click untracks.
 
 ## Looking For Group: players by role
 
@@ -37,7 +38,7 @@ When you enter a zone, the tracker switches to that zone's quests: every
 quest under the zone's quest log header is tracked, the others are
 untracked. Go to Duskwood and you see Duskwood's quests. It happens once
 per zone - anything you track or untrack by hand stays until you enter
-the next zone. A dungeon's quests show inside the dungeon; the quest
+the next zone (a /reload doesn't count as entering one). A dungeon's quests show inside the dungeon; the quest
 you've set your arrow on stays tracked; nothing changes during combat or
 a flight (it catches up after).
 
@@ -50,8 +51,10 @@ join.
 
 The game doesn't tell add-ons who's in a voice channel you haven't
 joined, so Pace's QoL users tell each other: opening Chat Channels on a
-community asks its online members, and the ones in voice (who also run
-Pace's QoL) answer, and say when they join or leave. So you see people
+community asks its online members (a big community, 60 at a time,
+carrying on down the list every minute and a half while the window is
+open), and the ones in voice (who also run Pace's QoL) answer, and say
+when they join or leave. So you see people
 who run Pace's QoL - ask your friends to install it. These are invisible
 add-on messages; nothing appears in chat, and nothing is sent in
 dungeons or encounters (the game's chat lockdown). You can stop sharing

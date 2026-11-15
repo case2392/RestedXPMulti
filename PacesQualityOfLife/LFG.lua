@@ -194,7 +194,10 @@ local function InitRow(row, entry)
             UpdateButtons()
         end))
         row:SetScript("OnDoubleClick", ns.Guard("lfgroles", function(self)
+            -- the first click of the two toggled it: select it for good
             selected = self.entry.resultID
+            M.RefreshRows()
+            UpdateButtons()
             M.SendMessage()
         end))
         row:SetScript("OnEnter", ns.Guard("lfgroles", function(self)
@@ -293,14 +296,15 @@ local function MakeOverlay()
     send:SetSize(111, 28)
     send:SetPoint("BOTTOMLEFT", 21, 16)
     send:SetText(SEND_MESSAGE or "Send Message")
-    send:SetFrameLevel((LFGBrowseFrame.SendMessageButton and LFGBrowseFrame.SendMessageButton:GetFrameLevel() or 1) + 5)
+    -- above our own list (it reaches down over the buttons' top edge)
+    send:SetFrameLevel(overlay:GetFrameLevel() + 5)
     send:SetScript("OnClick", ns.Guard("lfgroles", function() M.SendMessage() end))
     overlay.send = send
     local invite = CreateFrame("Button", nil, LFGBrowseFrame, "UIPanelButtonTemplate")
     invite:SetSize(109, 28)
     invite:SetPoint("BOTTOMRIGHT", -21, 16)
     invite:SetText(GROUP_INVITE or "Group Invite")
-    invite:SetFrameLevel((LFGBrowseFrame.GroupInviteButton and LFGBrowseFrame.GroupInviteButton:GetFrameLevel() or 1) + 5)
+    invite:SetFrameLevel(overlay:GetFrameLevel() + 5)
     invite:SetScript("OnClick", ns.Guard("lfgroles", function() M.Invite() end))
     overlay.invite = invite
     overlay:SetScript("OnHide", function()
@@ -357,8 +361,9 @@ end
 function M.Update()
     if not LFGBrowseFrame then return end
     M.UpdateBar()
+    -- a search running or failed: Blizzard's spinner or message shows
     local show = M.FilterActive() and LFGBrowseFrame:IsShown() and not Locked() and
-                     not LFGBrowseFrame.searching
+                     not LFGBrowseFrame.searching and not LFGBrowseFrame.searchFailed
     if not show then
         if overlay then overlay:Hide() end
         FadeBlizzardButtons(false)

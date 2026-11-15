@@ -37,6 +37,15 @@ local function Cap()
     return ok and type(cap) == "number" and cap or 25
 end
 
+-- "as tracked as it gets": every quest, or as many as the game's cap
+-- allows (34 quests, 25 tracked) - so the next click untracks
+local function Full(watched, total)
+    if total == 0 then return false end
+    if watched == total then return true end
+    local ok, n = pcall(C_QuestLog.GetNumQuestWatches)
+    return watched > 0 and ok and type(n) == "number" and n >= Cap() or false
+end
+
 local function IsWatched(questID)
     local ok, kind = pcall(C_QuestLog.GetQuestWatchType, questID)
     return ok and kind ~= nil
@@ -181,7 +190,7 @@ end
 
 -- all / some / none tracked
 local function ShowState(box, watched, total)
-    box.allTracked = total > 0 and watched == total
+    box.allTracked = Full(watched, total)
     if watched == 0 then
         box.tick:Hide()
     else
@@ -227,15 +236,20 @@ local function HeaderBox(header)
             box:SetPoint("RIGHT", header, "RIGHT", -30, 0)
         end
         box:SetScript("OnClick", ns.Guard("questlog", function(self)
-            local quests = QuestsUnder(header.questLogIndex)
+            local quests, title = QuestsUnder(header.questLogIndex)
             if not quests then return end
             local watched, total = Counts(quests)
-            if total > 0 and watched == total then
+            if Full(watched, total) then
                 Sound(false)
                 M.UntrackQuests(quests)
             else
                 Sound(true)
                 M.TrackQuests(quests)
+            end
+            -- the tooltip under the mouse shows the new count
+            M.Sync()
+            if self:IsShown() and GameTooltip and GameTooltip.IsOwned and GameTooltip:IsOwned(self) then
+                Tooltip(self, title)
             end
         end))
         box:SetScript("OnEnter", ns.Guard("questlog", function(self)
@@ -255,6 +269,10 @@ local function MasterBox()
     if master.SetFrameLevel then master:SetFrameLevel(level + 5) end
     master:SetScript("OnClick", ns.Guard("questlog", function(self)
         if self.allTracked then M.UntrackAll() else M.TrackAll() end
+        M.Sync()
+        if GameTooltip and GameTooltip.IsOwned and GameTooltip:IsOwned(self) then
+            Tooltip(self, "All quests")
+        end
     end))
     master:SetScript("OnEnter", ns.Guard("questlog", function(self)
         Tooltip(self, "All quests")

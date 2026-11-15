@@ -36,7 +36,8 @@ local MIC_ATLAS = "voicechat-icon-mic"
 local SEEN_TTL = 200       -- an answer counts this long (seconds)
 local WATCH_TTL = 200      -- we tell an asker about joins/leaves this long
 local ASK_EVERY = 90       -- re-ask while the window stays on a stream
-local MAX_TARGETS = 60     -- whispers per question, at most
+local MAX_TARGETS = 60     -- whispers per question, at most (the rest next time)
+local REASK_GAP = 60       -- a member isn't asked again sooner than this
 local SEND_GAP = 0.2       -- seconds between queued messages
 local WHISPER_OK_TTL = 300 -- how long a "can whisper" answer is trusted
 
@@ -45,6 +46,8 @@ local watchers = {}        -- key -> {to=, club=, stream=, exp=}
 local whisperOK = {}       -- guid -> {ok=bool, exp=}
 local pending = {}         -- guid -> {messages waiting for the whisper check}
 local myVoice              -- {channelID=, club=, stream=, guild=bool}
+local asked = {}           -- "club:stream" -> {target key -> time asked}
+local cursor = {}          -- clubId -> where the last question stopped
 local icons = setmetatable({}, {__mode = "k"})
 local hooked = setmetatable({}, {__mode = "k"})
 local askTicker
@@ -111,8 +114,15 @@ local function Pump()
 end
 
 local function Enqueue(msg, to)
-    if #queue >= 300 then return end
-    table.insert(queue, {msg = msg, to = to})
+    if msg:sub(1, 1) == "Q" then
+        if #queue >= 300 then return end
+        table.insert(queue, {msg = msg, to = to})
+    else
+        -- answers and join/leave news go ahead of any questions waiting
+        local at = 1
+        while queue[at] and queue[at].msg:sub(1, 1) ~= "Q" do at = at + 1 end
+        table.insert(queue, at, {msg = msg, to = to})
+    end
     if not pumping then
         pumping = true
         C_Timer.After(0, Pump)
@@ -209,10 +219,7 @@ function M.Targets(clubId)
                     target = {name = name, guid = m.guid}
                 end
             end
-            if target then
-                out[#out + 1] = target
-                if #out >= MAX_TARGETS then break end
-            end
+            if target then out[#out + 1] = target end
         end
     end
     return out
@@ -278,9 +285,21 @@ function M.Decorate(button)
         icons[button] = icon
     end
     if icon then icon:SetShown(show and true or false) end
-    -- room for the icon: Blizzard sets the name's width on every update
-    if show and button.Name then
-        button.Name:SetWidth(button.showRank and 110 or 124)
+    -- room for the icon: Blizzard sets the name's width (and puts the
+    -- owner/moderator rank after it) on every update, before this hook
+    if button.Name and (show or icons[button]) then
+        local width = show and (button.showRank and 110 or 124) or nil
+        if not show and not (button.IsChannelActive and button:IsChannelActive()) then width = 140 end
+        if width then
+            button.Name:SetWidth(width)
+            if button.showRank and button.Rank and button.Name.GetStringWidth then
+                local okW, w = pcall(button.Name.GetStringWidth, button.Name)
+                if okW and type(w) == "number" and not ns.IsSecret(w) then
+                    button.Rank:ClearAllPoints()
+                    button.Rank:SetPoint("LEFT", button.Name, "LEFT", math.min(w, width) + 4, 0)
+                end
+            end
+        end
     end
 end
 
@@ -303,12 +322,51 @@ end
 -- asking, answering
 --------------------------------------------------------------------------
 
+local function TargetKey(to)
+    return to.guild and "guild" or to.bn and ("bn" .. tostring(to.bn)) or to.name
+end
+
+-- ask the selected stream's online members who's in its voice. Nobody is
+-- asked twice within REASK_GAP (the window's OnShow and its re-select
+-- both land here; so does the member list arriving), and a big
+-- community is asked MAX_TARGETS at a time, carrying on where the last
+-- question stopped.
 function M.Ask()
     if not Active() or Locked() then return end
     local _, clubId, streamId = SelectedStream()
     if not clubId then return end
+    local streamKey = tostring(clubId) .. ":" .. tostring(streamId)
     local msg = ("Q:%s:%s:%s"):format(tostring(clubId), tostring(streamId), MyGUID() or "")
-    for _, to in ipairs(M.Targets(clubId)) do Send(msg, to) end
+    local targets = M.Targets(clubId)
+    local n = #targets
+    if n == 0 then return end
+    local now = Now()
+    local done = asked[streamKey] or {}
+    asked[streamKey] = done
+    local start = (cursor[clubId] or 0) % n
+    local sent = 0
+    for step = 1, n do
+        local i = (start + step - 1) % n + 1
+        local to = targets[i]
+        local key = TargetKey(to)
+        if not (done[key] and now - done[key] < REASK_GAP) then
+            done[key] = now
+            Send(msg, to)
+            sent = sent + 1
+            if sent >= MAX_TARGETS then
+                cursor[clubId] = i
+                return
+            end
+        end
+    end
+    cursor[clubId] = nil
+end
+
+-- drop questions not yet sent (window closed, feature off)
+local function DropQuestions()
+    for i = #queue, 1, -1 do
+        if queue[i].msg:sub(1, 1) == "Q" then table.remove(queue, i) end
+    end
 end
 
 local function Announce(kind)
@@ -399,6 +457,21 @@ end
 local function StopAsking()
     if askTicker then askTicker:Cancel() end
     askTicker = nil
+    DropQuestions()
+end
+
+-- the community's members (and who's online) load after the stream is
+-- picked: ask the ones not asked yet once they're in
+local reaskArmed = false
+local function OnClubMembers(clubId)
+    if not Active() or reaskArmed or not (ChannelFrame and ChannelFrame:IsShown()) then return end
+    local _, selClub = SelectedStream()
+    if not selClub or ns.IsSecret(clubId) or tostring(clubId) ~= tostring(selClub) then return end
+    reaskArmed = true
+    C_Timer.After(2, function()
+        reaskArmed = false
+        ns.SafeCall("voice ask", M.Ask)
+    end)
 end
 
 local function SetupChannelFrame()
@@ -430,7 +503,8 @@ function M:Init()
                             "VOICE_CHAT_CHANNEL_REMOVED", "VOICE_CHAT_LOGOUT", "PLAYER_LOGOUT",
                             "VOICE_CHAT_CHANNEL_JOINED", "VOICE_CHAT_CHANNEL_MEMBER_ADDED",
                             "VOICE_CHAT_CHANNEL_MEMBER_REMOVED",
-                            "VOICE_CHAT_CHANNEL_MEMBER_ACTIVE_STATE_CHANGED"}) do
+                            "VOICE_CHAT_CHANNEL_MEMBER_ACTIVE_STATE_CHANGED",
+                            "CLUB_MEMBERS_UPDATED", "CLUB_MEMBER_PRESENCE_UPDATED"}) do
         pcall(f.RegisterEvent, f, event)
     end
     f:SetScript("OnEvent", ns.Guard("voice", function(_, event, ...)
@@ -438,6 +512,8 @@ function M:Init()
             OnAddonMessage(event, ...)
         elseif event == "CAN_LOCAL_WHISPER_TARGET_RESPONSE" then
             OnWhisperCheck(...)
+        elseif event == "CLUB_MEMBERS_UPDATED" or event == "CLUB_MEMBER_PRESENCE_UPDATED" then
+            OnClubMembers((...))
         else
             if event == "VOICE_CHAT_CHANNEL_ACTIVATED" or event == "VOICE_CHAT_CHANNEL_DEACTIVATED" or
                 event == "VOICE_CHAT_CHANNEL_REMOVED" or event == "VOICE_CHAT_LOGOUT" or
@@ -449,6 +525,12 @@ function M:Init()
     end))
     M.eventFrame = f
     ns.OnAddOnLoaded("Blizzard_Channels", function() ns.SafeCall("voice", SetupChannelFrame) end)
+    -- already in a community's voice (a /reload doesn't end it): no
+    -- ACTIVATED event comes, so read it now
+    if C_VoiceChat and C_VoiceChat.GetActiveChannelID then
+        local ok, id = pcall(C_VoiceChat.GetActiveChannelID)
+        if ok and id and not ns.IsSecret(id) then OnMyVoice("VOICE_CHAT_CHANNEL_ACTIVATED", id) end
+    end
 end
 
 function M:Apply(on)
@@ -456,6 +538,7 @@ function M:Apply(on)
         if ChannelFrame and ChannelFrame:IsShown() then StartAsking() end
     else
         StopAsking()
+        DropQuestions()
     end
     M.Refresh()
 end

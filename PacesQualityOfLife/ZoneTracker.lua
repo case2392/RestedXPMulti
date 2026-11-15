@@ -161,8 +161,13 @@ function M:Init()
                             "PLAYER_CONTROL_GAINED", "QUEST_LOG_UPDATE"}) do
         pcall(f.RegisterEvent, f, event)
     end
-    f:SetScript("OnEvent", ns.Guard("zonetracker", function(_, event)
+    f:SetScript("OnEvent", ns.Guard("zonetracker", function(_, event, isLogin, isReload)
         if not ns.IsOn("zonetracker") then return end
+        if event == "PLAYER_ENTERING_WORLD" and isReload then
+            -- a /reload is not entering a zone: keep what you tracked here
+            lastKey = ZoneKey()
+            return
+        end
         if event == "PLAYER_ENTERING_WORLD" or event == "ZONE_CHANGED_NEW_AREA" then
             Schedule(1)
         elseif pending then
@@ -171,13 +176,17 @@ function M:Init()
         end
     end))
     M.eventFrame = f
+    M.initialized = true
 end
 
+-- switched on from the options or /pqol: apply to the zone you're in now
+-- (at login the PLAYER_ENTERING_WORLD pass does that)
 function M:Apply(on)
-    if on then
+    if on and M.switchedOff then
         lastKey = nil
         Schedule(0.1)
     end
+    M.switchedOff = not on
 end
 
 function M:Status()

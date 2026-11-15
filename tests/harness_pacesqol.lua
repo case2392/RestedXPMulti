@@ -288,7 +288,7 @@ local function makePlayer(name, opts)
     env.C_Club = {
         GetClubInfo = function(id) local c = clubs[id]; if c then return {clubId = id, clubType = c.type} end end,
         GetClubMembers = function(id)
-            local c = clubs[id]; if not c then return {} end
+            local c = clubs[id]; if not c or c.notReady then return {} end
             local out = {}
             for i in ipairs(c.members) do out[i] = i end
             return out
@@ -325,6 +325,9 @@ local function makePlayer(name, opts)
             if v and v.members[memberID] ~= nil then return {memberID = memberID, isActive = v.members[memberID]} end
         end,
         IsMemberLocalPlayer = function(memberID) return memberID == P.guid end,
+        GetActiveChannelID = function()
+            for id, v in pairs(P.voice) do if v.isActive then return id end end
+        end,
     }
 
     -- Chat Channels window: ChannelFrame with its list and roster
@@ -583,6 +586,7 @@ local function makePlayer(name, opts)
     P.Slash = function(s) env.SlashCmdList["PACESQOL"](s) end
     P.Fire = function(event, ...) FireEvent(P, event, ...) end
 
+    if opts.voiceAtLoad then P.voice[opts.voiceAtLoad.id] = {clubId = opts.voiceAtLoad.club, streamId = opts.voiceAtLoad.stream, isActive = true, members = {}} end
     if opts.beforeLoad then opts.beforeLoad(P, env) end
     local ns = {}
     P.ns = ns
@@ -764,8 +768,9 @@ end
 do
     local P = makePlayer("Questy")
     -- 34 quests in 6 zones, like the screenshot
-    QuestLogOf(P, {{"Redridge Mountains", 7, onMap = true}, {"Ashenvale", 5}, {"Blackfathom Deeps", 4},
-                   {"Darkshore", 6}, {"Dun Morogh", 6}, {"Duskwood", 6}})
+    -- the open map shows Duskwood, the LAST zone in the log (129-134)
+    QuestLogOf(P, {{"Redridge Mountains", 7}, {"Ashenvale", 5}, {"Blackfathom Deeps", 4},
+                   {"Darkshore", 6}, {"Dun Morogh", 6}, {"Duskwood", 6, onMap = true}})
     P.watched[101], P.watched[102] = true, true -- two Redridge quests tracked
     P.OpenQuestMap()
     local red, ash = P.HeaderBox("Redridge Mountains"), P.HeaderBox("Ashenvale")
@@ -790,14 +795,32 @@ do
     check(master and P.BoxState(master) == "some", "questlog: a box for all quests by the quest count")
     P.errorsShown = {}
     master.scripts.OnClick(master)
-    check(P.WatchCount() == 25 and Watched(P, 101, 107) == 7, "questlog: track all fills the game's 25, the zone on the map first")
+    check(P.WatchCount() == 25 and Watched(P, 129, 134) == 6, "questlog: track all fills the game's 25, the zone on the map first")
     check(P.errorsShown[1] and P.errorsShown[1]:find("9 not tracked", 1, true),
           "questlog: and says how many didn't fit")
-    P.watched = {}
-    for id = 101, 125 do P.watched[id] = true end
-    P.OpenQuestMap()
+    check(P.BoxState(master) == "some" and master.allTracked,
+          "questlog: 25 of 34 is as full as it gets: the box offers to untrack")
+    P.errorsShown = {}
     master.scripts.OnClick(master)
-    check(P.WatchCount() == 25, "questlog: at the cap, all-box click still can't pass 25")
+    check(P.WatchCount() == 0 and #P.errorsShown == 0, "questlog: so the next click untracks them all (no error)")
+    -- a zone that only partly fits: its box untracks on the next click too
+    for id = 101, 120 do P.watched[id] = true end -- 20 elsewhere tracked
+    P.OpenQuestMap()
+    local dusk = P.HeaderBox("Duskwood")
+    dusk.scripts.OnClick(dusk)
+    check(Watched(P, 129, 134) == 5 and P.WatchCount() == 25, "questlog: a zone fills what's left of the 25")
+    dusk = P.HeaderBox("Duskwood")
+    dusk.scripts.OnClick(dusk)
+    check(Watched(P, 129, 134) == 0 and P.WatchCount() == 20, "questlog: and its next click untracks it")
+    -- the tooltip under the mouse follows the click
+    P.watched = {}
+    P.OpenQuestMap()
+    P.env.GameTooltip.IsOwned = function(_, b) return b == master end
+    P.env.GameTooltip.lines = {}
+    P.env.GameTooltip.AddLine = function(self, t) table.insert(self.lines, t) end
+    master.scripts.OnClick(master)
+    check(P.env.GameTooltip.lines[#P.env.GameTooltip.lines - 1] == "25 of 34 tracked",
+          "questlog: the tooltip shows the new count after a click")
     -- untrack all from the gear menu
     local menu = P.GearMenu()
     check(menu["Track all quests"] and menu["Untrack all quests"], "questlog: Track all / Untrack all in the list's gear menu")
@@ -876,6 +899,21 @@ do
     P.Fire("ZONE_CHANGED_NEW_AREA")
     advance(2)
     check(P.WatchCount() == was and was > 0, "zone: a city with none of your quests leaves the tracker alone")
+    -- a /reload in the same zone keeps what was tracked by hand
+    local reloaded = makePlayer("Zoner2")
+    reloaded.log, reloaded.maps = P.log, P.maps
+    reloaded.zone, reloaded.mapID = "Duskwood", nil -- a zone with quests
+    for id in pairs(P.watched) do reloaded.watched[id] = true end
+    reloaded.watched[101] = true -- tracked by hand before the reload
+    reloaded.Fire("PLAYER_ENTERING_WORLD", false, true)
+    advance(2)
+    check(reloaded.watched[101], "zone: a /reload doesn't redo the zone (hand-tracked quest stays)")
+    reloaded.zone = "Redridge Mountains"
+    reloaded.Fire("ZONE_CHANGED_NEW_AREA")
+    advance(2)
+    check(Watched(reloaded, 101, 107) == 7 and not reloaded.watched[112], "zone: the next real zone change does")
+    reloaded.online = false
+    players[reloaded.name] = nil
     -- off: zone changes leave watches alone
     P.Slash("zonetracker off")
     local before = P.WatchCount()
@@ -883,6 +921,10 @@ do
     P.Fire("ZONE_CHANGED_NEW_AREA")
     advance(2)
     check(P.WatchCount() == before and P.watched[112], "zone: off, nothing changes")
+    -- switched back on: applies to the zone you're in right away
+    P.Slash("zonetracker on")
+    advance(1)
+    check(Watched(P, 101, 107) == 7 and not P.watched[112], "zone: switched on, the current zone at once")
     P.online = false
     players[P.name] = nil
 end
@@ -909,7 +951,10 @@ do
     for _, fr in ipairs(P.frames) do
         if fr.role and fr.role.field == "healer" then healer = fr end
     end
-    check(healer ~= nil, "lfg: role buttons between Send Message and Group Invite")
+    local bp = healer and healer:GetParent().point
+    check(bp and bp[1] == "BOTTOM" and bp[2] == f and bp[3] == "BOTTOM" and bp[4] == 0 and bp[5] == 16 and
+              healer:GetParent().width <= 196,
+          "lfg: role buttons centred in the gap between Send Message and Group Invite")
     healer.scripts.OnClick(healer)
     local rows = P.OverlayRows()
     local names = {}
@@ -944,6 +989,19 @@ do
     invite.scripts.OnClick(invite)
     send.scripts.OnClick(send)
     check(P.invited == row.entry.name and P.toldTo == row.entry.name, "lfg: Group Invite and Send Message act on our selection")
+    -- double-click on the selected row: stays selected, whispers
+    row.scripts.OnClick(row) -- first click of the double-click: deselects
+    row.scripts.OnDoubleClick(row)
+    local selTex
+    for _, rg in ipairs(row.regions) do if rg.atlas == "common-button-list-mid2-selected" then selTex = rg end end
+    check(selTex and selTex.shown and send:IsEnabled(), "lfg: a double-click leaves the row selected")
+    -- a failed search: Blizzard's message, not our list
+    f.searchFailed = true
+    f:UpdateResults()
+    local ovShown = P.OverlayRows()[1] and P.OverlayRows()[1].parent.parent.shown
+    check(not ovShown, "lfg: a failed search shows Blizzard's message, not our list")
+    f.searchFailed = nil
+    P.LFGResults()
     -- add tanks
     local tank
     for _, fr in ipairs(P.frames) do if fr.role and fr.role.field == "tank" then tank = fr end end
@@ -967,6 +1025,78 @@ do
     check(f.SendMessageButton.alpha == 1, "lfg: off, Blizzard's list as always")
     P.online = false
     players[P.name] = nil
+end
+
+--------------------------------------------------------------------------
+-- voice: reloads, asking once, big communities, late member lists, ranks
+--------------------------------------------------------------------------
+do
+    local viewer = makePlayer("Viewer")
+    local reloader = makePlayer("Reloader", {voiceAtLoad = {id = 31, club = "C3", stream = "S3"}})
+    local filler = {}
+    clubs["C3"] = {type = ENUM.ClubType.Character, members = {"Viewer", "Reloader"}}
+    for _, R in ipairs({viewer, reloader}) do viewer.AddRosterRow(R) end
+    viewer.OpenChannels("C3", "S3")
+    advance(3)
+    check(viewer.RowMic(reloader), "voice: someone who /reloaded while in voice is still seen")
+    local function QTo(P, name)
+        return SentCount(P, function(x) return x.msg:sub(1, 2) == "Q:" and x.to and x.to:find("^" .. name) end)
+    end
+    check(QTo(viewer, "Reloader") == 1, "voice: one question per member when the window opens")
+    viewer.CloseChannels()
+    viewer.OpenChannels("C3", "S3")
+    viewer.SelectStream("C3", "S3") -- Blizzard re-selects on show
+    advance(3)
+    check(QTo(viewer, "Reloader") == 1, "voice: reopening at once doesn't ask again")
+    viewer.CloseChannels()
+
+    -- 70 online members without the addon, one user in voice at the end
+    local names = {"Viewer"}
+    for i = 1, 70 do
+        local F = makePlayer("Filler" .. i, {beforeLoad = function(P) P.files = {} end})
+        F.prefix = nil
+        filler[#filler + 1] = F
+        names[#names + 1] = F.name
+    end
+    local far = makePlayer("Faraway")
+    names[#names + 1] = "Faraway"
+    clubs["C4"] = {type = ENUM.ClubType.Character, members = names}
+    far.JoinVoice(41, "C4", "S4")
+    viewer.AddRosterRow(far)
+    viewer.OpenChannels("C4", "S4")
+    advance(30)
+    check(not viewer.RowMic(far), "voice: a big community: the first question goes to 60 members")
+    advance(120)
+    check(viewer.RowMic(far), "voice: the next one carries on down the list and finds the far one")
+    viewer.CloseChannels()
+
+    -- the member list arrives after the stream is picked
+    local late = makePlayer("Latecomer")
+    clubs["C5"] = {type = ENUM.ClubType.Character, members = {"Viewer", "Latecomer"}, notReady = true}
+    late.JoinVoice(51, "C5", "S5")
+    viewer.AddRosterRow(late)
+    viewer.OpenChannels("C5", "S5")
+    advance(3)
+    check(not viewer.RowMic(late), "voice: no members loaded yet, nobody to ask")
+    clubs["C5"].notReady = false
+    viewer.Fire("CLUB_MEMBERS_UPDATED", "C5")
+    advance(4)
+    check(viewer.RowMic(late), "voice: asked as soon as the member list comes in")
+    viewer.CloseChannels()
+
+    -- an owner's rank icon moves clear of the microphone
+    local row = viewer.Row(late)
+    row.showRank = true
+    row.Rank = Widget("Texture", nil, row)
+    row.Name.GetStringWidth = function() return 130 end
+    viewer.OpenChannels("C5", "S5")
+    advance(1)
+    check(viewer.RowMic(late) and row.Rank.point and row.Rank.point[4] == 114,
+          "voice: the rank icon sits after the shortened name, clear of the microphone")
+    viewer.CloseChannels()
+
+    for _, R in ipairs({viewer, reloader, far, late}) do R.online = false; players[R.name] = nil end
+    for _, F in ipairs(filler) do F.online = false; players[F.name] = nil end
 end
 
 realPrint(("Pace's Quality of Life harness: %d passed, %d failed"):format(passed, failed))
