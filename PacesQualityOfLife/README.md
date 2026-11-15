@@ -38,9 +38,10 @@ When you enter a zone, the tracker switches to that zone's quests: every
 quest under the zone's quest log header is tracked, the others are
 untracked. Go to Duskwood and you see Duskwood's quests. It happens once
 per zone - anything you track or untrack by hand stays until you enter
-the next zone (a /reload doesn't count as entering one). A dungeon's quests show inside the dungeon; the quest
-you've set your arrow on stays tracked; nothing changes during combat or
-a flight (it catches up after).
+the next zone (a /reload doesn't count as entering one). A dungeon's
+quests show inside the dungeon; the quest you've set your arrow on stays
+tracked; nothing changes during combat or a flight (it catches up
+after).
 
 ## Chat Channels: who's in voice, before you join
 
