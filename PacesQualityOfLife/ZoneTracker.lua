@@ -12,7 +12,8 @@
 -- player's map (and its parents up to the zone), so a dungeon's header
 -- ("Blackfathom Deeps") matches inside the dungeon.
 --
--- Kept tracked always: the quest you have super-tracked (its arrow).
+-- Kept tracked always: the quest you have super-tracked (its arrow). A
+-- zone with none of your quests (a city, a road) leaves the tracker as is.
 -- Skipped: passes in combat and on a flight path wait until they end; up
 -- to 25 quests can be tracked (the game's cap). Only the differences are
 -- changed, removals first, so the tracker and quest log rebuild as little
@@ -113,6 +114,12 @@ function M.Run(force)
             end
         end
     end
+    if #wantList == 0 then
+        -- no quests here (a city, a road between zones): leave the tracker
+        -- as it is rather than empty it
+        M.last = {zone = key, tracked = 0, untracked = 0, left = 0, none = true}
+        return
+    end
     local keep = SuperTracked()
     -- collect first: removing a watch shifts the watch indices
     local remove = {}
@@ -176,6 +183,7 @@ end
 function M:Status()
     local l = M.last
     if not l then return "(waiting for a zone change)" end
+    if l.none then return "(no quests in this zone: tracker left as it was)" end
     return ("(last zone: %d tracked, %d untracked%s)"):format(l.tracked, l.untracked,
         l.left > 0 and (", " .. l.left .. " didn't fit") or "")
 end

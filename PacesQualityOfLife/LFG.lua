@@ -69,7 +69,7 @@ end
 
 -- the solo players in Blizzard's current results that match the filter
 function M.Matches()
-    local out, solo = {}, 0
+    local out, solo, mine = {}, 0, false
     local results = LFGBrowseFrame and LFGBrowseFrame.results
     if type(results) ~= "table" then
         local _, fresh = pcall(C_LFGList.GetFilteredSearchResults)
@@ -77,6 +77,7 @@ function M.Matches()
     end
     for _, id in ipairs(results) do
         local info = Read(C_LFGList.GetSearchResultInfo, id)
+        if info and not ns.IsSecret(info.hasSelf) and info.hasSelf then mine = true end
         if info and not ns.IsSecret(info.numMembers) and not ns.IsSecret(info.hasSelf) and
             not info.hasSelf and (info.numMembers or 0) <= 1 then
             solo = solo + 1
@@ -98,7 +99,7 @@ function M.Matches()
             end
         end
     end
-    return out, solo
+    return out, solo, mine
 end
 
 --------------------------------------------------------------------------
@@ -253,8 +254,11 @@ local function MakeOverlay()
     if overlay then return overlay end
     local blizzBox = LFGBrowseFrame.ScrollBox
     overlay = CreateFrame("Frame", nil, LFGBrowseFrame)
+    -- Blizzard re-anchors its list at run time (a managed scroll bar:
+    -- TOPLEFT 7,-112, BOTTOMRIGHT -22 or -6, 40): follow the list's top
+    -- left, and cover to the frame's right edge, scroll bar included
     overlay:SetPoint("TOPLEFT", blizzBox, "TOPLEFT", 0, 0)
-    overlay:SetPoint("BOTTOMRIGHT", LFGBrowseFrame.ScrollBar or blizzBox, "BOTTOMRIGHT", 0, 0)
+    overlay:SetPoint("BOTTOMRIGHT", LFGBrowseFrame, "BOTTOMRIGHT", -6, 40)
     overlay:SetFrameLevel(blizzBox:GetFrameLevel() + 20)
     overlay:EnableMouse(true)
     if overlay.EnableMouseWheel then overlay:EnableMouseWheel(true) end
@@ -263,7 +267,7 @@ local function MakeOverlay()
     bg:SetAllPoints()
 
     overlay.header = overlay:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-    overlay.header:SetPoint("TOPLEFT", 12, -8)
+    overlay.header:SetPoint("TOPLEFT", 12, -6)
     overlay.header:SetJustifyH("LEFT")
     overlay.empty = overlay:CreateFontString(nil, "ARTWORK", "GameFontDisable")
     overlay.empty:SetPoint("TOP", 0, -60)
@@ -271,7 +275,7 @@ local function MakeOverlay()
 
     list = {}
     list.box = CreateFrame("Frame", nil, overlay, "WowScrollBoxList")
-    list.box:SetPoint("TOPLEFT", 0, -28)
+    list.box:SetPoint("TOPLEFT", 0, -40)
     list.box:SetPoint("BOTTOMRIGHT", -18, 0)
     list.bar = CreateFrame("EventFrame", nil, overlay, "MinimalScrollBar")
     list.bar:SetPoint("TOPLEFT", list.box, "TOPRIGHT", 4, 0)
@@ -361,12 +365,13 @@ function M.Update()
         return
     end
     MakeOverlay()
-    local entries, solo = M.Matches()
+    local entries, solo, mine = M.Matches()
     overlay.entries = entries
     local names = {}
     for _, r in ipairs(ROLES) do if ns.db[r.key] then table.insert(names, r.name) end end
-    overlay.header:SetText(("%s: %s  |cFFAAAAAA(%d of %d)|r"):format(
-        LFG_LIST_CATEGORY_SOLO_PLAYERS or "Players", table.concat(names, ", "), #entries, solo))
+    overlay.header:SetText(("%s: %s  |cFFAAAAAA(%d of %d)|r%s"):format(
+        LFG_LIST_CATEGORY_SOLO_PLAYERS or "Players", table.concat(names, ", "), #entries, solo,
+        mine and "\n|cFFAAAAAAYour listing is hidden while filtering: light all roles to manage it.|r" or ""))
     if #entries == 0 then
         overlay.empty:SetText(solo == 0 and "No players are listed for this search." or
                                   "No listed players match these roles. Click a lit role to change the filter.")

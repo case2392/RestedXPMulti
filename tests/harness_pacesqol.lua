@@ -870,6 +870,12 @@ do
     advance(2)
     check(P.watched[101] and Watched(P, 112, 117) == 6, "zone: the quest with your arrow stays tracked")
     P.superTracked = nil
+    -- a zone with none of your quests: the tracker stays as it was
+    P.zone, P.mapID = "Stormwind City", nil
+    local was = P.WatchCount()
+    P.Fire("ZONE_CHANGED_NEW_AREA")
+    advance(2)
+    check(P.WatchCount() == was and was > 0, "zone: a city with none of your quests leaves the tracker alone")
     -- off: zone changes leave watches alone
     P.Slash("zonetracker off")
     local before = P.WatchCount()
@@ -913,6 +919,15 @@ do
           "lfg: one click on healer: only the solo players listing healer (not groups, not you)")
     check(f.SendMessageButton.alpha == 0 and f.GroupInviteButton.alpha == 0,
           "lfg: Blizzard's buttons fade under ours while filtering")
+    local header
+    for _, fr in ipairs(P.frames) do
+        for _, rg in ipairs(fr.regions or {}) do
+            if type(rg.text) == "string" and rg.text:find("^Players:") then header = rg.text end
+        end
+    end
+    check(header and header:find("Healers", 1, true) and header:find("(2 of 4)", 1, true) and
+              header:find("Your listing is hidden", 1, true),
+          "lfg: the list says which roles, how many of the players, and that your listing is hidden")
     -- Blizzard refreshes the results: the filter holds
     P.lfg[7] = {name = "Newheals", level = 18, class = "PRIEST", roles = {healer = true}}
     table.insert(P.lfgOrder, 7)

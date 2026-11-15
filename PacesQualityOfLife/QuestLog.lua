@@ -217,6 +217,9 @@ local function HeaderBox(header)
     local box = boxes[header]
     if not box then
         box = MakeBox(header)
+        -- the header still lights up under the mouse; our box takes the
+        -- click (so it never collapses the header)
+        if box.SetPropagateMouseMotion then box:SetPropagateMouseMotion(true) end
         local anchor = header.CollapseButton
         if anchor then
             box:SetPoint("RIGHT", anchor, "LEFT", -4, 0)
