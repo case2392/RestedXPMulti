@@ -130,7 +130,14 @@ You have 40 (bags 25 · bank 15) · ~140 short
 ## Commands
 
 - `/rxpp` — show/hide the window
-- `/rxpp setup` — reopen the profession/AH setup
+- `/rxpp setup` — reopen the profession/AH setup (it also has a window
+  opacity slider)
+- `/rxpp min` — fold the window up to its title bar, and back. The button
+  left of the close X does the same; the window keeps running while
+  folded, and stays folded across reloads until you unfold it.
+- `/rxpp alpha <0-1>` — window opacity, e.g. `/rxpp alpha 0.7` (or `70%`).
+  At 0 the window is invisible and lets clicks through; `/rxpp alpha 1`
+  brings it back.
 - `/rxpp tooltip` — item tooltips on/off
 - `/rxpp tooltip later` — show/hide the spans after the one you are in
 - `/rxpp tooltip others` — also show the professions you did not pick

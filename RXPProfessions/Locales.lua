@@ -769,7 +769,12 @@ T.frFR = {
     ["item tooltips show only the span you are in"] = "les infobulles des objets ne montrent que votre palier actuel",
     ["item tooltips also show the professions you did not pick, apart"] = "les infobulles des objets montrent aussi, à part, les métiers que vous n'avez pas choisis",
     ["item tooltips show only the professions you picked"] = "les infobulles des objets ne montrent que les métiers que vous avez choisis",
-    ["item tooltips: |cFFFFCC00/rxpp tooltip|r on or off, |cFFFFCC00/rxpp tooltip later|r the spans after the one you are in, |cFFFFCC00/rxpp tooltip others|r the professions you did not pick"] = "infobulles des objets : |cFFFFCC00/rxpp tooltip|r activer/désactiver, |cFFFFCC00/rxpp tooltip later|r les paliers après le vôtre, |cFFFFCC00/rxpp tooltip others|r les métiers que vous n'avez pas choisis"
+    ["item tooltips: |cFFFFCC00/rxpp tooltip|r on or off, |cFFFFCC00/rxpp tooltip later|r the spans after the one you are in, |cFFFFCC00/rxpp tooltip others|r the professions you did not pick"] = "infobulles des objets : |cFFFFCC00/rxpp tooltip|r activer/désactiver, |cFFFFCC00/rxpp tooltip later|r les paliers après le vôtre, |cFFFFCC00/rxpp tooltip others|r les métiers que vous n'avez pas choisis",
+    ["Window opacity: %d%%"] = "Opacité de la fenêtre : %d %%",
+    ["Minimize"] = "Réduire",
+    ["Expand"] = "Déplier",
+    ["window: |cFFFFCC00/rxpp alpha 0.8|r opacity from 0 to 1, |cFFFFCC00/rxpp min|r minimize or expand"] = "fenêtre : |cFFFFCC00/rxpp alpha 0.8|r opacité de 0 à 1, |cFFFFCC00/rxpp min|r réduire ou déplier",
+    ["at 0 the window is invisible and lets clicks through: |cFFFFCC00/rxpp alpha 1|r brings it back"] = "à 0, la fenêtre est invisible et laisse passer les clics : |cFFFFCC00/rxpp alpha 1|r la fait réapparaître"
 }
 
 T.deDE = {
@@ -877,7 +882,12 @@ T.deDE = {
     ["item tooltips show only the span you are in"] = "Gegenstands-Tooltips zeigen nur Euren jetzigen Abschnitt",
     ["item tooltips also show the professions you did not pick, apart"] = "Gegenstands-Tooltips zeigen auch die Berufe, die Ihr nicht gewählt habt, getrennt",
     ["item tooltips show only the professions you picked"] = "Gegenstands-Tooltips zeigen nur die Berufe, die Ihr gewählt habt",
-    ["item tooltips: |cFFFFCC00/rxpp tooltip|r on or off, |cFFFFCC00/rxpp tooltip later|r the spans after the one you are in, |cFFFFCC00/rxpp tooltip others|r the professions you did not pick"] = "Gegenstands-Tooltips: |cFFFFCC00/rxpp tooltip|r an/aus, |cFFFFCC00/rxpp tooltip later|r die Abschnitte nach Eurem jetzigen, |cFFFFCC00/rxpp tooltip others|r die Berufe, die Ihr nicht gewählt habt"
+    ["item tooltips: |cFFFFCC00/rxpp tooltip|r on or off, |cFFFFCC00/rxpp tooltip later|r the spans after the one you are in, |cFFFFCC00/rxpp tooltip others|r the professions you did not pick"] = "Gegenstands-Tooltips: |cFFFFCC00/rxpp tooltip|r an/aus, |cFFFFCC00/rxpp tooltip later|r die Abschnitte nach Eurem jetzigen, |cFFFFCC00/rxpp tooltip others|r die Berufe, die Ihr nicht gewählt habt",
+    ["Window opacity: %d%%"] = "Deckkraft des Fensters: %d %%",
+    ["Minimize"] = "Einklappen",
+    ["Expand"] = "Ausklappen",
+    ["window: |cFFFFCC00/rxpp alpha 0.8|r opacity from 0 to 1, |cFFFFCC00/rxpp min|r minimize or expand"] = "Fenster: |cFFFFCC00/rxpp alpha 0.8|r Deckkraft von 0 bis 1, |cFFFFCC00/rxpp min|r ein- oder ausklappen",
+    ["at 0 the window is invisible and lets clicks through: |cFFFFCC00/rxpp alpha 1|r brings it back"] = "Bei 0 ist das Fenster unsichtbar und lässt Klicks durch: |cFFFFCC00/rxpp alpha 1|r holt es zurück"
 }
 
 T.esES = {
@@ -985,7 +995,12 @@ T.esES = {
     ["item tooltips show only the span you are in"] = "las descripciones de objetos solo muestran el tramo actual",
     ["item tooltips also show the professions you did not pick, apart"] = "las descripciones de objetos también muestran, aparte, las profesiones que no elegiste",
     ["item tooltips show only the professions you picked"] = "las descripciones de objetos solo muestran las profesiones que elegiste",
-    ["item tooltips: |cFFFFCC00/rxpp tooltip|r on or off, |cFFFFCC00/rxpp tooltip later|r the spans after the one you are in, |cFFFFCC00/rxpp tooltip others|r the professions you did not pick"] = "descripciones de objetos: |cFFFFCC00/rxpp tooltip|r las activa o desactiva, |cFFFFCC00/rxpp tooltip later|r los tramos posteriores al actual, |cFFFFCC00/rxpp tooltip others|r las profesiones que no elegiste"
+    ["item tooltips: |cFFFFCC00/rxpp tooltip|r on or off, |cFFFFCC00/rxpp tooltip later|r the spans after the one you are in, |cFFFFCC00/rxpp tooltip others|r the professions you did not pick"] = "descripciones de objetos: |cFFFFCC00/rxpp tooltip|r las activa o desactiva, |cFFFFCC00/rxpp tooltip later|r los tramos posteriores al actual, |cFFFFCC00/rxpp tooltip others|r las profesiones que no elegiste",
+    ["Window opacity: %d%%"] = "Opacidad de la ventana: %d %%",
+    ["Minimize"] = "Minimizar",
+    ["Expand"] = "Expandir",
+    ["window: |cFFFFCC00/rxpp alpha 0.8|r opacity from 0 to 1, |cFFFFCC00/rxpp min|r minimize or expand"] = "ventana: |cFFFFCC00/rxpp alpha 0.8|r opacidad de 0 a 1, |cFFFFCC00/rxpp min|r minimizar o expandir",
+    ["at 0 the window is invisible and lets clicks through: |cFFFFCC00/rxpp alpha 1|r brings it back"] = "a 0 la ventana es invisible y deja pasar los clics: |cFFFFCC00/rxpp alpha 1|r la vuelve a mostrar"
 }
 
 T.esMX = {
@@ -1093,7 +1108,12 @@ T.esMX = {
     ["item tooltips show only the span you are in"] = "las descripciones de objetos solo muestran el tramo actual",
     ["item tooltips also show the professions you did not pick, apart"] = "las descripciones de objetos también muestran, aparte, las profesiones que no elegiste",
     ["item tooltips show only the professions you picked"] = "las descripciones de objetos solo muestran las profesiones que elegiste",
-    ["item tooltips: |cFFFFCC00/rxpp tooltip|r on or off, |cFFFFCC00/rxpp tooltip later|r the spans after the one you are in, |cFFFFCC00/rxpp tooltip others|r the professions you did not pick"] = "descripciones de objetos: |cFFFFCC00/rxpp tooltip|r las activa o desactiva, |cFFFFCC00/rxpp tooltip later|r los tramos posteriores al actual, |cFFFFCC00/rxpp tooltip others|r las profesiones que no elegiste"
+    ["item tooltips: |cFFFFCC00/rxpp tooltip|r on or off, |cFFFFCC00/rxpp tooltip later|r the spans after the one you are in, |cFFFFCC00/rxpp tooltip others|r the professions you did not pick"] = "descripciones de objetos: |cFFFFCC00/rxpp tooltip|r las activa o desactiva, |cFFFFCC00/rxpp tooltip later|r los tramos posteriores al actual, |cFFFFCC00/rxpp tooltip others|r las profesiones que no elegiste",
+    ["Window opacity: %d%%"] = "Opacidad de la ventana: %d%%",
+    ["Minimize"] = "Minimizar",
+    ["Expand"] = "Expandir",
+    ["window: |cFFFFCC00/rxpp alpha 0.8|r opacity from 0 to 1, |cFFFFCC00/rxpp min|r minimize or expand"] = "ventana: |cFFFFCC00/rxpp alpha 0.8|r opacidad de 0 a 1, |cFFFFCC00/rxpp min|r minimizar o expandir",
+    ["at 0 the window is invisible and lets clicks through: |cFFFFCC00/rxpp alpha 1|r brings it back"] = "en 0 la ventana es invisible y deja pasar los clics: |cFFFFCC00/rxpp alpha 1|r la vuelve a mostrar"
 }
 
 T.ptBR = {
@@ -1201,7 +1221,12 @@ T.ptBR = {
     ["item tooltips show only the span you are in"] = "as dicas de itens mostram só a etapa atual",
     ["item tooltips also show the professions you did not pick, apart"] = "as dicas de itens também mostram, à parte, as profissões que você não escolheu",
     ["item tooltips show only the professions you picked"] = "as dicas de itens mostram só as profissões que você escolheu",
-    ["item tooltips: |cFFFFCC00/rxpp tooltip|r on or off, |cFFFFCC00/rxpp tooltip later|r the spans after the one you are in, |cFFFFCC00/rxpp tooltip others|r the professions you did not pick"] = "dicas de itens: |cFFFFCC00/rxpp tooltip|r liga/desliga, |cFFFFCC00/rxpp tooltip later|r as etapas depois da atual, |cFFFFCC00/rxpp tooltip others|r as profissões que você não escolheu"
+    ["item tooltips: |cFFFFCC00/rxpp tooltip|r on or off, |cFFFFCC00/rxpp tooltip later|r the spans after the one you are in, |cFFFFCC00/rxpp tooltip others|r the professions you did not pick"] = "dicas de itens: |cFFFFCC00/rxpp tooltip|r liga/desliga, |cFFFFCC00/rxpp tooltip later|r as etapas depois da atual, |cFFFFCC00/rxpp tooltip others|r as profissões que você não escolheu",
+    ["Window opacity: %d%%"] = "Opacidade da janela: %d%%",
+    ["Minimize"] = "Minimizar",
+    ["Expand"] = "Expandir",
+    ["window: |cFFFFCC00/rxpp alpha 0.8|r opacity from 0 to 1, |cFFFFCC00/rxpp min|r minimize or expand"] = "janela: |cFFFFCC00/rxpp alpha 0.8|r opacidade de 0 a 1, |cFFFFCC00/rxpp min|r minimizar ou expandir",
+    ["at 0 the window is invisible and lets clicks through: |cFFFFCC00/rxpp alpha 1|r brings it back"] = "em 0 a janela fica invisível e deixa os cliques passarem: |cFFFFCC00/rxpp alpha 1|r a traz de volta"
 }
 
 T.itIT = {
@@ -1309,7 +1334,12 @@ T.itIT = {
     ["item tooltips show only the span you are in"] = "le descrizioni degli oggetti mostrano solo la fascia attuale",
     ["item tooltips also show the professions you did not pick, apart"] = "le descrizioni degli oggetti mostrano anche, a parte, le professioni che non hai scelto",
     ["item tooltips show only the professions you picked"] = "le descrizioni degli oggetti mostrano solo le professioni che hai scelto",
-    ["item tooltips: |cFFFFCC00/rxpp tooltip|r on or off, |cFFFFCC00/rxpp tooltip later|r the spans after the one you are in, |cFFFFCC00/rxpp tooltip others|r the professions you did not pick"] = "descrizioni degli oggetti: |cFFFFCC00/rxpp tooltip|r attiva/disattiva, |cFFFFCC00/rxpp tooltip later|r le fasce dopo quella attuale, |cFFFFCC00/rxpp tooltip others|r le professioni che non hai scelto"
+    ["item tooltips: |cFFFFCC00/rxpp tooltip|r on or off, |cFFFFCC00/rxpp tooltip later|r the spans after the one you are in, |cFFFFCC00/rxpp tooltip others|r the professions you did not pick"] = "descrizioni degli oggetti: |cFFFFCC00/rxpp tooltip|r attiva/disattiva, |cFFFFCC00/rxpp tooltip later|r le fasce dopo quella attuale, |cFFFFCC00/rxpp tooltip others|r le professioni che non hai scelto",
+    ["Window opacity: %d%%"] = "Opacità della finestra: %d%%",
+    ["Minimize"] = "Riduci",
+    ["Expand"] = "Espandi",
+    ["window: |cFFFFCC00/rxpp alpha 0.8|r opacity from 0 to 1, |cFFFFCC00/rxpp min|r minimize or expand"] = "finestra: |cFFFFCC00/rxpp alpha 0.8|r opacità da 0 a 1, |cFFFFCC00/rxpp min|r riduci o espandi",
+    ["at 0 the window is invisible and lets clicks through: |cFFFFCC00/rxpp alpha 1|r brings it back"] = "a 0 la finestra è invisibile e lascia passare i clic: |cFFFFCC00/rxpp alpha 1|r la fa ricomparire"
 }
 
 T.ruRU = {
@@ -1417,7 +1447,12 @@ T.ruRU = {
     ["item tooltips show only the span you are in"] = "подсказки предметов показывают только текущий этап",
     ["item tooltips also show the professions you did not pick, apart"] = "подсказки предметов показывают и невыбранные профессии, отдельно",
     ["item tooltips show only the professions you picked"] = "подсказки предметов показывают только выбранные профессии",
-    ["item tooltips: |cFFFFCC00/rxpp tooltip|r on or off, |cFFFFCC00/rxpp tooltip later|r the spans after the one you are in, |cFFFFCC00/rxpp tooltip others|r the professions you did not pick"] = "подсказки предметов: |cFFFFCC00/rxpp tooltip|r - вкл./выкл., |cFFFFCC00/rxpp tooltip later|r - этапы после текущего, |cFFFFCC00/rxpp tooltip others|r - невыбранные профессии"
+    ["item tooltips: |cFFFFCC00/rxpp tooltip|r on or off, |cFFFFCC00/rxpp tooltip later|r the spans after the one you are in, |cFFFFCC00/rxpp tooltip others|r the professions you did not pick"] = "подсказки предметов: |cFFFFCC00/rxpp tooltip|r - вкл./выкл., |cFFFFCC00/rxpp tooltip later|r - этапы после текущего, |cFFFFCC00/rxpp tooltip others|r - невыбранные профессии",
+    ["Window opacity: %d%%"] = "Непрозрачность окна: %d%%",
+    ["Minimize"] = "Свернуть",
+    ["Expand"] = "Развернуть",
+    ["window: |cFFFFCC00/rxpp alpha 0.8|r opacity from 0 to 1, |cFFFFCC00/rxpp min|r minimize or expand"] = "окно: |cFFFFCC00/rxpp alpha 0.8|r - непрозрачность от 0 до 1, |cFFFFCC00/rxpp min|r - свернуть или развернуть",
+    ["at 0 the window is invisible and lets clicks through: |cFFFFCC00/rxpp alpha 1|r brings it back"] = "при 0 окно невидимо и пропускает щелчки мыши: |cFFFFCC00/rxpp alpha 1|r вернёт его"
 }
 
 T.koKR = {
@@ -1525,7 +1560,12 @@ T.koKR = {
     ["item tooltips show only the span you are in"] = "아이템 툴팁에 현재 구간만 표시해요",
     ["item tooltips also show the professions you did not pick, apart"] = "아이템 툴팁에 선택하지 않은 전문 기술도 따로 표시해요",
     ["item tooltips show only the professions you picked"] = "아이템 툴팁에 선택한 전문 기술만 표시해요",
-    ["item tooltips: |cFFFFCC00/rxpp tooltip|r on or off, |cFFFFCC00/rxpp tooltip later|r the spans after the one you are in, |cFFFFCC00/rxpp tooltip others|r the professions you did not pick"] = "아이템 툴팁: |cFFFFCC00/rxpp tooltip|r 켜기/끄기, |cFFFFCC00/rxpp tooltip later|r 현재 이후 구간, |cFFFFCC00/rxpp tooltip others|r 선택하지 않은 전문 기술"
+    ["item tooltips: |cFFFFCC00/rxpp tooltip|r on or off, |cFFFFCC00/rxpp tooltip later|r the spans after the one you are in, |cFFFFCC00/rxpp tooltip others|r the professions you did not pick"] = "아이템 툴팁: |cFFFFCC00/rxpp tooltip|r 켜기/끄기, |cFFFFCC00/rxpp tooltip later|r 현재 이후 구간, |cFFFFCC00/rxpp tooltip others|r 선택하지 않은 전문 기술",
+    ["Window opacity: %d%%"] = "창 불투명도: %d%%",
+    ["Minimize"] = "접기",
+    ["Expand"] = "펼치기",
+    ["window: |cFFFFCC00/rxpp alpha 0.8|r opacity from 0 to 1, |cFFFFCC00/rxpp min|r minimize or expand"] = "창: |cFFFFCC00/rxpp alpha 0.8|r 불투명도(0~1), |cFFFFCC00/rxpp min|r 접기/펼치기",
+    ["at 0 the window is invisible and lets clicks through: |cFFFFCC00/rxpp alpha 1|r brings it back"] = "0이면 창이 보이지 않고 클릭도 통과해요. |cFFFFCC00/rxpp alpha 1|r 명령어로 다시 보이게 할 수 있어요"
 }
 
 T.zhCN = {
@@ -1633,7 +1673,12 @@ T.zhCN = {
     ["item tooltips show only the span you are in"] = "物品鼠标提示只显示当前阶段",
     ["item tooltips also show the professions you did not pick, apart"] = "物品鼠标提示也会单独显示你未选择的专业",
     ["item tooltips show only the professions you picked"] = "物品鼠标提示只显示你选择的专业",
-    ["item tooltips: |cFFFFCC00/rxpp tooltip|r on or off, |cFFFFCC00/rxpp tooltip later|r the spans after the one you are in, |cFFFFCC00/rxpp tooltip others|r the professions you did not pick"] = "物品鼠标提示：|cFFFFCC00/rxpp tooltip|r 开关，|cFFFFCC00/rxpp tooltip later|r 当前之后的阶段，|cFFFFCC00/rxpp tooltip others|r 未选择的专业"
+    ["item tooltips: |cFFFFCC00/rxpp tooltip|r on or off, |cFFFFCC00/rxpp tooltip later|r the spans after the one you are in, |cFFFFCC00/rxpp tooltip others|r the professions you did not pick"] = "物品鼠标提示：|cFFFFCC00/rxpp tooltip|r 开关，|cFFFFCC00/rxpp tooltip later|r 当前之后的阶段，|cFFFFCC00/rxpp tooltip others|r 未选择的专业",
+    ["Window opacity: %d%%"] = "窗口不透明度：%d%%",
+    ["Minimize"] = "折叠",
+    ["Expand"] = "展开",
+    ["window: |cFFFFCC00/rxpp alpha 0.8|r opacity from 0 to 1, |cFFFFCC00/rxpp min|r minimize or expand"] = "窗口：|cFFFFCC00/rxpp alpha 0.8|r 不透明度（0到1），|cFFFFCC00/rxpp min|r 折叠或展开",
+    ["at 0 the window is invisible and lets clicks through: |cFFFFCC00/rxpp alpha 1|r brings it back"] = "为0时窗口不可见，点击会穿透它：输入 |cFFFFCC00/rxpp alpha 1|r 即可恢复"
 }
 
 T.zhTW = {
@@ -1741,7 +1786,12 @@ T.zhTW = {
     ["item tooltips show only the span you are in"] = "物品滑鼠提示只顯示目前階段",
     ["item tooltips also show the professions you did not pick, apart"] = "物品滑鼠提示也會另外顯示你未選擇的專業",
     ["item tooltips show only the professions you picked"] = "物品滑鼠提示只顯示你選擇的專業",
-    ["item tooltips: |cFFFFCC00/rxpp tooltip|r on or off, |cFFFFCC00/rxpp tooltip later|r the spans after the one you are in, |cFFFFCC00/rxpp tooltip others|r the professions you did not pick"] = "物品滑鼠提示：|cFFFFCC00/rxpp tooltip|r 開關，|cFFFFCC00/rxpp tooltip later|r 目前之後的階段，|cFFFFCC00/rxpp tooltip others|r 未選擇的專業"
+    ["item tooltips: |cFFFFCC00/rxpp tooltip|r on or off, |cFFFFCC00/rxpp tooltip later|r the spans after the one you are in, |cFFFFCC00/rxpp tooltip others|r the professions you did not pick"] = "物品滑鼠提示：|cFFFFCC00/rxpp tooltip|r 開關，|cFFFFCC00/rxpp tooltip later|r 目前之後的階段，|cFFFFCC00/rxpp tooltip others|r 未選擇的專業",
+    ["Window opacity: %d%%"] = "視窗不透明度：%d%%",
+    ["Minimize"] = "收合",
+    ["Expand"] = "展開",
+    ["window: |cFFFFCC00/rxpp alpha 0.8|r opacity from 0 to 1, |cFFFFCC00/rxpp min|r minimize or expand"] = "視窗：|cFFFFCC00/rxpp alpha 0.8|r 不透明度（0到1），|cFFFFCC00/rxpp min|r 收合或展開",
+    ["at 0 the window is invisible and lets clicks through: |cFFFFCC00/rxpp alpha 1|r brings it back"] = "為0時視窗不可見，點擊會穿透它：輸入 |cFFFFCC00/rxpp alpha 1|r 即可恢復"
 }
 
 ns.L = setmetatable({}, {__index = function(_, key) return key end})

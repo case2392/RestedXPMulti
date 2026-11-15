@@ -1474,6 +1474,24 @@ SlashCmdList["RXPPROFESSIONS"] = function(input)
         ns.ToggleTooltipSetting(input)
     elseif input:sub(1, 4) == "need" and ns.PrintNeeds then
         ns.PrintNeeds(input:sub(5))
+    elseif input == "min" or input == "minimize" then
+        ns.ToggleMinimize()
+    elseif input:match("^alpha") or input:match("^opacity") then
+        -- 0.8, 0,8, 80 or 80%: from 0 to 1, or a percentage
+        local arg = (input:match("^alpha(.*)$") or input:match("^opacity(.*)$")):gsub(",", ".")
+        local percent = arg:find("%", 1, true)
+        local n = tonumber((arg:gsub("%%", "")))
+        if n and (percent or n > 1) then n = n / 100 end
+        if not n or n < 0 or n > 1 then
+            ns.Print(L["Window opacity: %d%%"], math.floor((tonumber(ns.db.alpha) or 1) * 100 + 0.5))
+            ns.Print("%s", L["window: |cFFFFCC00/rxpp alpha 0.8|r opacity from 0 to 1, |cFFFFCC00/rxpp min|r minimize or expand"])
+        else
+            local set = ns.SetWindowAlpha(n)
+            ns.Print(L["Window opacity: %d%%"], math.floor(set * 100 + 0.5))
+            if set == 0 then
+                ns.Print("%s", L["at 0 the window is invisible and lets clicks through: |cFFFFCC00/rxpp alpha 1|r brings it back"])
+            end
+        end
     elseif input == "status" then
         ns.Refresh()
         local names = {}
@@ -1513,5 +1531,6 @@ SlashCmdList["RXPPROFESSIONS"] = function(input)
     else
         ns.Print(L["commands: |cFFFFCC00/rxpp|r toggle the window, |cFFFFCC00/rxpp setup|r choose professions, |cFFFFCC00/rxpp status|r what the client gives us"])
         ns.Print(L["item tooltips: |cFFFFCC00/rxpp tooltip|r on or off, |cFFFFCC00/rxpp tooltip later|r the spans after the one you are in, |cFFFFCC00/rxpp tooltip others|r the professions you did not pick"])
+        ns.Print("%s", L["window: |cFFFFCC00/rxpp alpha 0.8|r opacity from 0 to 1, |cFFFFCC00/rxpp min|r minimize or expand"])
     end
 end

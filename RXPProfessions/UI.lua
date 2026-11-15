@@ -76,6 +76,7 @@ local function ApplyEUISkin()
     EUI("OnLooksChanged", Recolor)
     EUI("Font", frame.title, 1, 1, 1)
     EUI("CloseButton", frame.closeButton)
+    ns.SkinMinButtonEUI(frame.minButton)
     for _, line in ipairs(lines) do EUI("Font", line) end
 end
 
@@ -145,6 +146,105 @@ local function ApplySkin()
     end
 end
 
+--------------------------------------------------------------------------
+-- Minimize (the window folds up to its title bar) and opacity
+--------------------------------------------------------------------------
+
+-- Pin the window by its top-left corner, so a change of height (folding
+-- up, a line more or less) leaves the title bar where it is. Positions
+-- saved by older versions are converted the first time this runs.
+local function AnchorTop()
+    local left, top = frame:GetLeft(), frame:GetTop()
+    if not (left and top) then return end
+    frame:ClearAllPoints()
+    frame:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", left, top)
+    ns.db.pos = {"TOPLEFT", "BOTTOMLEFT", left, top}
+end
+
+-- the game's own minimize/expand art, as on its world map: Forever's red
+-- buttons (an atlas, like its close button), the classic clients' files
+local function HasAtlas(name)
+    if not (C_Texture and C_Texture.GetAtlasInfo) then return false end
+    local ok, info = pcall(C_Texture.GetAtlasInfo, name)
+    return ok and info ~= nil
+end
+
+local function SetMinButtonLook(button, minimized)
+    if button.euiBar then
+        -- EllesmereUI: a "-" glyph, "+" while folded
+        button.euiBar2:SetShown(minimized and true or false)
+    elseif button.useAtlas then
+        local base = minimized and "RedButton-Expand" or "RedButton-Condense"
+        button:SetNormalAtlas(base)
+        button:SetPushedAtlas(base .. "-Pressed")
+    else
+        local base = minimized and "Interface\\Buttons\\UI-Panel-BiggerButton" or
+                         "Interface\\Buttons\\UI-Panel-SmallerButton"
+        button:SetNormalTexture(base .. "-Up")
+        button:SetPushedTexture(base .. "-Down")
+    end
+end
+
+-- EllesmereUI has no minimize glyph of its own: draw one like its close X
+-- (white at 75%, full on hover). The bars sit on the button itself, which
+-- EllesmereUI never re-fades (we don't hand it this button).
+function ns.SkinMinButtonEUI(button)
+    if not button or button.euiBar then return end
+    button:SetNormalTexture("")
+    button:SetPushedTexture("")
+    button:SetHighlightTexture("")
+    local function Bar(w, h)
+        local bar = button:CreateTexture(nil, "OVERLAY")
+        bar:SetColorTexture(1, 1, 1, 1)
+        bar:SetSize(w, h)
+        bar:SetPoint("CENTER", 0, 0)
+        bar:SetAlpha(0.75)
+        return bar
+    end
+    button.euiBar, button.euiBar2 = Bar(11, 2), Bar(2, 11)
+    button:HookScript("OnEnter", function()
+        button.euiBar:SetAlpha(1)
+        button.euiBar2:SetAlpha(1)
+    end)
+    button:HookScript("OnLeave", function()
+        button.euiBar:SetAlpha(0.75)
+        button.euiBar2:SetAlpha(0.75)
+    end)
+    SetMinButtonLook(button, ns.db and ns.db.minimized)
+end
+
+local function ApplyAlpha()
+    local alpha = tonumber(ns.db.alpha) or 1
+    frame:SetAlpha(alpha)
+    -- a window you can't see must not catch clicks meant for the world
+    local clickable = alpha > 0
+    frame:EnableMouse(clickable)
+    frame.closeButton:EnableMouse(clickable)
+    frame.minButton:EnableMouse(clickable)
+end
+
+-- opacity from 0 to 1, in steps of 0.01; returns what was set
+function ns.SetWindowAlpha(value)
+    value = math.max(0, math.min(1, tonumber(value) or 1))
+    value = math.floor(value * 100 + 0.5) / 100
+    ns.db.alpha = value
+    if frame then ApplyAlpha() end
+    return value
+end
+
+function ns.ToggleMinimize()
+    if not frame then return end
+    ns.db.minimized = not ns.db.minimized
+    AnchorTop()
+    if ns.db.minimized and not frame:IsShown() then
+        -- folding a hidden window up shows it folded: that's the point
+        ns.db.show = true
+        frame:Show()
+    end
+    SetMinButtonLook(frame.minButton, ns.db.minimized)
+    ns.UpdateUI()
+end
+
 local function CreateWindow()
     frame = CreateFrame("Frame", "RXPProfessionsFrame", UIParent,
                         BackdropTemplateMixin and "BackdropTemplate" or nil)
@@ -158,15 +258,15 @@ local function CreateWindow()
     frame:SetScript("OnDragStart", frame.StartMoving)
     frame:SetScript("OnDragStop", function(self)
         self:StopMovingOrSizing()
-        local point, _, relPoint, x, y = self:GetPoint()
-        ns.db.pos = {point, relPoint, x, y}
+        AnchorTop()
     end)
 
     if ns.db.pos then
         frame:SetPoint(ns.db.pos[1], UIParent, ns.db.pos[2], ns.db.pos[3],
                        ns.db.pos[4])
     else
-        frame:SetPoint("CENTER", UIParent, "CENTER", 320, -120)
+        -- by its top, so it grows downward from a title bar that stays put
+        frame:SetPoint("TOP", UIParent, "CENTER", 320, -90)
     end
 
     local tb = CreateFrame("Frame", "$parentTitle", frame,
@@ -180,7 +280,8 @@ local function CreateWindow()
     tb.bg:SetPoint("BOTTOMRIGHT", -2, 2)
 
     frame.title = tb:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    frame.title:SetPoint("CENTER", tb, "CENTER", 0, 0)
+    -- a little left of centre: two buttons sit on the right
+    frame.title:SetPoint("CENTER", tb, "CENTER", -8, 0)
     frame.title:SetText("RestedXP Professions")
 
     local close = CreateFrame("Button", nil, tb, "UIPanelCloseButton")
@@ -193,7 +294,47 @@ local function CreateWindow()
         ns.Print(ns.L["window hidden. Type /rxpp to bring it back."])
     end)
 
+    -- minimize: fold up to the title bar and back (the window keeps
+    -- running; only its lines are put away)
+    local minButton = CreateFrame("Button", nil, tb)
+    frame.minButton = minButton
+    minButton:SetScale(0.75)
+    -- the red atlas buttons only where the close button is one of them
+    -- (Forever), so the pair always matches
+    local closeTex = close.GetNormalTexture and close:GetNormalTexture()
+    local okAtlas, closeAtlas = false, nil
+    if closeTex and closeTex.GetAtlas then
+        okAtlas, closeAtlas = pcall(closeTex.GetAtlas, closeTex)
+    end
+    minButton.useAtlas = okAtlas and type(closeAtlas) == "string" and
+                             closeAtlas:lower():find("redbutton", 1, true) ~= nil and
+                             HasAtlas("RedButton-Condense")
+    if minButton.useAtlas then
+        minButton:SetSize(24, 24)
+        minButton:SetHighlightAtlas("RedButton-Highlight", "ADD")
+        minButton:SetPoint("RIGHT", close, "LEFT", 0, 0)
+    else
+        minButton:SetSize(32, 32)
+        minButton:SetHitRectInsets(5, 5, 5, 5)
+        minButton:SetHighlightTexture(
+            "Interface\\Buttons\\UI-Panel-MinimizeButton-Highlight", "ADD")
+        minButton:SetPoint("RIGHT", close, "LEFT", 12, 0)
+    end
+    SetMinButtonLook(minButton, ns.db.minimized)
+    minButton:SetScript("OnClick", function() ns.ToggleMinimize() end)
+    minButton:SetScript("OnEnter", function(self)
+        if not GameTooltip then return end
+        GameTooltip:SetOwner(self, "ANCHOR_TOP")
+        GameTooltip:SetText(ns.db.minimized and ns.L["Expand"] or
+                                ns.L["Minimize"])
+        GameTooltip:Show()
+    end)
+    minButton:SetScript("OnLeave", function()
+        if GameTooltip then GameTooltip:Hide() end
+    end)
+
     ApplySkin()
+    ApplyAlpha()
 end
 
 local function GetLine(i)
@@ -254,6 +395,11 @@ function ns.UpdateUI()
                    {1, 1, 1}
 
     for _, line in ipairs(lines) do line:Hide() end
+    SetMinButtonLook(frame.minButton, ns.db.minimized)
+    if ns.db.minimized then
+        frame:SetHeight(TITLE_HEIGHT)
+        return
+    end
 
     local i = 0
     local y = TITLE_HEIGHT + 6
@@ -369,6 +515,41 @@ function ns.ShowSetup()
     ahBox:SetChecked(ns.db.useAH and true or false)
     table.insert(f.checks, ahBox)
     table.insert(f.texts, ahLabel)
+
+    -- window opacity, live while dragging (also /rxpp alpha <0-1>)
+    local slider
+    for _, template in ipairs({"UISliderTemplateWithLabels", "OptionsSliderTemplate"}) do
+        local made, s = pcall(CreateFrame, "Slider", nil, f, template)
+        if made and s then
+            slider = s
+            break
+        end
+    end
+    if slider then
+        yOff = yOff - 46
+        f.alphaSlider = slider
+        slider:SetPoint("TOPLEFT", 30, yOff)
+        slider:SetWidth(260)
+        slider:SetHeight(17)
+        slider:SetMinMaxValues(0, 1)
+        slider:SetValueStep(0.05)
+        if slider.SetObeyStepOnDrag then slider:SetObeyStepOnDrag(true) end
+        if slider.Low then slider.Low:SetText("0%") end
+        if slider.High then slider.High:SetText("100%") end
+        local function Label(value)
+            if slider.Text then
+                slider.Text:SetText(string.format(ns.L["Window opacity: %d%%"],
+                                                  math.floor(value * 100 + 0.5)))
+            end
+        end
+        slider:SetValue(tonumber(ns.db.alpha) or 1)
+        Label(tonumber(ns.db.alpha) or 1)
+        slider:SetScript("OnValueChanged", function(_, value)
+            Label(ns.SetWindowAlpha(value))
+        end)
+        if slider.Text then table.insert(f.texts, slider.Text) end
+        yOff = yOff - 14
+    end
 
     local ok = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
     f.okButton = ok

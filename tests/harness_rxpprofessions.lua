@@ -38,6 +38,17 @@ local function Widget()
     function w:CreateFontString() local fs = Widget(); table.insert(self.mockTexts, fs); return fs end
     function w:CreateTexture() return Widget() end
     function w:SetTexture(t) self.tex = t end
+    -- what the window's minimize and opacity code changes
+    function w:SetAlpha(a) self.alpha = a end
+    function w:EnableMouse(v) self.mouse = v and true or false end
+    function w:SetHeight(h) self.height = h end
+    function w:SetNormalTexture(t) self.normal = t end
+    function w:SetNormalAtlas(a) self.normal = a end
+    function w:SetPoint(...) self.point = {...} end
+    function w:GetLeft() return self.left end
+    function w:GetTop() return self.top end
+    function w:SetShown(v) self.shown = v and true or false end
+    function w:SetValue(v) self.value = v end
     return w
 end
 
@@ -46,7 +57,7 @@ local function NewWorld(opts)
     for _, k in ipairs({"GetNumSkillLines", "GetSkillLineInfo", "C_SkillInfo", "GetProfessions", "GetProfessionInfo",
                         "GetTradeSkillLine", "GetNumTradeSkills", "GetTradeSkillInfo", "C_TradeSkillUI",
                         "GetCraftDisplaySkillLine", "GetNumCrafts", "GetCraftInfo", "LibStub", "RXPProfessionsDB", "GetBuildInfo",
-                        "GetLocale", "GetSpellInfo", "GetItemInfo", "C_Map", "C_Item", "C_Spell", "EllesmereUI"}) do
+                        "GetLocale", "GetSpellInfo", "GetItemInfo", "C_Map", "C_Item", "C_Spell", "EllesmereUI", "C_Texture"}) do
         _G[k] = nil
     end
     _G.print = function(...) local t = {} for i = 1, select("#", ...) do t[i] = tostring(select(i, ...)) end table.insert(printed, table.concat(t, " ")) end
@@ -58,6 +69,11 @@ local function NewWorld(opts)
         f.kind, f.template, f.name = kind, template, name
         f.backdropCalls = 0
         function f:SetBackdrop() self.backdropCalls = self.backdropCalls + 1 end
+        -- Forever's close button is the red atlas one
+        if template == "UIPanelCloseButton" and opts.client == "forever" then
+            f.GetNormalTexture = function() return {GetAtlas = function() return "RedButton-Exit" end} end
+        end
+        if kind == "Slider" then f.Text, f.Low, f.High = Widget(), Widget(), Widget() end
         function f:RegisterEvent(e)
             -- the client throws on an event it does not have
             if not known[e] then error('Frame:RegisterEvent(): Attempt to register unknown event "' .. e .. '"') end
@@ -89,6 +105,9 @@ local function NewWorld(opts)
                     GetMapInfo = function(id) return {name = (opts.mapNames or {})[id] or "?", parentMapID = (opts.mapParents or {})[id]} end}
     end
     _G.RXPProfessionsDB = opts.db
+    if opts.client == "forever" then
+        _G.C_Texture = {GetAtlasInfo = function(name) if name:find("^RedButton") then return {width = 24} end end}
+    end
     -- opts.rxp: a RestedXP to skin from (found through AceAddon)
     if opts.rxp then
         _G.LibStub = function(lib)
@@ -1766,6 +1785,123 @@ do
     w3.Fire("PLAYER_ENTERING_WORLD")
     check(Logged(w3, "Panel", ByName(w3, "RXPProfessionsFrame")) ~= nil,
           "eui: callback before the window exists: skinned when it's made")
+end
+
+--------------------------------------------------------------------------
+-- Minimize and opacity (a request: the window takes up a lot of screen;
+-- a minimize button that keeps it running, and its alpha from 0 to 1)
+--------------------------------------------------------------------------
+do
+    local function ByName(w, name)
+        for _, f in ipairs(w.frames) do if f.name == name then return f end end
+    end
+    local function ShownLines(f)
+        local n = 0
+        for _, fs in ipairs(f.mockTexts) do if fs.shown then n = n + 1 end end
+        return n
+    end
+    local db = {setupDone = true, chosen = {Mining = true, Cooking = true}, show = true}
+    local w = NewWorld({client = "classic", events = CLASSIC_EVENTS, db = db})
+    w.Fire("PLAYER_ENTERING_WORLD")
+    local main = ByName(w, "RXPProfessionsFrame")
+    local minB, close = main.minButton, main.closeButton
+    check(minB and not minB.useAtlas and minB.normal == "Interface\\Buttons\\UI-Panel-SmallerButton-Up",
+          "min: a minimize button in the classic art, beside the classic close button")
+    local fullHeight, fullLines = main.height, ShownLines(main)
+    check(fullHeight > 21 and fullLines > 0, "min: the window starts unfolded")
+    main.left, main.top = 900, 700
+    minB.scripts.OnClick(minB)
+    check(w.ns.db.minimized and main.height == 21 and ShownLines(main) == 0,
+          "min: the button folds the window up to its title bar")
+    check(main.shown and minB.normal == "Interface\\Buttons\\UI-Panel-BiggerButton-Up",
+          "min: still shown, and the button now offers to expand")
+    check(main.point[1] == "TOPLEFT" and main.point[3] == "BOTTOMLEFT" and main.point[4] == 900 and main.point[5] == 700 and
+              w.ns.db.pos[1] == "TOPLEFT" and w.ns.db.pos[3] == 900,
+          "min: pinned by its top-left corner, so the title bar doesn't move")
+    w.ns.Refresh()
+    w.ns.UpdateUI()
+    check(main.height == 21 and ShownLines(main) == 0, "min: a refresh keeps it folded")
+    w.slash("min")
+    check(not w.ns.db.minimized and main.height == fullHeight and ShownLines(main) == fullLines and
+              minB.normal == "Interface\\Buttons\\UI-Panel-SmallerButton-Up",
+          "min: /rxpp min unfolds it again")
+    w.slash("hide")
+    w.slash("min")
+    check(main.shown and w.ns.db.show and w.ns.db.minimized, "min: folding a hidden window shows it folded")
+    w.slash("min")
+
+    -- opacity
+    w.slash("alpha 0.5")
+    check(w.ns.db.alpha == 0.5 and main.alpha == 0.5, "alpha: /rxpp alpha 0.5")
+    check(printed[#printed]:find("Window opacity: 50%", 1, true) ~= nil, "alpha: says what it set")
+    w.slash("alpha 70%")
+    check(w.ns.db.alpha == 0.7 and main.alpha == 0.7, "alpha: 70% reads as 0.7")
+    w.slash("alpha 30")
+    check(w.ns.db.alpha == 0.3, "alpha: 30 reads as 30%")
+    w.slash("alpha 0,25")
+    check(w.ns.db.alpha == 0.25, "alpha: a decimal comma works (0,25)")
+    w.slash("alpha 150")
+    w.slash("alpha banana")
+    check(w.ns.db.alpha == 0.25 and Printed("|cFFFFCC00/rxpp alpha 0.8|r"), "alpha: out of range or not a number: unchanged, with the usage")
+    w.slash("alpha 0")
+    check(main.alpha == 0 and main.mouse == false and close.mouse == false and minB.mouse == false,
+          "alpha: at 0 the window lets every click through")
+    check(Printed("brings it back"), "alpha: and says how to get it back")
+    w.slash("alpha 1")
+    check(main.alpha == 1 and main.mouse and close.mouse and minB.mouse, "alpha: back to 1, clickable again")
+    w.slash("help")
+    check(Printed("|cFFFFCC00/rxpp min|r"), "help: lists the window commands")
+
+    -- the setup dialog's slider
+    w.ns.SetWindowAlpha(0.85)
+    w.slash("setup")
+    local setup = ByName(w, "RXPProfessionsSetup")
+    local slider = setup.alphaSlider
+    check(slider and slider.value == 0.85 and slider.Text.text == "Window opacity: 85%",
+          "slider: setup has an opacity slider at the current value")
+    slider.scripts.OnValueChanged(slider, 0.6000001)
+    check(w.ns.db.alpha == 0.6 and main.alpha == 0.6 and slider.Text.text == "Window opacity: 60%",
+          "slider: dragging it sets the window's opacity live")
+
+    -- (each world takes over the global slash command: the reload last)
+    local w2 = NewWorld({client = "classic", events = CLASSIC_EVENTS,
+                         db = {setupDone = true, chosen = {Mining = true}, show = true, minimized = true, alpha = 0.4}})
+    w2.Fire("PLAYER_ENTERING_WORLD")
+    local main2 = ByName(w2, "RXPProfessionsFrame")
+    check(main2.height == 21 and main2.alpha == 0.4, "min/alpha: both are remembered across a reload")
+
+    -- Forever: the red atlas pair
+    local wf = NewWorld({client = "forever", events = FOREVER_EVENTS, db = {setupDone = true, chosen = {Mining = true}, show = true}})
+    wf.Fire("PLAYER_ENTERING_WORLD")
+    local mf = ByName(wf, "RXPProfessionsFrame")
+    check(mf.minButton.useAtlas and mf.minButton.normal == "RedButton-Condense", "min: Forever's red minimize button beside its red close")
+    wf.slash("min")
+    check(mf.minButton.normal == "RedButton-Expand" and mf.height == 21, "min: and its expand look when folded")
+
+    -- EllesmereUI: a glyph like its close X
+    local we = NewWorld({client = "forever", events = FOREVER_EVENTS, eui = "login", db = {setupDone = true, chosen = {Mining = true}, show = true}})
+    we.Fire("PLAYER_ENTERING_WORLD")
+    we.euiCallback(we.euiS)
+    local me = ByName(we, "RXPProfessionsFrame").minButton
+    check(me.euiBar and me.euiBar2 and not me.euiBar2.shown, "eui: the minimize button becomes a '-' glyph")
+    we.slash("min")
+    check(me.euiBar2.shown, "eui: '+' while folded")
+
+    -- the new sentences in every language, %d kept
+    local keys = {"Window opacity: %d%%", "Minimize", "Expand",
+                  "window: |cFFFFCC00/rxpp alpha 0.8|r opacity from 0 to 1, |cFFFFCC00/rxpp min|r minimize or expand",
+                  "at 0 the window is invisible and lets clicks through: |cFFFFCC00/rxpp alpha 1|r brings it back"}
+    local missing = {}
+    for _, locale in ipairs({"frFR", "deDE", "esES", "esMX", "ptBR", "itIT", "ruRU", "koKR", "zhCN", "zhTW"}) do
+        local wl = NewWorld({client = "classic", locale = locale, events = CLASSIC_EVENTS, db = {setupDone = true, chosen = {Mining = true}, show = true}})
+        for _, k in ipairs(keys) do
+            local v = rawget(wl.ns.L, k)
+            if v == nil or (k:find("%d", 1, true) and not pcall(string.format, v, 85)) then
+                missing[#missing + 1] = locale .. ": " .. k
+            end
+        end
+    end
+    check(#missing == 0, "min/alpha: every new sentence translated (" .. (missing[1] or "all") .. ")")
 end
 
 realPrint(("RestedXP Professions harness: %d passed, %d failed"):format(passed, failed))
