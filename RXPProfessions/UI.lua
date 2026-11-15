@@ -223,12 +223,25 @@ local function ApplyAlpha()
     frame.minButton:EnableMouse(clickable)
 end
 
+-- the setup dialog's slider shows the window's opacity, however it was set
+local function SyncAlphaSlider()
+    local slider = setupFrame and setupFrame.alphaSlider
+    if not slider then return end
+    local alpha = tonumber(ns.db.alpha) or 1
+    -- SetValue fires OnValueChanged: not a change of ours to make
+    slider.syncing = true
+    slider:SetValue(alpha)
+    slider.syncing = nil
+    slider.Label(alpha)
+end
+
 -- opacity from 0 to 1, in steps of 0.01; returns what was set
-function ns.SetWindowAlpha(value)
+function ns.SetWindowAlpha(value, fromSlider)
     value = math.max(0, math.min(1, tonumber(value) or 1))
     value = math.floor(value * 100 + 0.5) / 100
     ns.db.alpha = value
     if frame then ApplyAlpha() end
+    if not fromSlider then SyncAlphaSlider() end
     return value
 end
 
@@ -438,6 +451,7 @@ end
 
 function ns.ShowSetup()
     if setupFrame then
+        SyncAlphaSlider()
         setupFrame:Show()
         return
     end
@@ -542,10 +556,12 @@ function ns.ShowSetup()
                                                   math.floor(value * 100 + 0.5)))
             end
         end
+        slider.Label = Label
         slider:SetValue(tonumber(ns.db.alpha) or 1)
         Label(tonumber(ns.db.alpha) or 1)
-        slider:SetScript("OnValueChanged", function(_, value)
-            Label(ns.SetWindowAlpha(value))
+        slider:SetScript("OnValueChanged", function(self, value)
+            if self.syncing then return end
+            Label(ns.SetWindowAlpha(value, true))
         end)
         if slider.Text then table.insert(f.texts, slider.Text) end
         yOff = yOff - 14

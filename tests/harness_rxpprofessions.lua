@@ -1862,6 +1862,20 @@ do
     slider.scripts.OnValueChanged(slider, 0.6000001)
     check(w.ns.db.alpha == 0.6 and main.alpha == 0.6 and slider.Text.text == "Window opacity: 60%",
           "slider: dragging it sets the window's opacity live")
+    -- the mock's SetValue fires OnValueChanged as the game's does
+    local plainSetValue = slider.SetValue
+    function slider:SetValue(v)
+        plainSetValue(self, v)
+        if self.scripts.OnValueChanged then self.scripts.OnValueChanged(self, v == 0.3 and 0.3000001 or v) end
+    end
+    setup:Hide()
+    w.slash("alpha 0.3")
+    w.slash("setup")
+    check(slider.value == 0.3 and slider.Text.text == "Window opacity: 30%" and w.ns.db.alpha == 0.3,
+          "slider: reopening setup after /rxpp alpha shows the new opacity")
+    w.slash("alpha 0.45")
+    check(slider.value == 0.45 and slider.Text.text == "Window opacity: 45%" and w.ns.db.alpha == 0.45,
+          "slider: follows /rxpp alpha while the dialog is open")
 
     -- (each world takes over the global slash command: the reload last)
     local w2 = NewWorld({client = "classic", events = CLASSIC_EVENTS,

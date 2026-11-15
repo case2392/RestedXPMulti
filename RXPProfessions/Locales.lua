@@ -770,7 +770,7 @@ T.frFR = {
     ["item tooltips also show the professions you did not pick, apart"] = "les infobulles des objets montrent aussi, à part, les métiers que vous n'avez pas choisis",
     ["item tooltips show only the professions you picked"] = "les infobulles des objets ne montrent que les métiers que vous avez choisis",
     ["item tooltips: |cFFFFCC00/rxpp tooltip|r on or off, |cFFFFCC00/rxpp tooltip later|r the spans after the one you are in, |cFFFFCC00/rxpp tooltip others|r the professions you did not pick"] = "infobulles des objets : |cFFFFCC00/rxpp tooltip|r activer/désactiver, |cFFFFCC00/rxpp tooltip later|r les paliers après le vôtre, |cFFFFCC00/rxpp tooltip others|r les métiers que vous n'avez pas choisis",
-    ["Window opacity: %d%%"] = "Opacité de la fenêtre : %d %%",
+    ["Window opacity: %d%%"] = "Opacité de la fenêtre : %d%%",
     ["Minimize"] = "Réduire",
     ["Expand"] = "Déplier",
     ["window: |cFFFFCC00/rxpp alpha 0.8|r opacity from 0 to 1, |cFFFFCC00/rxpp min|r minimize or expand"] = "fenêtre : |cFFFFCC00/rxpp alpha 0.8|r opacité de 0 à 1, |cFFFFCC00/rxpp min|r réduire ou déplier",
@@ -883,7 +883,7 @@ T.deDE = {
     ["item tooltips also show the professions you did not pick, apart"] = "Gegenstands-Tooltips zeigen auch die Berufe, die Ihr nicht gewählt habt, getrennt",
     ["item tooltips show only the professions you picked"] = "Gegenstands-Tooltips zeigen nur die Berufe, die Ihr gewählt habt",
     ["item tooltips: |cFFFFCC00/rxpp tooltip|r on or off, |cFFFFCC00/rxpp tooltip later|r the spans after the one you are in, |cFFFFCC00/rxpp tooltip others|r the professions you did not pick"] = "Gegenstands-Tooltips: |cFFFFCC00/rxpp tooltip|r an/aus, |cFFFFCC00/rxpp tooltip later|r die Abschnitte nach Eurem jetzigen, |cFFFFCC00/rxpp tooltip others|r die Berufe, die Ihr nicht gewählt habt",
-    ["Window opacity: %d%%"] = "Deckkraft des Fensters: %d %%",
+    ["Window opacity: %d%%"] = "Deckkraft des Fensters: %d%%",
     ["Minimize"] = "Einklappen",
     ["Expand"] = "Ausklappen",
     ["window: |cFFFFCC00/rxpp alpha 0.8|r opacity from 0 to 1, |cFFFFCC00/rxpp min|r minimize or expand"] = "Fenster: |cFFFFCC00/rxpp alpha 0.8|r Deckkraft von 0 bis 1, |cFFFFCC00/rxpp min|r ein- oder ausklappen",
@@ -996,10 +996,10 @@ T.esES = {
     ["item tooltips also show the professions you did not pick, apart"] = "las descripciones de objetos también muestran, aparte, las profesiones que no elegiste",
     ["item tooltips show only the professions you picked"] = "las descripciones de objetos solo muestran las profesiones que elegiste",
     ["item tooltips: |cFFFFCC00/rxpp tooltip|r on or off, |cFFFFCC00/rxpp tooltip later|r the spans after the one you are in, |cFFFFCC00/rxpp tooltip others|r the professions you did not pick"] = "descripciones de objetos: |cFFFFCC00/rxpp tooltip|r las activa o desactiva, |cFFFFCC00/rxpp tooltip later|r los tramos posteriores al actual, |cFFFFCC00/rxpp tooltip others|r las profesiones que no elegiste",
-    ["Window opacity: %d%%"] = "Opacidad de la ventana: %d %%",
+    ["Window opacity: %d%%"] = "Opacidad de la ventana: %d%%",
     ["Minimize"] = "Minimizar",
     ["Expand"] = "Expandir",
-    ["window: |cFFFFCC00/rxpp alpha 0.8|r opacity from 0 to 1, |cFFFFCC00/rxpp min|r minimize or expand"] = "ventana: |cFFFFCC00/rxpp alpha 0.8|r opacidad de 0 a 1, |cFFFFCC00/rxpp min|r minimizar o expandir",
+    ["window: |cFFFFCC00/rxpp alpha 0.8|r opacity from 0 to 1, |cFFFFCC00/rxpp min|r minimize or expand"] = "ventana: |cFFFFCC00/rxpp alpha 0.8|r opacidad de 0 a 1, |cFFFFCC00/rxpp min|r la minimiza o expande",
     ["at 0 the window is invisible and lets clicks through: |cFFFFCC00/rxpp alpha 1|r brings it back"] = "a 0 la ventana es invisible y deja pasar los clics: |cFFFFCC00/rxpp alpha 1|r la vuelve a mostrar"
 }
 
@@ -1112,7 +1112,7 @@ T.esMX = {
     ["Window opacity: %d%%"] = "Opacidad de la ventana: %d%%",
     ["Minimize"] = "Minimizar",
     ["Expand"] = "Expandir",
-    ["window: |cFFFFCC00/rxpp alpha 0.8|r opacity from 0 to 1, |cFFFFCC00/rxpp min|r minimize or expand"] = "ventana: |cFFFFCC00/rxpp alpha 0.8|r opacidad de 0 a 1, |cFFFFCC00/rxpp min|r minimizar o expandir",
+    ["window: |cFFFFCC00/rxpp alpha 0.8|r opacity from 0 to 1, |cFFFFCC00/rxpp min|r minimize or expand"] = "ventana: |cFFFFCC00/rxpp alpha 0.8|r opacidad de 0 a 1, |cFFFFCC00/rxpp min|r la minimiza o expande",
     ["at 0 the window is invisible and lets clicks through: |cFFFFCC00/rxpp alpha 1|r brings it back"] = "en 0 la ventana es invisible y deja pasar los clics: |cFFFFCC00/rxpp alpha 1|r la vuelve a mostrar"
 }
 
@@ -1225,7 +1225,7 @@ T.ptBR = {
     ["Window opacity: %d%%"] = "Opacidade da janela: %d%%",
     ["Minimize"] = "Minimizar",
     ["Expand"] = "Expandir",
-    ["window: |cFFFFCC00/rxpp alpha 0.8|r opacity from 0 to 1, |cFFFFCC00/rxpp min|r minimize or expand"] = "janela: |cFFFFCC00/rxpp alpha 0.8|r opacidade de 0 a 1, |cFFFFCC00/rxpp min|r minimizar ou expandir",
+    ["window: |cFFFFCC00/rxpp alpha 0.8|r opacity from 0 to 1, |cFFFFCC00/rxpp min|r minimize or expand"] = "janela: |cFFFFCC00/rxpp alpha 0.8|r opacidade de 0 a 1, |cFFFFCC00/rxpp min|r minimiza/expande",
     ["at 0 the window is invisible and lets clicks through: |cFFFFCC00/rxpp alpha 1|r brings it back"] = "em 0 a janela fica invisível e deixa os cliques passarem: |cFFFFCC00/rxpp alpha 1|r a traz de volta"
 }
 
