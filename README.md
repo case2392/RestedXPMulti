@@ -10,6 +10,7 @@ of that folder alone:
 | [`ForeverClassicUI/`](ForeverClassicUI/) | **Classic UI (Forever)** | The Classic Era look on World of Warcraft Forever, part by part |
 | [`RIPBozo/`](RIPBozo/) | **RIP Bozo** | Hardcore death roasts |
 | [`CrossTalk/`](CrossTalk/) | **CrossTalk (Forever)** | Short phrases the other faction can read on WoW Forever, spelled out in letters the game lets through |
+| [`PacesQualityOfLife/`](PacesQualityOfLife/) | **Pace's Quality of Life (Forever)** | Track or untrack a whole zone from the quest log, LFG players by role, a quest tracker that follows your zone, and who's in a community voice channel before you join |
 
 Each folder's README covers that addon. `tests/` holds the offline
 harnesses (`lua5.1 tests/harness_<name>.lua .`) and `scripts/package.sh`
