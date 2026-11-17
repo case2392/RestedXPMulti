@@ -706,10 +706,6 @@ frame. So above about 115%, the first time Action Bar 3 is dropped
 somewhere its buttons step left to the start of its box - by up to the
 shift, 53px at 125% - and it wants dragging until they are where they
 are wanted; resetting it to its default position puts the shift back.
-(Early in a login Edit Mode has not initialised the bar yet, and it
-answers "not in its default position" then too. That is not a moved bar:
-it keeps the shift, so a login or `/reload` straight into a fight still
-has it.)
 
 The target's name string is a secret on this client (its width cannot be
 read from addon code), so the long-name fit measures under `pcall` and

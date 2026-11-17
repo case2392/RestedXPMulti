@@ -1645,14 +1645,8 @@ function M.Layout()
         -- (only while that bar is Blizzard's to stack: one the player has
         -- moved in Edit Mode is skipped by the restack, and its buttons
         -- stay at the start of their frame)
-        -- (A bar Edit Mode has not initialised yet, early in a login, also
-        -- answers "not in its default position": only one known to have
-        -- been moved loses the shift, or a login straight into a fight
-        -- would meet Blizzard's restack without it.)
         local br = G("MultiBarBottomRight")
-        local moved = br and br.IsInDefaultPosition and not (br.IsInitialized and not br:IsInitialized())
-            and not br:IsInDefaultPosition()
-        M.stackShift = (br and not moved) and StackShift(M.scale) or 0
+        M.stackShift = (br and (not br.IsInDefaultPosition or br:IsInDefaultPosition())) and StackShift(M.scale) or 0
         if art.SetScale then art:SetScale(M.scale) end
         if not (art.IsShown and art:IsShown()) then art:Show() end
     end

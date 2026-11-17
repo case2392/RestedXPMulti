@@ -3582,16 +3582,6 @@ do
         ab.Layout()
         check(Near(ab.stackShift, 53.5) and Near(c1.anchors[1][4] * c1.scale, 53.5) and Near(br.width, 676) and br.anchors[1][1] == "BOTTOMLEFT" and Near(br.anchors[1][4], 7.5 - 53.5), "restack: reset to its default position, the shift is back")
     end
-    -- early in a login Edit Mode has not initialised the bar yet and it answers "not in its default
-    -- position" too: that is not a moved bar, and a login straight into a fight still needs the shift
-    do
-        local br, c1 = MultiBarBottomRight, MultiBarBottomRightButton1.container
-        br.uninitialised = true
-        ab.Layout()
-        check(br:IsInDefaultPosition() == false and Near(ab.stackShift, 53.5) and Near(c1.anchors[1][4] * c1.scale, 53.5), "restack: a bar Edit Mode has not initialised yet keeps the shift (only a bar known to be moved loses it)")
-        br.uninitialised = nil
-        ab.Layout()
-    end
     -- the largest size a 16:9 screen allows (133%): 22 right of its place would put the end of the row past
     -- the screen's edge, so the shift stops where the restacked row ends at the edge
     do
