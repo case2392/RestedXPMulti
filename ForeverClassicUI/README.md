@@ -670,7 +670,9 @@ both keep theirs, so they draw over the bars instead of under them.
 Switching the classic bar off mid-fight is finished when the fight ends
 for the same reason: hiding the stone art then is refused like showing
 it, so the art goes, and a reagent slot the addon had taken off the bar
-comes back, at the end of combat.
+comes back, at the end of combat. Forever's dividers come back with them,
+not at once, so the bar is not half one look and half the other for the
+rest of the fight.
 
 Action Bar 2 sliding sideways in combat and back afterwards is Blizzard's
 stacking: Edit Mode puts the bottom bars at its own offsets from the main
@@ -704,6 +706,10 @@ frame. So above about 115%, the first time Action Bar 3 is dropped
 somewhere its buttons step left to the start of its box - by up to the
 shift, 53px at 125% - and it wants dragging until they are where they
 are wanted; resetting it to its default position puts the shift back.
+(Early in a login Edit Mode has not initialised the bar yet, and it
+answers "not in its default position" then too. That is not a moved bar:
+it keeps the shift, so a login or `/reload` straight into a fight still
+has it.)
 
 The target's name string is a secret on this client (its width cannot be
 read from addon code), so the long-name fit measures under `pcall` and

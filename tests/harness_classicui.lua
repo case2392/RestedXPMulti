@@ -572,7 +572,9 @@ local function NewWorld(opts)
             end
             function bar:UpdateSystemSettingIconSize() for _, b in ipairs(self.actionButtons) do b.container:SetScale(1) end end
             function bar:ApplySystemAnchor() self:ClearAllPoints(); self:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 0, 0) end
-            function bar:IsInDefaultPosition() return self.moved ~= true end
+            -- (Edit Mode: IsInitialized() and systemInfo.isInDefaultPosition - false until it has initialised the bar)
+            function bar:IsInitialized() return self.uninitialised ~= true end
+            function bar:IsInDefaultPosition() return self.uninitialised ~= true and self.moved ~= true end
             bar:UpdateGridLayout()
             _G[name] = bar
             return bar
@@ -3580,6 +3582,16 @@ do
         ab.Layout()
         check(Near(ab.stackShift, 53.5) and Near(c1.anchors[1][4] * c1.scale, 53.5) and Near(br.width, 676) and br.anchors[1][1] == "BOTTOMLEFT" and Near(br.anchors[1][4], 7.5 - 53.5), "restack: reset to its default position, the shift is back")
     end
+    -- early in a login Edit Mode has not initialised the bar yet and it answers "not in its default
+    -- position" too: that is not a moved bar, and a login straight into a fight still needs the shift
+    do
+        local br, c1 = MultiBarBottomRight, MultiBarBottomRightButton1.container
+        br.uninitialised = true
+        ab.Layout()
+        check(br:IsInDefaultPosition() == false and Near(ab.stackShift, 53.5) and Near(c1.anchors[1][4] * c1.scale, 53.5), "restack: a bar Edit Mode has not initialised yet keeps the shift (only a bar known to be moved loses it)")
+        br.uninitialised = nil
+        ab.Layout()
+    end
     -- the largest size a 16:9 screen allows (133%): 22 right of its place would put the end of the row past
     -- the screen's edge, so the shift stops where the restacked row ends at the edge
     do
@@ -3689,10 +3701,12 @@ do
     w.slash("actionbars off")
     check(w.Blocked() == 0 and Printed("the stone bar goes when combat ends"), "off in combat: not one protected call (the art is not hidden mid-fight), and the reply says what waits")
     check(ab.mode == "off" and art.shown == true and reagent:IsShown() == false and ab.disablePending == true, "off in combat: the art and the stowed slot wait for the fight to end")
+    check(BagsBar.div1.alpha == 0 and MainActionBar.HorizontalDividersPool.active[1].alpha == 0, "off in combat: and Forever's dividers stay away with them (the bar is not half one look, half the other)")
     w.inCombat = false
     w.ResetBlocked()
     ab.waiter:Fire("PLAYER_REGEN_ENABLED")
     check(art.shown == false and reagent:IsShown() == true and ab.reagentStowed == nil and ab.disablePending == nil and ab.mode == "off", "off in combat: when the fight ends the art goes and the reagent slot is back on the bar")
+    check(BagsBar.div1.alpha == 1 and MainActionBar.HorizontalDividersPool.active[1].alpha == 1, "off in combat: and the dividers come back then")
     -- finished once: a later fight's end touches nothing
     reagent:Hide()      -- something else hides it afterwards: not ours to show
     ab.waiter:Fire("PLAYER_REGEN_ENABLED")
@@ -3747,7 +3761,7 @@ do
     w.reagentSlots = 0
     ab.Layout()
     w.slash("actionbars off")
-    check(ab.art.shown == false and CharacterReagentBag0Slot:IsShown() == true and ab.disablePending == nil and Printed("type /reload to restore Blizzard's bars"), "off out of combat: done at once, as before")
+    check(ab.art.shown == false and CharacterReagentBag0Slot:IsShown() == true and ab.disablePending == nil and BagsBar.div1.alpha == 1 and Printed("action bars: type /reload to restore Blizzard's bars") and not Printed("the stone bar goes when combat ends"), "off out of combat: done at once, as before")
 end
 
 --------------------------------------------------------------------------
@@ -3835,7 +3849,36 @@ do
     Lift(true)
     check(reagent:IsShown() == false and #w.ns.errors == 0, "cursor: an answer that cannot be read leaves the slot off the bar, and no error")
     w.cursorErr = nil; w.cursorFits = false
-    -- a client without the question, or without timers, behaves as before
+    -- the slot hidden by something else while a reagent bag is carried: the cursor's answer is settled
+    -- after one look, not asked into a layout on every cursor event
+    do
+        -- (hidden while it had a bag in it, so not by this addon; then the bag taken out)
+        w.reagentSlots = 36
+        ab.waiter:Fire("BAG_UPDATE_DELAYED")
+        reagent:Hide(); ab.Layout()
+        w.reagentSlots = 0
+        ab.waiter:Fire("BAG_UPDATE_DELAYED")
+        check(reagent:IsShown() == false and ab.reagentStowed ~= true and ab.reagentKnown == false, "cursor: (an empty slot something else has hidden is not this addon's to stow)")
+        local layouts, realLayout = 0, ab.Layout
+        ab.Layout = function(...) layouts = layouts + 1; return realLayout(...) end
+        w.cursorFits = true
+        for _ = 1, 5 do ab.waiter:Fire("CURSOR_CHANGED") end
+        check(layouts == 1 and reagent:IsShown() == false, "cursor: with the slot hidden by something else, five cursor events while a reagent bag is carried make one layout, not five (and the slot is left hidden)")
+        w.cursorFits = false
+        ab.waiter:Fire("CURSOR_CHANGED")
+        ab.Layout = realLayout
+        check(layouts == 2 and #timers == 0 and ab.reagentHold == nil and reagent:IsShown() == false, "cursor: and letting go starts no hold for a slot that is not on the bar")
+        reagent:Show(); ab.Layout()
+        RunTimers()
+        check(reagent:IsShown() == false and ab.reagentStowed == true and ab.plan.step == 5, "cursor: (the reporter's bar again)")
+    end
+    -- a client without timers: no hold, the slot leaves as the cursor lets go
+    _G.C_Timer = nil
+    Lift(true)
+    check(reagent:IsShown() == true, "cursor: (without timers the slot still comes for the bag)")
+    Lift(false)
+    check(reagent:IsShown() == false and ab.reagentHold == nil, "cursor: a client without timers has no hold: the slot leaves as the cursor lets go")
+    -- a client without the question behaves as before
     _G.C_PaperDollInfo = nil
     Lift(true)
     check(reagent:IsShown() == false, "cursor: a client without the question keeps the slot off the bar")

@@ -765,7 +765,11 @@ local function PlanRow(count)
     -- a reagent bag on the cursor has to have its slot to be dropped on
     -- (hidden, the slot takes no drop), and the slot stays a moment after
     -- the cursor lets go (see HoldReagent)
-    local fits = hasReagent and CursorFitsReagentSlot()
+    -- (the cursor's own answer is kept as well: it is what the cursor
+    -- event is compared with, slot on the bar or not)
+    local cursor = CursorFitsReagentSlot()
+    M.reagentCursor = cursor
+    local fits = hasReagent and cursor
     if M.reagentFits and not fits and equipped == false then M.HoldReagent() end
     M.reagentFits = fits
     local wanted = fits or M.reagentHold ~= nil
@@ -1641,8 +1645,14 @@ function M.Layout()
         -- (only while that bar is Blizzard's to stack: one the player has
         -- moved in Edit Mode is skipped by the restack, and its buttons
         -- stay at the start of their frame)
+        -- (A bar Edit Mode has not initialised yet, early in a login, also
+        -- answers "not in its default position": only one known to have
+        -- been moved loses the shift, or a login straight into a fight
+        -- would meet Blizzard's restack without it.)
         local br = G("MultiBarBottomRight")
-        M.stackShift = (br and (not br.IsInDefaultPosition or br:IsInDefaultPosition())) and StackShift(M.scale) or 0
+        local moved = br and br.IsInDefaultPosition and not (br.IsInitialized and not br:IsInitialized())
+            and not br:IsInDefaultPosition()
+        M.stackShift = (br and not moved) and StackShift(M.scale) or 0
         if art.SetScale then art:SetScale(M.scale) end
         if not (art.IsShown and art:IsShown()) then art:Show() end
     end
@@ -1781,10 +1791,12 @@ end
 -- leaves it to the regen waiter when the part goes off mid-fight.
 local function FinishDisable()
     M.disablePending = nil
+    -- Forever's dividers come back as the stone art goes, not before it
+    M.HideDividers(1)
     if M.art then M.art:Hide() end
     -- a reagent bag slot this addon took off the bar goes back on it
     Unstow(G(REAGENT_BUTTON))
-    M.reagentStowed, M.reagentHold, M.reagentFits = nil, nil, nil
+    M.reagentStowed, M.reagentHold, M.reagentFits, M.reagentCursor = nil, nil, nil, nil
     -- the handler stops placing the bars
     if M.holder then
         pcall(M.holder.SetAttribute, M.holder, "cui-bl", false)
@@ -1822,7 +1834,7 @@ local function InstallCombatWaiter()
         elseif event == "CURSOR_CHANGED" then
             -- (Blizzard's bag manager says so too, but only when the cursor
             -- goes from holding nothing to holding an item or back)
-            if G(REAGENT_BUTTON) and CursorFitsReagentSlot() ~= (M.reagentFits or false) then
+            if G(REAGENT_BUTTON) and CursorFitsReagentSlot() ~= (M.reagentCursor or false) then
                 if InCombat() then M.pending = true else Again() end
             end
         elseif G(REAGENT_BUTTON) and ReagentBagEquipped() ~= M.reagentKnown then
@@ -1866,10 +1878,11 @@ function M:Force()
 end
 
 function M:Disable()
-    M.HideDividers(1)
     M.mode = "off"
     -- the art, the stowed reagent slot and the handler's attributes are
-    -- protected in combat: mid-fight they wait for the regen waiter
+    -- protected in combat: mid-fight they wait for the regen waiter (and
+    -- Forever's dividers with them, so the bar is not half one look and
+    -- half the other for the rest of the fight)
     if InCombat() then
         M.disablePending = true
         ns.Print("action bars: the stone bar goes when combat ends; type /reload to restore Blizzard's bars.")
