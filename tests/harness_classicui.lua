@@ -3446,8 +3446,10 @@ do
         ab.waiter:Fire("PLAYER_REGEN_ENABLED")
         check(MultiBarBottomRight.anchors[1][2] == UIParent and Near((Span(MultiBarBottomRight, 1)), 6 * s), ("restack %d%%: and back on Era's spot when the fight ends"):format(pct))
     end
+    w.slash("barsize 125")
+    check(ab:Status():find("bottom-right bar's buttons 54px into their frame", 1, true) ~= nil, "restack: the status line says how far the buttons stand into their frame")
     w.slash("barsize 100")
-    check(ab.stackShift == 0 and MultiBarBottomRight.anchors[1][4] == 6 and MultiBarBottomRight.width == 498 and MultiBarBottomRightButton1.container.anchors[1][4] == 0, "restack: at Era's size nothing is shifted")
+    check(ab.stackShift == 0 and MultiBarBottomRight.anchors[1][4] == 6 and MultiBarBottomRight.width == 498 and MultiBarBottomRightButton1.container.anchors[1][4] == 0 and not ab:Status():find("into their frame", 1, true), "restack: at Era's size nothing is shifted")
     check(#w.ns.errors == 0, "restack: no errors")
     -- a client that does have restricted snippets: the handler puts the frame back with the same shift
     w = NewWorld({style = "6", forever = true})

@@ -1791,6 +1791,9 @@ function M:Status()
     if M.mode == "restyled" then
         local s = "(Era bottom bar: stone art, 36px buttons, page arrows, micro buttons and bags on the bar, XP bar in the bar"
         if M.scale and math.abs(M.scale - 1) > 0.001 then s = s .. ("; bar size %d%%"):format(M.scale * 100 + 0.5) end
+        if M.stackShift and M.stackShift > 0 then
+            s = s .. ("; bottom-right bar's buttons %dpx into their frame, for Blizzard's stacking mid-fight"):format(M.stackShift + 0.5)
+        end
         if M.microShown then
             s = s .. ("; %d micro buttons"):format(M.microShown)
             if M.microStride and M.microStride < MICRO_STRIDE then
