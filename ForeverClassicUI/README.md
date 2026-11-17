@@ -386,7 +386,10 @@ usually enough to rebuild that window in the classic style.
   stopping at the first that fits: the buttons pack to 24px, where their
   faces touch (the 29px art has a few transparent pixels each side); the
   reagent bag's slot leaves the bar while no reagent bag is in it (it is
-  back the moment one is equipped; it is hidden, not faded, because
+  back the moment one is equipped - by right-clicking it in a bag, or by
+  picking it up: the slot is on the bar for as long as the cursor holds
+  something that goes in it, and a second longer, so there is somewhere
+  to drop it; it is hidden, not faded, because
   `SetAlpha` on one of Forever's item buttons is Blizzard's own function
   and fades the icon alone, leaving the slot's frame on the bar); the bag
   slots close up, from 5 apart to as little as 1; the buttons pack to 22px, their edges just
@@ -409,7 +412,7 @@ usually enough to rebuild that window in the classic style.
   bag update - any loot - and straight on the textures, where the hooks
   on `SetNormalAtlas` never saw it: the classic ring was gone until the
   next layout. `UpdateTextures` is hooked on every slot and the keyring;
-  the slots are protected, so mid-fight Blizzard's layout stands until
+  the slots are treated as protected, so mid-fight Blizzard's layout stands until
   the fight ends: the slots 2 apart and the keyring back at its 33px,
   17 longer than Era's row and into the last micro button, which is why
   the micro menu itself is raised over the bag slots' frame levels
@@ -420,10 +423,15 @@ usually enough to rebuild that window in the classic style.
   each button's trailing edge that goes under its neighbour, the way
   Era's own art interlocks, rather than the icon's middle. The
   disabled Store button is hidden so it takes no slot. Forever's own
-  overlays on a bag slot (the gold frame while that bag's window is
-  open, the search and context dimmers, the keybind glow) are sized for
-  its 48px slot and hung off the top left of the 37px one; they are
-  anchored to the button. Micro buttons are
+  overlays on a bag slot (the mark while that bag's window is open, the
+  search and context dimmers, the keybind glow) are sized for its 48px
+  slot and hung off the top left of the 37px one; they are anchored to
+  the button. The open-bag mark is Era's - the yellow check highlight -
+  in place of Forever's own slot frame, which it puts back on every bag
+  update; the keyring, as in Era, gets none. Forever's item buttons also
+  mask their normal and pushed textures and the icon to the button's own
+  rectangle, which cut Era's 64px ring to the 37px slot: that mask is
+  taken off all three. Micro buttons are
   protected frames, so their size, anchor and frame level are only touched
   out of combat: the re-skin runs from the hover and pushed hooks, which
   fire mid-fight, and a resize there is refused by the client with
@@ -501,9 +509,10 @@ usually enough to rebuild that window in the classic style.
   its top. The stance and pet bars above those are still Blizzard's to
   place: it stacks them off the main bar on every restack, which lands
   them 8 clear of the bottom-left bar with one status bar and 10 with two
-  (Era keeps 7), less as the bar size grows (3 to 4 at 125%), and 4 into
-  it with no status bar at all - level cap and no faction watched - or
-  up to 3 into it from about 140% bar size. Which is which goes by what each of Forever's two
+  (Era keeps 7), less as the bar size grows (3 to 4 at 125%, and up to
+  3.5 into it from about 140%); with no status bar at all - level cap
+  and no faction watched - Blizzard's sum puts them 4 into it at 100%, 7
+  at 125% and 10 at 150%. Which is which goes by what each of Forever's two
   containers is showing, not by which container it is: Era ranks
   experience over reputation, so its first container - the one in the
   bar - holds the experience bar, but Forever's constants rank reputation
@@ -565,7 +574,9 @@ usually enough to rebuild that window in the classic style.
   size: Blizzard fits those to the room between the minimap and the
   bottom corner by scaling the bar from its height, so a bigger bar was
   only scaled back down - after being drawn too big until Blizzard's
-  next pass. A bar dragged in Edit Mode keeps the corner it was dropped
+  next pass. Action Bars 6 to 8 follow the size where they
+  stand; at Blizzard's default spots, 50 apart, their rows touch from
+  about 139%. A bar dragged in Edit Mode keeps the corner it was dropped
   on: the size resizes it but does not place it, so it may need
   dragging again. Well above 100 on a screen the bar nearly fills, its
   right end and gryphon reach the right-hand bars' column.
@@ -656,6 +667,10 @@ off it. Since 0.7.27 the in-combat pass touches textures and alpha only;
 every size, anchor, scale and level waits for the end of the fight. The
 gryphons moved to their own frame at level 100, where Era and Forever
 both keep theirs, so they draw over the bars instead of under them.
+Switching the classic bar off mid-fight is finished when the fight ends
+for the same reason: hiding the stone art then is refused like showing
+it, so the art goes, and a reagent slot the addon had taken off the bar
+comes back, at the end of combat.
 
 Action Bar 2 sliding sideways in combat and back afterwards is Blizzard's
 stacking: Edit Mode puts the bottom bars at its own offsets from the main
@@ -664,7 +679,8 @@ cannot be anchored back from addon code until it ends. The secure handler
 that would hold them is dead on Forever (no `loadstring_untainted`). The
 way round it on the player's side: drag Action Bar 2 (and 3) in Edit Mode,
 even a little. A bar that is not in its default position is skipped by
-Blizzard's stacking and by this addon alike, so it stays put.
+Blizzard's stacking, and this addon no longer places it (it still sizes
+and skins it), so it stays put.
 
 Those offsets are in the screen's units whatever the bar size, so with
 the bar drawn bigger than about 117% the bottom-left bar's twelve buttons
@@ -674,8 +690,20 @@ where Era's gap between the two no longer fits (about 115%), the
 bottom-right bar's buttons stand that much further right inside their
 frame and the frame is anchored that much further left: out of combat
 nothing moves, and mid-fight Blizzard's +606 lands the buttons beside the
-other bar's, both 22 right of their place. In Edit Mode that bar's
-selection box then starts ahead of its first button.
+other bar's, both 22 right of their place. At the largest size a screen
+allows, 22 right would put the end of the row past the screen's edge, so
+the shift stops where the restacked row ends at the edge; the two bars
+then stand closer than Era's gap mid-fight, never on each other. While
+that bar is in its default position its Edit Mode selection box starts
+ahead of its first button (and over the end of Action Bar 2's box), and
+the quick keybind glow behind it is centred on the frame, not the
+buttons. A bottom-right bar the player has moved gets no shift: Blizzard
+does not restack it, and its own layout sizes a bar to its buttons
+whenever the bar is shown, which would move the buttons of a widened
+frame. So above about 115%, the first time Action Bar 3 is dropped
+somewhere its buttons step left to the start of its box - by up to the
+shift, 53px at 125% - and it wants dragging until they are where they
+are wanted; resetting it to its default position puts the shift back.
 
 The target's name string is a secret on this client (its width cannot be
 read from addon code), so the long-name fit measures under `pcall` and

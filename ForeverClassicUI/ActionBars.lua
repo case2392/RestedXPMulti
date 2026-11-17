@@ -78,6 +78,10 @@ local KEYRING_W, KEYRING_H = 18, 39
 local KEYRING_TEX = BUTTONS .. "UI-Button-KeyRing"
 local KEYRING_COORDS = {0, 0.5625, 0, 0.609375}
 local REAGENT_BUTTON, KEYRING_BUTTON = "CharacterReagentBag0Slot", "KeyRingButton"
+-- how long the reagent bag's slot stays on the bar after a reagent bag
+-- leaves the cursor: dropped on the slot, the bag is only in it once the
+-- server has said so
+local REAGENT_HOLD = 1
 -- Era had nine micro buttons; Forever has ten or eleven, plus a reagent bag
 -- slot, in the same 466px run of bar between the page arrows and the bar's
 -- right end. Eleven at Era's 26px stride need 291px and, with Era's bag
@@ -261,6 +265,15 @@ local function Anchor(frame, point, rel, relPoint, x, y)
     if not scale or scale <= 0 then scale = 1 end
     frame:ClearAllPoints()
     frame:SetPoint(point, rel, relPoint, (x or 0) / scale, (y or 0) / scale)
+end
+
+-- a frame's level as a plain number, or nil: the client can hand a level
+-- back as a secret value, which addon code may not do sums with or compare
+local function LevelOf(frame)
+    if not (frame and frame.GetFrameLevel) then return nil end
+    local ok, level = pcall(function() return frame:GetFrameLevel() + 0 end)
+    if ok and type(level) == "number" then return level end
+    return nil
 end
 
 --------------------------------------------------------------------------
@@ -461,7 +474,17 @@ local function StackShift(s)
     if type(x2) ~= "number" or type(x3) ~= "number" then return 0 end
     -- Era: the bottom-right bar starts 510 from the main bar's left
     local era = BAR_W / 2 + BOTTOM_BAR_X - MAIN_BAR_X
-    return math.max(0, x2 + era * s - x3)
+    local shift = math.max(0, x2 + era * s - x3)
+    -- ...and no further than keeps the restacked row on the screen: at the
+    -- largest size a screen allows, 22 right of its place would put the
+    -- row's end past the screen's edge. The two bars then stand closer
+    -- than Era's gap mid-fight, and never on each other.
+    local width = UIParent and UIParent.GetWidth and UIParent:GetWidth()
+    if type(width) == "number" and width > 0 then
+        local row = BarSize(12, true)
+        shift = math.max(0, math.min(shift, width / 2 - x3 + (BAR_W / 2 - MAIN_BAR_X - row) * s))
+    end
+    return shift
 end
 
 --------------------------------------------------------------------------
@@ -684,6 +707,17 @@ local function KeyringOnBar()
     return keyring ~= nil and (not keyring.IsShown or keyring:IsShown()) and true or false
 end
 
+-- is the cursor holding something that goes in the reagent bag's slot - a
+-- reagent bag on its way there? Blizzard asks the same of every slot when
+-- the cursor changes (PaperDollItemSlotButton_OnEvent). false when the
+-- client will not say (the test sits inside the pcall with the call).
+local function CursorFitsReagentSlot()
+    local reagent = G(REAGENT_BUTTON)
+    if not (reagent and reagent.GetID and C_PaperDollInfo and C_PaperDollInfo.CursorCanGoInSlot) then return false end
+    local ok, fits = pcall(function() return C_PaperDollInfo.CursorCanGoInSlot(reagent:GetID()) == true end)
+    return ok and fits == true
+end
+
 -- the reagent bag's slot counts while it is shown, or hidden by this
 -- addon (see Stow); one that something else has hidden is left alone
 local function ReagentOnBar()
@@ -691,6 +725,22 @@ local function ReagentOnBar()
     if not reagent then return false end
     if M.own[reagent] and M.own[reagent].stowed then return true end
     return (not reagent.IsShown or reagent:IsShown()) and true or false
+end
+
+-- The cursor has let go of a reagent bag. If that was onto the slot, the
+-- bag is in it a moment later, when the server says so: the slot stays on
+-- the bar until then instead of leaving and coming straight back, and the
+-- bar is laid out again when the moment is over.
+function M.HoldReagent()
+    if not (C_Timer and C_Timer.After) then return end
+    local id = (M.reagentHoldId or 0) + 1
+    M.reagentHoldId, M.reagentHold = id, true
+    C_Timer.After(REAGENT_HOLD, function()
+        if M.reagentHoldId ~= id then return end
+        M.reagentHold = nil
+        if M.mode ~= "restyled" then return end
+        if InCombat() then M.pending = true elseif M.Relayout then M.Relayout() end
+    end)
 end
 
 -- How the micro row and the bag cluster share the run of bar between the
@@ -712,6 +762,13 @@ local function PlanRow(count)
     local equipped = nil
     if G(REAGENT_BUTTON) then equipped = ReagentBagEquipped() end
     M.reagentKnown = equipped
+    -- a reagent bag on the cursor has to have its slot to be dropped on
+    -- (hidden, the slot takes no drop), and the slot stays a moment after
+    -- the cursor lets go (see HoldReagent)
+    local fits = hasReagent and CursorFitsReagentSlot()
+    if M.reagentFits and not fits and equipped == false then M.HoldReagent() end
+    M.reagentFits = fits
+    local wanted = fits or M.reagentHold ~= nil
     local plan = {stride = MICRO_STRIDE, scale = 1, bagSize = BAG_SIZE, bagPad = BAG_PAD, hasReagent = hasReagent,
                   reagent = hasReagent, reagentSize = REAGENT_SIZE, keyring = hasKeyring, step = 1}
     local function Room()
@@ -742,7 +799,7 @@ local function PlanRow(count)
         stride = Fit(MICRO_MIN_STRIDE)
         plan.step = 2
     end
-    if not stride and hasReagent and equipped == false then
+    if not stride and hasReagent and equipped == false and not wanted then
         plan.reagent = false
         stride = Fit(MICRO_MIN_STRIDE)
         plan.step = 3
@@ -795,12 +852,12 @@ local function LayoutMicroMenu(art, row, plan)
     -- buttons draw as one, at the menu's own level - so it is the menu
     -- that is raised over the slots (one and two levels above their bar),
     -- for the keyring to go under that button instead of over it.
-    local bags = G("BagsBar")
-    if menu and menu.SetFrameLevel and menu.GetFrameLevel and bags and bags.GetFrameLevel then
-        local over = bags:GetFrameLevel() + 3
-        if menu:GetFrameLevel() < over then pcall(menu.SetFrameLevel, menu, over) end
+    local bagsLevel, menuLevel = LevelOf(G("BagsBar")), LevelOf(menu)
+    if menu and menu.SetFrameLevel and bagsLevel and menuLevel and menuLevel < bagsLevel + 3 then
+        pcall(menu.SetFrameLevel, menu, bagsLevel + 3)
+        menuLevel = LevelOf(menu) or menuLevel
     end
-    local base = (menu and menu.GetFrameLevel and menu:GetFrameLevel() or 1) + 1
+    local base = (menuLevel or 1) + 1
     for i, btn in ipairs(row) do
         if menu and btn.SetPoint then Anchor(btn, "BOTTOMLEFT", menu, "BOTTOMLEFT", (i - 1) * stride, 0) end
         if btn.SetFrameLevel then pcall(btn.SetFrameLevel, btn, base + shown - i) end
@@ -861,6 +918,15 @@ local function SkinBagButton(btn, size)
     btn:SetPushedTexture(QUICKSLOT_DOWN)
     local pt = btn.GetPushedTexture and btn:GetPushedTexture()
     if pt then pt:SetTexCoord(0, 1, 0, 1); pt:ClearAllPoints(); pt:SetAllPoints(btn) end
+    -- Forever's item buttons mask their normal and pushed textures (and
+    -- the icon) to the button's own rectangle (ItemButtonMixin:PostOnLoad,
+    -- the intrinsic's Mask). Its own slot art fits inside that; Era's ring
+    -- is 64px round a 37px slot and stands outside it.
+    if btn.Mask then
+        for _, t in ipairs({nt, pt}) do
+            if t and t.RemoveMaskTexture then pcall(t.RemoveMaskTexture, t, btn.Mask) end
+        end
+    end
     btn:SetHighlightTexture(HILIGHT_SQUARE, "ADD")
     local ht = btn.GetHighlightTexture and btn:GetHighlightTexture()
     if ht then
@@ -870,7 +936,7 @@ local function SkinBagButton(btn, size)
     local icon = btn.icon or (btn.GetName and G(btn:GetName() .. "IconTexture"))
     if icon then
         -- Forever masks the icon to the retail slot shape (SquareMask / IconMask)
-        for _, key in ipairs({"IconMask", "CircleMask", "SquareMask"}) do
+        for _, key in ipairs({"IconMask", "CircleMask", "SquareMask", "Mask"}) do
             if btn[key] and icon.RemoveMaskTexture then pcall(icon.RemoveMaskTexture, icon, btn[key]) end
         end
         icon:ClearAllPoints()
@@ -889,6 +955,15 @@ local function SkinBagButton(btn, size)
             t:ClearAllPoints()
             t:SetAllPoints(btn)
         end
+    end
+    -- the mark on a slot whose bag is open: Forever shows this texture
+    -- with its own slot frame on it (put back in UpdateTextures); Era
+    -- checks the slot, which is the yellow CheckButtonHilight, added on
+    local open = btn.SlotHighlightTexture
+    if open and open.SetTexture then
+        open:SetTexture(CHECK_HILIGHT)
+        if open.SetTexCoord then open:SetTexCoord(0, 1, 0, 1) end
+        if open.SetBlendMode then open:SetBlendMode("ADD") end
     end
     M.inSkin = nil
     if not own.hooked and hooksecurefunc then
@@ -940,12 +1015,19 @@ local function SkinKeyRing(btn)
             t:SetTexCoord(unpack(KEYRING_COORDS))
             t:ClearAllPoints()
             t:SetAllPoints(btn)
+            -- (Forever draws a slot's highlight at 40%, and masks the other
+            -- two to the button with the item button's rounded mask)
+            if t.SetAlpha then t:SetAlpha(1) end
+            if btn.Mask and t.RemoveMaskTexture then pcall(t.RemoveMaskTexture, t, btn.Mask) end
         end
     end
     -- the retail slot art sits on the icon; the classic button has none
     local icon = btn.icon or (btn.GetName and G(btn:GetName() .. "IconTexture"))
     Fade(icon)
     Fade(btn.IconBorder)
+    -- Forever's mark on a slot whose bag is open (its slot frame, 46px):
+    -- Era's keyring has none
+    Fade(btn.SlotHighlightTexture)
     Hide(btn.SlotBackground)
     Hide(btn.SlotArt)
     M.inSkin = nil
@@ -1556,7 +1638,11 @@ function M.Layout()
     if not combat then
         -- the bar size: the art, and through S() everything laid out on it
         M.scale = M.WantedScale()
-        M.stackShift = StackShift(M.scale)
+        -- (only while that bar is Blizzard's to stack: one the player has
+        -- moved in Edit Mode is skipped by the restack, and its buttons
+        -- stay at the start of their frame)
+        local br = G("MultiBarBottomRight")
+        M.stackShift = (br and (not br.IsInDefaultPosition or br:IsInDefaultPosition())) and StackShift(M.scale) or 0
         if art.SetScale then art:SetScale(M.scale) end
         if not (art.IsShown and art:IsShown()) then art:Show() end
     end
@@ -1629,10 +1715,14 @@ local function Again()
     if M.mode ~= "restyled" or M.inLayout then return end
     local ok, err = pcall(M.Layout)
     if not ok then
-        M.inLayout = nil
+        -- (an error inside a skin function left its guard up as well: the
+        -- re-skin hooks would have gone quiet until the next clean pass)
+        M.inLayout, M.inSkin = nil, nil
         ns.errors[#ns.errors + 1] = "actionbars layout: " .. tostring(err)
     end
 end
+
+M.Relayout = Again
 
 local function HookMethod(frame, method)
     if frame and type(frame[method]) == "function" then hooksecurefunc(frame, method, Again) end
@@ -1684,6 +1774,25 @@ local function InstallHooks()
     HookMethod(G("StatusTrackingBarManager"), "UpdateBarsShown")
 end
 
+-- What switching the part off does to protected frames: the stone art
+-- (the bars are anchored to it, so in combat even Hide() on it is
+-- refused), the reagent bag slot this addon took off the bar, the secure
+-- handler's attributes. Out of combat only: M:Disable runs it at once, or
+-- leaves it to the regen waiter when the part goes off mid-fight.
+local function FinishDisable()
+    M.disablePending = nil
+    if M.art then M.art:Hide() end
+    -- a reagent bag slot this addon took off the bar goes back on it
+    Unstow(G(REAGENT_BUTTON))
+    M.reagentStowed, M.reagentHold, M.reagentFits = nil, nil, nil
+    -- the handler stops placing the bars
+    if M.holder then
+        pcall(M.holder.SetAttribute, M.holder, "cui-bl", false)
+        pcall(M.holder.SetAttribute, M.holder, "cui-br", false)
+        M.holding = nil
+    end
+end
+
 local function InstallCombatWaiter()
     if M.waiter or not CreateFrame then return end
     M.waiter = CreateFrame("Frame")
@@ -1691,14 +1800,31 @@ local function InstallCombatWaiter()
     -- a bag put in or taken out of a bag slot: the reagent bag's slot
     -- comes and goes with its bag. Whichever of the bag events says so,
     -- only a change of that answer lays the bar out again (the delayed
-    -- one fires on every loot).
-    for _, event in ipairs({"BAG_CONTAINER_UPDATE", "BAG_UPDATE_DELAYED"}) do
+    -- one fires on every loot). And the cursor: the slot is on the bar
+    -- while a reagent bag is being carried to it.
+    for _, event in ipairs({"BAG_CONTAINER_UPDATE", "BAG_UPDATE_DELAYED", "CURSOR_CHANGED"}) do
         pcall(M.waiter.RegisterEvent, M.waiter, event)
     end
     M.waiter:SetScript("OnEvent", function(_, event)
+        -- the part was switched off mid-fight: what had to wait is done now
+        -- (switched on again since, there is nothing left to finish)
+        if event == "PLAYER_REGEN_ENABLED" and M.disablePending then
+            if M.mode == "restyled" then
+                M.disablePending = nil
+            elseif not InCombat() then
+                local ok, err = pcall(FinishDisable)
+                if not ok then ns.errors[#ns.errors + 1] = "actionbars off: " .. tostring(err) end
+            end
+        end
         if M.mode ~= "restyled" then return end
         if event == "PLAYER_REGEN_ENABLED" then
-            if M.pending then M.Layout() end
+            if M.pending then Again() end
+        elseif event == "CURSOR_CHANGED" then
+            -- (Blizzard's bag manager says so too, but only when the cursor
+            -- goes from holding nothing to holding an item or back)
+            if G(REAGENT_BUTTON) and CursorFitsReagentSlot() ~= (M.reagentFits or false) then
+                if InCombat() then M.pending = true else Again() end
+            end
         elseif G(REAGENT_BUTTON) and ReagentBagEquipped() ~= M.reagentKnown then
             if InCombat() then M.pending = true else Again() end
         end
@@ -1726,6 +1852,7 @@ function M:Enable()
     InstallCombatWaiter()
     if M.Layout() then
         M.mode = "restyled"
+        M.disablePending = nil
         InstallHooks()
     else
         M.mode = "unavailable"
@@ -1739,22 +1866,17 @@ function M:Force()
 end
 
 function M:Disable()
-    if M.art then M.art:Hide() end
     M.HideDividers(1)
     M.mode = "off"
-    -- a reagent bag slot this addon took off the bar goes back on it
-    if not InCombat() then
-        Unstow(G(REAGENT_BUTTON))
-        M.reagentStowed = nil
+    -- the art, the stowed reagent slot and the handler's attributes are
+    -- protected in combat: mid-fight they wait for the regen waiter
+    if InCombat() then
+        M.disablePending = true
+        ns.Print("action bars: the stone bar goes when combat ends; type /reload to restore Blizzard's bars.")
+    else
+        FinishDisable()
+        ns.Print("action bars: type /reload to restore Blizzard's bars.")
     end
-    -- the handler stops placing the bars (an attribute write on a secure
-    -- frame is refused in combat; then it stops at the next chance)
-    if M.holder and not InCombat() then
-        pcall(M.holder.SetAttribute, M.holder, "cui-bl", false)
-        pcall(M.holder.SetAttribute, M.holder, "cui-br", false)
-        M.holding = nil
-    end
-    ns.Print("action bars: type /reload to restore Blizzard's bars.")
 end
 
 -- /cui barsize <percent> (and the options slider): the bottom bar's size.

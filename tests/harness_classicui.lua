@@ -66,7 +66,7 @@ local function Region(kind, init)
     function r:SetWordWrap() end
     function r:GetStringWidth() return self.text and (#tostring(self.text) * 6 * ((self.fontSize or 10) / 10)) or 0 end
     function r:SetFont(path, size, flags) self.fontPath, self.fontSize, self.fontFlags = path, size, flags end
-    function r:RemoveMaskTexture(m) self.maskRemoved = m end
+    function r:RemoveMaskTexture(m) self.maskRemoved = m; self.masksRemoved = self.masksRemoved or {}; self.masksRemoved[m] = true end
     function r:SetShown(v) self.shown = v and true or false end
     -- read-back API used by /cui dump
     function r:GetObjectType() return self.objectType or self.kind end
@@ -672,7 +672,9 @@ local function NewWorld(opts)
         end
         for _, n in ipairs(BAG_ORDER) do
             -- the slots are protected item buttons
-            local b = Frame(n); b.protectedFrame = true; b.level = (n == "MainMenuBarBackpackButton" or n == "KeyRingButton") and 53 or 54; b:SetSize(n == "MainMenuBarBackpackButton" and 50 or 30, n == "MainMenuBarBackpackButton" and 50 or 30); b.icon = Region("Texture"); b.IconBorder = Region("Texture"); b.SquareMask = Region("MaskTexture", {atlas = "UI-HUD-ActionBar-IconFrame-Mask"}); b:SetNormalAtlas("bag-border"); _G[n] = b
+            local b = Frame(n); b.protectedFrame = true; b.level = (n == "MainMenuBarBackpackButton" or n == "KeyRingButton") and 53 or 54; b:SetSize(n == "MainMenuBarBackpackButton" and 50 or 30, n == "MainMenuBarBackpackButton" and 50 or 30); b.icon = Region("Texture"); b.IconBorder = Region("Texture"); b.SquareMask = Region("MaskTexture", {atlas = "UI-HUD-ActionBar-IconFrame-Mask"}); b:SetNormalAtlas("ui-hud-actionbar-iconframe-bags"); _G[n] = b
+            -- the item button intrinsic's own mask, put on the normal and pushed textures and the icon at load (ItemButtonMixin:PostOnLoad)
+            b.Mask = Region("MaskTexture", {file = "Interface\\Common\\common-iconmask"})
             -- ItemButtonMixin:SetAlpha: on an item button SetAlpha is Blizzard's Lua and fades the icon
             -- and its border, never the button itself
             function b:SetAlpha(a) self.icon:SetAlpha(a); self.IconBorder:SetAlpha(a) end
@@ -680,13 +682,17 @@ local function NewWorld(opts)
             -- straight onto the normal, pushed and highlight textures (never through SetNormalAtlas), the
             -- normal one given a top-left point and 46x46, the highlight drawn at 40%
             function b:UpdateTextures()
+                if self.bagAtlas then self.icon:SetAtlas(self.bagAtlas); self.icon:Show() end
                 local nt = self:GetNormalTexture(); nt:SetPoint("TOPLEFT", self, "TOPLEFT"); nt:SetSize(46, 46); nt:SetAtlas("ui-hud-actionbar-iconframe-bags")
-                self.PushedTexture = self.PushedTexture or Region("Texture"); self.PushedTexture:SetAtlas("ui-hud-actionbar-iconframe-bags")
+                self.PushedTexture = self.PushedTexture or Region("Texture"); self.PushedTexture:SetPoint("TOPLEFT", self, "TOPLEFT"); self.PushedTexture:SetSize(46, 46); self.PushedTexture:SetAtlas("ui-hud-actionbar-iconframe-bags")
                 self.HighlightTexture = self.HighlightTexture or Region("Texture"); self.HighlightTexture:SetAtlas("ui-hud-actionbar-iconframe-bags"); self.HighlightTexture:SetAlpha(0.4)
+                -- on camelot the open-bag marker is given the slot frame itself
+                self.SlotHighlightTexture:SetAtlas("ui-hud-actionbar-iconframe-bags")
             end
-            -- Forever's gold frame while the bag is open, sized for its 48px slot
-            b.SlotHighlightTexture = Region("Texture", {atlas = "bag-border-highlight"}); b.SlotHighlightTexture:SetSize(48, 48); b.SlotHighlightTexture:SetPoint("TOPLEFT", b, "TOPLEFT", -5, 5); b.SlotHighlightTexture.shown = false
+            -- Forever's mark on a slot while its bag is open (on camelot its own slot frame), sized for its 48px slot
+            b.SlotHighlightTexture = Region("Texture", {atlas = "ui-hud-actionbar-iconframe-bags"}); b.SlotHighlightTexture:SetSize(48, 48); b.SlotHighlightTexture:SetPoint("TOPLEFT", b, "TOPLEFT", -5, 5); b.SlotHighlightTexture.shown = false
         end
+        KeyRingButton.bagAtlas = "UI-HUD-ActionBar-Keyring-Small"
         -- the bag manager: an item on the cursor "expands" the bar, and the bar is laid out through a
         -- callback registered at load - the Layout function as it was then, not the one hooks see
         do
@@ -1995,7 +2001,7 @@ do
     check(CharacterMicroButton.PushedBackground.alpha == 0, "forever: pushed micro background stays hidden")
     check(BagsBar.anchors[1][1] == "BOTTOMRIGHT" and BagsBar.anchors[1][2] == art and BagsBar.anchors[1][4] == -6 and BagsBar.anchors[1][5] == 2, "forever: bag bar at the bar's right end")
     check(MainMenuBarBackpackButton.width == 37 and MainMenuBarBackpackButton.NormalTexture.texture == "Interface\\Buttons\\UI-Quickslot2" and MainMenuBarBackpackButton.NormalTexture.width == 64 and CharacterBag0Slot.anchors[1][2] == MainMenuBarBackpackButton and CharacterBag0Slot.anchors[1][4] == -1 and CharacterBag0Slot.width == 34 and CharacterBag3Slot.width == 34 and CharacterBag0Slot.NormalTexture.width == 59, "forever: 37px backpack, the four bag slots closed up to 1 apart and at 34px, with a ring to match")
-    check(MainMenuBarBackpackButton.icon.maskRemoved == MainMenuBarBackpackButton.SquareMask and BagsBar.BorderArt.alpha == 0 and BagsBar.div1.alpha == 0, "forever: retail icon mask, bag border and slot dividers gone")
+    check(MainMenuBarBackpackButton.icon.masksRemoved[MainMenuBarBackpackButton.SquareMask] == true and BagsBar.BorderArt.alpha == 0 and BagsBar.div1.alpha == 0, "forever: retail icon mask, bag border and slot dividers gone")
     -- Forever's gold frame while a bag is open was sized for its 48px slot and hung off the top left of ours
     local hl = CharacterBag0Slot.SlotHighlightTexture
     check(hl.anchors[1][1] == "ALL" and hl.anchors[1][2] == CharacterBag0Slot, "forever: the open-bag frame fits the slot")
@@ -3165,6 +3171,32 @@ do
     check(b0.NormalTexture.texture == "Interface\\Buttons\\UI-Quickslot2" and b0.NormalTexture.atlas == nil and b0.NormalTexture.width == 64 and #b0.NormalTexture.anchors == 1 and b0.NormalTexture.anchors[1][1] == "CENTER", "report: the classic ring is back on a bag slot at once after a bag update (Forever's slot frame had replaced it after every loot)")
     check(b0.PushedTexture.texture == "Interface\\Buttons\\UI-Quickslot-Depress" and b0.HighlightTexture.texture == "Interface\\Buttons\\ButtonHilight-Square" and b0.HighlightTexture.alpha == 1, "report: its pushed and highlight art with it, the highlight at full strength (Forever's is drawn at 40%)")
     check(keyring.NormalTexture.texture == "Interface\\Buttons\\UI-Button-KeyRing" and keyring.NormalTexture.atlas == nil and MainMenuBarBackpackButton.NormalTexture.texture == "Interface\\Buttons\\UI-Quickslot2", "report: and on the backpack and the keyring")
+    check(keyring.HighlightTexture.alpha == 1 and keyring.icon.atlas == "UI-HUD-ActionBar-Keyring-Small" and keyring.icon.alpha == 0 and keyring.SlotHighlightTexture.alpha == 0, "report: the keyring's glow is at full strength too, its retail icon stays unseen though Blizzard shows it again, and it gets no open-bag mark (Era's has none)")
+    -- Forever masks an item button's normal and pushed textures and its icon to the button's own rectangle:
+    -- Era's 64px ring stands outside the 37px slot
+    check(b0.NormalTexture.masksRemoved[b0.Mask] == true and b0.PushedTexture.masksRemoved[b0.Mask] == true and b0.icon.masksRemoved[b0.Mask] == true and keyring.NormalTexture.masksRemoved[keyring.Mask] == true, "report: the item button's own mask is off the ring, the pushed art and the icon, so the ring is not cut to the slot")
+    -- the mark on a slot whose bag is open: Era checks the slot (the yellow CheckButtonHilight, added on)
+    check(b0.SlotHighlightTexture.texture == "Interface\\Buttons\\CheckButtonHilight" and b0.SlotHighlightTexture.atlas == nil and b0.SlotHighlightTexture.blend == "ADD" and b0.SlotHighlightTexture.anchors[1][1] == "ALL", "report: an open bag's slot is marked Era's way, not with Forever's slot frame, which Blizzard puts back on every bag update")
+    -- an error inside the re-skin stays the addon's: Blizzard's bag update is not broken by it, it is
+    -- recorded once, and the next update skins the slot again
+    do
+        local slot, real, errorsBefore = CharacterBag1Slot, CharacterBag1Slot.SetPushedTexture, #w.ns.errors
+        slot.SetPushedTexture = function() error("boom") end
+        local ok = pcall(slot.UpdateTextures, slot)
+        check(ok and #w.ns.errors == errorsBefore + 1 and w.ns.errors[#w.ns.errors]:find("bag slot skin", 1, true) ~= nil, "report: an error in the re-skin does not escape into Blizzard's bag update, and is recorded")
+        slot.SetPushedTexture = real
+        slot:UpdateTextures()
+        check(slot.NormalTexture.texture == "Interface\\Buttons\\UI-Quickslot2" and slot.PushedTexture.texture == "Interface\\Buttons\\UI-Quickslot-Depress" and #w.ns.errors == errorsBefore + 1, "report: and the next bag update skins the slot again")
+        -- the same error met from a layout pass must not leave the re-skin hooks quiet either
+        slot.SetPushedTexture = function() error("boom") end
+        MainMenuBarBagManager:OnExpandBarChanged()
+        slot.SetPushedTexture = real
+        check(#w.ns.errors == errorsBefore + 2 and w.ns.errors[#w.ns.errors]:find("actionbars layout", 1, true) ~= nil, "report: (an error inside a layout pass is recorded as the layout's)")
+        slot:UpdateTextures()
+        check(slot.NormalTexture.texture == "Interface\\Buttons\\UI-Quickslot2" and slot.PushedTexture.texture == "Interface\\Buttons\\UI-Quickslot-Depress", "report: and the bag update after it still skins the slot (the guard is not left up)")
+        for i = #w.ns.errors, errorsBefore + 1, -1 do table.remove(w.ns.errors, i) end
+        ab.Layout()
+    end
     -- mid-fight the slots are protected: nothing of theirs is sized or moved until the fight ends, whether
     -- Blizzard resizes one slot, the keyring, or lays the whole bar out
     w.inCombat = true
@@ -3190,6 +3222,15 @@ do
     w.inCombat = false
     ab.waiter:Fire("PLAYER_REGEN_ENABLED")
     check(keyring.width == 18 and CharacterBag1Slot.width == 37 and CharacterBag1Slot.anchors[1][4] == -1 and BagsBar.width == 211 and ab.pending == nil, "report: and the bags are put right when the fight ends")
+    do
+        -- the client can hand a frame level back as a secret value, which addon code may not do sums with:
+        -- the layout goes on without it
+        local realLevel, errorsBefore = BagsBar.GetFrameLevel, #w.ns.errors
+        BagsBar.GetFrameLevel = function() error("attempt to perform arithmetic on a secret value") end
+        ab.Layout()
+        BagsBar.GetFrameLevel = realLevel
+        check(#w.ns.errors == errorsBefore and CharacterMicroButton.level > MainMenuMicroButton.level and MicroMenu.height == 37 and Near(MainMenuMicroButton.anchors[1][4], 220), "report: a frame level the client will not give is no error: the row is laid out all the same")
+    end
 
     -- a reagent bag goes into its slot: the slot comes back the moment the bag does
     w.reagentSlots = 36
@@ -3235,10 +3276,34 @@ do
     ab.Layout()
     check(reagent:IsShown() == true and ab.plan.reagent == true, "report: when the client cannot say whether a reagent bag is equipped, its slot stays")
     -- a slot something else has hidden is not this addon's to show: it stays hidden and takes no room
+    -- (with a reagent bag in it, so that the bag events below have an answer to compare)
+    w.reagentSlots = 36
     reagent:Hide(); ab.Layout()
     check(reagent:IsShown() == false and ab.plan.hasReagent == false and keyring.anchors[1][2] == CharacterBag3Slot and not ab:Status():find("empty reagent bag slot off the bar", 1, true), "report: a reagent slot hidden by something else is left hidden, and the keyring closes up")
+    do
+        -- a bag event meanwhile lays nothing out: the answer about the reagent bag has not changed
+        local layouts, realLayout = 0, ab.Layout
+        ab.Layout = function(...) layouts = layouts + 1; return realLayout(...) end
+        ab.waiter:Fire("BAG_UPDATE_DELAYED")
+        ab.Layout = realLayout
+        check(layouts == 0, "report: and loot while it is hidden that way does not lay the bar out again")
+    end
+    w.reagentSlots = nil
     reagent:Show(); ab.Layout()
     check(reagent:IsShown() == true and keyring.anchors[1][2] == reagent, "report: (shown again, it is back in the row)")
+    do
+        -- a client without Era's keyring art draws the keyring as a small slot: the plan counts it that wide
+        local realFile = _G.GetFileIDFromPath
+        _G.GetFileIDFromPath = function(path) if path:find("KeyRing", 1, true) then return nil end return realFile(path) end
+        w.reagentSlots = 0
+        LegacyMicroButton:Show(); StoreMicroButton:Enable(); UpdateMicroButtons()
+        check(ab.microShown == 11 and keyring.width == 30 and keyring.NormalTexture.texture == "Interface\\Buttons\\UI-Quickslot2" and RowEnd() <= BagsStart() - 4 + 0.001, "report: without Era's keyring art the keyring is a 30px slot, and the row still ends before the bags begin")
+        _G.GetFileIDFromPath = realFile
+        StoreMicroButton:Disable(); LegacyMicroButton:Hide(); UpdateMicroButtons()
+        w.reagentSlots = nil
+        ab.Layout()
+        check(ab.microShown == 9 and keyring.width == 18 and reagent:IsShown() == true, "report: (Era's keyring again, nine buttons, the client not saying about the reagent bag)")
+    end
     -- Era's own bar: nine buttons, five bags, no reagent slot and no keyring
     _G.CharacterReagentBag0Slot, _G.KeyRingButton = nil, nil
     ab.Layout()
@@ -3501,6 +3566,40 @@ do
     end
     w.slash("barsize 125")
     check(ab:Status():find("bottom-right bar's buttons 54px into their frame", 1, true) ~= nil, "restack: the status line says how far the buttons stand into their frame")
+    -- a bottom-right bar the player has moved in Edit Mode is skipped by Blizzard's restack: its buttons
+    -- start where its frame does, and the frame is as wide as they are (Blizzard's own Layout() sizes a
+    -- bar to its buttons whenever it is shown, which moved the buttons of a widened, right-anchored bar)
+    do
+        local br, c1 = MultiBarBottomRight, MultiBarBottomRightButton1.container
+        check(Near(ab.stackShift, 53.5) and Near(c1.anchors[1][4] * c1.scale, 53.5) and Near(br.width, 676), "restack: (in its default position at 125%: 53.5 in, the frame 676 wide)")
+        br.moved = true
+        br:ClearAllPoints(); br:SetPoint("BOTTOMRIGHT", UIParent, "BOTTOMRIGHT", -40, 120)
+        ab.Layout()
+        check(ab.stackShift == 0 and c1.anchors[1][4] == 0 and Near(br.width, 498 * 1.25) and br.anchors[1][1] == "BOTTOMRIGHT" and br.anchors[1][4] == -40 and not ab:Status():find("into their frame", 1, true), "restack: a bar moved in Edit Mode gets no shift: buttons at its frame's start, the frame their width, its anchor left alone")
+        br.moved = nil
+        ab.Layout()
+        check(Near(ab.stackShift, 53.5) and Near(c1.anchors[1][4] * c1.scale, 53.5) and Near(br.width, 676) and br.anchors[1][1] == "BOTTOMLEFT" and Near(br.anchors[1][4], 7.5 - 53.5), "restack: reset to its default position, the shift is back")
+    end
+    -- the largest size a 16:9 screen allows (133%): 22 right of its place would put the end of the row past
+    -- the screen's edge, so the shift stops where the restacked row ends at the edge
+    do
+        local W = 1365.33
+        UIParent:SetWidth(W)
+        w.slash("barsize 150")
+        local s = ab.scale
+        check(Near(s, W / 1024) and Near(ab.stackShift, W / 2 - 606 + 6 * s) and ab.stackShift < 22 + 510 * s - 606, "restack: at the largest size the screen allows the shift is held to what keeps the restacked row on the screen")
+        check(Near((Span(MultiBarBottomRight, 1)), 6 * s), "restack: (out of combat the buttons are still on Era's spot)")
+        w.inCombat = true
+        EditModeManagerFrame:UpdateBottomActionBarPositions()
+        local _, right2 = Span(MultiBarBottomLeft, 12)
+        local left3 = Span(MultiBarBottomRight, 1)
+        local _, right3 = Span(MultiBarBottomRight, 12)
+        -- (measured from the main bar's left end, which is 504*s left of the screen's middle)
+        check(Near((W / 2 - 504 * s) + right3, W) and left3 - right2 > 4 and left3 - right2 < 12 * s, "restack: mid-fight the row ends at the screen's edge and the two bars stand closer than Era's gap, not on each other")
+        w.inCombat = false
+        ab.waiter:Fire("PLAYER_REGEN_ENABLED")
+        UIParent:SetWidth(0)
+    end
     w.slash("barsize 100")
     check(ab.stackShift == 0 and MultiBarBottomRight.anchors[1][4] == 6 and MultiBarBottomRight.width == 498 and MultiBarBottomRightButton1.container.anchors[1][4] == 0 and not ab:Status():find("into their frame", 1, true), "restack: at Era's size nothing is shifted")
     check(#w.ns.errors == 0, "restack: no errors")
@@ -3558,11 +3657,190 @@ do
     first:SetShownBar(-1); second:SetShownBar(-1)
     first:FinishFade(); second:FinishFade()
     check(MultiBarBottomLeft.anchors[1][5] == 52 and Near(Clear(), -4), "stack: (known, and older than the bar size) with no status bar at all Blizzard's sum puts it 4 into them, where Era keeps 7")
+    w.slash("barsize 125")
+    check(Near(Clear(), -7), "stack: (known) 7 into them at 125%")
+    w.slash("barsize 150")
+    check(Near(Clear(), -10), "stack: (known) 10 into them at 150%")
+    w.slash("barsize 100")
     -- the pet bar stands on the stance bar
     PetActionBar:Show()
     EditModeManagerFrame:UpdateBottomActionBarPositions()
     check(PetActionBar.blizz[2] == StanceBar.blizz[2] + 30 + 4 and PetActionBar.anchors[1][2] == MainActionBar, "stack: (the pet bar goes above the stance bar)")
     check(w.Blocked() == 0 and #w.ns.errors == 0, "stack: the addon touches neither, and no errors")
+end
+
+--------------------------------------------------------------------------
+-- 13. The classic bar switched off mid-fight. The stone art is protected
+-- by anchor (the bars hang off it: even Hide() on it is refused in combat,
+-- and blamed on the addon), and so is the reagent slot the addon took off
+-- the bar: what switching off does to them waits for the fight to end.
+--------------------------------------------------------------------------
+do
+    -- camelot as Blizzard ships it: no restricted snippets for addons
+    local w = NewWorld({style = "6", forever = true, noSnippets = true})
+    local ab = w.ns.modules.actionbars
+    local art, reagent = ab.art, CharacterReagentBag0Slot
+    art.protectedFrame = true
+    w.reagentSlots = 0
+    ab.Layout()
+    check(reagent:IsShown() == false and ab.reagentStowed == true and art.shown == true, "off in combat: (the default bar: the empty reagent slot is off the bar)")
+    w.inCombat = true
+    w.ResetBlocked()
+    w.slash("actionbars off")
+    check(w.Blocked() == 0 and Printed("the stone bar goes when combat ends"), "off in combat: not one protected call (the art is not hidden mid-fight), and the reply says what waits")
+    check(ab.mode == "off" and art.shown == true and reagent:IsShown() == false and ab.disablePending == true, "off in combat: the art and the stowed slot wait for the fight to end")
+    w.inCombat = false
+    w.ResetBlocked()
+    ab.waiter:Fire("PLAYER_REGEN_ENABLED")
+    check(art.shown == false and reagent:IsShown() == true and ab.reagentStowed == nil and ab.disablePending == nil and ab.mode == "off", "off in combat: when the fight ends the art goes and the reagent slot is back on the bar")
+    -- finished once: a later fight's end touches nothing
+    reagent:Hide()      -- something else hides it afterwards: not ours to show
+    ab.waiter:Fire("PLAYER_REGEN_ENABLED")
+    check(reagent:IsShown() == false and art.shown == false, "off in combat: (finished once: a later fight's end touches nothing)")
+    reagent:Show()
+    check(#w.ns.errors == 0, "off in combat: no errors")
+
+    -- switched on again before the fight ends: nothing is left to finish
+    w = NewWorld({style = "6", forever = true, noSnippets = true})
+    ab = w.ns.modules.actionbars
+    art, reagent = ab.art, CharacterReagentBag0Slot
+    art.protectedFrame = true
+    w.reagentSlots = 0
+    ab.Layout()
+    w.inCombat = true
+    w.ResetBlocked()
+    w.slash("actionbars off")
+    w.slash("actionbars on")
+    check(w.Blocked() == 0 and ab.mode == "restyled" and ab.pending == true, "off then on in combat: nothing protected is touched, the layout waits")
+    w.inCombat = false
+    ab.waiter:Fire("PLAYER_REGEN_ENABLED")
+    check(ab.mode == "restyled" and art.shown == true and reagent:IsShown() == false and ab.reagentStowed == true and ab.disablePending == nil and ab.pending == nil, "off then on in combat: the bar is laid out when the fight ends, art up and the empty slot still off the bar")
+    -- ...and off, on, off inside one fight ends off
+    w.inCombat = true
+    w.ResetBlocked()
+    w.slash("actionbars off"); w.slash("actionbars on"); w.slash("actionbars off")
+    check(w.Blocked() == 0 and ab.mode == "off", "off, on, off in combat: still nothing protected touched")
+    w.inCombat = false
+    ab.waiter:Fire("PLAYER_REGEN_ENABLED")
+    check(art.shown == false and reagent:IsShown() == true and ab.reagentStowed == nil, "off, on, off in combat: ends off, art gone, slot back")
+    check(#w.ns.errors == 0, "off then on in combat: no errors")
+
+    -- a client with the snippet loader: the handler is disarmed when the fight ends
+    w = NewWorld({style = "6", forever = true})
+    ab = w.ns.modules.actionbars
+    ab.art.protectedFrame = true
+    w.reagentSlots = 0
+    ab.Layout()
+    local holder = ab.holder
+    w.inCombat = true
+    w.ResetBlocked()
+    w.slash("actionbars off")
+    check(w.Blocked() == 0 and holder:GetAttribute("cui-bl") == true, "off in combat (handler): its attributes are not written mid-fight")
+    w.inCombat = false
+    ab.waiter:Fire("PLAYER_REGEN_ENABLED")
+    check(holder:GetAttribute("cui-bl") == false and holder:GetAttribute("cui-br") == false and ab.holding == nil, "off in combat (handler): the handler stops placing the bars once the fight ends")
+
+    -- out of combat it is all done at once, as before
+    w = NewWorld({style = "6", forever = true, noSnippets = true})
+    ab = w.ns.modules.actionbars
+    ab.art.protectedFrame = true
+    w.reagentSlots = 0
+    ab.Layout()
+    w.slash("actionbars off")
+    check(ab.art.shown == false and CharacterReagentBag0Slot:IsShown() == true and ab.disablePending == nil and Printed("type /reload to restore Blizzard's bars"), "off out of combat: done at once, as before")
+end
+
+--------------------------------------------------------------------------
+-- 14. A reagent bag on the cursor. While the empty reagent slot is off the
+-- bar there is nowhere to drop one, so the slot is on the bar for as long
+-- as the cursor holds something that goes in it, and a moment longer (a
+-- bag dropped on the slot is only in it once the server has said so).
+--------------------------------------------------------------------------
+do
+    local timers = {}
+    local function RunTimers() local due = timers; timers = {}; for _, t in ipairs(due) do t[2]() end end
+    local w = NewWorld({style = "6", forever = true, noSnippets = true})
+    _G.C_Timer = {After = function(delay, fn) timers[#timers + 1] = {delay, fn} end}
+    local ab = w.ns.modules.actionbars
+    local reagent, keyring = CharacterReagentBag0Slot, KeyRingButton
+    reagent:SetID(35)
+    local asked = {}
+    _G.C_PaperDollInfo = {CursorCanGoInSlot = function(id) asked[#asked + 1] = id; if w.cursorErr then error("attempt to compare a secret value") end; return w.cursorFits == true and id == 35 end}
+    -- the cursor picks something up or lets go: Blizzard's bag manager lays the bag bar out, then the event
+    local function Lift(fits) w.cursorFits = fits; MainMenuBarBagManager:OnExpandBarChanged(); ab.waiter:Fire("CURSOR_CHANGED") end
+    w.reagentSlots = 0
+    StoreMicroButton:Enable(); UpdateMicroButtons()
+    check(ab.microShown == 11 and reagent:IsShown() == false and ab.plan.step == 5, "cursor: the reporter's bar, the empty reagent slot off it")
+    -- an ordinary item on the cursor moves nothing
+    do
+        local layouts, realLayout = 0, ab.Layout
+        ab.Layout = function(...) layouts = layouts + 1; return realLayout(...) end
+        ab.waiter:Fire("CURSOR_CHANGED")
+        ab.Layout = realLayout
+        check(layouts == 0 and reagent:IsShown() == false and asked[#asked] == 35, "cursor: a cursor change that is not a reagent bag lays nothing out (the client is asked with the slot's own id)")
+    end
+    -- a reagent bag is lifted: its slot is there to drop it on
+    Lift(true)
+    check(reagent:IsShown() == true and ab.plan.step == 6 and keyring.anchors[1][2] == reagent and CharacterBag0Slot.width == 28, "cursor: a reagent bag lifted: its slot is on the bar (the row as it will be with the bag in)")
+    -- dropped on the slot: the cursor lets go first, the bag is in a moment later; the slot stays throughout
+    Lift(false)
+    check(reagent:IsShown() == true and #timers == 1 and timers[1][1] == 1, "cursor: the cursor lets go: the slot stays for a moment (one timer of a second)")
+    w.reagentSlots = 36
+    ab.waiter:Fire("BAG_UPDATE_DELAYED")
+    check(reagent:IsShown() == true and ab.plan.step == 6, "cursor: the bag lands in the slot: still there, nothing moved")
+    RunTimers()
+    check(reagent:IsShown() == true and ab.reagentHold == nil, "cursor: and when the moment is over the slot stays, with its bag")
+    -- taken out again, lifted and dropped somewhere else: the slot leaves when the moment is over
+    w.reagentSlots = 0
+    ab.waiter:Fire("BAG_UPDATE_DELAYED")
+    check(reagent:IsShown() == false, "cursor: (the bag is out again, the slot off the bar)")
+    Lift(true); Lift(false)
+    check(reagent:IsShown() == true and #timers == 1, "cursor: dropped somewhere else: the slot lingers")
+    RunTimers()
+    check(reagent:IsShown() == false and ab.plan.step == 5 and ab.reagentHold == nil and CharacterBag0Slot.width == 37, "cursor: and leaves when the moment is over, the bags Era's size again")
+    -- two drops in quick succession: the first timer does not end the second hold
+    Lift(true); Lift(false); Lift(true); Lift(false)
+    check(#timers == 2 and reagent:IsShown() == true, "cursor: two drops, two timers")
+    local firstTimer = table.remove(timers, 1)
+    firstTimer[2]()
+    check(reagent:IsShown() == true and ab.reagentHold == true, "cursor: the first timer leaves the second hold alone")
+    -- the moment ends in combat: nothing protected is touched, the layout waits
+    w.inCombat = true; w.ResetBlocked()
+    RunTimers()
+    check(w.Blocked() == 0 and reagent:IsShown() == true and ab.pending == true and ab.reagentHold == nil, "cursor: a hold that ends mid-fight touches nothing protected; the layout waits")
+    w.inCombat = false
+    ab.waiter:Fire("PLAYER_REGEN_ENABLED")
+    check(reagent:IsShown() == false and ab.pending == nil, "cursor: and the slot leaves when the fight ends")
+    -- lifted mid-fight: nothing protected is touched; still held when the fight ends, the slot is there
+    w.inCombat = true; w.ResetBlocked()
+    Lift(true)
+    check(w.Blocked() == 0 and reagent:IsShown() == false and ab.pending == true, "cursor: lifted mid-fight, nothing protected is touched")
+    w.inCombat = false
+    ab.waiter:Fire("PLAYER_REGEN_ENABLED")
+    check(reagent:IsShown() == true, "cursor: still held when the fight ends: the slot is there")
+    Lift(false); RunTimers()
+    check(reagent:IsShown() == false, "cursor: (let go: off the bar again)")
+    -- the cursor swaps an ordinary item for a reagent bag: Blizzard's bag manager, which only notices
+    -- the cursor going from empty to holding something or back, says nothing; the cursor event does
+    w.cursorFits = true
+    ab.waiter:Fire("CURSOR_CHANGED")
+    check(reagent:IsShown() == true and ab.plan.step == 6, "cursor: a swap onto a reagent bag is seen from the cursor event alone")
+    w.cursorFits = false
+    ab.waiter:Fire("CURSOR_CHANGED")
+    check(reagent:IsShown() == true and #timers == 1, "cursor: (and the swap back starts the hold)")
+    RunTimers()
+    check(reagent:IsShown() == false, "cursor: (then off the bar)")
+    -- a client whose answer cannot be read keeps the slot off the bar, without an error
+    w.cursorErr = true
+    Lift(true)
+    check(reagent:IsShown() == false and #w.ns.errors == 0, "cursor: an answer that cannot be read leaves the slot off the bar, and no error")
+    w.cursorErr = nil; w.cursorFits = false
+    -- a client without the question, or without timers, behaves as before
+    _G.C_PaperDollInfo = nil
+    Lift(true)
+    check(reagent:IsShown() == false, "cursor: a client without the question keeps the slot off the bar")
+    check(#w.ns.errors == 0, "cursor: no errors")
+    _G.C_Timer = nil
 end
 
 realPrint(("Forever Classic UI harness: %d passed, %d failed"):format(passed, failed))
