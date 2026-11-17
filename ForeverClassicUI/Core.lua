@@ -36,6 +36,7 @@ local DEFAULTS = {
     party = true,
     charsheet = true,
     spellbook = true,
+    talents = true,
     professions = true,
     questlog = true,
     collections = true,

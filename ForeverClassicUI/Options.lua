@@ -150,9 +150,15 @@ function ns.BuildOptionsPanel()
         if slider.SetObeyStepOnDrag then slider:SetObeyStepOnDrag(true) end
         if slider.Low then slider.Low:SetText("60%") end
         if slider.High then slider.High:SetText("150%") end
-        -- the template centres its label over the slider: keep it short
+        -- the template centres its label over the slider: keep it short.
+        -- A size wider than the screen is held to what fits, and says so.
         function slider.Label(value)
-            if slider.Text then slider.Text:SetText(("Bottom bar size: %d%%"):format(value)) end
+            if not slider.Text then return end
+            local text = ("Bottom bar size: %d%%"):format(value)
+            local bars = ns.modules.actionbars
+            local fits = bars and bars.ScaleFor and math.floor(bars.ScaleFor(value) * 100 + 0.5)
+            if fits and fits < value then text = text .. (" (%d%% fits this screen)"):format(fits) end
+            slider.Text:SetText(text)
         end
         local note = body:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
         note:SetPoint("LEFT", slider, "RIGHT", 24, 0)

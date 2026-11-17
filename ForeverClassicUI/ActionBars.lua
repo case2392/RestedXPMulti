@@ -267,12 +267,11 @@ end
 -- bar size
 --------------------------------------------------------------------------
 
--- the scale the bottom bar is drawn at: the saved percentage, held to the
--- range the setting offers and to what the screen can show (the stone
--- bar is 1024 wide, as wide as a 4:3 screen at Era's size)
-function M.WantedScale()
-    local pct = ns.db and tonumber(ns.db.barscale) or 100
-    local s = pct / 100
+-- the scale a percentage is drawn at: held to the range the setting
+-- offers and to what the screen can show (the stone bar is 1024 wide, as
+-- wide as a 4:3 screen at Era's size)
+function M.ScaleFor(pct)
+    local s = (tonumber(pct) or 100) / 100
     if s ~= s then s = 1 end
     s = math.max(SCALE_MIN, math.min(SCALE_MAX, s))
     local width = UIParent and UIParent.GetWidth and UIParent:GetWidth()
@@ -280,6 +279,11 @@ function M.WantedScale()
         s = math.max(1, math.min(s, width / BAR_W))
     end
     return s
+end
+
+-- the scale the bottom bar is drawn at: the saved percentage's
+function M.WantedScale()
+    return M.ScaleFor(ns.db and ns.db.barscale)
 end
 
 -- the scale the bar was last laid out at (it only changes out of combat)
@@ -393,6 +397,15 @@ local function SkinButton(btn)
     end
 end
 
+-- The bar size is the bottom bar's. The two right-hand bars keep Era's
+-- own size: Blizzard fits those to the room between the minimap and the
+-- bottom corner by scaling the bar frame from its height
+-- (UpdateRightActionBarPositions), so a bigger bar only made it scale
+-- them back down - after drawing them too big until its next pass.
+local function BarScale(horizontal)
+    return horizontal and S() or 1
+end
+
 -- 36px buttons 42px apart: the containers (plain frames Blizzard lays
 -- out) are scaled and re-anchored; hidden ones are skipped so the shown
 -- buttons stay packed the way Era packs them. The containers hold the
@@ -400,10 +413,10 @@ end
 -- in combat is refused and printed as "ADDON BLOCKED" (a report, dozens
 -- of lines per kill), so with combat on only the art is touched and the
 -- geometry waits for the end of the fight.
-local function LayoutBar(bar, horizontal, combat)
+local function LayoutBar(bar, horizontal, combat, inset)
     if not bar or type(bar.actionButtons) ~= "table" then return 0 end
     local shown = 0
-    local s = S()
+    local s = BarScale(horizontal)
     for _, btn in ipairs(bar.actionButtons) do
         SkinButton(btn)
         local c = btn.container
@@ -412,7 +425,7 @@ local function LayoutBar(bar, horizontal, combat)
             if not c.IsShown or c:IsShown() then
                 if not combat then
                     if horizontal then
-                        Anchor(c, "BOTTOMLEFT", bar, "BOTTOMLEFT", shown * STRIDE * s, 0)
+                        Anchor(c, "BOTTOMLEFT", bar, "BOTTOMLEFT", (inset or 0) + shown * STRIDE * s, 0)
                     else
                         Anchor(c, "TOPLEFT", bar, "TOPLEFT", 0, -shown * STRIDE * s)
                     end
@@ -428,6 +441,27 @@ local function BarSize(count, horizontal)
     local long = math.max(count * STRIDE - (STRIDE - BUTTON), BUTTON)
     if horizontal then return long, BUTTON end
     return BUTTON, long
+end
+
+-- Forever restacks the bottom bars whenever one of them updates its
+-- visibility - the pet bar does on every target change - and puts the
+-- bottom-left bar at the main bar's left +22 and the bottom-right bar at
+-- +606 (Camelot's constants), in the screen's units whatever the bar
+-- size. Mid-fight they cannot be put back, and with the bar drawn bigger
+-- than about 117% the bottom-left bar's twelve buttons reach past +606:
+-- the bottom-right bar landed on its last button until the fight ended.
+-- So from the size where Era's gap between the two no longer fits, the
+-- bottom-right bar's buttons stand this far right inside their frame and
+-- the frame is anchored this much further left. Out of combat nothing
+-- moves; mid-fight Blizzard's +606 lands the buttons beside the other
+-- bar's, both 22 right of their place, instead of on them.
+local function StackShift(s)
+    if ACTION_BARS_RELATIVE_TO_BASE_POSITIONING ~= true then return 0 end
+    local x2, x3 = ACTION_BAR_2_BOTTOM_BAR_OFFSET_X, ACTION_BAR_3_BOTTOM_BAR_OFFSET_X
+    if type(x2) ~= "number" or type(x3) ~= "number" then return 0 end
+    -- Era: the bottom-right bar starts 510 from the main bar's left
+    local era = BAR_W / 2 + BOTTOM_BAR_X - MAIN_BAR_X
+    return math.max(0, x2 + era * s - x3)
 end
 
 --------------------------------------------------------------------------
@@ -822,7 +856,10 @@ local function SkinBagButton(btn, size)
     if pt then pt:SetTexCoord(0, 1, 0, 1); pt:ClearAllPoints(); pt:SetAllPoints(btn) end
     btn:SetHighlightTexture(HILIGHT_SQUARE, "ADD")
     local ht = btn.GetHighlightTexture and btn:GetHighlightTexture()
-    if ht then ht:SetTexCoord(0, 1, 0, 1); ht:ClearAllPoints(); ht:SetAllPoints(btn) end
+    if ht then
+        ht:SetTexCoord(0, 1, 0, 1); ht:ClearAllPoints(); ht:SetAllPoints(btn)
+        ht:SetAlpha(1)      -- Forever's own is drawn at 40%
+    end
     local icon = btn.icon or (btn.GetName and G(btn:GetName() .. "IconTexture"))
     if icon then
         -- Forever masks the icon to the retail slot shape (SquareMask / IconMask)
@@ -849,8 +886,20 @@ local function SkinBagButton(btn, size)
     M.inSkin = nil
     if not own.hooked and hooksecurefunc then
         own.hooked = true
-        local function Again(b) if M.mode == "restyled" and not M.inSkin then SkinBagButton(b) end end
-        for _, m in ipairs({"SetNormalAtlas", "SetPushedAtlas"}) do
+        -- (these run inside Blizzard's own bag code: an error stays ours)
+        local function Again(b)
+            if M.mode ~= "restyled" or M.inSkin then return end
+            local ok, err = pcall(SkinBagButton, b)
+            if not ok then
+                M.inSkin = nil
+                ns.errors[#ns.errors + 1] = "bag slot skin: " .. tostring(err)
+            end
+        end
+        -- Forever puts its slot atlas back on the normal, pushed and
+        -- highlight textures in the slot's own UpdateTextures, on every bag
+        -- update - any loot - and straight on the textures, not through
+        -- SetNormalAtlas: the classic ring was gone until the next layout
+        for _, m in ipairs({"UpdateTextures", "SetNormalAtlas", "SetPushedAtlas"}) do
             if type(btn[m]) == "function" then hooksecurefunc(btn, m, Again) end
         end
         -- Blizzard's bag layout puts the retail slot size back
@@ -895,8 +944,16 @@ local function SkinKeyRing(btn)
     M.inSkin = nil
     if not own.hooked and hooksecurefunc then
         own.hooked = true
-        local function Again(b) if M.mode == "restyled" and not M.inSkin then SkinKeyRing(b) end end
-        for _, m in ipairs({"SetNormalAtlas", "SetPushedAtlas"}) do
+        local function Again(b)
+            if M.mode ~= "restyled" or M.inSkin then return end
+            local ok, err = pcall(SkinKeyRing, b)
+            if not ok then
+                M.inSkin = nil
+                ns.errors[#ns.errors + 1] = "keyring skin: " .. tostring(err)
+            end
+        end
+        -- (UpdateTextures: the keyring's runs on every bag update)
+        for _, m in ipairs({"UpdateTextures", "SetNormalAtlas", "SetPushedAtlas"}) do
             if type(btn[m]) == "function" then hooksecurefunc(btn, m, Again) end
         end
         if btn.HookScript then btn:HookScript("OnSizeChanged", Again) end
@@ -1325,7 +1382,7 @@ local HOLD_SNIPPET = [=[
     local br = self:GetFrameRef("cui-br")
     if br and self:GetAttribute("cui-br") and br:IsProtected() then
         br:ClearAllPoints()
-        br:SetPoint("BOTTOMLEFT", "$parent", "BOTTOM", gap, lift)
+        br:SetPoint("BOTTOMLEFT", "$parent", "BOTTOM", gap - (self:GetAttribute("cui-shift") or 0), lift)
     end
 ]=]
 
@@ -1366,11 +1423,12 @@ end
 -- out of combat only (attributes on a secure frame are locked in combat):
 -- hands the handler the bars, the lift and which bars are still Blizzard's
 -- to place
-local function ArmHoldHandler(gap, lift, bl, br)
+local function ArmHoldHandler(gap, lift, bl, br, shift)
     local h = M.holder or InstallHoldHandler()
     if not h then return end
     h:SetAttribute("cui-gap", gap)
     h:SetAttribute("cui-lift", lift)
+    h:SetAttribute("cui-shift", shift or 0)
     if bl then
         h:SetFrameRef("cui-bl", bl)
         h:SetAttribute("cui-bl", (not bl.IsInDefaultPosition or bl:IsInDefaultPosition()) and true or false)
@@ -1396,12 +1454,15 @@ local function ProtectedLayout(art)
         main:ClearAllPoints()
         main:SetPoint("BOTTOMLEFT", art, "BOTTOMLEFT", MAIN_BAR_X * s, MAIN_BAR_Y * s)
     end
+    local shift = M.stackShift or 0
     for _, spec in ipairs(BARS) do
         local bar = G(spec.name)
         if bar and bar.SetSize then
             local count = M.counts[spec.name] or 12
             local w, h = BarSize(count, spec.horizontal)
-            bar:SetSize(w * s, h * s)
+            local bs = BarScale(spec.horizontal)
+            -- (the bottom-right bar's frame starts ahead of its buttons: see StackShift)
+            bar:SetSize(w * bs + (spec.name == "MultiBarBottomRight" and shift or 0), h * bs)
         end
     end
     -- Era: the bottom bars either side of the screen centre, above the
@@ -1422,10 +1483,10 @@ local function ProtectedLayout(art)
     end
     if br and (not br.IsInDefaultPosition or br:IsInDefaultPosition()) then
         br:ClearAllPoints()
-        br:SetPoint("BOTTOMLEFT", UIParent, "BOTTOM", gap, lift)
+        br:SetPoint("BOTTOMLEFT", UIParent, "BOTTOM", gap - shift, lift)
     end
     -- and the same anchors for the secure handler to put back mid-fight
-    ArmHoldHandler(gap, lift, bl, br)
+    ArmHoldHandler(gap, lift, bl, br, shift)
 end
 
 -- When Blizzard's layout moves a bar during a fight there is nothing to be
@@ -1476,6 +1537,7 @@ function M.Layout()
     if not combat then
         -- the bar size: the art, and through S() everything laid out on it
         M.scale = M.WantedScale()
+        M.stackShift = StackShift(M.scale)
         if art.SetScale then art:SetScale(M.scale) end
         if not (art.IsShown and art:IsShown()) then art:Show() end
     end
@@ -1487,7 +1549,9 @@ function M.Layout()
     M.counts = {}
     for _, spec in ipairs(BARS) do
         local bar = G(spec.name)
-        if bar then M.counts[spec.name] = LayoutBar(bar, spec.horizontal, combat) end
+        if bar then
+            M.counts[spec.name] = LayoutBar(bar, spec.horizontal, combat, spec.name == "MultiBarBottomRight" and M.stackShift or 0)
+        end
     end
     M.HideDividers()
     if combat then
@@ -1698,8 +1762,10 @@ function M:Command(arg)
     if what ~= "size" and what ~= "scale" then return false end
     value = ((value or ""):gsub("%%", "")):gsub(",", ".")
     if value == "" then
-        ns.Print("bottom bar size: %d%%. Era's own size is 100; /cui barsize <%d-%d> changes it.",
-                 tonumber(ns.db and ns.db.barscale) or 100, SCALE_MIN * 100, SCALE_MAX * 100)
+        local saved = tonumber(ns.db and ns.db.barscale) or 100
+        local drawn = math.floor(M.WantedScale() * 100 + 0.5)
+        ns.Print("bottom bar size: %d%%%s. Era's own size is 100; /cui barsize <%d-%d> changes it.", saved,
+                 drawn < saved and (" (this screen has room for %d%%)"):format(drawn) or "", SCALE_MIN * 100, SCALE_MAX * 100)
         return true
     end
     local pct = M.SetSize(value)

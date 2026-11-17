@@ -346,7 +346,7 @@ local function NewWorld(opts)
     _G.InCombatLockdown = function() return w.inCombat end
     _G.SetPortraitTexture = function(tex, unit) tex.portraitUnit = unit; tex.atlas = nil end
     -- the loader the restricted environment compiles snippets with (Forever's client lacks it)
-    _G.loadstring_untainted = opts.noSnippets and nil or loadstring
+    if opts.noSnippets then _G.loadstring_untainted = nil else _G.loadstring_untainted = loadstring end
     _G.UIParent.GetTop = function() return w.screenTop or 1080 end
     -- secure handlers: a state driver is remembered, and w.FireState runs the
     -- handler's snippet the way the restricted environment would, with self
@@ -582,6 +582,8 @@ local function NewWorld(opts)
         bar.EndCaps = Frame("EndCaps"); bar.EndCaps.LeftEndCap = Frame("cap"); bar.EndCaps.RightEndCap = Frame("cap")
         for _, c in pairs({bar.EndCaps.LeftEndCap, bar.EndCaps.RightEndCap}) do function c:SetVisibilitySetting(v) self.visibilitySetting = v end end
         local pn = Frame("ActionBarPageNumber"); pn.Text = Region("FontString"); pn.UpButton = Frame("UpButton"); pn.DownButton = Frame("DownButton")
+        -- (a child of the main bar: protected with it, and so are its arrows)
+        pn.protectedFrame = true; pn.UpButton.protectedFrame = true; pn.DownButton.protectedFrame = true
         pn.UpButton:SetNormalAtlas("ui-hud-actionbar-pageuparrow-up"); pn.DownButton:SetNormalAtlas("ui-hud-actionbar-pagedownarrow-up")
         bar.ActionBarPageNumber = pn
         local function Pool() local p = {active = {}}; function p:EnumerateActive() local i = 0; return function() i = i + 1; return self.active[i] end end; return p end
@@ -591,24 +593,25 @@ local function NewWorld(opts)
         ActionBar("MultiBarBottomLeft", "MultiBarBottomLeftButton", true)
         ActionBar("MultiBarBottomRight", "MultiBarBottomRightButton", true)
         ActionBar("MultiBarRight", "MultiBarRightButton", false)
-        -- Blizzard's restack of the bottom bars (EditModeManager.lua, Camelot's list): the main bar off the
-        -- micro container, then the two status containers stacked on the main bar's corner, the second
-        -- one first (main bar height + 4, then the next 1 short of the first's height), then the bottom bars
+        -- Blizzard's restack of the bottom bars (EditModeManager.lua with Camelot's list and constants): the
+        -- main bar off the micro container, then everything else on the main bar's bottom left corner at
+        -- the stack's height - the two status containers (the second one first, 1 short of its height;
+        -- then the first and a spacer of 4), then Action Bar 3 at +606 and Action Bar 2 at +22, side by side
+        _G.ACTION_BARS_RELATIVE_TO_BASE_POSITIONING = true
+        _G.ACTION_BAR_2_BOTTOM_BAR_OFFSET_X, _G.ACTION_BAR_3_BOTTOM_BAR_OFFSET_X = 22, 606
         _G.EditModeManagerFrame = {ExitEditMode = function() end, UpdateBottomActionBarPositions = function()
             MainActionBar:ClearAllPoints(); MainActionBar:SetPoint("BOTTOMRIGHT", MicroMenuContainer, "BOTTOMLEFT", -4.5, -4)
             local y = (MainActionBar.height or 45) + 4
             local sec, main = _G.SecondaryStatusTrackingBarContainer, _G.MainStatusTrackingBarContainer
-            if sec and sec:IsShown() then
-                sec:ClearAllPoints(); sec:SetPoint("BOTTOMLEFT", MainActionBar, "BOTTOMLEFT", 0, y)
-                y = y + sec.height + ((main and main:IsShown()) and -1 or 4)
-            end
-            if main and main:IsShown() then main:ClearAllPoints(); main:SetPoint("BOTTOMLEFT", MainActionBar, "BOTTOMLEFT", 0, y) end
-            MultiBarBottomLeft:ClearAllPoints(); MultiBarBottomLeft:SetPoint("BOTTOMLEFT", MainActionBar, "BOTTOMLEFT", 22, 57); MultiBarBottomRight:ClearAllPoints(); MultiBarBottomRight:SetPoint("BOTTOMLEFT", MainActionBar, "BOTTOMLEFT", 606, 57)
+            if sec and sec:IsShown() then sec:ClearAllPoints(); sec:SetPoint("BOTTOMLEFT", MainActionBar, "BOTTOMLEFT", 0, y); y = y + sec.height - 1 end
+            if main and main:IsShown() then main:ClearAllPoints(); main:SetPoint("BOTTOMLEFT", MainActionBar, "BOTTOMLEFT", 0, y); y = y + main.height + 4 end
+            MultiBarBottomRight:ClearAllPoints(); MultiBarBottomRight:SetPoint("BOTTOMLEFT", MainActionBar, "BOTTOMLEFT", ACTION_BAR_3_BOTTOM_BAR_OFFSET_X, y)
+            MultiBarBottomLeft:ClearAllPoints(); MultiBarBottomLeft:SetPoint("BOTTOMLEFT", MainActionBar, "BOTTOMLEFT", ACTION_BAR_2_BOTTOM_BAR_OFFSET_X, y)
         end}
         _G.C_Texture = {GetAtlasInfo = function() return nil end}
         -- micro menu and bags, retail style (atlas art, grid layout)
         _G.MicroMenuContainer = Frame("MicroMenuContainer"); function MicroMenuContainer:ApplySystemAnchor() self:ClearAllPoints(); self:SetPoint("BOTTOM", UIParent, "BOTTOM", 116.5, 6) end
-        _G.MicroMenu = Frame("MicroMenu"); MicroMenu.level = 51; MicroMenu.BorderArt = Region("Texture", {atlas = "UI-HUD-ActionBar-Frame"}); MicroMenu.BackgroundArt = Region("Texture"); function MicroMenu:Layout() end
+        _G.MicroMenu = Frame("MicroMenu"); MicroMenu.level = 51; MicroMenu.protectedFrame = true; MicroMenu.BorderArt = Region("Texture", {atlas = "UI-HUD-ActionBar-Frame"}); MicroMenu.BackgroundArt = Region("Texture"); function MicroMenu:Layout() end
         local function Micro(name)
             local b = Frame(name); b:SetSize(32, 40); b.protectedFrame = true; b.Background = Region("Texture", {atlas = "UI-HUD-MicroMenu-ButtonBG-Up"}); b.PushedBackground = Region("Texture", {atlas = "UI-HUD-MicroMenu-ButtonBG-Down"})
             b:SetNormalAtlas("UI-HUD-MicroMenu-" .. name .. "-Up"); b:SetPushedAtlas("UI-HUD-MicroMenu-" .. name .. "-Down"); b:SetDisabledAtlas("UI-HUD-MicroMenu-" .. name .. "-Disabled"); b:SetHighlightAtlas("UI-HUD-MicroMenu-" .. name .. "-Mouseover")
@@ -625,7 +628,7 @@ local function NewWorld(opts)
         Micro("ProfessionMicroButton"); Micro("SpellbookMicroButton"); Micro("TalentMicroButton"); Micro("LegacyMicroButton"); Micro("QuestLogMicroButton"); Micro("GuildMicroButton")
         Micro("LFDMicroButton"); Micro("CollectionsMicroButton"); Micro("StoreMicroButton"):Disable(); Micro("MainMenuMicroButton")
         _G.UpdateMicroButtons = function() StoreMicroButton:Show(); StoreMicroButton.alpha = 0.5 end
-        _G.BagsBar = Frame("BagsBar"); BagsBar.level = 52; BagsBar.BorderArt = Region("Texture", {atlas = "UI-HUD-ActionBar-Frame"})
+        _G.BagsBar = Frame("BagsBar"); BagsBar.level = 52; BagsBar.protectedFrame = true; BagsBar.BorderArt = Region("Texture", {atlas = "UI-HUD-ActionBar-Frame"})
         function BagsBar:ApplySystemAnchor() self:ClearAllPoints(); self:SetPoint("BOTTOMLEFT", MicroMenuContainer, "BOTTOMRIGHT", 7, -4) end
         local BAG_ORDER = {"MainMenuBarBackpackButton", "CharacterBag0Slot", "CharacterBag1Slot", "CharacterBag2Slot", "CharacterBag3Slot", "CharacterReagentBag0Slot", "KeyRingButton"}
         -- BagsBarMixin:Layout: the keyring goes back to its own 33x45 (KeyRingMixin:UpdateOrientation), the
@@ -657,6 +660,14 @@ local function NewWorld(opts)
             -- ItemButtonMixin:SetAlpha: on an item button SetAlpha is Blizzard's Lua and fades the icon
             -- and its border, never the button itself
             function b:SetAlpha(a) self.icon:SetAlpha(a); self.IconBorder:SetAlpha(a) end
+            -- BaseBagSlotButtonMixin:UpdateTextures (Camelot), run on every bag update: Forever's slot atlas
+            -- straight onto the normal, pushed and highlight textures (never through SetNormalAtlas), the
+            -- normal one given a top-left point and 46x46, the highlight drawn at 40%
+            function b:UpdateTextures()
+                local nt = self:GetNormalTexture(); nt:SetPoint("TOPLEFT", self, "TOPLEFT"); nt:SetSize(46, 46); nt:SetAtlas("ui-hud-actionbar-iconframe-bags")
+                self.PushedTexture = self.PushedTexture or Region("Texture"); self.PushedTexture:SetAtlas("ui-hud-actionbar-iconframe-bags")
+                self.HighlightTexture = self.HighlightTexture or Region("Texture"); self.HighlightTexture:SetAtlas("ui-hud-actionbar-iconframe-bags"); self.HighlightTexture:SetAlpha(0.4)
+            end
             -- Forever's gold frame while the bag is open, sized for its 48px slot
             b.SlotHighlightTexture = Region("Texture", {atlas = "bag-border-highlight"}); b.SlotHighlightTexture:SetSize(48, 48); b.SlotHighlightTexture:SetPoint("TOPLEFT", b, "TOPLEFT", -5, 5); b.SlotHighlightTexture.shown = false
         end
@@ -1269,8 +1280,10 @@ local function NewWorld(opts)
             pd:SetScript("OnHide", function(self) CharacterFrame:Collapse(); PaperDollSidebarTabs:Hide() end)
             _G.CharacterStatsPaneScrollBox = Frame("CharacterStatsPaneScrollBox"); _G.CharacterStatsPaneScrollBox.ScrollBox = Frame("ScrollBox")
             _G.PaperDollSidebarTabs = Frame("PaperDollSidebarTabs")
-            for i = 1, 3 do _G["PaperDollSidebarTab" .. i] = Frame("PaperDollSidebarTab" .. i) end
+            -- four tabs on Forever: stats, equipment sets, titles and (with a pet out) the pet's page
+            for i = 1, 4 do _G["PaperDollSidebarTab" .. i] = Frame("PaperDollSidebarTab" .. i) end
             _G.PaperDollLevelInfo = Frame("PaperDollLevelInfo")
+            _G.PaperDollPetLevelInfo = Frame("PaperDollPetLevelInfo"); PaperDollPetLevelInfo.shown = false
             -- Forever's rock band across the top of the paper doll, behind its level line (36 tall, as wide as its left pane)
             pd.TopBackgroundStripHost = Frame("TopBackgroundStripHost"); pd.TopBackgroundStripHost:SetSize(398, 36)
             _G.PaperDollFrame_ShowSidebar = function(frame) w.sidebarShown = frame end
@@ -2258,6 +2271,8 @@ do
     local m = CharacterModelScene
     check(m.anchors[1][2] == PaperDollFrame and m.anchors[1][4] == 65 and m.anchors[1][5] == -78 and m.width == 233 and m.height == 224 and m.BackgroundTopLeft.alpha == 0 and m.BackgroundOverlay.alpha == 0, "sheet: model in Era's window, race backdrop faded")
     check(CharacterStatsPaneScrollBox.shown == false and CharacterStatsPaneScrollBox.alpha == 0 and PaperDollSidebarTabs.alpha == 0 and PaperDollLevelInfo.alpha == 0, "sheet: retail stats list, sidebar tabs and level banner gone")
+    -- the fourth tab is the pet's page: left live it was an unseen button whose page hides every equipment slot
+    check(PaperDollSidebarTab1.mouse == false and PaperDollSidebarTab4.mouse == false and PaperDollPetLevelInfo.alpha == 0, "sheet: all four sidebar tabs are dead to the mouse, the pet's among them, and the pet's level line is gone")
     -- a report: "a weird gray bar streaking across" the sheet - Forever's rock band behind its level line, wider than Era's frame
     check(PaperDollFrame.TopBackgroundStripHost.alpha == 0, "sheet: Forever's rock band across the title is gone")
     local rows = sheet.rows
@@ -2456,6 +2471,7 @@ do
     check(h[2] == cf.LeftPaneHost and h[4] == 24 and h[5] == -60 and CharacterHeadSlot.BorderFrame.alpha == 1 and CharacterModelScene.anchors[1][2] == cf.LeftPaneHost and CharacterModelScene.width == 398, "off: slots and model back on Blizzard's anchors")
     check(CharacterStatsPaneScrollBox.shown == true and CharacterStatsPaneScrollBox.alpha == 1 and PaperDollSidebarTabs.alpha == 1, "off: Blizzard's stats list back")
     check(PaperDollFrame.TopBackgroundStripHost.alpha == 1 and PaperDollLevelInfo.alpha == 1, "off: Blizzard's rock band and level line back")
+    check(PaperDollSidebarTab4.mouse == true and PaperDollPetLevelInfo.alpha == 1, "off: the pet's tab and level line back")
     check(CharacterAmmoSlot.gearSlotSmall.alpha == 1 and CharacterAmmoSlot.arrowHolder.alpha == 1, "off: ammo slot art back")
     w.slash("charsheet on")
     check(cs.mode == "restyled" and cf.width == 384 and sheet.shown == true and CharacterHeadSlot.anchors[1][4] == 21, "on: classic layout again")
@@ -3112,6 +3128,14 @@ do
     -- the keyring back to 33x45 and every shown slot 2 apart.
     MainMenuBarBagManager:OnExpandBarChanged()
     check(keyring.width == 18 and keyring.height == 39 and CharacterBag1Slot.anchors[1][4] == -1 and keyring.anchors[1][4] == -4 and BagsBar.width == 211 and reagent:IsShown() == false and BagsBar.div1.alpha == 0, "report: Blizzard's bag layout run by the bag manager (an item on the cursor) is put right too")
+    -- any loot: each slot's own UpdateTextures puts Forever's slot atlas straight back on its normal, pushed
+    -- and highlight textures (on BAG_UPDATE_DELAYED; the keyring's on every BAG_UPDATE), not through the
+    -- SetNormalAtlas the addon was watching
+    for _, n in ipairs({"CharacterBag0Slot", "MainMenuBarBackpackButton", "KeyRingButton"}) do _G[n]:UpdateTextures() end
+    local b0 = CharacterBag0Slot
+    check(b0.NormalTexture.texture == "Interface\\Buttons\\UI-Quickslot2" and b0.NormalTexture.atlas == nil and b0.NormalTexture.width == 64 and #b0.NormalTexture.anchors == 1 and b0.NormalTexture.anchors[1][1] == "CENTER", "report: the classic ring is back on a bag slot at once after a bag update (Forever's slot frame had replaced it after every loot)")
+    check(b0.PushedTexture.texture == "Interface\\Buttons\\UI-Quickslot-Depress" and b0.HighlightTexture.texture == "Interface\\Buttons\\ButtonHilight-Square" and b0.HighlightTexture.alpha == 1, "report: its pushed and highlight art with it, the highlight at full strength (Forever's is drawn at 40%)")
+    check(keyring.NormalTexture.texture == "Interface\\Buttons\\UI-Button-KeyRing" and keyring.NormalTexture.atlas == nil and MainMenuBarBackpackButton.NormalTexture.texture == "Interface\\Buttons\\UI-Quickslot2", "report: and on the backpack and the keyring")
     -- mid-fight the slots are protected: nothing of theirs is sized or moved until the fight ends, whether
     -- Blizzard resizes one slot, the keyring, or lays the whole bar out
     w.inCombat = true
@@ -3128,6 +3152,8 @@ do
     w.ResetBlocked()
     MainMenuBarBagManager:OnExpandBarChanged()
     check(w.Blocked() == 0 and ab.pending == true and keyring.width == 33 and CharacterBag1Slot.anchors[1][4] == -2, "report: in combat Blizzard's bag layout stands, and no protected slot is sized or moved")
+    CharacterBag2Slot:UpdateTextures(); keyring:UpdateTextures()
+    check(CharacterBag2Slot.NormalTexture.texture == "Interface\\Buttons\\UI-Quickslot2" and keyring.NormalTexture.texture == "Interface\\Buttons\\UI-Button-KeyRing" and w.Blocked() == 0, "report: loot mid-fight: the classic art goes straight back (textures are not protected) and nothing protected is touched")
     -- (spread 2 apart with a 33px keyring, Blizzard's row is 17 longer than ours and the keyring reaches the
     -- last micro button: the micro buttons are all a level above the bag slots, so it goes under, not over)
     check(MainMenuMicroButton.level > (BagsBar.level or 1) + 1 and CharacterMicroButton.level > MainMenuMicroButton.level, "report: every micro button is above the bag slots' level, the last one included")
@@ -3299,7 +3325,7 @@ do
     w.slash("barsize 125")
     check(w.ns.db.barscale == 125 and ab.scale == 1.25 and art.scale == 1.25 and art.width == 1024 and Printed("bottom bar size 125%."), "size: /cui barsize 125 saves it and scales the stone bar")
     check(Near(c2.scale, 1.0) and Near(c2.anchors[1][4], 42 * 1.25 / 1.0) and Near(MainActionBar.width, 498 * 1.25) and Near(MainActionBar.height, 45) and Near(MainActionBar.anchors[1][4], 10) and Near(MainActionBar.anchors[1][5], 5), "size: buttons 45px and 52.5 apart, the main bar at 10,5: Era's layout a quarter bigger")
-    check(Near(MultiBarRightButton2.container.scale, 1.0) and Near(MultiBarRight.height, 498 * 1.25), "size: the side bars' buttons grow with it")
+    check(Near(MultiBarRightButton2.container.scale, 0.8) and MultiBarRight.height == 498 and MultiBarRight.width == 36 and Near(MultiBarRightButton2.container.anchors[1][5], -42 / 0.8), "size: the right-hand bars keep Era's own size (Blizzard fits those to the screen's height itself)")
     check(pn.scale == 1.25 and Near(pn.anchors[1][4], 506) and Near(pn.anchors[1][5], 3) and pn.anchors[1][2] == art, "size: the page number scaled, still at Era's 506,3 of the bar")
     check(Near(MicroMenu.scale, 1.25) and Near(MicroMenu.anchors[1][4], 552) and Near(MicroMenu.anchors[1][5], 2) and BagsBar.scale == 1.25 and Near(BagsBar.anchors[1][4], -6) and Near(BagsBar.anchors[1][5], 2), "size: micro buttons and bags scaled, at Era's places on the bar")
     check(first.scale == 1.25 and second.scale == 1.25 and first.width == 1024 and Near(first.anchors[1][5], -3) and second.anchors[1][1] == "TOP", "size: both status bars scaled with the bar")
@@ -3326,6 +3352,12 @@ do
     UIParent:SetWidth(1100)
     w.slash("barsize 150")
     check(w.ns.db.barscale == 150 and Near(ab.scale, 1100 / 1024) and Printed("room for 107%"), "size: a size the screen cannot fit is held to what it can, and the command says so")
+    w.ns.optionsPanel.Refresh()
+    check(slider.Text.text == "Bottom bar size: 150% (107% fits this screen)", "size: the slider's label says what the screen holds it to")
+    w.slash("barsize")
+    check(Printed("bottom bar size: 150% (this screen has room for 107%)"), "size: and so does the command with no number")
+    slider.scripts.OnValueChanged(slider, 100)
+    check(slider.Text.text == "Bottom bar size: 100%" and w.ns.db.barscale == 100, "size: (a size that fits says nothing more)")
     UIParent:SetWidth(900)
     w.slash("barsize 80")
     check(Near(ab.scale, 0.8), "size: a narrow screen never stops the bar being made smaller")
@@ -3353,6 +3385,8 @@ do
     check(w.ns.db.barscale == 115 and w.ns.modules.actionbars.scale == 1.15 and w.ns.modules.actionbars.art.scale == 1.15 and w.ns.optionsPanel.barSize.value == 115, "size: kept across a reload")
     w = NewWorld({style = "6", forever = true, cvars = {ForeverClassicUI_settings = cvarCopy}})
     check(w.ns.dbLoaded == false and w.ns.db.barscale == 115 and w.ns.modules.actionbars.scale == 1.15 and w.ns.db.actionbars == true and w.ns.db.welcomed == false, "size: and restored from the CVar copy when the client wrote no settings file, the on/off flags with it")
+    w = NewWorld({style = "6", forever = true, cvars = {ForeverClassicUI_settings = "castbar=0,talents=0,tracker=1,barscale=125"}})
+    check(w.ns.dbLoaded == false and w.ns.db.talents == false and w.ns.db.castbar == false and w.ns.db.tracker == true and w.ns.db.barscale == 125, "size: the CVar copy brings back every part switched off, the talents part among them (it was dropped)")
     w = NewWorld({style = "6", forever = true, savedDB = {barscale = "huge"}})
     check(w.ns.db.barscale == 100 and w.ns.modules.actionbars.scale == 1, "size: a saved value that is not a number falls back to Era's size")
     -- the part switched off: a reagent slot it had taken off the bar goes back on, and the size setting
@@ -3370,6 +3404,68 @@ do
     CharacterReagentBag0Slot:Hide(); w.ns.modules.actionbars.Layout()
     w.slash("actionbars off")
     check(CharacterReagentBag0Slot:IsShown() == false and #w.ns.errors == 0, "report: and leaves a reagent slot something else had hidden as it was")
+end
+
+--------------------------------------------------------------------------
+-- 11. The bar size against Blizzard's mid-fight restack. Forever puts the
+-- bottom-left bar at the main bar's left +22 and the bottom-right bar at
+-- +606 on every restack (the pet bar asks for one on every target change),
+-- in the screen's units whatever the bar size, and in a fight they cannot
+-- be put back: from 118% the bottom-right bar landed on the other's end.
+--------------------------------------------------------------------------
+do
+    local w = NewWorld({style = "6", forever = true, noSnippets = true})
+    local ab = w.ns.modules.actionbars
+    local function Near(a, b) return type(a) == "number" and math.abs(a - b) < 0.001 end
+    -- a button's left and right edge, measured from whatever its bar is anchored to
+    local function Span(bar, i)
+        local c = bar.actionButtons[i].container
+        local left = bar.anchors[1][4] + c.anchors[1][4] * (c.scale or 1)
+        return left, left + c.width * (c.scale or 1)
+    end
+    check(ab.holder == nil, "restack: (Forever's client has no restricted snippets: nothing can hold the bars mid-fight)")
+    for _, pct in ipairs({100, 114, 115, 120, 125, 150}) do
+        w.slash("barsize " .. pct)
+        local s = ab.scale
+        local shift = math.max(0, 22 + 510 * s - 606)
+        check(MultiBarBottomRight.anchors[1][2] == UIParent and Near((Span(MultiBarBottomRight, 1)), 6 * s) and Near(MultiBarBottomRight.width, 498 * s + shift) and Near(MultiBarBottomLeft.anchors[1][4], -6 * s) and Near(MultiBarBottomLeft.width, 498 * s),
+              ("restack %d%%: out of combat both bars' buttons are on Era's spots, 6 either side of centre"):format(pct))
+        w.inCombat = true
+        w.ResetBlocked()
+        EditModeManagerFrame:UpdateBottomActionBarPositions()
+        w.ResetBlocked()
+        ab.Layout()
+        local _, right2 = Span(MultiBarBottomLeft, 12)
+        local left3 = Span(MultiBarBottomRight, 1)
+        check(MultiBarBottomRight.anchors[1][2] == MainActionBar and MultiBarBottomRight.anchors[1][4] == 606 and left3 - right2 >= 12 * s - 0.001 and w.Blocked() == 0,
+              ("restack %d%%: Blizzard's mid-fight restack leaves the bottom-right bar clear of the bottom-left one (%.1f apart)"):format(pct, left3 - right2))
+        if pct >= 115 then
+            check(Near(left3 - right2, 12 * s), ("restack %d%%: side by side with Era's gap between them, both 22 right of their place"):format(pct))
+        end
+        w.inCombat = false
+        ab.waiter:Fire("PLAYER_REGEN_ENABLED")
+        check(MultiBarBottomRight.anchors[1][2] == UIParent and Near((Span(MultiBarBottomRight, 1)), 6 * s), ("restack %d%%: and back on Era's spot when the fight ends"):format(pct))
+    end
+    w.slash("barsize 100")
+    check(ab.stackShift == 0 and MultiBarBottomRight.anchors[1][4] == 6 and MultiBarBottomRight.width == 498 and MultiBarBottomRightButton1.container.anchors[1][4] == 0, "restack: at Era's size nothing is shifted")
+    check(#w.ns.errors == 0, "restack: no errors")
+    -- a client that does have restricted snippets: the handler puts the frame back with the same shift
+    w = NewWorld({style = "6", forever = true})
+    ab = w.ns.modules.actionbars
+    w.slash("barsize 125")
+    local holder = ab.holder
+    check(holder ~= nil and Near(holder:GetAttribute("cui-shift"), 53.5) and Near(holder:GetAttribute("cui-gap"), 7.5), "restack: the combat handler is handed the shift with the gap")
+    w.inCombat = true
+    EditModeManagerFrame:UpdateBottomActionBarPositions()
+    w.FireState(holder, "cuicombat", 1)
+    check(MultiBarBottomRight.anchors[1][2] == UIParent and Near(MultiBarBottomRight.anchors[1][4], 7.5 - 53.5) and Near((Span(MultiBarBottomRight, 1)), 7.5), "restack: and its snippet lands the bottom-right bar's buttons on Era's spot mid-fight")
+    w.inCombat = false
+    -- a world without Camelot's constants: nothing to allow for
+    w = NewWorld({style = "6", forever = true})
+    _G.ACTION_BARS_RELATIVE_TO_BASE_POSITIONING, _G.ACTION_BAR_2_BOTTOM_BAR_OFFSET_X, _G.ACTION_BAR_3_BOTTOM_BAR_OFFSET_X = nil, nil, nil
+    w.slash("barsize 150")
+    check(w.ns.modules.actionbars.stackShift == 0 and Near(MultiBarBottomRight.anchors[1][4], 9) and Near(MultiBarBottomRight.width, 498 * 1.5), "restack: on a client that does not stack its bars off the main bar the frame is left where its buttons are")
+    check(#w.ns.errors == 0, "restack: no errors there either")
 end
 
 realPrint(("Forever Classic UI harness: %d passed, %d failed"):format(passed, failed))

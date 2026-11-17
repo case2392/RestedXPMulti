@@ -130,7 +130,8 @@ usually enough to rebuild that window in the classic style.
   column, and text tabs along the bottom edge (Character, Reputation,
   Skills, Honor, plus Forever's Currency and Statistics, tightened to fit)
   instead of the picture tabs down the side. Forever's shell (metal frame,
-  stats list, sidebar tabs, level banner, collapse button, and the rock
+  stats list, all four sidebar tabs - the fourth is the pet's page,
+  there with a pet out - level banner, collapse button, and the rock
   band it lays across the top of the paper doll behind its level line -
   `PaperDollFrame.TopBackgroundStripHost`, 398x36, wider than Era's sheet:
   a report had it as "a weird gray bar streaking across" the name and
@@ -402,7 +403,12 @@ usually enough to rebuild that window in the classic style.
   something else has hidden. Blizzard lays the bag bar out again
   whenever an item is lifted or dropped, through a callback that holds
   the layout function it had at load - a hook on `BagsBar.Layout` never
-  sees it - so the bag manager's `OnExpandBarChanged` is hooked as well;
+  sees it - so the bag manager's `OnExpandBarChanged` is hooked as well.
+  Forever also puts its own slot frame back on a bag slot's normal,
+  pushed and highlight textures in the slot's `UpdateTextures`, on every
+  bag update - any loot - and straight on the textures, where the hooks
+  on `SetNormalAtlas` never saw it: the classic ring was gone until the
+  next layout. `UpdateTextures` is hooked on every slot and the keyring;
   the slots are protected, so mid-fight Blizzard's layout stands until
   the fight ends: the slots 2 apart and the keyring back at its 33px,
   17 longer than Era's row and into the last micro button, which is why
@@ -539,12 +545,20 @@ usually enough to rebuild that window in the classic style.
   Era's bar is four fifths the size of Forever's (a report: "much smaller
   than the original UI and can be hard to see"). `/cui barsize <60-150>`,
   or the slider on the options page, scales the whole bottom bar - the
-  stone bar, every action button on every bar, the page number, micro
-  buttons, bags, status bars and the bottom bars' gap and lift. 100 is
-  Era's own size; 125 is the size of Forever's buttons. It is held to
-  what the screen can show (the bar is as wide as a 4:3 screen at 100),
+  stone bar, the action buttons on it and on the bars above it, the page
+  number, micro buttons, bags, status bars and the bottom bars' gap and
+  lift. 100 is Era's own size; 125 is the size of Forever's buttons. It
+  is held to what the screen can show (the bar is as wide as a 4:3
+  screen at 100; the slider and the command say when a size is held),
   saved with the other settings and in the CVar copy, and applied out of
-  combat like the rest of the layout.
+  combat like the rest of the layout. The two right-hand bars keep Era's
+  size: Blizzard fits those to the room between the minimap and the
+  bottom corner by scaling the bar from its height, so a bigger bar was
+  only scaled back down - after being drawn too big until Blizzard's
+  next pass. A bar dragged in Edit Mode keeps the corner it was dropped
+  on: the size resizes it but does not place it, so it may need
+  dragging again. Well above 100 on a screen the bar nearly fills, its
+  right end and gryphon reach the right-hand bars' column.
 - **Minimap** — the 140px round map with the classic ring border and the
   zone-name strip; the day/night dial is hidden. The cluster round the map
   is a `ResizeLayoutFrame` that Blizzard sizes round its children when
@@ -641,6 +655,17 @@ that would hold them is dead on Forever (no `loadstring_untainted`). The
 way round it on the player's side: drag Action Bar 2 (and 3) in Edit Mode,
 even a little. A bar that is not in its default position is skipped by
 Blizzard's stacking and by this addon alike, so it stays put.
+
+Those offsets are in the screen's units whatever the bar size, so with
+the bar drawn bigger than about 117% the bottom-left bar's twelve buttons
+reached past +606 and the bottom-right bar landed on the last of them for
+the rest of the fight (38px of a 45px button at 125%). From the size
+where Era's gap between the two no longer fits (about 115%), the
+bottom-right bar's buttons stand that much further right inside their
+frame and the frame is anchored that much further left: out of combat
+nothing moves, and mid-fight Blizzard's +606 lands the buttons beside the
+other bar's, both 22 right of their place. In Edit Mode that bar's
+selection box then starts ahead of its first button.
 
 The target's name string is a secret on this client (its width cannot be
 read from addon code), so the long-name fit measures under `pcall` and

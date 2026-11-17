@@ -967,9 +967,13 @@ local function PaperDollExtras(hidden)
     local tabs = G("PaperDollSidebarTabs")
     if tabs then
         Fade(tabs, hidden)
-        for i = 1, 3 do Mouse(G("PaperDollSidebarTab" .. i), not hidden) end
+        -- four on Forever: the fourth is the pet's page (shown with a pet
+        -- out). Left live it was an unseen button beside the sheet whose
+        -- page hides every equipment slot.
+        for i = 1, 4 do Mouse(G("PaperDollSidebarTab" .. i), not hidden) end
     end
     Fade(G("PaperDollLevelInfo"), hidden)
+    Fade(G("PaperDollPetLevelInfo"), hidden)
     -- the rock band Forever lays across the top of the paper doll, behind
     -- its level line (PaperDollFrame.TopBackgroundStripHost: 36 tall and
     -- the 398 width of Forever's left pane). It is wider than Era's sheet
