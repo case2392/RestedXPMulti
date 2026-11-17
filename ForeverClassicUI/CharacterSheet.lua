@@ -970,6 +970,13 @@ local function PaperDollExtras(hidden)
         for i = 1, 3 do Mouse(G("PaperDollSidebarTab" .. i), not hidden) end
     end
     Fade(G("PaperDollLevelInfo"), hidden)
+    -- the rock band Forever lays across the top of the paper doll, behind
+    -- its level line (PaperDollFrame.TopBackgroundStripHost: 36 tall and
+    -- the 398 width of Forever's left pane). It is wider than Era's sheet
+    -- and sat over the name and the level line (a report: "a weird gray
+    -- bar streaking across")
+    local pd = G("PaperDollFrame")
+    Fade(pd and pd.TopBackgroundStripHost, hidden)
 end
 
 local function SideTabs(cf, hidden)

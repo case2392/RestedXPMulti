@@ -130,6 +130,49 @@ function ns.BuildOptionsPanel()
         y = y - rowHeight
     end
 
+    -- the bottom bar's size (also /cui barsize <percent>): Era's bar is
+    -- four fifths the size of Forever's own, which some find small
+    local slider
+    for _, template in ipairs({"UISliderTemplateWithLabels", "OptionsSliderTemplate"}) do
+        local made, made_slider = pcall(CreateFrame, "Slider", nil, body, template)
+        if made and made_slider and made_slider.SetMinMaxValues then
+            slider = made_slider
+            break
+        end
+    end
+    if slider then
+        y = y - 24
+        slider:SetPoint("TOPLEFT", 24, y)
+        slider:SetWidth(280)
+        slider:SetHeight(17)
+        slider:SetMinMaxValues(60, 150)
+        slider:SetValueStep(5)
+        if slider.SetObeyStepOnDrag then slider:SetObeyStepOnDrag(true) end
+        if slider.Low then slider.Low:SetText("60%") end
+        if slider.High then slider.High:SetText("150%") end
+        -- the template centres its label over the slider: keep it short
+        function slider.Label(value)
+            if slider.Text then slider.Text:SetText(("Bottom bar size: %d%%"):format(value)) end
+        end
+        local note = body:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
+        note:SetPoint("LEFT", slider, "RIGHT", 24, 0)
+        note:SetWidth(250)
+        note:SetJustifyH("LEFT")
+        if note.SetWordWrap then note:SetWordWrap(true) end
+        note:SetText("100% is Era's own size. 125% is the size of Forever's own buttons.")
+        slider.note = note
+        slider:SetScript("OnValueChanged", function(self, value)
+            value = math.floor((tonumber(value) or 100) / 5 + 0.5) * 5
+            self.Label(value)
+            if self.syncing then return end
+            local bars = ns.modules.actionbars
+            if bars and bars.SetSize then bars.SetSize(value) end
+            if panel and panel.RefreshStatus then panel.RefreshStatus() end
+        end)
+        panel.barSize = slider
+        y = y - 36
+    end
+
     -- not a look setting: the bug-report button and the window that
     -- explains how to send one
     local bug = CreateFrame("CheckButton", nil, body, "UICheckButtonTemplate")
@@ -220,6 +263,13 @@ function ns.BuildOptionsPanel()
             cb:SetChecked(not cb.comingSoon and ns.db[key] ~= false)
         end
         if panel.bugButton then panel.bugButton:SetChecked(ns.db.bugbutton ~= false) end
+        if panel.barSize then
+            local pct = tonumber(ns.db.barscale) or 100
+            panel.barSize.syncing = true
+            panel.barSize:SetValue(pct)
+            panel.barSize.syncing = nil
+            panel.barSize.Label(pct)
+        end
         panel.RefreshStatus()
     end
     panel:SetScript("OnShow", panel.Refresh)

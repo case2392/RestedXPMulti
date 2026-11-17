@@ -130,9 +130,12 @@ usually enough to rebuild that window in the classic style.
   column, and text tabs along the bottom edge (Character, Reputation,
   Skills, Honor, plus Forever's Currency and Statistics, tightened to fit)
   instead of the picture tabs down the side. Forever's shell (metal frame,
-  stats list, sidebar tabs, level banner, collapse button) is faded out
-  and unclickable, never destroyed: Blizzard keeps driving the slots and
-  model. The Reputation and Skills tabs are Era's too: the "General" art,
+  stats list, sidebar tabs, level banner, collapse button, and the rock
+  band it lays across the top of the paper doll behind its level line -
+  `PaperDollFrame.TopBackgroundStripHost`, 398x36, wider than Era's sheet:
+  a report had it as "a weird gray bar streaking across" the name and
+  level) is faded out and unclickable, never destroyed: Blizzard keeps
+  driving the slots and model. The Reputation and Skills tabs are Era's too: the "General" art,
   the column of 137px reputation bars with their bevel art, +/- headers,
   the at-war swords and the watched-faction check mark, the 212x203
   detail popup off the right edge with the At War / Inactive / Show as
@@ -370,16 +373,31 @@ usually enough to rebuild that window in the classic style.
   the experience bar in the top 13px of the bar with the 10px stone ledge
   over it, purple/blue fill, the classic rest tick and none of Forever's
   segment dividers. Forever has more micro buttons than Era's nine
-  (professions, legacy, group finder, collections): ten of them at Era's
-  26px stride need 265px and only about 201 are free between the page
-  arrows and the bag cluster, so the row has to give somewhere. The
-  buttons pack no closer than 24px (the 29px art has a few transparent
-  pixels each side, so 24 still reads as separate buttons; a report of
-  them at 19 showed them piled on each other) and past that the row is
-  scaled down to fit. Packed at all they overlap a little, and they are
-  stacked left over right — descending frame levels — so it is each
-  button's trailing edge that goes under its neighbour, the way Era's
-  own art interlocks, rather than the icon's middle. The
+  (professions, legacy, group finder, collections, and the Store where it
+  is live): eleven at Era's 26px stride need 291px, and with Era's bag
+  cluster, the keyring and the reagent slot beside them only 201 are free
+  between the page arrows and the bags. Packing the row tighter piled the
+  buttons on each other (a report of ten at 19px), and scaling it down to
+  fit left them small in their band of bar with an empty strip above (a
+  report of eleven at 74%). So the row keeps Era's full 37px height and
+  the room comes from the bag side, a step at a time, the least
+  noticeable first, taking no more at each step than is needed and
+  stopping at the first that fits: the buttons pack to 24px, where their
+  faces touch (the 29px art has a few transparent pixels each side); the
+  reagent bag's slot leaves the bar while no reagent bag is in it (it is
+  back the moment one is equipped); the bag slots close up, from 5 apart
+  to as little as 1; the buttons pack to 22px, their edges just
+  overlapping; the four bag slots are drawn smaller, down to 28px beside
+  the 37px backpack, which is what Blizzard itself did when the micro
+  row grew (the Wrath client's `BAGS_BAR_SLOT_SIZE = 28`); and only then
+  is the row scaled down. Eleven buttons with the keyring and an empty reagent
+  slot stop at 22px with the bags 1 apart, nothing drawn smaller than Era
+  drew it; ten sit 24 apart beside bags 2 apart; nine keep Era's bags. A
+  keyring Forever has hidden (a character the game says has no use for
+  one) takes no room. Packed at all the buttons overlap a little, and
+  they are stacked left over right — descending frame levels — so it is
+  each button's trailing edge that goes under its neighbour, the way
+  Era's own art interlocks, rather than the icon's middle. The
   disabled Store button is hidden so it takes no slot. Forever's own
   overlays on a bag slot (the gold frame while that bag's window is
   open, the search and context dimmers, the keybind glow) are sized for
@@ -445,6 +463,44 @@ usually enough to rebuild that window in the classic style.
   re-anchors on every layout apply, so each of its refreshes is hooked
   and the classic layout put back; bar anchors are protected and wait
   for combat to end.
+  The two status bars follow Era's own client (`StatusTrackingBar.xml`,
+  Classic): each is 1024x13 with an 8px `UI-StatusBar` fill through its
+  middle over half-black. The one in the bar is under the ledge; a second
+  stands on the bar, 10 higher, in the reputation watch bar's own frame
+  (`UI-ReputationWatchBar`, five pieces end to end), and the bottom bars
+  rise 9 for it. Which is which goes by what each of Forever's two
+  containers is showing, not by which container it is: Era ranks
+  experience over reputation, so its first container - the one in the
+  bar - holds the experience bar, but Forever's constants rank reputation
+  over experience and hand the first container the reputation bar the
+  moment a faction is watched. Placing by container put the reputation
+  bar in the experience bar's place with the experience bar floating
+  above it, their texts overlapping (a report). The experience bar now
+  takes the place in the bar and the other stands on it; a bar on its own
+  goes in the bar, as Era's reputation bar did at the level cap. A
+  container changes its bar at the end of its fade
+  (`ApplyPendingBarToShow`), so that and `UpdateShownState` are hooked.
+  Fills are Era's colours: purple or rested blue for experience, with
+  Era's 15% wash of the same colour over the rested stretch in place of
+  Forever's solid dark-blue atlas, and `FACTION_BAR_COLORS` by standing
+  for reputation, which used to be left white - the addon swapped every
+  fill for the grey `UI-StatusBar` and only coloured the experience bar.
+  Forever queues the reputation bar's atlas (`deferUntilNextLevel`) and
+  applies it whenever the bar is next reset, so the fill is put back from
+  a hook on the status bar's own `SetBarTexture` as well. A bar Era never
+  had (honor) keeps Forever's fill. Fills are textures and colours, so
+  they are right in combat too; the places wait for it to end.
+  **Bar size**: Era's bar is 1024 of the screen's units with 36px
+  buttons, and Forever's own buttons are 45, so at the same UI scale
+  Era's bar is four fifths the size of Forever's (a report: "much smaller
+  than the original UI and can be hard to see"). `/cui barsize <60-150>`,
+  or the slider on the options page, scales the whole bottom bar - the
+  stone bar, every action button on every bar, the page number, micro
+  buttons, bags, status bars and the bottom bars' gap and lift. 100 is
+  Era's own size; 125 is the size of Forever's buttons. It is held to
+  what the screen can show (the bar is as wide as a 4:3 screen at 100),
+  saved with the other settings and in the CVar copy, and applied out of
+  combat like the rest of the layout.
 - **Minimap** — the 140px round map with the classic ring border and the
   zone-name strip; the day/night dial is hidden. The cluster round the map
   is a `ResizeLayoutFrame` that Blizzard sizes round its children when
@@ -479,6 +535,7 @@ takes the other parts down.
 | `/cui combo offset <x> <y>` | Nudge the dots if the target frame art differs (no numbers = reset) |
 | `/cui combo force` | Draw the classic combo points right now, replacing Blizzard's (testing) |
 | `/cui unitframes\|party\|charsheet\|spellbook\|actionbars\|minimap\|tracker on\|off\|force` | The other parts |
+| `/cui barsize <60-150>` | The bottom bar's size in percent: 100 is Era's own size, 125 the size of Forever's buttons (also a slider on the options page) |
 | `/cui options` | Open the settings panel (Options > AddOns > Classic UI (Forever)) |
 | `/cui report` | Everything for support in one copyable window: the probe, a dump of every frame the addon touches (plus your target's nameplate), and the last Lua errors the client raised |
 | `/cui report all` | The same including hidden pieces (marked). Run it on Classic Era with a mob targeted to capture the exact classic layout for comparison |

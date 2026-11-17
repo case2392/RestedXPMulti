@@ -46,7 +46,9 @@ local DEFAULTS = {
     -- not a look: the minimap bug-report button, and whether the welcome
     -- window has been seen. Booleans so they ride the CVar fallback too.
     bugbutton = true,
-    welcomed = false
+    welcomed = false,
+    -- the bottom bar's size in percent of Era's own (see ActionBars.lua)
+    barscale = 100
 }
 
 function ns.Print(fmt, ...)
@@ -106,6 +108,7 @@ local function SerializeSettings()
     -- feedback flags ride the CVar with the rest
     parts[#parts + 1] = "bugbutton=" .. (ns.db.bugbutton == false and "0" or "1")
     parts[#parts + 1] = "welcomed=" .. (ns.db.welcomed == true and "1" or "0")
+    parts[#parts + 1] = "barscale=" .. math.floor((tonumber(ns.db.barscale) or DEFAULTS.barscale) + 0.5)
     return table.concat(parts, ",")
 end
 
@@ -127,7 +130,14 @@ local function LoadFallback()
     local ok, value = pcall(api.GetCVar, SETTINGS_CVAR)
     if not ok or type(value) ~= "string" or value == "" then return nil end
     local t = {}
-    for key, v in value:gmatch("(%w+)=([01])") do t[key] = (v == "1") end
+    -- the on/off flags are 0 or 1; a setting that is a number is read whole
+    for key, v in value:gmatch("(%w+)=(%d+)") do
+        if type(DEFAULTS[key]) == "number" then
+            t[key] = tonumber(v)
+        else
+            t[key] = (v == "1")
+        end
+    end
     return t, value
 end
 
@@ -139,6 +149,7 @@ function ns.InitDB()
     for k, v in pairs(DEFAULTS) do
         if ForeverClassicUIDB[k] == nil then ForeverClassicUIDB[k] = v end
     end
+    if type(ForeverClassicUIDB.barscale) ~= "number" then ForeverClassicUIDB.barscale = DEFAULTS.barscale end
     ForeverClassicUIDB.logins = (tonumber(ForeverClassicUIDB.logins) or 0) + 1
     ns.db = ForeverClassicUIDB
     ns.dbSource = ns.dbLoaded and "saved file" or "defaults"
@@ -317,6 +328,7 @@ local function PrintHelp()
     ns.Print("  /cui combo offset <x> <y> - nudge the combo points (no numbers = reset)")
     ns.Print("  /cui combo force - draw the classic combo points now (testing)")
     ns.Print("  /cui unitframes|party|charsheet|spellbook|professions|actionbars|minimap|tracker on|off|force - the other classic parts")
+    ns.Print("  /cui barsize <60-150> - the bottom bar's size in percent (100 is Era's own size; 125 is the size of Forever's buttons)")
     ns.Print("  /cui talents on|off|force - Era's talent frame on the talents page, one tree at a time")
     ns.Print("  /cui questlog on|off|force - Era's page on the map window and its quest list")
     ns.Print("  /cui collections on|off|force - Era's page on the Appearances window")
@@ -364,6 +376,9 @@ function ns.HandleSlash(input)
         end
     elseif cmd == "screenshot" then
         if ns.TakeScreenshot then ns.SafeCall("screenshot", ns.TakeScreenshot) end
+    elseif cmd == "barsize" or cmd == "barscale" then
+        local bars = ns.modules.actionbars
+        if bars and bars.Command then ns.SafeCall("barsize", bars.Command, bars, "size " .. arg) end
     elseif cmd == "options" or cmd == "config" then
         if ns.OpenOptions then ns.SafeCall("options", ns.OpenOptions) end
     elseif cmd == "help" then

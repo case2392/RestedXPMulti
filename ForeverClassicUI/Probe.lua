@@ -681,6 +681,14 @@ local function Describe(obj, label)
                 local tex = (fill.GetAtlas and fill:GetAtlas()) or (fill.GetTexture and fill:GetTexture())
                 return ("fill=%.2f,%.2f,%.2f filltex=%s"):format(r or 1, g or 1, b or 1, tostring(tex))
             end)
+            -- how wide the fill is drawn against the bar: it should be the
+            -- value's share of it (a 0.7.28 screenshot had a reputation fill
+            -- in two tones, the last sixth darker, that this would explain)
+            add(function()
+                local fill = obj:GetStatusBarTexture()
+                if not fill or not fill.GetWidth or not obj.GetWidth then return end
+                return ("fillw=%.1f/%.1f"):format(tonumber(fill:GetWidth()) or 0, tonumber(obj:GetWidth()) or 0)
+            end)
         end
         if obj.GetMinMaxValues and obj.GetValue then
             add(function()

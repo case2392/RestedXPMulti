@@ -78,18 +78,41 @@ local KEYRING_W, KEYRING_H = 18, 39
 local KEYRING_TEX = BUTTONS .. "UI-Button-KeyRing"
 local KEYRING_COORDS = {0, 0.5625, 0, 0.609375}
 local REAGENT_BUTTON, KEYRING_BUTTON = "CharacterReagentBag0Slot", "KeyRingButton"
--- Era had nine micro buttons and Forever has ten, in the same run of bar.
--- Era's 26px stride needs 265px and there are about 201, so the row has
--- to give somewhere. Scaling it down left it shorter than the bag slots
--- beside it, with a band of empty bar along the top, so instead it keeps
--- Era's full 37px height and packs closer: the buttons overlap. They are
--- stacked left over right (see LayoutMicroMenu) so it is each one's right
--- edge that goes under its neighbour, the way Era's own art interlocks.
--- The floor is how close they may get before the faces overlap: the 29px
--- art has two or three transparent pixels each side, so 24 still reads
--- as separate buttons (a report of ten at 19 showed them piled on each
--- other); past that the row scales down instead.
+-- Era had nine micro buttons; Forever has ten or eleven, plus a reagent bag
+-- slot, in the same 466px run of bar between the page arrows and the bar's
+-- right end. Eleven at Era's 26px stride need 291px and, with Era's bag
+-- cluster, the keyring and the reagent slot beside them, there are 201.
+-- Packing the row closer piled the buttons on each other (a report of ten
+-- at 19), and scaling it down to fit left them small in their band of bar
+-- with an empty strip above (a report of eleven at 74%: "the icons appear
+-- small within their area"). So the row keeps Era's full 37px height and
+-- the room comes from the bag side instead, a step at a time, the least
+-- noticeable first and no more of each than is needed (PlanRow):
+--   1. Era as it is: 26 apart, 37px bags 5 apart
+--   2. the buttons packed to 24, where their faces touch (the 29px art
+--      has two or three transparent pixels each side)
+--   3. the reagent bag's slot leaves the bar while no reagent bag is in it
+--   4. the bag slots close up, from 5 apart to as little as 1
+--   5. the buttons packed to 22, their edges just overlapping
+--   6. the four bag slots are drawn smaller, down to 28px beside the 37px
+--      backpack: what Blizzard did itself when the micro row grew (its
+--      Wrath constants: BAGS_BAR_SLOT_SIZE = 28, backpack 37)
+--   7. only then is the row scaled down
+-- Eleven buttons with the keyring and an empty reagent slot stop at 5:
+-- 22 apart, the bags 1 apart, and nothing drawn smaller than Era drew it.
+-- Packed buttons are stacked left over right (see LayoutMicroMenu) so it
+-- is each one's right edge that goes under its neighbour, the way Era's
+-- own art interlocks.
 local MICRO_MIN_STRIDE = 24
+local MICRO_HARD_STRIDE = 22
+local MIN_BAG_PAD, SMALL_BAG_SIZE = 1, 28
+-- the run the micro buttons and the bag cluster share
+local RUN = BAR_W + BAGS_X - MICRO_X
+-- Era draws the bar in UI units (1024 wide, 36px buttons) and Forever's
+-- own buttons are 45, so beside Forever's bar Era's is four fifths the
+-- size (a report: "much smaller than the original UI and can be hard to
+-- see"). The bar size setting scales the whole bottom bar; 100 is Era's.
+local SCALE_MIN, SCALE_MAX = 0.6, 1.5
 -- Forever positions the main action bar off the micro menu's container:
 --   MainActionBar.BOTTOMRIGHT = MicroMenuContainer.BOTTOMLEFT -4.5,-4
 -- (read straight off a live client - the report records it). It re-applies
@@ -107,8 +130,32 @@ local MICRO_MIN_STRIDE = 24
 local BLIZZ_MAIN_GAP_X, BLIZZ_MAIN_GAP_Y = -4.5, -4
 -- the gryphons' frame level: Era's and Forever's own EndCaps frames
 local CAPS_LEVEL = 100
-local XP_H, XP_TOP_H = 13, 8
+-- Era's status bars (StatusTrackingBar.xml, Classic): each 1024x13 with an
+-- 8px fill through its middle. The first sits in the top of the stone bar
+-- under the ledge; a second one stands on the bar, 10 higher, in the
+-- reputation watch bar's own frame.
+local STATUS_H, FILL_H = 13, 8
+local STATUS_UP = -3             -- the upper bar's bottom edge from the art's top
+local STATUS_LIFT = 9            -- how far the bottom bars rise for it
 local BOTTOM_BAR_X, BOTTOM_BAR_Y = 6, 52
+-- Era's fills (ExpBarOverrides.lua, Classic; FACTION_BAR_COLORS)
+local XP_RESTED, XP_NORMAL = {0.0, 0.39, 0.88}, {0.58, 0.0, 0.55}
+local REST_AREA_ALPHA = 0.15
+local REP_COLORS = {
+    {0.8, 0.3, 0.22}, {0.8, 0.3, 0.22}, {0.75, 0.27, 0}, {0.9, 0.7, 0},
+    {0, 0.6, 0.1}, {0, 0.6, 0.1}, {0, 0.6, 0.1}, {0, 0.6, 0.1}
+}
+local REP_BLUE = {0.0, 0.5, 0.9}
+-- the reputation watch bar's frame (Era's StandaloneFrameTexture1..5): the
+-- first 16px are cut from the image's left edge, as Era cuts them
+local WATCH_ART = "Interface\\PaperDollInfoFrame\\UI-ReputationWatchBar"
+local WATCH_TILES = {
+    {16, 0.01171875, 0.0625, 0.03125, 0.171875},
+    {240, 0.0625, 1.0, 0.03125, 0.171875},
+    {256, 0, 1.0, 0.203125, 0.34375},
+    {256, 0, 1.0, 0.375, 0.515625},
+    {256, 0, 1.0, 0.546875, 0.6875}
+}
 -- the four stone strips: rows of the 256x256 image (Era's MainMenuBarTexture0..3)
 local STRIPS = {
     {x = -384, top = 0.83203125, bottom = 1.0},
@@ -209,6 +256,30 @@ local function Anchor(frame, point, rel, relPoint, x, y)
     if not scale or scale <= 0 then scale = 1 end
     frame:ClearAllPoints()
     frame:SetPoint(point, rel, relPoint, (x or 0) / scale, (y or 0) / scale)
+end
+
+--------------------------------------------------------------------------
+-- bar size
+--------------------------------------------------------------------------
+
+-- the scale the bottom bar is drawn at: the saved percentage, held to the
+-- range the setting offers and to what the screen can show (the stone
+-- bar is 1024 wide, as wide as a 4:3 screen at Era's size)
+function M.WantedScale()
+    local pct = ns.db and tonumber(ns.db.barscale) or 100
+    local s = pct / 100
+    if s ~= s then s = 1 end
+    s = math.max(SCALE_MIN, math.min(SCALE_MAX, s))
+    local width = UIParent and UIParent.GetWidth and UIParent:GetWidth()
+    if type(width) == "number" and width > 0 and s > 1 then
+        s = math.max(1, math.min(s, width / BAR_W))
+    end
+    return s
+end
+
+-- the scale the bar was last laid out at (it only changes out of combat)
+local function S()
+    return M.scale or 1
 end
 
 --------------------------------------------------------------------------
@@ -327,17 +398,18 @@ end
 local function LayoutBar(bar, horizontal, combat)
     if not bar or type(bar.actionButtons) ~= "table" then return 0 end
     local shown = 0
+    local s = S()
     for _, btn in ipairs(bar.actionButtons) do
         SkinButton(btn)
         local c = btn.container
         if c and c.SetPoint then
-            if not combat and c.SetScale then c:SetScale(BUTTON_SCALE) end
+            if not combat and c.SetScale then c:SetScale(BUTTON_SCALE * s) end
             if not c.IsShown or c:IsShown() then
                 if not combat then
                     if horizontal then
-                        Anchor(c, "BOTTOMLEFT", bar, "BOTTOMLEFT", shown * STRIDE, 0)
+                        Anchor(c, "BOTTOMLEFT", bar, "BOTTOMLEFT", shown * STRIDE * s, 0)
                     else
-                        Anchor(c, "TOPLEFT", bar, "TOPLEFT", 0, -shown * STRIDE)
+                        Anchor(c, "TOPLEFT", bar, "TOPLEFT", 0, -shown * STRIDE * s)
                     end
                 end
                 shown = shown + 1
@@ -386,9 +458,10 @@ local function LayoutPageNumber(art)
     local bar = G("MainActionBar")
     local pn = bar and bar.ActionBarPageNumber
     if not pn then return end
+    local s = S()
     pn:SetSize(42, 36)
-    pn:ClearAllPoints()
-    pn:SetPoint("BOTTOMLEFT", art, "BOTTOMLEFT", PAGE_X, PAGE_Y)
+    if pn.SetScale then pn:SetScale(s) end
+    Anchor(pn, "BOTTOMLEFT", art, "BOTTOMLEFT", PAGE_X * s, PAGE_Y * s)
     if pn.Text then
         pn.Text:ClearAllPoints()
         pn.Text:SetPoint("CENTER", pn, "CENTER", 15, 0)
@@ -520,14 +593,10 @@ local function StoreWanted()
     return true
 end
 
--- Era: 552 + 26 per button. Forever has more buttons than Era's nine (and
--- the keyring and reagent bag to the right), so the row always spans the
--- room between the page arrows and the bag cluster: at Era's stride when
--- that fits, packed closer when it does not, and only scaled down if even
--- the closest packing would not fit. Packing keeps the buttons the height
--- of the bag slots beside them, so the row fills the bar's whole band.
-local function LayoutMicroMenu(art)
-    local container = G("MicroMenuContainer")
+-- the micro buttons that stand in the row, in Era's order. Only the menu's
+-- own children count: Forever keeps a few more micro buttons as globals
+-- parked elsewhere (shown, but not in the row).
+local function MicroRow()
     local menu = G("MicroMenu")
     if menu then
         Hide(menu.BorderArt)
@@ -541,8 +610,6 @@ local function LayoutMicroMenu(art)
             Hide(store)
         end
     end
-    -- only the menu's own children count: Forever keeps a few more micro
-    -- buttons as globals parked elsewhere (shown, but not in the row)
     local skinned, row = 0, {}
     for _, gname in ipairs(MICRO_ORDER) do
         local btn = G(gname)
@@ -552,18 +619,113 @@ local function LayoutMicroMenu(art)
             if inMenu and (not btn.IsShown or btn:IsShown()) then row[#row + 1] = btn end
         end
     end
-    local shown = #row
     M.microSkinned = skinned
-    M.microShown = shown
-    local room = BAR_W + BAGS_X - (M.bagsWidth or 0) - SMALL_PAD - MICRO_X
-    local stride = MICRO_STRIDE
-    local function Width(s) return math.max(shown - 1, 0) * s + MICRO_W + 2 end
-    local natural, scale = Width(stride), 1
-    if natural > room and room > 0 then
-        if shown > 1 then stride = math.max(MICRO_MIN_STRIDE, (room - MICRO_W - 2) / (shown - 1)) end
-        natural = Width(stride)
-        if natural > room then scale = room / natural end
+    M.microShown = #row
+    return row
+end
+
+local function MicroWidth(count, stride)
+    return math.max(count - 1, 0) * stride + MICRO_W + 2
+end
+
+-- is there a reagent bag in the reagent bag's slot? nil when the client
+-- will not say (then the slot stays, as it would with one in it)
+local function ReagentBagEquipped()
+    if not (C_Container and C_Container.GetContainerNumSlots) then return nil end
+    local index = (Enum and Enum.BagIndex and Enum.BagIndex.ReagentBag) or 5
+    local ok, slots = pcall(C_Container.GetContainerNumSlots, index)
+    if ok and type(slots) == "number" then return slots > 0 end
+    return nil
+end
+
+-- Forever hides the keyring on a character the game says has no use for
+-- one (C_ActionBar.ShouldShowKeyring): then it takes no room on the bar
+local function KeyringOnBar()
+    local keyring = G(KEYRING_BUTTON)
+    return keyring ~= nil and (not keyring.IsShown or keyring:IsShown()) and true or false
+end
+
+-- How the micro row and the bag cluster share the run of bar between the
+-- page arrows and the bar's right end (see the steps by MICRO_MIN_STRIDE).
+-- Returns the plan both layouts follow: the micro buttons' stride and
+-- scale, the bag slots' size and spacing, whether the reagent slot stays.
+local function PlanRow(count)
+    local bags = 0
+    for _, gname in ipairs(BAG_BUTTONS) do
+        if G(gname) then bags = bags + 1 end
     end
+    local gaps = math.max(bags - 1, 0)      -- the bag slots beside the backpack
+    local hasReagent = bags > 0 and G(REAGENT_BUTTON) ~= nil
+    local hasKeyring = bags > 0 and KeyringOnBar()
+    local equipped = nil
+    if hasReagent then equipped = ReagentBagEquipped() end
+    M.reagentKnown = equipped
+    local plan = {stride = MICRO_STRIDE, scale = 1, bagSize = BAG_SIZE, bagPad = BAG_PAD, reagent = hasReagent, keyring = hasKeyring, step = 1}
+    local function Room()
+        local width = 0
+        if bags > 0 then width = BAG_SIZE + gaps * (plan.bagPad + plan.bagSize) end
+        if plan.reagent then width = width + SMALL_PAD + REAGENT_SIZE end
+        if hasKeyring then width = width + SMALL_PAD + KEYRING_W end
+        return RUN - width - SMALL_PAD
+    end
+    -- the widest stride, from Era's down to the floor, the room allows
+    local function Fit(floor)
+        local room = Room()
+        if MicroWidth(count, MICRO_STRIDE) <= room then return MICRO_STRIDE end
+        if count > 1 then
+            local stride = (room - MICRO_W - 2) / (count - 1)
+            if stride >= floor then return stride end
+        end
+        return nil
+    end
+    -- how much room the row is short of at a stride, shared between the gaps
+    local function Short(stride)
+        return gaps > 0 and math.max(MicroWidth(count, stride) - Room(), 0) / gaps or 0
+    end
+    local stride = Fit(MICRO_STRIDE)
+    if not stride then
+        stride = Fit(MICRO_MIN_STRIDE)
+        plan.step = 2
+    end
+    if not stride and hasReagent and equipped == false then
+        plan.reagent = false
+        stride = Fit(MICRO_MIN_STRIDE)
+        plan.step = 3
+    end
+    if not stride and gaps > 0 then
+        plan.bagPad = math.max(MIN_BAG_PAD, math.floor(BAG_PAD - Short(MICRO_MIN_STRIDE)))
+        stride = Fit(MICRO_MIN_STRIDE)
+        plan.step = 4
+    end
+    if not stride then
+        stride = Fit(MICRO_HARD_STRIDE)
+        plan.step = 5
+    end
+    if not stride and gaps > 0 then
+        plan.bagSize = math.max(SMALL_BAG_SIZE, math.floor(BAG_SIZE - Short(MICRO_HARD_STRIDE)))
+        stride = Fit(MICRO_HARD_STRIDE)
+        plan.step = 6
+    end
+    if not stride then
+        stride = MICRO_HARD_STRIDE
+        local room = Room()
+        if room > 0 then plan.scale = math.min(1, room / MicroWidth(count, stride)) end
+        plan.step = 7
+    end
+    plan.stride = stride
+    plan.room = Room()
+    return plan
+end
+
+-- Era: 552 + 26 per button. The row keeps Era's height and takes the
+-- stride and (as the last resort) the scale the plan worked out.
+local function LayoutMicroMenu(art, row, plan)
+    local container = G("MicroMenuContainer")
+    local menu = G("MicroMenu")
+    local s = S()
+    local shown = #row
+    local stride, scale = plan.stride, plan.scale
+    local natural = MicroWidth(shown, stride)
     M.microStride, M.microScale = stride, scale
     -- packed closer than Era, the buttons overlap. Blizzard's own order
     -- draws each one over the one to its left, which buries the left
@@ -576,21 +738,22 @@ local function LayoutMicroMenu(art)
     end
     if menu and menu.SetSize then
         menu:SetSize(natural, MICRO_H)
-        if menu.SetScale then menu:SetScale(scale) end
+        if menu.SetScale then menu:SetScale(scale * s) end
         -- on the art, not on the container: the container is moved to suit
         -- Blizzard's arithmetic and the buttons must not follow it
-        Anchor(menu, "BOTTOMLEFT", art, "BOTTOMLEFT", MICRO_X, MICRO_Y)
+        Anchor(menu, "BOTTOMLEFT", art, "BOTTOMLEFT", MICRO_X * s, MICRO_Y * s)
     end
     if container and container.SetPoint then
-        -- the left edge Blizzard measures the main bar from...
+        -- the left edge Blizzard measures the main bar from (its gap is in
+        -- the main bar's own units, which the bar size does not scale)...
         local mainWidth = BarSize(M.counts and M.counts.MainActionBar or 12, true)
-        local left = MAIN_BAR_X + mainWidth - BLIZZ_MAIN_GAP_X
-        local bottom = MAIN_BAR_Y - BLIZZ_MAIN_GAP_Y
+        local left = (MAIN_BAR_X + mainWidth) * s - BLIZZ_MAIN_GAP_X
+        local bottom = MAIN_BAR_Y * s - BLIZZ_MAIN_GAP_Y
         -- ...and a width that keeps its right edge where the row really
         -- ends, so the bag bar, which Blizzard hangs off that edge, is no
         -- worse off in combat than it was before
-        local right = MICRO_X + natural * scale
-        container:SetSize(math.max(right - left, 1), MICRO_H * scale)
+        local right = (MICRO_X + natural * scale) * s
+        container:SetSize(math.max(right - left, 1), MICRO_H * scale * s)
         container:ClearAllPoints()
         container:SetPoint("BOTTOMLEFT", art, "BOTTOMLEFT", left, bottom)
         M.microAnchor = left
@@ -720,23 +883,47 @@ local function BagDividers(bar, alpha)
     end
 end
 
-local function LayoutBags(art)
+-- a slot that is not wanted on the bar: unseen and dead to the mouse, on
+-- top of the slot beside it so it takes no room. (Out of combat only, like
+-- the rest of the bag layout: the bag buttons are protected.)
+local function Stow(btn, onto)
+    if not btn then return end
+    if btn.SetAlpha then btn:SetAlpha(0) end
+    if btn.EnableMouse then btn:EnableMouse(false) end
+    if onto and btn.SetPoint then
+        btn:ClearAllPoints()
+        btn:SetPoint("CENTER", onto, "CENTER", 0, 0)
+    end
+end
+
+local function Unstow(btn)
+    if not btn then return end
+    if btn.SetAlpha then btn:SetAlpha(1) end
+    if btn.EnableMouse then btn:EnableMouse(true) end
+end
+
+local function LayoutBags(art, plan)
     local bar = G("BagsBar")
     if not bar or not bar.SetPoint then return end
-    bar:ClearAllPoints()
-    bar:SetPoint("BOTTOMRIGHT", art, "BOTTOMRIGHT", BAGS_X, BAGS_Y)
+    local s = S()
+    if bar.SetScale then bar:SetScale(s) end
+    Anchor(bar, "BOTTOMRIGHT", art, "BOTTOMRIGHT", BAGS_X * s, BAGS_Y * s)
     Hide(bar.BorderArt)
     BagDividers(bar, 0)
     local prev, width = nil, 0
     for _, gname in ipairs(BAG_BUTTONS) do
         local btn = G(gname)
         if btn then
-            SkinBagButton(btn, BAG_SIZE)
             btn:ClearAllPoints()
             if prev then
-                btn:SetPoint("RIGHT", prev, "LEFT", -BAG_PAD, 0)
-                width = width + BAG_PAD + BAG_SIZE
+                -- the four bag slots: Era's 37px 5 apart, closer and then
+                -- smaller when the micro row needs the room (the backpack
+                -- keeps its size either way)
+                SkinBagButton(btn, plan.bagSize)
+                btn:SetPoint("RIGHT", prev, "LEFT", -plan.bagPad, 0)
+                width = width + plan.bagPad + plan.bagSize
             else
+                SkinBagButton(btn, BAG_SIZE)
                 btn:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", 0, 0)
                 width = BAG_SIZE
             end
@@ -745,14 +932,23 @@ local function LayoutBags(art)
     end
     local reagent = G(REAGENT_BUTTON)
     if reagent and reagent.SetPoint and prev then
-        SkinBagButton(reagent, REAGENT_SIZE)
-        reagent:ClearAllPoints()
-        reagent:SetPoint("RIGHT", prev, "LEFT", -SMALL_PAD, 0)
-        width = width + SMALL_PAD + REAGENT_SIZE
-        prev = reagent
+        if plan.reagent then
+            Unstow(reagent)
+            SkinBagButton(reagent, REAGENT_SIZE)
+            reagent:ClearAllPoints()
+            reagent:SetPoint("RIGHT", prev, "LEFT", -SMALL_PAD, 0)
+            width = width + SMALL_PAD + REAGENT_SIZE
+            prev = reagent
+        else
+            -- no reagent bag and no room: the empty slot leaves the bar
+            -- (it is back the moment a reagent bag is equipped)
+            SkinBagButton(reagent, REAGENT_SIZE)
+            Stow(reagent, prev)
+        end
     end
+    M.reagentStowed = (reagent ~= nil and prev ~= nil and not plan.reagent) or nil
     local keyring = G(KEYRING_BUTTON)
-    if keyring and keyring.SetPoint and prev and SkinKeyRing(keyring) then
+    if keyring and keyring.SetPoint and prev and plan.keyring and SkinKeyRing(keyring) then
         keyring:ClearAllPoints()
         keyring:SetPoint("RIGHT", prev, "LEFT", -SMALL_PAD, 0)
         local w = keyring.GetWidth and keyring:GetWidth() or KEYRING_W
@@ -761,21 +957,104 @@ local function LayoutBags(art)
     end
     Hide(G("BagBarExpandToggle"))
     M.bagsWidth = width
+    M.bagSize, M.bagPad = plan.bagSize, plan.bagPad
     bar:SetSize(width, BAG_SIZE)
 end
 
 --------------------------------------------------------------------------
--- experience / reputation bar in the top of the stone bar
+-- experience / reputation bars: one in the top of the stone bar, a second
+-- standing on it
 --------------------------------------------------------------------------
+
+-- Forever fills its bars with coloured atlases; Era's are the grey
+-- UI-StatusBar gradient tinted by SetStatusBarColor. The tint Era gives a
+-- bar, or nil for a bar Era never had (honor, artifact power...), whose
+-- fill is left the way Forever draws it.
+local function WatchedReaction()
+    if not (C_Reputation and C_Reputation.GetWatchedFactionData) then return nil end
+    local ok, data = pcall(C_Reputation.GetWatchedFactionData)
+    if ok and type(data) == "table" and type(data.reaction) == "number" then return data.reaction end
+    return nil
+end
+
+local function IsReputationBar(bar)
+    return not bar.isExpBar and type(bar.UpdateBarTextures) == "function"
+end
+
+local function FillColor(bar)
+    local own = Own(bar)
+    if bar.isExpBar then
+        local rested = own.rested
+        if rested == nil and GetRestState then
+            local ok, state = pcall(GetRestState)
+            rested = ok and state == 1
+        end
+        return rested and XP_RESTED or XP_NORMAL
+    end
+    if IsReputationBar(bar) then
+        -- Forever's "blue bar" factions (renown, paragon): Era had none
+        if own.blue then return REP_BLUE end
+        local reaction = own.reaction or WatchedReaction()
+        local global = type(FACTION_BAR_COLORS) == "table" and reaction and FACTION_BAR_COLORS[reaction]
+        if type(global) == "table" and type(global.r) == "number" and type(global.g) == "number" and type(global.b) == "number" then
+            return {global.r, global.g, global.b}
+        end
+        return REP_COLORS[reaction] or REP_COLORS[4]
+    end
+    return nil
+end
+
+-- textures and colours only: safe at any time, combat included
+local function ApplyFill(bar)
+    local sb = bar and bar.StatusBar
+    if not sb or not sb.SetStatusBarTexture then return end
+    local ok, color = pcall(FillColor, bar)
+    if not ok or type(color) ~= "table" then return end
+    sb:SetStatusBarTexture(STATUS_BAR)
+    if sb.SetStatusBarColor then sb:SetStatusBarColor(color[1], color[2], color[3], 1) end
+    -- the rested stretch ahead of the fill: Era's is a flat wash of the
+    -- bar's colour at 15%, Forever's a solid dark blue atlas
+    local rest = bar.ExhaustionLevelFillBar
+    if rest and rest.SetColorTexture then
+        rest:SetColorTexture(1, 1, 1, 1)
+        if rest.SetVertexColor then rest:SetVertexColor(color[1], color[2], color[3], REST_AREA_ALPHA) end
+    end
+    local tick = bar.ExhaustionTick
+    local glow = tick and tick.GetHighlightTexture and tick:GetHighlightTexture()
+    if glow and glow.SetVertexColor then glow:SetVertexColor(color[1], color[2], color[3]) end
+end
 
 local function SkinStatusBar(bar)
     if not bar then return end
+    local own = Own(bar)
     local sb = bar.StatusBar
     if sb then
+        -- Era: an 8px fill through the middle of the 13px bar
         sb:ClearAllPoints()
-        sb:SetAllPoints(bar)
-        if sb.SetStatusBarTexture then sb:SetStatusBarTexture(STATUS_BAR) end
-        if sb.Background and sb.Background.SetColorTexture then sb.Background:SetColorTexture(0, 0, 0, 0.5) end
+        sb:SetPoint("LEFT", bar, "LEFT", 0, 0)
+        sb:SetPoint("RIGHT", bar, "RIGHT", 0, 0)
+        if sb.SetHeight then sb:SetHeight(FILL_H) end
+        -- Era's half-black behind the fill. It goes on the bar itself and
+        -- Forever's own background (a texture of the fill's frame, which
+        -- draws over the bar's) is emptied, or it would sit on top of the
+        -- rested stretch and all but hide it.
+        if sb.Background and sb.Background.SetColorTexture then sb.Background:SetColorTexture(0, 0, 0, 0) end
+        if not own.back and bar.CreateTexture then
+            own.back = bar:CreateTexture(nil, "BACKGROUND")
+            own.back:SetColorTexture(0, 0, 0, 0.5)
+        end
+        if own.back then
+            own.back:ClearAllPoints()
+            own.back:SetPoint("TOPLEFT", sb, "TOPLEFT", 0, 0)
+            own.back:SetPoint("BOTTOMRIGHT", sb, "BOTTOMRIGHT", 0, 0)
+        end
+    end
+    -- the rested stretch is the bar's height (Forever's is a fixed 11px)
+    local rest = bar.ExhaustionLevelFillBar
+    if rest and rest.ClearAllPoints and sb then
+        rest:ClearAllPoints()
+        rest:SetPoint("TOPLEFT", sb, "TOPLEFT", 0, 0)
+        rest:SetPoint("BOTTOMLEFT", sb, "BOTTOMLEFT", 0, 0)
     end
     local tick = bar.ExhaustionTick
     if tick and tick.SetNormalTexture and HasFile(EXHAUSTION_TICK) then
@@ -787,28 +1066,41 @@ local function SkinStatusBar(bar)
             if t then t:ClearAllPoints(); t:SetAllPoints(tick) end
         end
     end
-    local own = Own(bar)
     if not own.hooked and hooksecurefunc then
         own.hooked = true
-        -- Forever swaps in a coloured atlas fill for rested / normal XP
+        -- Forever swaps in a coloured atlas fill for rested / normal XP...
         if type(bar.UpdateStatusBarTextures) == "function" then
             hooksecurefunc(bar, "UpdateStatusBarTextures", function(b, isRested)
-                if M.mode ~= "restyled" or not b.StatusBar then return end
-                if b.StatusBar.SetStatusBarTexture then b.StatusBar:SetStatusBarTexture(STATUS_BAR) end
-                if b.isExpBar and b.StatusBar.SetStatusBarColor then
-                    if isRested then b.StatusBar:SetStatusBarColor(0, 0.39, 0.88, 1)
-                    else b.StatusBar:SetStatusBarColor(0.58, 0, 0.55, 1) end
-                end
+                Own(b).rested = isRested and true or false
+                if M.mode == "restyled" then ApplyFill(b) end
+            end)
+        end
+        -- ...and one by standing for the reputation bar. That one it only
+        -- queues (deferUntilNextLevel), then applies whenever the bar is
+        -- next reset, so the fill is put back from both ends: here, when
+        -- the standing is known, and below, when the atlas really lands.
+        if IsReputationBar(bar) then
+            hooksecurefunc(bar, "UpdateBarTextures", function(b, reaction, blue)
+                local o = Own(b)
+                if type(reaction) == "number" then o.reaction = reaction end
+                o.blue = blue and true or false
+                if M.mode == "restyled" then ApplyFill(b) end
+            end)
+        end
+        if sb and type(sb.SetBarTexture) == "function" then
+            hooksecurefunc(sb, "SetBarTexture", function(_, _, deferred)
+                if M.mode == "restyled" and not deferred then ApplyFill(bar) end
             end)
         end
     end
+    ApplyFill(bar)
 end
 
--- the stone ledge over the bar, on a child of the container so it comes
--- and goes (and fades) with it
+-- the stone ledge over the bar in the top of the stone bar, on a child of
+-- the container so it comes and goes (and fades) with it
 local function Ledge(container)
     local own = Own(container)
-    if own.ledge or not CreateFrame then return end
+    if own.ledge or not CreateFrame then return own.ledge end
     local f = CreateFrame("Frame", nil, container)
     f:SetAllPoints(container)
     if f.SetFrameLevel and container.GetFrameLevel then f:SetFrameLevel(container:GetFrameLevel() + 2) end
@@ -822,6 +1114,31 @@ local function Ledge(container)
         f.tiles[i] = t
     end
     own.ledge = f
+    return f
+end
+
+-- the frame round the bar that stands on the stone bar: the reputation
+-- watch bar's own art, five pieces end to end, as Era draws a status bar
+-- that is not in the bar
+local function WatchFrame(container)
+    local own = Own(container)
+    if own.watch or not CreateFrame or not HasFile(WATCH_ART) then return own.watch end
+    local f = CreateFrame("Frame", nil, container)
+    f:SetAllPoints(container)
+    if f.SetFrameLevel and container.GetFrameLevel then f:SetFrameLevel(container:GetFrameLevel() + 2) end
+    f.tiles = {}
+    local x = 0
+    for i, c in ipairs(WATCH_TILES) do
+        local t = f:CreateTexture(nil, "OVERLAY")
+        t:SetTexture(WATCH_ART)
+        t:SetTexCoord(c[2], c[3], c[4], c[5])
+        t:SetSize(c[1], STATUS_H)
+        t:SetPoint("LEFT", f, "LEFT", x, 0)
+        x = x + c[1]
+        f.tiles[i] = t
+    end
+    own.watch = f
+    return f
 end
 
 -- Forever's twenty segment dividers along the bar (pooled frames holding a
@@ -833,23 +1150,70 @@ local function StatusDividers(container, alpha)
     end
 end
 
-local function LayoutStatusBars(art)
+-- the bar a container is showing, or nil
+local function ShownBar(container)
+    if not container or (container.IsShown and not container:IsShown()) then return nil end
+    local bars = container.bars
+    if type(bars) ~= "table" then return nil end
+    local index = container.shownBarIndex
+    local bar = index ~= nil and bars[index] or nil
+    if bar == nil and index == nil then
+        for _, b in pairs(bars) do
+            if not b.IsShown or b:IsShown() then return b end
+        end
+    end
+    return bar
+end
+
+-- Which container goes in the stone bar and which stands on it. Era's
+-- experience bar is the one in the bar, with the reputation bar above it;
+-- Forever's manager hands its first container the reputation bar instead
+-- (its priorities put reputation over experience), so going by container
+-- put the reputation bar in the experience bar's place and the experience
+-- bar on top (a report). It goes by what each one is showing: the
+-- experience bar takes the place in the bar, and a bar on its own does too
+-- (Era's reputation bar dropped into it at the level cap).
+local function StatusPlaces()
     local main = G("MainStatusTrackingBarContainer")
     local second = G("SecondaryStatusTrackingBarContainer")
-    for _, container in ipairs({main, second}) do
+    local mainBar, secondBar = ShownBar(main), ShownBar(second)
+    local inBar, onTop = main, second
+    if secondBar and (mainBar == nil or (secondBar.isExpBar and not mainBar.isExpBar)) then
+        inBar, onTop = second, main
+    end
+    return inBar, onTop
+end
+
+-- the fills alone, for a pass made in combat
+local function StatusFills()
+    for _, name in ipairs({"MainStatusTrackingBarContainer", "SecondaryStatusTrackingBarContainer"}) do
+        local container = G(name)
+        if container and type(container.bars) == "table" then
+            for _, bar in pairs(container.bars) do
+                if M.own[bar] and M.own[bar].hooked then ApplyFill(bar) end
+            end
+        end
+    end
+end
+
+local function LayoutStatusBars(art)
+    local inBar, onTop = StatusPlaces()
+    local s = S()
+    M.statusTop = onTop
+    for _, container in ipairs({inBar, onTop}) do
         if container and container.SetPoint then
             Hide(container.BarFrameTexture)
             StatusDividers(container, 0)
-            if container == main then
-                container:SetSize(BAR_W, XP_H)
-                container:ClearAllPoints()
-                container:SetPoint("TOP", art, "TOP", 0, 0)
-                Ledge(container)
+            if container.SetScale then container:SetScale(s) end
+            container:SetSize(BAR_W, STATUS_H)
+            local ledge, watch = Ledge(container), WatchFrame(container)
+            if container == inBar then
+                Anchor(container, "TOP", art, "TOP", 0, 0)
             else
-                container:SetSize(BAR_W, XP_TOP_H)
-                container:ClearAllPoints()
-                container:SetPoint("BOTTOM", art, "TOP", 0, -3)
+                Anchor(container, "BOTTOM", art, "TOP", 0, STATUS_UP * s)
             end
+            if ledge then ledge:SetShown(container == inBar) end
+            if watch then watch:SetShown(container ~= inBar) end
             if type(container.bars) == "table" then
                 for _, bar in pairs(container.bars) do
                     if bar.SetAllPoints then bar:ClearAllPoints(); bar:SetAllPoints(container) end
@@ -920,10 +1284,10 @@ end
 -- out of combat only (attributes on a secure frame are locked in combat):
 -- hands the handler the bars, the lift and which bars are still Blizzard's
 -- to place
-local function ArmHoldHandler(lift, bl, br)
+local function ArmHoldHandler(gap, lift, bl, br)
     local h = M.holder or InstallHoldHandler()
     if not h then return end
-    h:SetAttribute("cui-gap", BOTTOM_BAR_X)
+    h:SetAttribute("cui-gap", gap)
     h:SetAttribute("cui-lift", lift)
     if bl then
         h:SetFrameRef("cui-bl", bl)
@@ -942,33 +1306,40 @@ end
 
 local function ProtectedLayout(art)
     -- action bars are protected: anchors and sizes only out of combat
+    -- (the bars themselves are not scaled: their button containers are,
+    -- so the offsets and sizes here are in the screen's units)
+    local s = S()
     local main = G("MainActionBar")
     if main then
         main:ClearAllPoints()
-        main:SetPoint("BOTTOMLEFT", art, "BOTTOMLEFT", MAIN_BAR_X, MAIN_BAR_Y)
+        main:SetPoint("BOTTOMLEFT", art, "BOTTOMLEFT", MAIN_BAR_X * s, MAIN_BAR_Y * s)
     end
     for _, spec in ipairs(BARS) do
         local bar = G(spec.name)
         if bar and bar.SetSize then
             local count = M.counts[spec.name] or 12
-            bar:SetSize(BarSize(count, spec.horizontal))
+            local w, h = BarSize(count, spec.horizontal)
+            bar:SetSize(w * s, h * s)
         end
     end
-    -- Era: the bottom bars either side of the screen centre, above the bar
+    -- Era: the bottom bars either side of the screen centre, above the
+    -- bar, and higher when a second status bar stands on it
     local lift = BOTTOM_BAR_Y
-    local second = G("SecondaryStatusTrackingBarContainer")
-    if second and second.IsShown and second:IsShown() then lift = lift + 9 end
+    local top = M.statusTop
+    if top and top.IsShown and top:IsShown() then lift = lift + STATUS_LIFT end
+    lift = lift * s
+    local gap = BOTTOM_BAR_X * s
     local bl, br = G("MultiBarBottomLeft"), G("MultiBarBottomRight")
     if bl and (not bl.IsInDefaultPosition or bl:IsInDefaultPosition()) then
         bl:ClearAllPoints()
-        bl:SetPoint("BOTTOMRIGHT", UIParent, "BOTTOM", -BOTTOM_BAR_X, lift)
+        bl:SetPoint("BOTTOMRIGHT", UIParent, "BOTTOM", -gap, lift)
     end
     if br and (not br.IsInDefaultPosition or br:IsInDefaultPosition()) then
         br:ClearAllPoints()
-        br:SetPoint("BOTTOMLEFT", UIParent, "BOTTOM", BOTTOM_BAR_X, lift)
+        br:SetPoint("BOTTOMLEFT", UIParent, "BOTTOM", gap, lift)
     end
     -- and the same anchors for the secure handler to put back mid-fight
-    ArmHoldHandler(lift, bl, br)
+    ArmHoldHandler(gap, lift, bl, br)
 end
 
 -- When Blizzard's layout moves a bar during a fight there is nothing to be
@@ -1014,7 +1385,12 @@ function M.Layout()
     if not art then return false end
     M.inLayout = true
     local combat = InCombat()
-    if not combat and not (art.IsShown and art:IsShown()) then art:Show() end
+    if not combat then
+        -- the bar size: the art, and through S() everything laid out on it
+        M.scale = M.WantedScale()
+        if art.SetScale then art:SetScale(M.scale) end
+        if not (art.IsShown and art:IsShown()) then art:Show() end
+    end
     local main = G("MainActionBar")
     if main then
         Hide(main.BorderArt)
@@ -1029,12 +1405,18 @@ function M.Layout()
     if combat then
         M.pending = true
         RecordCombatAnchors()
+        StatusFills()
     else
         M.pending = nil
         LayoutPageNumber(art)
-        LayoutBags(art)        -- first: the micro menu is scaled to the room left of the bags
+        -- the micro buttons and the bags share one run of bar: count the
+        -- buttons, settle who gets how much, then lay both out
+        local row = MicroRow()
+        local plan = PlanRow(#row)
+        M.plan = plan
+        LayoutBags(art, plan)
         LayoutStatusBars(art)
-        LayoutMicroMenu(art)
+        LayoutMicroMenu(art, row, plan)
         ProtectedLayout(art)
     end
     M.inLayout = nil
@@ -1116,6 +1498,10 @@ local function InstallHooks()
         HookMethod(G(name), "ApplySystemAnchor")
         HookMethod(G(name), "UpdateSystemSetting")
         HookMethod(G(name), "Layout")
+        -- a container changes the bar it shows at the end of its fade,
+        -- not when the manager decides: the bars swap places then
+        HookMethod(G(name), "ApplyPendingBarToShow")
+        HookMethod(G(name), "UpdateShownState")
     end
     HookMethod(G("StatusTrackingBarManager"), "UpdateBarVisuals")
     HookMethod(G("StatusTrackingBarManager"), "UpdateBarsShown")
@@ -1125,8 +1511,20 @@ local function InstallCombatWaiter()
     if M.waiter or not CreateFrame then return end
     M.waiter = CreateFrame("Frame")
     M.waiter:RegisterEvent("PLAYER_REGEN_ENABLED")
-    M.waiter:SetScript("OnEvent", function()
-        if M.mode == "restyled" and M.pending then M.Layout() end
+    -- a bag put in or taken out of a bag slot: the reagent bag's slot
+    -- comes and goes with its bag. Whichever of the bag events says so,
+    -- only a change of that answer lays the bar out again (the delayed
+    -- one fires on every loot).
+    for _, event in ipairs({"BAG_CONTAINER_UPDATE", "BAG_UPDATE_DELAYED"}) do
+        pcall(M.waiter.RegisterEvent, M.waiter, event)
+    end
+    M.waiter:SetScript("OnEvent", function(_, event)
+        if M.mode ~= "restyled" then return end
+        if event == "PLAYER_REGEN_ENABLED" then
+            if M.pending then M.Layout() end
+        elseif G(REAGENT_BUTTON) and ReagentBagEquipped() ~= M.reagentKnown then
+            if InCombat() then M.pending = true else Again() end
+        end
     end)
 end
 
@@ -1177,15 +1575,71 @@ function M:Disable()
     ns.Print("action bars: type /reload to restore Blizzard's bars.")
 end
 
+-- /cui barsize <percent> (and the options slider): the bottom bar's size.
+-- 100 is Era's own; a value up to 3 is read as a factor (1.25 = 125).
+-- Returns the percentage saved, or nil when the value is not a number.
+function M.SetSize(value)
+    local pct = tonumber(value)
+    if not pct or pct ~= pct or pct <= 0 then return nil end
+    if pct <= 3 then pct = pct * 100 end
+    pct = math.floor(math.max(SCALE_MIN * 100, math.min(SCALE_MAX * 100, pct)) + 0.5)
+    if ns.db then
+        ns.db.barscale = pct
+        if ns.SaveFallback then ns.SaveFallback() end
+    end
+    if M.mode == "restyled" then
+        if InCombat() then M.pending = true else Again() end
+    end
+    return pct
+end
+
+-- /cui actionbars size <percent>
+function M:Command(arg)
+    local what, value = tostring(arg or ""):match("^(%S+)%s*(.-)$")
+    if what ~= "size" and what ~= "scale" then return false end
+    value = ((value or ""):gsub("%%", "")):gsub(",", ".")
+    if value == "" then
+        ns.Print("bottom bar size: %d%%. Era's own size is 100; /cui barsize <%d-%d> changes it.",
+                 tonumber(ns.db and ns.db.barscale) or 100, SCALE_MIN * 100, SCALE_MAX * 100)
+        return true
+    end
+    local pct = M.SetSize(value)
+    if not pct then
+        ns.Print("bottom bar size: give a percentage from %d to %d, for example /cui barsize 125.", SCALE_MIN * 100, SCALE_MAX * 100)
+        return true
+    end
+    local fits = math.floor(M.WantedScale() * 100 + 0.5)
+    local note = ""
+    if fits < pct then note = (" This screen has room for %d%%, so that is what is drawn."):format(fits) end
+    if M.mode ~= "restyled" then
+        note = note .. " It applies while the classic bottom bar is on."
+    elseif InCombat() then
+        note = note .. " It changes when combat ends."
+    end
+    ns.Print("bottom bar size %d%%.%s", pct, note)
+    if ns.optionsPanel and ns.optionsPanel.Refresh then ns.optionsPanel.Refresh() end
+    return true
+end
+
 function M:Status()
     if M.mode == "native" then return "(client already draws the classic bar)" end
     if M.mode == "restyled" then
         local s = "(Era bottom bar: stone art, 36px buttons, page arrows, micro buttons and bags on the bar, XP bar in the bar"
+        if M.scale and math.abs(M.scale - 1) > 0.001 then s = s .. ("; bar size %d%%"):format(M.scale * 100 + 0.5) end
         if M.microShown then
             s = s .. ("; %d micro buttons"):format(M.microShown)
             if M.microStride and M.microStride < MICRO_STRIDE then s = s .. (" %dpx apart"):format(M.microStride + 0.5) end
             if M.microScale and M.microScale < 1 then s = s .. (" at %d%%"):format(M.microScale * 100 + 0.5) end
             if (M.microStride and M.microStride < MICRO_STRIDE) or (M.microScale and M.microScale < 1) then s = s .. " to fill the room before the bags" end
+            -- what the bag side gave up for them
+            if M.reagentStowed then s = s .. "; empty reagent bag slot off the bar" end
+            if M.bagPad and M.bagPad < BAG_PAD then s = s .. ("; bag slots %dpx apart"):format(M.bagPad) end
+            if M.bagSize and M.bagSize < BAG_SIZE then s = s .. ("; bag slots at %dpx"):format(M.bagSize) end
+        end
+        local top = M.statusTop
+        if top and top.IsShown and top:IsShown() then
+            s = s .. "; a second status bar stands on the bar"
+            if top == G("MainStatusTrackingBarContainer") then s = s .. " (Forever's first container: its experience bar is in the second)" end
         end
         if M.pending then s = s .. "; bar anchors wait for combat to end" end
         if M.holding then s = s .. "; a secure handler holds the bottom bars in combat" end

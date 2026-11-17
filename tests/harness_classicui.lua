@@ -616,22 +616,58 @@ local function NewWorld(opts)
         end
         -- the divider strips between the slots (pooled frames)
         BagsBar.div1 = Frame("div"); BagsBar.div1.TopEdge = Region("Texture"); BagsBar.div1.BottomEdge = Region("Texture"); BagsBar.div1.Center = Region("Texture")
-        -- experience bar: retail framed strip, atlas fill, segment dividers
+        -- experience / reputation bars: retail framed strips, atlas fills, segment dividers.
+        -- Each container holds one bar of every kind (Forever's indices: reputation 1, honor 2,
+        -- experience 4) and shows one; -1 is none. The bar changes at the end of the container's
+        -- fade, in ApplyPendingBarToShow.
         _G.StatusTrackingBarManager = Frame("StatusTrackingBarManager"); function StatusTrackingBarManager:UpdateBarVisuals() end
+        -- GradualAnimatedStatusBarMixin's fill handling: a deferred texture only waits
+        local function AnimatedBar()
+            local sb = Frame("sb"); sb.Background = Region("Texture", {atlas = "UI-HUD-ExperienceBar-Background"})
+            function sb:SetBarTexture(tex, defer) if defer then self.pendingBarTexture = tex else self:SetStatusBarTexture(tex) end end
+            function sb:ApplyPendingTextures() if self.pendingBarTexture then self:SetBarTexture(self.pendingBarTexture); self.pendingBarTexture = nil end end
+            return sb
+        end
         local function StatusContainer(name)
             local c = Frame(name); c:SetSize(571, 17); c.BarFrameTexture = Region("Texture", {atlas = "UI-HUD-ExperienceBar-Frame"})
             c.div1 = Frame("div"); c.div1.BarDividerTexture = Region("Texture", {atlas = "UI-HUD-ExperienceBar-Divider"})
-            local xp = Frame(name .. "Exp"); xp.isExpBar = true; xp.StatusBar = Frame("sb"); xp.StatusBar.Background = Region("Texture", {atlas = "UI-HUD-ExperienceBar-Background"})
+            local xp = Frame(name .. "Exp"); xp.isExpBar = true; xp.StatusBar = AnimatedBar()
+            xp.ExhaustionLevelFillBar = Region("Texture", {atlas = "UI-HUD-ExperienceBar-Fill-Prediction"}); xp.ExhaustionLevelFillBar:SetSize(0, 11)
             xp.ExhaustionTick = Frame("tick"); xp.ExhaustionTick:SetNormalAtlas("UI-HUD-ExperienceBar-Frame-Pip")
-            function xp:UpdateStatusBarTextures(isRested) self.StatusBar:SetStatusBarTexture(isRested and "UI-HUD-ExperienceBar-Fill-Rested" or "UI-HUD-ExperienceBar-Fill-Experience") end
-            c.bars = {[1] = xp}
+            function xp:UpdateStatusBarTextures(isRested) self.StatusBar:SetBarTexture(isRested and "UI-HUD-ExperienceBar-Fill-Rested" or "UI-HUD-ExperienceBar-Fill-Experience") end
+            local rep = Frame(name .. "Rep"); rep.StatusBar = AnimatedBar()
+            function rep:UpdateBarTextures(reaction, blue) self.StatusBar:SetBarTexture(blue and "UI-HUD-ExperienceBar-Fill-Reputation-Faction-Blue" or "UI-HUD-ExperienceBar-Fill-Reputation-Faction-Green", true) end
+            -- a bar Era never had
+            local honor = Frame(name .. "Honor"); honor.StatusBar = AnimatedBar(); honor.StatusBar:SetStatusBarTexture("UI-HUD-ExperienceBar-Fill-Honor")
+            c.bars = {[1] = rep, [2] = honor, [4] = xp}
+            for _, b in pairs(c.bars) do b.parent = c; b.shown = false end
+            c.shownBarIndex = -1
+            function c:SetShownBar(index) self.pendingBarToShowIndex = index end
+            function c:ApplyPendingBarToShow()
+                if not self.pendingBarToShowIndex then return end
+                if self.pendingBarToShowIndex ~= self.shownBarIndex then
+                    local old = self.bars[self.shownBarIndex]; if old then old:Hide() end
+                    local new = self.bars[self.pendingBarToShowIndex]; if new then new:Show() end
+                    self.shownBarIndex = self.pendingBarToShowIndex
+                end
+                self.pendingBarToShowIndex = nil
+            end
+            -- Blizzard re-sizes the bars from here (ResizeContainerBars: the container less 3)
+            function c:UpdateShownState()
+                self:SetShown(self.shownBarIndex ~= -1)
+                for _, b in pairs(self.bars) do b.StatusBar:SetSize(self.width - 3, self.height - 3) end
+            end
+            -- the end of the fade: the pending bar is applied, then the container shown or hidden
+            function c:FinishFade() self:ApplyPendingBarToShow(); self:UpdateShownState() end
             function c:ApplySystemAnchor() self:ClearAllPoints(); self:SetPoint("BOTTOM", UIParent, "BOTTOM", 0, 60); self:SetSize(571, 17) end
             function c:UpdateSystemSetting() end
             _G[name] = c
             return c
         end
-        StatusContainer("MainStatusTrackingBarContainer")
+        local first = StatusContainer("MainStatusTrackingBarContainer"); first:SetShownBar(4); first:FinishFade()
         local second = StatusContainer("SecondaryStatusTrackingBarContainer"); second.shown = false
+        -- the reagent bag is bag 5; w.reagentSlots is how many slots the equipped one has (nil: the client will not say)
+        _G.C_Container = {GetContainerNumSlots = function(index) if index == 5 and w.reagentSlots ~= nil then return w.reagentSlots end error("no such bag") end}
         -- party frames: retail layout (atlas art, masked bars), Blizzard's art refresh
         local pfr = Frame("PartyFrame"); _G.PartyFrame = pfr
         for i = 1, 2 do
@@ -1175,6 +1211,8 @@ local function NewWorld(opts)
             _G.PaperDollSidebarTabs = Frame("PaperDollSidebarTabs")
             for i = 1, 3 do _G["PaperDollSidebarTab" .. i] = Frame("PaperDollSidebarTab" .. i) end
             _G.PaperDollLevelInfo = Frame("PaperDollLevelInfo")
+            -- Forever's rock band across the top of the paper doll, behind its level line (36 tall, as wide as its left pane)
+            pd.TopBackgroundStripHost = Frame("TopBackgroundStripHost"); pd.TopBackgroundStripHost:SetSize(398, 36)
             _G.PaperDollFrame_ShowSidebar = function(frame) w.sidebarShown = frame end
             _G.PaperDollFrame_SetSidebar = function(tabs, index) CharacterStatsPaneScrollBox:Show(); PaperDollFrame_ShowSidebar(CharacterStatsPaneScrollBox) end
             local model = Frame("CharacterModelScene"); model:SetPoint("TOPLEFT", cf.LeftPaneHost, "TOPLEFT", 0, 0); model:SetPoint("BOTTOMRIGHT", cf.LeftPaneHost, "BOTTOMRIGHT", 0, 0); model:SetSize(398, 464)
@@ -1808,10 +1846,14 @@ do
     check(pn.anchors[1][2] == art and pn.anchors[1][4] == 506 and pn.anchors[1][5] == 3 and pn.Text.anchors[1][4] == 15 and pn.UpButton.NormalTexture.texture == "Interface\\MainMenuBar\\UI-MainMenu-ScrollUpButton-Up" and pn.UpButton.anchors[1][5] == 10, "forever: page number and classic arrows right of the buttons")
     -- the buttons sit at Era's 552 on the art; the container is placed to
     -- suit Blizzard's arithmetic, not to be looked at
-    -- room left of the bag cluster: 1024-6-261-4-552 = 201; ten buttons at
-    -- Era's 26 need 265 and at the 24 floor 247, so the row is scaled to fit
-    -- (anchors on a scaled frame are in its own units: 552 becomes 552/scale)
-    local microScale = 201 / 247
+    -- the micro buttons and the bag cluster share the 466 between 552 and the
+    -- bar's right end. Ten buttons at Era's 26 need 265 and Era's cluster
+    -- (five 37px bags 5 apart, the reagent slot, the keyring) leaves 201, so
+    -- the bag slots close up to 1 apart, the buttons pack to 22, and the four
+    -- bag slots give the last 12 (34px: cluster 233, room 229): the row is
+    -- not scaled down
+    local microScale = 1
+    local packed = 22
     check(MicroMenu.anchors[1][2] == art and math.abs(MicroMenu.anchors[1][4] - 552 / microScale) < 0.01 and math.abs(MicroMenu.anchors[1][5] - 2 / microScale) < 0.01 and MicroMenu.BorderArt.alpha == 0, "forever: micro buttons on the bar's floor at 552, retail border gone")
     -- Forever sets MainActionBar.BOTTOMRIGHT = MicroMenuContainer.BOTTOMLEFT -4.5,-4.
     -- Put the container where that sum lands the bar on Era's 8,4 and the
@@ -1827,14 +1869,13 @@ do
     check(LFDMicroButton.NormalTexture.alpha == 1, "forever: the micro button icon is held visible when Forever fades it on hover")
     SpellbookMicroButton:SetSize(32, 40); SpellbookMicroButton.scripts.OnSizeChanged(SpellbookMicroButton)
     check(SpellbookMicroButton.width == 31 and SpellbookMicroButton.height == 37, "forever: micro button re-skinned when Blizzard's layout resizes it")
-    -- ten buttons pack to the 24px floor (a report of them at 19 showed them
-    -- piled on each other), and the row is scaled down to fit the room
-    local packed = 24
-    check(StoreMicroButton.shown == false and ab.microShown == 10 and ProfessionMicroButton.anchors[1][2] == MicroMenu and math.abs(ProfessionMicroButton.anchors[1][4] - packed) < 0.001 and math.abs(MainMenuMicroButton.anchors[1][4] - 9 * packed) < 0.001, "forever: disabled Store button hidden, the ten others no closer than 24 apart")
-    check(math.abs(MicroMenu.width - 247) < 0.01 and MicroMenu.height == 37 and math.abs(MicroMenu.scale - microScale) < 0.001 and math.abs(MicroMenuContainer.height - 37 * microScale) < 0.01, "forever: the row is scaled to fit the room rather than packed tighter")
+    -- (a report of ten buttons at 19 apart showed them piled on each other;
+    -- a report of eleven scaled to 74% called them small in their band of bar)
+    check(StoreMicroButton.shown == false and ab.microShown == 10 and ProfessionMicroButton.anchors[1][2] == MicroMenu and math.abs(ProfessionMicroButton.anchors[1][4] - packed) < 0.001 and math.abs(MainMenuMicroButton.anchors[1][4] - 9 * packed) < 0.001 and packed >= 22, "forever: disabled Store button hidden, the ten others no closer than 22 apart")
+    check(math.abs(MicroMenu.width - 229) < 0.01 and MicroMenu.height == 37 and MicroMenu.scale == 1 and MicroMenuContainer.height == 37 and ab.plan.step == 6, "forever: the row keeps Era's full height: the bag slots gave it the room")
     -- the container is widened leftwards, so its right edge is still where
     -- the row really ends and the bag bar hangs off the same place as before
-    check(math.abs((MicroMenuContainer.anchors[1][4] + MicroMenuContainer.width) - (552 + 201)) < 0.01, "forever: the container still ends where the micro row ends, so the bags are no worse off")
+    check(math.abs((MicroMenuContainer.anchors[1][4] + MicroMenuContainer.width) - (552 + 229)) < 0.01, "forever: the container still ends where the micro row ends, so the bags are no worse off")
     check(CharacterMicroButton.level > ProfessionMicroButton.level and ProfessionMicroButton.level > MainMenuMicroButton.level, "forever: packed buttons stack left over right, so only trailing edges go under")
     UpdateMicroButtons()
     check(StoreMicroButton.shown == false and ab.microShown == 10, "forever: Store hidden again after Blizzard's micro button refresh")
@@ -1843,28 +1884,30 @@ do
     CharacterMicroButton:SetPushed()
     check(CharacterMicroButton.PushedBackground.alpha == 0, "forever: pushed micro background stays hidden")
     check(BagsBar.anchors[1][1] == "BOTTOMRIGHT" and BagsBar.anchors[1][2] == art and BagsBar.anchors[1][4] == -6 and BagsBar.anchors[1][5] == 2, "forever: bag bar at the bar's right end")
-    check(MainMenuBarBackpackButton.width == 37 and MainMenuBarBackpackButton.NormalTexture.texture == "Interface\\Buttons\\UI-Quickslot2" and MainMenuBarBackpackButton.NormalTexture.width == 64 and CharacterBag0Slot.anchors[1][2] == MainMenuBarBackpackButton and CharacterBag0Slot.anchors[1][4] == -5, "forever: 37px bag slots 5 apart with the quickslot ring")
+    check(MainMenuBarBackpackButton.width == 37 and MainMenuBarBackpackButton.NormalTexture.texture == "Interface\\Buttons\\UI-Quickslot2" and MainMenuBarBackpackButton.NormalTexture.width == 64 and CharacterBag0Slot.anchors[1][2] == MainMenuBarBackpackButton and CharacterBag0Slot.anchors[1][4] == -1 and CharacterBag0Slot.width == 34 and CharacterBag3Slot.width == 34 and CharacterBag0Slot.NormalTexture.width == 59, "forever: 37px backpack, the four bag slots closed up to 1 apart and at 34px, with a ring to match")
     check(MainMenuBarBackpackButton.icon.maskRemoved == MainMenuBarBackpackButton.SquareMask and BagsBar.BorderArt.alpha == 0 and BagsBar.div1.alpha == 0, "forever: retail icon mask, bag border and slot dividers gone")
     -- Forever's gold frame while a bag is open was sized for its 48px slot and hung off the top left of ours
     local hl = CharacterBag0Slot.SlotHighlightTexture
-    check(hl.anchors[1][1] == "ALL" and hl.anchors[1][2] == CharacterBag0Slot, "forever: the open-bag frame fits the 37px slot")
+    check(hl.anchors[1][1] == "ALL" and hl.anchors[1][2] == CharacterBag0Slot, "forever: the open-bag frame fits the slot")
     local reagent, keyring = CharacterReagentBag0Slot, KeyRingButton
     check(reagent.width == 30 and reagent.anchors[1][2] == CharacterBag3Slot and reagent.anchors[1][4] == -4 and reagent.NormalTexture.texture == "Interface\\Buttons\\UI-Quickslot2" and reagent.NormalTexture.width == 52, "forever: reagent bag 30px beside the bags with a smaller ring")
     check(keyring.width == 18 and keyring.height == 39 and keyring.NormalTexture.texture == "Interface\\Buttons\\UI-Button-KeyRing" and keyring.NormalTexture.texcoord[2] == 0.5625 and keyring.NormalTexture.texcoord[4] == 0.609375 and keyring.anchors[1][2] == reagent and keyring.icon.alpha == 0, "forever: Era's 18x39 keyring left of the reagent bag, retail slot art faded")
-    check(BagsBar.width == 261 and ab.bagsWidth == 261, "forever: bag cluster 261 wide (five bags, reagent bag, keyring)")
+    check(BagsBar.width == 233 and ab.bagsWidth == 233 and BagsBar.height == 37 and reagent.alpha == 1 and reagent.mouse ~= false, "forever: bag cluster 233 wide (backpack, four 34px bags, reagent bag, keyring)")
     BagsBar:Layout()
-    check(CharacterBag0Slot.anchors[1][4] == -5 and CharacterBag0Slot.width == 37 and BagsBar.div1.alpha == 0, "forever: bag slots re-laid out after Blizzard's layout, dividers faded again")
+    check(CharacterBag0Slot.anchors[1][4] == -1 and CharacterBag0Slot.width == 34 and BagsBar.div1.alpha == 0, "forever: bag slots re-laid out after Blizzard's layout, dividers faded again")
     CharacterBag1Slot:SetSize(45, 45); CharacterBag1Slot.scripts.OnSizeChanged(CharacterBag1Slot)
     keyring:SetSize(33, 45); keyring.scripts.OnSizeChanged(keyring)
-    check(CharacterBag1Slot.width == 37 and CharacterBag1Slot.NormalTexture.texture == "Interface\\Buttons\\UI-Quickslot2" and keyring.width == 18, "forever: bag slot and keyring re-skinned when Blizzard resizes them")
+    MainMenuBarBackpackButton:SetSize(50, 50); MainMenuBarBackpackButton.scripts.OnSizeChanged(MainMenuBarBackpackButton)
+    check(CharacterBag1Slot.width == 34 and CharacterBag1Slot.NormalTexture.texture == "Interface\\Buttons\\UI-Quickslot2" and keyring.width == 18 and MainMenuBarBackpackButton.width == 37, "forever: bag slots, backpack and keyring re-skinned at their own sizes when Blizzard resizes them")
     BagsBar.div1.alpha = 1; BagsBar.div1.scripts.OnShow(BagsBar.div1)
     check(BagsBar.div1.alpha == 0, "forever: a bag divider shown again by its pool is faded on show")
     local xpc = MainStatusTrackingBarContainer
-    local xp = xpc.bars[1]
+    local xp = xpc.bars[4]
     check(xpc.anchors[1][1] == "TOP" and xpc.anchors[1][2] == art and xpc.width == 1024 and xpc.height == 13 and xpc.BarFrameTexture.alpha == 0 and xpc.div1.alpha == 0, "forever: experience bar 1024x13 in the top of the stone bar, retail frame and segment dividers gone")
     xpc.div1.alpha = 1; xpc.div1.scripts.OnShow(xpc.div1)
     check(xpc.div1.alpha == 0, "forever: an XP divider shown again by its pool is faded on show")
-    check(xp.StatusBar.barTexture == "Interface\\TargetingFrame\\UI-StatusBar" and xp.StatusBar.anchors[1][1] == "ALL" and xp.ExhaustionTick.NormalTexture.texture == "Interface\\MainMenuBar\\UI-ExhaustionTickNormal" and xp.ExhaustionTick.width == 32, "forever: classic XP fill and rest tick")
+    check(xp.StatusBar.barTexture == "Interface\\TargetingFrame\\UI-StatusBar" and xp.StatusBar.anchors[1][1] == "LEFT" and xp.StatusBar.anchors[2][1] == "RIGHT" and xp.StatusBar.height == 8 and xp.anchors[1][1] == "ALL" and xp.ExhaustionTick.NormalTexture.texture == "Interface\\MainMenuBar\\UI-ExhaustionTickNormal" and xp.ExhaustionTick.width == 32, "forever: classic XP fill, Era's 8px through the middle of the 13px bar, and the rest tick")
+    check(xp.StatusBar.barColor[1] == 0.58 and xp.StatusBar.barColor[3] == 0.55, "forever: Era's purple for experience that is not rested")
     xp:UpdateStatusBarTextures(true)
     check(xp.StatusBar.barTexture == "Interface\\TargetingFrame\\UI-StatusBar" and xp.StatusBar.barColor[2] == 0.39, "forever: rested XP colour after Blizzard's fill swap")
     local ledge = ab.own[xpc].ledge
@@ -2147,6 +2190,8 @@ do
     local m = CharacterModelScene
     check(m.anchors[1][2] == PaperDollFrame and m.anchors[1][4] == 65 and m.anchors[1][5] == -78 and m.width == 233 and m.height == 224 and m.BackgroundTopLeft.alpha == 0 and m.BackgroundOverlay.alpha == 0, "sheet: model in Era's window, race backdrop faded")
     check(CharacterStatsPaneScrollBox.shown == false and CharacterStatsPaneScrollBox.alpha == 0 and PaperDollSidebarTabs.alpha == 0 and PaperDollLevelInfo.alpha == 0, "sheet: retail stats list, sidebar tabs and level banner gone")
+    -- a report: "a weird gray bar streaking across" the sheet - Forever's rock band behind its level line, wider than Era's frame
+    check(PaperDollFrame.TopBackgroundStripHost.alpha == 0, "sheet: Forever's rock band across the title is gone")
     local rows = sheet.rows
     check(rows.STRENGTH.Value.text == "|cff20ff2026|r" and rows.STRENGTH.tooltip:find("26", 1, true) and rows.STRENGTH.tooltip:find("+5", 1, true), "sheet: buffed stat shown green with the formula in the tooltip")
     check(rows.ARMOR.Value.text == "|cff20ff20350|r" and rows.ARMOR.tooltip2:find("12.50", 1, true), "sheet: armor with the reduction line")
@@ -2331,6 +2376,7 @@ do
     t1.scripts.OnClick(t1)
     check(PaperDollFrame.shown == true and cf.width == 384 and sheet.shown == true and t1.selected == true, "sheet: character tab restores the classic layout")
     check(CharacterStatsPaneScrollBox.shown == false and w.sidebarShown == CharacterStatsPaneScrollBox and PaperDollSidebarTabs.alpha == 0 and PaperDollLevelInfo.alpha == 0, "sheet: Blizzard's Expand/SetSidebar showed its panes again, hooks hid them")
+    check(PaperDollFrame.TopBackgroundStripHost.alpha == 0, "sheet: the rock band stays gone after a tab switch")
     -- off: everything back
     w.slash("charsheet off")
     check(cs.mode == "off" and cf.width == 631 and cf.NineSlice.alpha == 1 and cf.ModeTabs.alpha == 1 and cf.ModeTabs.Tabs[1].mouse == true, "off: Blizzard's frame size, shell and side tabs back")
@@ -2341,6 +2387,7 @@ do
     local h = CharacterHeadSlot.anchors[1]
     check(h[2] == cf.LeftPaneHost and h[4] == 24 and h[5] == -60 and CharacterHeadSlot.BorderFrame.alpha == 1 and CharacterModelScene.anchors[1][2] == cf.LeftPaneHost and CharacterModelScene.width == 398, "off: slots and model back on Blizzard's anchors")
     check(CharacterStatsPaneScrollBox.shown == true and CharacterStatsPaneScrollBox.alpha == 1 and PaperDollSidebarTabs.alpha == 1, "off: Blizzard's stats list back")
+    check(PaperDollFrame.TopBackgroundStripHost.alpha == 1 and PaperDollLevelInfo.alpha == 1, "off: Blizzard's rock band and level line back")
     check(CharacterAmmoSlot.gearSlotSmall.alpha == 1 and CharacterAmmoSlot.arrowHolder.alpha == 1, "off: ammo slot art back")
     w.slash("charsheet on")
     check(cs.mode == "restyled" and cf.width == 384 and sheet.shown == true and CharacterHeadSlot.anchors[1][4] == 21, "on: classic layout again")
@@ -2833,7 +2880,7 @@ do
     w.slash("probe")
     check(w.ns.lastProbe and w.ns.lastProbe:find("saved file found at login: yes  logins counted in it: 2", 1, true) and w.ns.lastProbe:find("settings came from: saved file", 1, true), "reload: probe reports the saved file and login count")
     -- the same on a client that never writes the SavedVariables file: the CVar copy carries the settings
-    check(cvarCopy == "nameplates=0,castbar=1,combo=0,unitframes=0,party=0,charsheet=0,spellbook=0,talents=0,professions=0,questlog=0,collections=0,guild=0,actionbars=0,minimap=0,tracker=0,bugbutton=1,welcomed=0", "reload: every change is also written to the settings CVar, with the feedback flags")
+    check(cvarCopy == "nameplates=0,castbar=1,combo=0,unitframes=0,party=0,charsheet=0,spellbook=0,talents=0,professions=0,questlog=0,collections=0,guild=0,actionbars=0,minimap=0,tracker=0,bugbutton=1,welcomed=0,barscale=100", "reload: every change is also written to the settings CVar, with the feedback flags and the bar size")
     w = NewWorld({style = "6", forever = true, cvars = {ForeverClassicUI_settings = cvarCopy}})
     check(w.ns.dbLoaded == false and w.ns.db.unitframes == false and w.ns.db.castbar == true and w.ns.modules.unitframes.mode == "off" and w.ns.modules.castbar.mode == "restyled", "no saved file: settings restored from the CVar copy")
     check(w.ns.dbSource:find("cvar fallback", 1, true) and w.ns.optionsPanel.checks.minimap.checked == false, "no saved file: probe names the fallback, boxes match")
@@ -2962,6 +3009,222 @@ do
     check(w4.ns.lastProbe:find("other copies installed: none", 1, true) ~= nil, "copies: probe says none")
     check(w.ns.CompareVersions("0.7.26", "0.7.9") == 1 and w.ns.CompareVersions("1.0", "0.9.99") == 1 and w.ns.CompareVersions("0.7.26", "0.7.26") == 0, "copies: versions compare by number, not text")
     check(#w.ns.errors == 0 and #w2.ns.errors == 0 and #w3.ns.errors == 0, "copies: no errors")
+end
+
+--------------------------------------------------------------------------
+-- 10. A 0.7.28 report with two screenshots: the micro buttons "small within
+-- their area", the reputation bar in the experience bar's place and white,
+-- the whole bottom bar "much smaller than the original UI"
+--------------------------------------------------------------------------
+do
+    local w = NewWorld({style = "6", forever = true})
+    local ab = w.ns.modules.actionbars
+    local art = ab.art
+    local first, second = MainStatusTrackingBarContainer, SecondaryStatusTrackingBarContainer
+    local reagent, keyring = CharacterReagentBag0Slot, KeyRingButton
+    local FILL = "Interface\\TargetingFrame\\UI-StatusBar"
+    local function Near(a, b) return type(a) == "number" and math.abs(a - b) < 0.001 end
+    -- where the micro row ends and the bag cluster begins, in the bar's units
+    local function RowEnd() return 552 + MicroMenu.width * MicroMenu.scale end
+    local function BagsStart() return 1024 - 6 - BagsBar.width end
+
+    -- the reporter's bar: eleven micro buttons (the Store is live), the keyring, and no reagent bag
+    w.reagentSlots = 0
+    StoreMicroButton:Enable(); UpdateMicroButtons()
+    check(ab.microShown == 11 and StoreMicroButton.alpha == 1, "report: eleven micro buttons in the row")
+    check(MicroMenu.scale == 1 and MicroMenu.height == 37 and CharacterMicroButton.height == 37 and Near(MicroMenu.width, 251), "report: the eleven keep Era's full 37px height (they were scaled to 74%)")
+    check(Near(ProfessionMicroButton.anchors[1][4], 22) and Near(MainMenuMicroButton.anchors[1][4], 220) and ab.plan.step == 5, "report: packed to 22, their edges just overlapping, and no closer")
+    check(reagent.alpha == 0 and reagent.mouse == false and reagent.anchors[1][1] == "CENTER" and reagent.anchors[1][2] == CharacterBag3Slot and keyring.anchors[1][2] == CharacterBag3Slot and keyring.anchors[1][4] == -4, "report: the empty reagent bag slot leaves the bar, the keyring closes up to the bags")
+    check(MainMenuBarBackpackButton.width == 37 and CharacterBag0Slot.width == 37 and CharacterBag3Slot.width == 37 and CharacterBag0Slot.NormalTexture.width == 64 and CharacterBag1Slot.anchors[1][4] == -1 and BagsBar.width == 211, "report: the bag slots close up to 1 apart to give the row its room, every one still Era's 37px")
+    check(RowEnd() <= BagsStart() - 4 + 0.001, "report: the row ends before the bag cluster begins")
+    check(ab:Status():find("11 micro buttons 22px apart", 1, true) and ab:Status():find("empty reagent bag slot off the bar", 1, true) and ab:Status():find("bag slots 1px apart", 1, true) and not ab:Status():find("bag slots at", 1, true) and not ab:Status():find(" at %d+%%"), "report: the status line says what gave way, and that nothing was drawn smaller")
+
+    -- a reagent bag goes into its slot: the slot comes back the moment the bag does
+    w.reagentSlots = 36
+    ab.waiter:Fire("BAG_CONTAINER_UPDATE")
+    check(reagent.alpha == 1 and reagent.mouse == true and reagent.width == 30 and reagent.anchors[1][2] == CharacterBag3Slot and reagent.anchors[1][4] == -4 and keyring.anchors[1][2] == reagent and BagsBar.width == 209, "report: equipping a reagent bag brings its slot back beside the bags")
+    check(CharacterBag0Slot.width == 28 and CharacterBag0Slot.anchors[1][4] == -1 and CharacterBag0Slot.NormalTexture.width == 48 and MainMenuBarBackpackButton.width == 37, "report: with everything on the bar the four bag slots go to 28px beside the 37px backpack, as Wrath's did")
+    check(MicroMenu.scale == 1 and Near(MicroMenu.width, 253) and Near(MainMenuMicroButton.anchors[1][4], 222) and ab.plan.step == 6 and RowEnd() <= BagsStart() - 4 + 0.001, "report: and the eleven micro buttons still keep their full height")
+    -- a twelfth button in the row is more than the bag side can give: only then is the row scaled, and by little
+    AchievementMicroButton.parent = MicroMenu; ab.Layout()
+    check(ab.microShown == 12 and ab.plan.step == 7 and Near(MicroMenu.scale, 253 / 273) and Near(MainMenuMicroButton.anchors[1][4], 11 * 22) and RowEnd() <= BagsStart() - 4 + 0.001 and ab:Status():find(" at 93%", 1, true), "report: twelve buttons with everything on the bar: packed to 22 and scaled to 93%")
+    AchievementMicroButton.parent = UIParent; ab.Layout()
+    check(ab.microShown == 11 and MicroMenu.scale == 1, "report: (eleven again)")
+    -- the other bag event says the same thing, and loot that changes nothing about the reagent bag lays nothing out
+    local layouts, realLayout = 0, ab.Layout
+    ab.Layout = function(...) layouts = layouts + 1; return realLayout(...) end
+    ab.waiter:Fire("BAG_UPDATE_DELAYED")
+    check(layouts == 0, "report: a bag update that leaves the reagent bag as it was does not lay the bar out again")
+    w.reagentSlots = 0
+    ab.waiter:Fire("BAG_UPDATE_DELAYED")
+    check(layouts == 1 and reagent.alpha == 0 and MicroMenu.scale == 1, "report: taking the reagent bag out is seen on the delayed bag event too")
+    w.reagentSlots = 36
+    ab.waiter:Fire("BAG_UPDATE_DELAYED")
+    ab.Layout = realLayout
+    check(reagent.alpha == 1 and ab.plan.step == 6, "report: (the reagent bag is back in)")
+    -- taking it out again in combat: the bag buttons are protected, so the slot waits for the fight to end
+    w.inCombat = true
+    w.reagentSlots = 0
+    w.ResetBlocked()
+    ab.waiter:Fire("BAG_CONTAINER_UPDATE")
+    check(reagent.alpha == 1 and reagent.mouse == true and ab.pending == true and w.Blocked() == 0, "report: a bag change in combat moves nothing; the layout waits")
+    w.inCombat = false
+    ab.waiter:Fire("PLAYER_REGEN_ENABLED")
+    check(reagent.alpha == 0 and reagent.mouse == false and MicroMenu.scale == 1 and ab.pending == nil, "report: and is done when combat ends")
+
+    -- fewer buttons need less: Era's own geometry comes back a step at a time
+    StoreMicroButton:Disable(); UpdateMicroButtons()
+    check(ab.microShown == 10 and ab.plan.step == 4 and CharacterBag0Slot.width == 37 and CharacterBag0Slot.anchors[1][4] == -2 and Near(MainMenuMicroButton.anchors[1][4], 9 * 24) and MicroMenu.scale == 1 and reagent.alpha == 0, "report: ten buttons sit 24 apart, faces touching, beside 37px bags 2 apart")
+    LegacyMicroButton:Hide(); ab.Layout()
+    check(ab.microShown == 9 and ab.plan.step == 3 and Near(MainMenuMicroButton.anchors[1][4], 8 * 25.5) and CharacterBag0Slot.width == 37 and CharacterBag0Slot.anchors[1][4] == -5 and reagent.alpha == 0, "report: nine buttons sit 25.5 apart beside Era's own bags once the empty reagent slot is off the bar")
+    -- a client that will not say whether a reagent bag is equipped keeps the slot
+    w.reagentSlots = nil
+    ab.Layout()
+    check(reagent.alpha == 1 and reagent.mouse == true and ab.plan.reagent == true, "report: when the client cannot say whether a reagent bag is equipped, its slot stays")
+    -- Era's own bar: nine buttons, five bags, no reagent slot and no keyring
+    _G.CharacterReagentBag0Slot, _G.KeyRingButton = nil, nil
+    ab.Layout()
+    check(ab.plan.step == 1 and Near(MainMenuMicroButton.anchors[1][4], 8 * 26) and CharacterBag0Slot.width == 37 and BagsBar.width == 205 and MicroMenu.scale == 1, "report: with Era's own pieces the row is Era's: 26 apart, 37px bags, 205 of cluster")
+    _G.CharacterReagentBag0Slot, _G.KeyRingButton = reagent, keyring
+    LegacyMicroButton:Show(); w.reagentSlots = 0
+    StoreMicroButton:Enable(); UpdateMicroButtons()
+    check(ab.microShown == 11 and MicroMenu.scale == 1, "report: back to the reporter's eleven")
+    -- Forever hides the keyring on a character with no use for one: a hidden keyring takes no room
+    local keyAnchors = #keyring.anchors
+    keyring:Hide(); ab.Layout()
+    check(BagsBar.width == 37 + 4 * 38 and ab.plan.keyring == false and Near(ProfessionMicroButton.anchors[1][4], 24.2) and ab.plan.step == 4 and #keyring.anchors == keyAnchors, "report: a hidden keyring is not laid out and its room goes to the row (24.2 apart)")
+    keyring:Show(); ab.Layout()
+    check(BagsBar.width == 211 and Near(ProfessionMicroButton.anchors[1][4], 22), "report: (the keyring is back)")
+
+    -- the status bars. Levelling with no watched faction: the experience bar is the first container's
+    local xp1, rep1, honor1 = first.bars[4], first.bars[1], first.bars[2]
+    local xp2 = second.bars[4]
+    check(first.anchors[1][1] == "TOP" and first.anchors[1][2] == art and ab.own[first].ledge.shown == true and second.shown == false and MultiBarBottomLeft.anchors[1][5] == 52, "report: one bar: in the top of the stone bar under the ledge, the bottom bars at Era's 52")
+    check(honor1.StatusBar.barTexture == "UI-HUD-ExperienceBar-Fill-Honor" and honor1.StatusBar.barColor == nil, "report: a bar Era never had (honor) keeps Forever's own fill instead of going white")
+    -- a faction is watched. Forever ranks reputation over experience, so the first container
+    -- takes the reputation bar and the experience bar moves to the second
+    _G.C_Reputation = {GetWatchedFactionData = function() return {name = "Darnassus", reaction = 5, factionID = 69} end}
+    first:SetShownBar(1); second:SetShownBar(4)
+    first:FinishFade(); second:FinishFade()
+    check(first.shownBarIndex == 1 and second.shownBarIndex == 4 and second.shown == true, "report: Forever's first container now shows reputation, its second experience")
+    check(second.anchors[1][1] == "TOP" and second.anchors[1][2] == art and second.anchors[1][5] == 0 and second.width == 1024 and second.height == 13 and ab.own[second].ledge.shown == true and (ab.own[second].watch == nil or ab.own[second].watch.shown == false), "report: the experience bar is the one in the stone bar, under the ledge (the reputation bar had taken its place)")
+    local watch = ab.own[first].watch
+    check(first.anchors[1][1] == "BOTTOM" and first.anchors[1][2] == art and first.anchors[1][3] == "TOP" and first.anchors[1][5] == -3 and first.height == 13 and ab.own[first].ledge.shown == false, "report: the reputation bar stands on the stone bar, 13 tall, 3 into it as Era's does")
+    check(watch ~= nil and watch.shown == true and watch.parent == first and #watch.tiles == 5 and watch.tiles[1].texture == "Interface\\PaperDollInfoFrame\\UI-ReputationWatchBar" and watch.tiles[1].width == 16 and watch.tiles[2].width == 240 and watch.tiles[5].anchors[1][4] == 768 and watch.tiles[3].texcoord[3] == 0.203125, "report: in the reputation watch bar's own frame, Era's five pieces end to end")
+    check(rep1.StatusBar.barTexture == FILL and rep1.StatusBar.barColor[1] == 0 and rep1.StatusBar.barColor[2] == 0.6 and rep1.StatusBar.barColor[3] == 0.1, "report: the reputation fill is Era's green for a friendly faction (it was white)")
+    check(rep1.StatusBar.height == 8 and rep1.StatusBar.anchors[1][1] == "LEFT" and xp2.StatusBar.height == 8, "report: both fills are Era's 8px, put back after Blizzard's own resize of the bars")
+    check(MultiBarBottomLeft.anchors[1][5] == 61 and MultiBarBottomRight.anchors[1][5] == 61 and ab.holder:GetAttribute("cui-lift") == 61 and ab:Status():find("a second status bar stands on the bar", 1, true), "report: the bottom bars rise 9 for the bar standing on the stone bar, whichever container it is")
+    -- Blizzard's update: the standing's atlas is only queued (deferUntilNextLevel)...
+    rep1:UpdateBarTextures(4)
+    check(rep1.StatusBar.pendingBarTexture ~= nil and rep1.StatusBar.barTexture == FILL and rep1.StatusBar.barColor[1] == 0.9 and rep1.StatusBar.barColor[2] == 0.7, "report: a neutral faction is Era's yellow, taken from Blizzard's own update")
+    -- ...and lands later, when the bar is next reset
+    rep1.StatusBar:ApplyPendingTextures()
+    check(rep1.StatusBar.barTexture == FILL and rep1.StatusBar.barColor[1] == 0.9, "report: when Blizzard's queued atlas lands, Era's fill and colour go straight back")
+    rep1:UpdateBarTextures(8, true)
+    check(rep1.StatusBar.barColor[3] == 0.9 and rep1.StatusBar.barColor[1] == 0, "report: one of Forever's blue-bar factions stays blue")
+    rep1:UpdateBarTextures(5)
+    -- the experience bar: Era's colours, and Era's faint wash over the rested stretch
+    xp2:UpdateStatusBarTextures(true)
+    local rest = xp2.ExhaustionLevelFillBar
+    check(xp2.StatusBar.barTexture == FILL and xp2.StatusBar.barColor[2] == 0.39 and xp2.StatusBar.barColor[3] == 0.88, "report: rested experience is Era's blue")
+    check(rest.atlas == nil and rest.color[1] == 1 and rest.vertex[2] == 0.39 and rest.vertex[4] == 0.15 and rest.anchors[1][1] == "TOPLEFT" and rest.anchors[1][2] == xp2.StatusBar and rest.anchors[2][1] == "BOTTOMLEFT", "report: the rested stretch is Era's 15% wash of the bar's colour, the fill's height (it was Forever's solid dark blue, 11px)")
+    check(xp2.StatusBar.Background.color[4] == 0 and ab.own[xp2].back ~= nil and ab.own[xp2].back.color[4] == 0.5 and ab.own[xp2].back.parent == xp2, "report: Era's half-black sits under the rested stretch, not over it")
+    xp2:UpdateStatusBarTextures(false)
+    check(xp2.StatusBar.barColor[1] == 0.58 and rest.vertex[1] == 0.58 and xp2.ExhaustionTick.HighlightTexture.vertex[1] == 0.58, "report: and purple again, wash and tick glow with it, when the rest runs out")
+    -- at the level cap the experience bar goes and the reputation bar drops into the stone bar, as Era's did
+    second:SetShownBar(-1); second:FinishFade()
+    check(second.shown == false and first.anchors[1][1] == "TOP" and first.anchors[1][5] == 0 and ab.own[first].ledge.shown == true and ab.own[first].watch.shown == false and MultiBarBottomLeft.anchors[1][5] == 52, "report: a reputation bar on its own goes in the stone bar, and the bottom bars come back down")
+    -- mid-change only Forever's second container may be showing a bar: it is then the one in the stone bar, with nothing standing on it
+    first:SetShownBar(-1); first:FinishFade()
+    second:SetShownBar(4); second:FinishFade()
+    check(first.shown == false and second.shown == true and second.anchors[1][1] == "TOP" and ab.own[second].ledge.shown == true and ab.own[second].watch.shown == false and MultiBarBottomLeft.anchors[1][5] == 52 and not ab:Status():find("a second status bar", 1, true), "report: a bar alone in Forever's second container is in the stone bar too, and the bottom bars stay down")
+    second:SetShownBar(-1); second:FinishFade()
+    -- a faction watched mid-fight: the fills are coloured at once, the places wait
+    first:SetShownBar(4); first:FinishFade()
+    check(first.anchors[1][1] == "TOP" and first.shownBarIndex == 4, "report: (levelling again, experience in the first container)")
+    local firstWas, secondWas = first.anchors[1][1], second.anchors[1][1]
+    w.inCombat = true
+    w.ResetBlocked()
+    first:SetShownBar(1); second:SetShownBar(4)
+    first:FinishFade(); second:FinishFade()
+    rep1.StatusBar:SetBarTexture("UI-HUD-ExperienceBar-Fill-Reputation-Faction-Green")
+    check(firstWas == "TOP" and first.anchors[1][1] == firstWas and second.anchors[1][1] == secondWas and ab.pending == true and w.Blocked() == 0, "report: in combat the bars are not moved")
+    check(rep1.StatusBar.barTexture == FILL and rep1.StatusBar.barColor[2] == 0.6, "report: but the fill is still Era's the moment Blizzard sets its own")
+    -- and a layout pass made in combat puts the fills right as well (textures are not protected)
+    rep1.StatusBar:SetStatusBarTexture("UI-HUD-ExperienceBar-Fill-Reputation-Faction-Green"); rep1.StatusBar.barColor = nil
+    ab.Layout()
+    check(rep1.StatusBar.barTexture == FILL and rep1.StatusBar.barColor ~= nil and rep1.StatusBar.barColor[2] == 0.6 and first.anchors[1][1] == firstWas and w.Blocked() == 0, "report: a layout pass in combat re-applies the fills and still moves nothing")
+    w.inCombat = false
+    ab.waiter:Fire("PLAYER_REGEN_ENABLED")
+    check(first.anchors[1][1] == "BOTTOM" and second.anchors[1][1] == "TOP" and second.anchors[1][5] == 0 and MultiBarBottomLeft.anchors[1][5] == 61, "report: and they take their places when combat ends")
+
+    -- the bar's size. Era's bar is four fifths of Forever's; 125% is Forever's button size
+    local c2, pn = ActionButton2.container, MainActionBar.ActionBarPageNumber
+    check(ab.scale == 1 and (art.scale or 1) == 1 and w.ns.db.barscale == 100, "size: Era's own size until it is changed")
+    w.slash("barsize 125")
+    check(w.ns.db.barscale == 125 and ab.scale == 1.25 and art.scale == 1.25 and art.width == 1024 and Printed("bottom bar size 125%."), "size: /cui barsize 125 saves it and scales the stone bar")
+    check(Near(c2.scale, 1.0) and Near(c2.anchors[1][4], 42 * 1.25 / 1.0) and Near(MainActionBar.width, 498 * 1.25) and Near(MainActionBar.height, 45) and Near(MainActionBar.anchors[1][4], 10) and Near(MainActionBar.anchors[1][5], 5), "size: buttons 45px and 52.5 apart, the main bar at 10,5: Era's layout a quarter bigger")
+    check(Near(MultiBarRightButton2.container.scale, 1.0) and Near(MultiBarRight.height, 498 * 1.25), "size: the side bars' buttons grow with it")
+    check(pn.scale == 1.25 and Near(pn.anchors[1][4], 506) and Near(pn.anchors[1][5], 3) and pn.anchors[1][2] == art, "size: the page number scaled, still at Era's 506,3 of the bar")
+    check(Near(MicroMenu.scale, 1.25) and Near(MicroMenu.anchors[1][4], 552) and Near(MicroMenu.anchors[1][5], 2) and BagsBar.scale == 1.25 and Near(BagsBar.anchors[1][4], -6) and Near(BagsBar.anchors[1][5], 2), "size: micro buttons and bags scaled, at Era's places on the bar")
+    check(first.scale == 1.25 and second.scale == 1.25 and first.width == 1024 and Near(first.anchors[1][5], -3) and second.anchors[1][1] == "TOP", "size: both status bars scaled with the bar")
+    check(Near(MultiBarBottomLeft.anchors[1][4], -7.5) and Near(MultiBarBottomLeft.anchors[1][5], 61 * 1.25) and Near(ab.holder:GetAttribute("cui-gap"), 7.5) and Near(ab.holder:GetAttribute("cui-lift"), 61 * 1.25), "size: the bottom bars' gap and lift scaled, and handed to the combat handler")
+    -- Blizzard still measures the main bar from the micro container: BOTTOMRIGHT = container BOTTOMLEFT -4.5,-4
+    check(Near(MicroMenuContainer.anchors[1][4] - 4.5 - MainActionBar.width, 10) and Near(MicroMenuContainer.anchors[1][5] - 4, 5) and Near(MicroMenuContainer.anchors[1][4] + MicroMenuContainer.width, (552 + MicroMenu.width) * 1.25), "size: Blizzard's own sum still lands the main bar on its spot, and the container still ends with the row")
+    check(w.cvars.ForeverClassicUI_settings:find("barscale=125", 1, true) ~= nil and ab:Status():find("bar size 125%", 1, true), "size: it rides the settings CVar and shows in the status line")
+    local slider = w.ns.optionsPanel.barSize
+    check(slider ~= nil and slider.value == 125 and slider.minmax[1] == 60 and slider.minmax[2] == 150, "size: the options slider follows the command")
+    slider.Text = Region("FontString")
+    slider.scripts.OnValueChanged(slider, 112)
+    check(w.ns.db.barscale == 110 and art.scale == 1.1 and slider.Text.text:find("110%", 1, true), "size: dragging the slider sets it, in steps of five")
+    w.slash("barsize")
+    check(Printed("bottom bar size: 110%"), "size: with no number the command says what it is")
+    w.slash("barsize big")
+    check(Printed("give a percentage from 60 to 150") and w.ns.db.barscale == 110, "size: something that is not a number changes nothing")
+    w.slash("barsize 1.25")
+    check(w.ns.db.barscale == 125, "size: 1.25 is read as 125%")
+    w.slash("barsize 90%")
+    check(w.ns.db.barscale == 90 and art.scale == 0.9 and Near(c2.scale, 0.72), "size: 90% makes it smaller")
+    w.slash("actionbars size 500")
+    check(w.ns.db.barscale == 150 and art.scale == 1.5, "size: /cui actionbars size works too, and stops at 150")
+    -- no wider than the screen: the bar is 1024 of the screen's units
+    UIParent:SetWidth(1100)
+    w.slash("barsize 150")
+    check(w.ns.db.barscale == 150 and Near(ab.scale, 1100 / 1024) and Printed("room for 107%"), "size: a size the screen cannot fit is held to what it can, and the command says so")
+    UIParent:SetWidth(900)
+    w.slash("barsize 80")
+    check(Near(ab.scale, 0.8), "size: a narrow screen never stops the bar being made smaller")
+    w.slash("barsize 120")
+    check(ab.scale == 1, "size: nor makes Era's own size any smaller than it is")
+    UIParent:SetWidth(0)
+    -- in combat the setting is saved and the bar changes when the fight ends
+    w.slash("barsize 100")
+    w.inCombat = true
+    w.ResetBlocked()
+    w.slash("barsize 140")
+    check(w.ns.db.barscale == 140 and ab.scale == 1 and art.scale == 1 and Near(c2.scale, 0.8) and ab.pending == true and w.Blocked() == 0 and Printed("It changes when combat ends."), "size: changed in combat it is saved, and nothing protected is touched")
+    w.inCombat = false
+    ab.waiter:Fire("PLAYER_REGEN_ENABLED")
+    check(ab.scale == 1.4 and art.scale == 1.4 and Near(c2.scale, 0.8 * 1.4), "size: applied when combat ends")
+    -- at 100% every number is Era's again
+    w.slash("barsize 100")
+    check(art.scale == 1 and Near(c2.scale, 0.8) and Near(c2.anchors[1][4], 42 / 0.8) and MainActionBar.width == 498 and MainActionBar.anchors[1][4] == 8 and pn.anchors[1][4] == 506 and BagsBar.anchors[1][4] == -6 and Near(MicroMenu.anchors[1][4], 552) and MultiBarBottomLeft.anchors[1][4] == -6 and MultiBarBottomLeft.anchors[1][5] == 61, "size: back at 100% the layout is Era's to the pixel")
+    check(#w.ns.errors == 0, "report: no errors")
+
+    -- the size survives a reload, from the saved file or, without one, from the CVar copy
+    w.slash("barsize 115")
+    local saved, cvarCopy = w.ns.db, w.cvars.ForeverClassicUI_settings
+    w = NewWorld({style = "6", forever = true, savedDB = saved})
+    check(w.ns.db.barscale == 115 and w.ns.modules.actionbars.scale == 1.15 and w.ns.modules.actionbars.art.scale == 1.15 and w.ns.optionsPanel.barSize.value == 115, "size: kept across a reload")
+    w = NewWorld({style = "6", forever = true, cvars = {ForeverClassicUI_settings = cvarCopy}})
+    check(w.ns.dbLoaded == false and w.ns.db.barscale == 115 and w.ns.modules.actionbars.scale == 1.15 and w.ns.db.actionbars == true and w.ns.db.welcomed == false, "size: and restored from the CVar copy when the client wrote no settings file, the on/off flags with it")
+    w = NewWorld({style = "6", forever = true, savedDB = {barscale = "huge"}})
+    check(w.ns.db.barscale == 100 and w.ns.modules.actionbars.scale == 1, "size: a saved value that is not a number falls back to Era's size")
+    -- the part switched off: the setting is kept for when it is on again
+    w.slash("actionbars off")
+    w.slash("barsize 130")
+    check(w.ns.db.barscale == 130 and Printed("It applies while the classic bottom bar is on."), "size: with the classic bar off the size is saved and the command says when it applies")
+    check(#w.ns.errors == 0, "size: no errors")
 end
 
 realPrint(("Forever Classic UI harness: %d passed, %d failed"):format(passed, failed))
