@@ -219,6 +219,7 @@ end
 local function ClassicFill(bar)
     if not bar then return end
     bar:SetStatusBarTexture(BAR_TEX)
+    ns.PlainFill(bar)
     local tex = bar.GetStatusBarTexture and bar:GetStatusBarTexture()
     if tex and tex.SetDrawLayer then tex:SetDrawLayer("BACKGROUND") end
 end

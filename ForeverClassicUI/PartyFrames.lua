@@ -137,6 +137,7 @@ local function RestylePet(pet, layout)
     if hb then
         Unmask(hb, hb.HealthBarMask or pet.HealthBarMask)
         hb:SetStatusBarTexture(BAR_TEX)
+        ns.PlainFill(hb)
         hb:SetStatusBarColor(0, 1, 0)
         if layout then Place(hb, "TOPLEFT", pet, "TOPLEFT", 23, -6, 35, 4) end
     end
@@ -206,6 +207,7 @@ function M.RestyleMember(frame, index)
     if hb then
         Unmask(hb, hc.HealthBarMask)
         hb:SetStatusBarTexture(BAR_TEX)
+        ns.PlainFill(hb)
         hb:SetStatusBarColor(0, 1, 0)
         if layout then
             Place(hc, "TOPLEFT", frame, "TOPLEFT", 47, -12, 70, 8)
@@ -217,6 +219,7 @@ function M.RestyleMember(frame, index)
     if mb then
         Unmask(mb, mb.ManaBarMask)
         mb:SetStatusBarTexture(BAR_TEX)
+        ns.PlainFill(mb)
         ColorManaBar(mb, unit)
         if layout then Place(mb, "TOPLEFT", frame, "TOPLEFT", 47, -21, 70, 8) end
     end
@@ -279,6 +282,7 @@ local function InstallHooks()
             local ours, unit = IsOurBar(bar)
             if ours then
                 bar:SetStatusBarTexture(BAR_TEX)
+                ns.PlainFill(bar)
                 ColorManaBar(bar, unit)
             end
         end)

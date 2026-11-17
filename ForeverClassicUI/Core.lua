@@ -57,6 +57,25 @@ function ns.Print(fmt, ...)
     print("|cFF66CCFFClassic UI (Forever)|r: " .. msg)
 end
 
+-- Forever's bar fills are atlases, and an atlas can carry nine-slice data:
+-- the client loads it with the atlas and keeps it on the texture when the
+-- image is swapped for a file. The classic fill was then drawn as end caps
+-- and a stretched middle instead of a plain crop - a 0.7.28 screenshot had
+-- the last stretch of both status bars a shade darker, a cap 4.5 times the
+-- bar's height wide, which is the grey gradient's dark left end drawn as
+-- the right cap. Blizzard clears the slices by hand where it makes the
+-- same swap (Blizzard_NamePlateUnitFrame.lua, the classic health bar);
+-- every fill this addon swaps on one of Blizzard's bars goes through here.
+function ns.PlainFill(bar)
+    local fill = bar and bar.GetStatusBarTexture and bar:GetStatusBarTexture()
+    if not fill then return end
+    if fill.ClearTextureSlice then
+        pcall(fill.ClearTextureSlice, fill)
+    elseif fill.SetTextureSliceMargins then
+        pcall(fill.SetTextureSliceMargins, fill, 0, 0, 0, 0)
+    end
+end
+
 function ns.RegisterModule(name, mod)
     ns.modules[name] = mod
     table.insert(ns.moduleOrder, name)

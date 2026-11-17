@@ -54,7 +54,9 @@ local function Region(kind, init)
     function r:SetFontObject(f) self.font = f end
     function r:GetFontObject() return self.font end
     function r:SetJustifyH(j) self.justify = j end
-    function r:SetTextureSliceMargins() end
+    -- an atlas brings its nine-slice data with it; swapping the image for a file keeps it
+    function r:SetTextureSliceMargins(l, t, rr, b) if l == 0 and t == 0 and rr == 0 and b == 0 then self.sliced = false end end
+    function r:ClearTextureSlice() self.sliced = false end
     function r:SetDrawLayer(l) self.layer = l end
     function r:SetText(t) self.text = t end
     function r:GetText() return self.text end
@@ -140,8 +142,12 @@ local function Frame(name)
     function f:UnregisterAllEvents() self.events = {} end
     function f:RegisterUnitEvent(e) self.events[e] = true end
     function f:GetAlpha() return self.alpha end
-    function f:SetStatusBarTexture(tex) self.barTexture = tex end
     function f:GetStatusBarTexture() self.fill = self.fill or Region("Texture"); return self.fill end
+    -- an atlas name (no path) loads that atlas's slice data onto the fill, as the client does
+    function f:SetStatusBarTexture(tex)
+        self.barTexture = tex
+        if type(tex) == "string" and not tex:find("\\", 1, true) then self:GetStatusBarTexture().sliced = true end
+    end
     function f:SetStatusBarColor(...) self.barColor = {...} end
     function f:SetMaskTexture(m) self.mask = m end
     -- Forever locks useParentLevel frames to their parent's level: SetFrameLevel is ignored
@@ -243,7 +249,7 @@ local function ModernBar(name, classic)
     end
     bar.fill = Region("Texture")
     function bar:GetStatusBarTexture() return self.fill end
-    function bar:SetStatusBarTexture(t) self.fill.texture = t end
+    function bar:SetStatusBarTexture(t) self.fill.texture = t; if type(t) == "string" and not t:find("\\", 1, true) then self.fill.sliced = true end end
     function bar:SetStatusBarColor(...) self.barColor = {...} end
     bar.lookCalls = 0
     function bar:SetLook(look)
@@ -1634,6 +1640,8 @@ do
     check(pcb.fill.texture == "Interface\\TargetingFrame\\UI-StatusBar" and pcb.barColor[1] == 1 and pcb.barColor[2] == 0.7, "forever: classic yellow fill")
     pcb:UpdateBarFillTexture(true)
     check(pcb.fill.texture == "Interface\\TargetingFrame\\UI-StatusBar" and pcb.barColor[2] == 1 and pcb.barColor[1] == 0, "forever: Blizzard's fill atlas replaced by the classic green full fill")
+    -- an atlas brings its nine-slice with it and the client keeps that under the file: cleared, so the fill is a plain crop
+    check(pcb.fill.sliced == false, "forever: the fill atlas's nine-slice is cleared off the cast bar's classic fill")
     pcb.Flash:SetAtlas("ui-castingbar-full-glow-standard")
     check(pcb.Flash.texture == "Interface\\CastingBar\\UI-CastingBar-Flash" and pcb.Flash.atlas == nil, "forever: flash atlas replaced by the classic flash")
     pcb.Spark:SetAtlas("ui-castingbar-pip")
@@ -1796,8 +1804,9 @@ do
     uf.barWaiter:Fire("PLAYER_REGEN_ENABLED")
     check(tm.HealthBarsContainer.width == 119, "forever: layout applied once combat ends")
     check(pm.HealthBarsContainer.width == 119 and PlayerFrame.PlayerFrameContent.PlayerFrameContentContextual.level == 14 and uf.pendingPlayer == nil, "forever: player bars re-laid out and contextual re-raised once combat ends")
+    pm.ManaBarArea.ManaBar:SetStatusBarTexture("UI-HUD-UnitFrame-Player-PortraitOn-Bar-Mana")
     UnitFrameManaBar_UpdateType(pm.ManaBarArea.ManaBar)
-    check(pm.ManaBarArea.ManaBar.barTexture == "Interface\\TargetingFrame\\UI-StatusBar", "forever: mana texture restored after Blizzard's power-type update")
+    check(pm.ManaBarArea.ManaBar.barTexture == "Interface\\TargetingFrame\\UI-StatusBar" and pm.ManaBarArea.ManaBar:GetStatusBarTexture().sliced == false, "forever: mana texture restored after Blizzard's power-type update, the atlas's nine-slice cleared")
     pc.FrameTexture:SetAtlas("UI-HUD-UnitFrame-Player-PortraitOn"); pc.FrameTexture.alpha = 1; pm.StatusTexture:SetAtlas("UI-HUD-UnitFrame-Player-PortraitOn-Status")
     PlayerFrame_ToPlayerArt()
     check(pc.FrameTexture.alpha == 0 and skin.art.texture == "Interface\\TargetingFrame\\UI-TargetingFrame" and pm.StatusTexture.texture == nil and pm.StatusTexture.atlas == nil, "forever: player art and glow restored after Blizzard's art swap")
@@ -1813,7 +1822,12 @@ do
     check(m1.ManaBar.width == 70 and m1.ManaBar.anchors[1][5] == -21 and m1.Name.anchors[1][1] == "BOTTOMLEFT" and m1.Name.anchors[1][4] == 50 and m1.Name.anchors[1][5] == 43 and m1.Portrait.width == 37 and m1.width == 128, "forever: party mana bar, name and portrait at Era's spots, frame 128 wide")
     local pet1 = m1.PetFrame
     check(pet1.Texture.texture == "Interface\\TargetingFrame\\UI-PartyFrame" and pet1.Texture.scale == 1 and pet1.Texture.width == 64 and pet1.HealthBar.width == 35 and pet1.HealthBar.height == 4 and pet1.HealthBar.anchors[1][4] == 23 and pet1.height == 26, "forever: party pet frame classic art, 35x4 bar, 64x26")
+    hc1.HealthBar:SetStatusBarTexture("UI-HUD-UnitFrame-Party-PortraitOn-Bar-Health"); m1.ManaBar:SetStatusBarTexture("UI-HUD-UnitFrame-Party-PortraitOn-Bar-Mana"); pet1.HealthBar:SetStatusBarTexture("UI-HUD-UnitFrame-Party-PortraitOn-Bar-Health")
     m1:UpdateArt()
+    check(hc1.HealthBar.barTexture == "Interface\\TargetingFrame\\UI-StatusBar" and hc1.HealthBar:GetStatusBarTexture().sliced == false and m1.ManaBar:GetStatusBarTexture().sliced == false and pet1.HealthBar:GetStatusBarTexture().sliced == false, "forever: party bars: the atlas's nine-slice is cleared when the classic fill goes on")
+    m1.ManaBar:SetStatusBarTexture("UI-HUD-UnitFrame-Party-PortraitOn-Bar-Mana")
+    UnitFrameManaBar_UpdateType(m1.ManaBar)
+    check(m1.ManaBar.barTexture == "Interface\\TargetingFrame\\UI-StatusBar" and m1.ManaBar:GetStatusBarTexture().sliced == false, "forever: party mana bar: classic fill and no nine-slice after Blizzard's power-type update")
     check(m1.Texture.alpha == 0 and hc1.anchors[1][4] == 47 and hc1.anchors[1][5] == -12 and hc1.HealthBarMask.texture == "Interface\\Buttons\\WHITE8x8", "forever: party frame re-skinned after Blizzard's art refresh")
     w.inCombat = true
     m1:UpdateArt()
@@ -3120,6 +3134,9 @@ do
     -- ...and lands later, when the bar is next reset
     rep1.StatusBar:ApplyPendingTextures()
     check(rep1.StatusBar.barTexture == FILL and rep1.StatusBar.barColor[1] == 0.9, "report: when Blizzard's queued atlas lands, Era's fill and colour go straight back")
+    -- the screenshots' darker tail on both bars: Forever's atlas left its nine-slice on the fill, so the
+    -- classic image was drawn as end caps and a stretched middle, not a plain crop
+    check(rep1.StatusBar:GetStatusBarTexture().sliced == false, "report: the atlas's nine-slice is cleared off the reputation fill, so it is a plain crop again")
     rep1:UpdateBarTextures(8, true)
     check(rep1.StatusBar.barColor[3] == 0.9 and rep1.StatusBar.barColor[1] == 0, "report: one of Forever's blue-bar factions stays blue")
     rep1:UpdateBarTextures(5)
@@ -3127,6 +3144,7 @@ do
     xp2:UpdateStatusBarTextures(true)
     local rest = xp2.ExhaustionLevelFillBar
     check(xp2.StatusBar.barTexture == FILL and xp2.StatusBar.barColor[2] == 0.39 and xp2.StatusBar.barColor[3] == 0.88, "report: rested experience is Era's blue")
+    check(xp2.StatusBar:GetStatusBarTexture().sliced == false, "report: and its fill is a plain crop too (the experience bar had the same darker tail)")
     check(rest.atlas == nil and rest.color[1] == 1 and rest.vertex[2] == 0.39 and rest.vertex[4] == 0.15 and rest.anchors[1][1] == "TOPLEFT" and rest.anchors[1][2] == xp2.StatusBar and rest.anchors[2][1] == "BOTTOMLEFT", "report: the rested stretch is Era's 15% wash of the bar's colour, the fill's height (it was Forever's solid dark blue, 11px)")
     check(xp2.StatusBar.Background.color[4] == 0 and ab.own[xp2].back ~= nil and ab.own[xp2].back.color[4] == 0.5 and ab.own[xp2].back.parent == xp2, "report: Era's half-black sits under the rested stretch, not over it")
     xp2:UpdateStatusBarTextures(false)

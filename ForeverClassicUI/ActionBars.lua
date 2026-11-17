@@ -1011,6 +1011,7 @@ local function ApplyFill(bar)
     local ok, color = pcall(FillColor, bar)
     if not ok or type(color) ~= "table" then return end
     sb:SetStatusBarTexture(STATUS_BAR)
+    ns.PlainFill(sb)    -- Forever's atlas left its nine-slice on the fill
     if sb.SetStatusBarColor then sb:SetStatusBarColor(color[1], color[2], color[3], 1) end
     -- the rested stretch ahead of the fill: Era's is a flat wash of the
     -- bar's colour at 15%, Forever's a solid dark blue atlas
@@ -1049,7 +1050,7 @@ local function SkinStatusBar(bar)
             own.back:SetPoint("BOTTOMRIGHT", sb, "BOTTOMRIGHT", 0, 0)
         end
     end
-    -- the rested stretch is the bar's height (Forever's is a fixed 11px)
+    -- the rested stretch is the fill's height (Forever's is a fixed 11px)
     local rest = bar.ExhaustionLevelFillBar
     if rest and rest.ClearAllPoints and sb then
         rest:ClearAllPoints()
@@ -1200,8 +1201,11 @@ local function LayoutStatusBars(art)
     local inBar, onTop = StatusPlaces()
     local s = S()
     M.statusTop = onTop
-    for _, container in ipairs({inBar, onTop}) do
-        if container and container.SetPoint then
+    local containers = {}
+    if inBar then containers[#containers + 1] = inBar end
+    if onTop then containers[#containers + 1] = onTop end
+    for _, container in ipairs(containers) do
+        if container.SetPoint then
             Hide(container.BarFrameTexture)
             StatusDividers(container, 0)
             if container.SetScale then container:SetScale(s) end

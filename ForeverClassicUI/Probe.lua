@@ -682,12 +682,22 @@ local function Describe(obj, label)
                 return ("fill=%.2f,%.2f,%.2f filltex=%s"):format(r or 1, g or 1, b or 1, tostring(tex))
             end)
             -- how wide the fill is drawn against the bar: it should be the
-            -- value's share of it (a 0.7.28 screenshot had a reputation fill
-            -- in two tones, the last sixth darker, that this would explain)
+            -- value's share of it (a 0.7.28 screenshot had both status bar
+            -- fills in two tones; see ns.PlainFill)
             add(function()
                 local fill = obj:GetStatusBarTexture()
                 if not fill or not fill.GetWidth or not obj.GetWidth then return end
                 return ("fillw=%.1f/%.1f"):format(tonumber(fill:GetWidth()) or 0, tonumber(obj:GetWidth()) or 0)
+            end)
+            -- nine-slice margins still on the fill: none are expected on a
+            -- bar this addon has put the classic fill on
+            add(function()
+                local fill = obj:GetStatusBarTexture()
+                if not fill or not fill.GetTextureSliceMargins then return end
+                local l, t, r, b = fill:GetTextureSliceMargins()
+                if (tonumber(l) or 0) ~= 0 or (tonumber(t) or 0) ~= 0 or (tonumber(r) or 0) ~= 0 or (tonumber(b) or 0) ~= 0 then
+                    return ("slice=%s,%s,%s,%s"):format(tostring(l), tostring(t), tostring(r), tostring(b))
+                end
             end)
         end
         if obj.GetMinMaxValues and obj.GetValue then

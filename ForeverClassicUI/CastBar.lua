@@ -94,6 +94,7 @@ end
 local function ApplyFill(bar, isFull)
     if not bar.SetStatusBarTexture then return end
     bar:SetStatusBarTexture(FILL)
+    ns.PlainFill(bar)
     bar:SetStatusBarColor(FillColor(bar, isFull))
     local fill = bar.GetStatusBarTexture and bar:GetStatusBarTexture()
     if fill and bar.BorderMask and fill.RemoveMaskTexture then

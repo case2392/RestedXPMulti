@@ -490,6 +490,19 @@ usually enough to rebuild that window in the classic style.
   a hook on the status bar's own `SetBarTexture` as well. A bar Era never
   had (honor) keeps Forever's fill. Fills are textures and colours, so
   they are right in combat too; the places wait for it to end.
+  The same screenshots had the last stretch of both fills a shade darker,
+  a tail 4.5 times the bar's height wide that ended exactly at the value.
+  Forever's fills are atlases, an atlas can carry nine-slice data, and
+  the client loads it with the atlas (`SetAtlas` "will automatically load
+  slice data for the atlas from the DB") and keeps it on the texture when
+  the image is swapped for a file. The grey `UI-StatusBar` was then drawn
+  as end caps and a stretched middle instead of a plain crop, and the
+  tail was its dark left end drawn as the right cap. Blizzard clears the
+  slices by hand where it makes the same swap (its classic nameplate
+  health bar), and so does every fill this addon swaps on one of
+  Blizzard's bars now - the status bars, the cast bars, the unit and
+  party frames (`ns.PlainFill`: `ClearTextureSlice`). The support report
+  records how wide each fill is drawn against its bar.
   **Bar size**: Era's bar is 1024 of the screen's units with 36px
   buttons, and Forever's own buttons are 45, so at the same UI scale
   Era's bar is four fifths the size of Forever's (a report: "much smaller
