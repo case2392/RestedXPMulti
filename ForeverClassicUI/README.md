@@ -412,8 +412,10 @@ usually enough to rebuild that window in the classic style.
   the slots are protected, so mid-fight Blizzard's layout stands until
   the fight ends: the slots 2 apart and the keyring back at its 33px,
   17 longer than Era's row and into the last micro button, which is why
-  the micro buttons are all a frame level above the bag slots - the
-  keyring goes under the button, not over it. Packed at all the buttons overlap a little, and
+  the micro menu itself is raised over the bag slots' frame levels
+  (Forever has it a level below the bag bar, and it flattens its render
+  layers, so its buttons' own levels count for nothing against a frame
+  outside it) - for the keyring to go under the button, not over it. Packed at all the buttons overlap a little, and
   they are stacked left over right — descending frame levels — so it is
   each button's trailing edge that goes under its neighbour, the way
   Era's own art interlocks, rather than the icon's middle. The
@@ -496,7 +498,12 @@ usually enough to rebuild that window in the classic style.
   and bottom-right bars follow Era's numbers too
   (`UIParentPanelManagerOverrides.lua`): 52 up with no status bar, 57
   over the one in the bar and 67 when a second stands on it, 4 clear of
-  its top. Which is which goes by what each of Forever's two
+  its top. The stance and pet bars above those are still Blizzard's to
+  place: it stacks them off the main bar on every restack, which lands
+  them 8 clear of the bottom-left bar with one status bar and 10 with two
+  (Era keeps 7), less as the bar size grows (3 to 4 at 125%), and 4 into
+  it with no status bar at all - level cap and no faction watched - or
+  up to 3 into it from about 140% bar size. Which is which goes by what each of Forever's two
   containers is showing, not by which container it is: Era ranks
   experience over reputation, so its first container - the one in the
   bar - holds the experience bar, but Forever's constants rank reputation
@@ -526,7 +533,10 @@ usually enough to rebuild that window in the classic style.
   wrappers, which keep books that Blizzard's restack reads just before
   it moves the protected bars, and those are not called in a fight. A
   container something protected hangs off (a bar snapped to it in Edit
-  Mode) waits, as the bottom bars' rise does.
+  Mode) waits, as the bottom bars' rise does: the client is asked whether
+  the frame's protected state may be changed (`CanChangeProtectedState`,
+  else `IsProtected`), inside a `pcall` because the answer can come back
+  as a secret value, and a frame it will not answer for is left alone.
   The same screenshots had the last stretch of both fills a shade darker,
   a tail 4.5 times the bar's height wide that ended exactly at the value.
   Forever's fills are atlases, an atlas can carry nine-slice data, and

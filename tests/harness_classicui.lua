@@ -594,19 +594,35 @@ local function NewWorld(opts)
         ActionBar("MultiBarBottomRight", "MultiBarBottomRightButton", true)
         ActionBar("MultiBarRight", "MultiBarRightButton", false)
         -- Blizzard's restack of the bottom bars (EditModeManager.lua with Camelot's list and constants): the
-        -- main bar off the micro container, then everything else on the main bar's bottom left corner at
-        -- the stack's height - the two status containers (the second one first, 1 short of its height;
-        -- then the first and a spacer of 4), then Action Bar 3 at +606 and Action Bar 2 at +22, side by side
+        -- main bar off the micro container, then every other shown bar still in its default position on
+        -- the main bar's bottom left corner at the stack's height - the two status containers (the second
+        -- one first, 1 short of its height; then the first and a spacer of 4), Action Bar 3 at +606 (it does
+        -- not raise the stack) and Action Bar 2 at +22 beside it, then the stance and pet bars at +30.
+        -- These are Blizzard's own calls: they are not blocked in combat, do not count as the addon's, and
+        -- go through Edit Mode's wrappers (w.blizzard marks them; what was set is kept as .blizz).
         _G.ACTION_BARS_RELATIVE_TO_BASE_POSITIONING = true
         _G.ACTION_BAR_2_BOTTOM_BAR_OFFSET_X, _G.ACTION_BAR_3_BOTTOM_BAR_OFFSET_X = 22, 606
+        _G.StanceBar = Frame("StanceBar"); StanceBar.protectedFrame = true; StanceBar:SetSize(120, 30); StanceBar.shown = false
+        _G.PetActionBar = Frame("PetActionBar"); PetActionBar.protectedFrame = true; PetActionBar:SetSize(330, 30); PetActionBar.shown = false
         _G.EditModeManagerFrame = {ExitEditMode = function() end, UpdateBottomActionBarPositions = function()
+            local was = blocked
+            w.blizzard = true
             MainActionBar:ClearAllPoints(); MainActionBar:SetPoint("BOTTOMRIGHT", MicroMenuContainer, "BOTTOMLEFT", -4.5, -4)
             local y = (MainActionBar.height or 45) + 4
-            local sec, main = _G.SecondaryStatusTrackingBarContainer, _G.MainStatusTrackingBarContainer
-            if sec and sec:IsShown() then sec:ClearAllPoints(); sec:SetPoint("BOTTOMLEFT", MainActionBar, "BOTTOMLEFT", 0, y); y = y + sec.height - 1 end
-            if main and main:IsShown() then main:ClearAllPoints(); main:SetPoint("BOTTOMLEFT", MainActionBar, "BOTTOMLEFT", 0, y); y = y + main.height + 4 end
-            MultiBarBottomRight:ClearAllPoints(); MultiBarBottomRight:SetPoint("BOTTOMLEFT", MainActionBar, "BOTTOMLEFT", ACTION_BAR_3_BOTTOM_BAR_OFFSET_X, y)
-            MultiBarBottomLeft:ClearAllPoints(); MultiBarBottomLeft:SetPoint("BOTTOMLEFT", MainActionBar, "BOTTOMLEFT", ACTION_BAR_2_BOTTOM_BAR_OFFSET_X, y)
+            local function Stack(bar, x, rise)
+                if not bar or not bar:IsShown() or bar.moved == true then return end
+                bar:ClearAllPoints(); bar:SetPoint("BOTTOMLEFT", MainActionBar, "BOTTOMLEFT", x, y)
+                bar.blizz = {x, y}
+                if rise then y = y + bar.height + rise end
+            end
+            Stack(_G.SecondaryStatusTrackingBarContainer, 0, -1)
+            Stack(_G.MainStatusTrackingBarContainer, 0, 4)
+            Stack(MultiBarBottomRight, ACTION_BAR_3_BOTTOM_BAR_OFFSET_X, nil)
+            Stack(MultiBarBottomLeft, ACTION_BAR_2_BOTTOM_BAR_OFFSET_X, 4)
+            Stack(StanceBar, 30, 4)
+            Stack(PetActionBar, 30, 4)
+            w.blizzard = nil
+            blocked = was
         end}
         _G.C_Texture = {GetAtlasInfo = function() return nil end}
         -- micro menu and bags, retail style (atlas art, grid layout)
@@ -656,7 +672,7 @@ local function NewWorld(opts)
         end
         for _, n in ipairs(BAG_ORDER) do
             -- the slots are protected item buttons
-            local b = Frame(n); b.protectedFrame = true; b:SetSize(n == "MainMenuBarBackpackButton" and 50 or 30, n == "MainMenuBarBackpackButton" and 50 or 30); b.icon = Region("Texture"); b.IconBorder = Region("Texture"); b.SquareMask = Region("MaskTexture", {atlas = "UI-HUD-ActionBar-IconFrame-Mask"}); b:SetNormalAtlas("bag-border"); _G[n] = b
+            local b = Frame(n); b.protectedFrame = true; b.level = (n == "MainMenuBarBackpackButton" or n == "KeyRingButton") and 53 or 54; b:SetSize(n == "MainMenuBarBackpackButton" and 50 or 30, n == "MainMenuBarBackpackButton" and 50 or 30); b.icon = Region("Texture"); b.IconBorder = Region("Texture"); b.SquareMask = Region("MaskTexture", {atlas = "UI-HUD-ActionBar-IconFrame-Mask"}); b:SetNormalAtlas("bag-border"); _G[n] = b
             -- ItemButtonMixin:SetAlpha: on an item button SetAlpha is Blizzard's Lua and fades the icon
             -- and its border, never the button itself
             function b:SetAlpha(a) self.icon:SetAlpha(a); self.IconBorder:SetAlpha(a) end
@@ -695,11 +711,15 @@ local function NewWorld(opts)
         local function StatusContainer(name)
             local c = Frame(name); c:SetSize(571, 17); c.level = 2; c.BarFrameTexture = Region("Texture", {atlas = "UI-HUD-ExperienceBar-Frame"})
             c.div1 = Frame("div"); c.div1.BarDividerTexture = Region("Texture", {atlas = "UI-HUD-ExperienceBar-Divider"})
-            local xp = Frame(name .. "Exp"); xp.isExpBar = true; xp.StatusBar = AnimatedBar()
+            -- the experience bar uses its parent's level: its text and rested tick are one level above the
+            -- container; the reputation bar does not, and its text is two above
+            local xp = Frame(name .. "Exp"); xp.isExpBar = true; xp.StatusBar = AnimatedBar(); xp.level = c.level
+            xp.OverlayFrame = Frame("overlay"); xp.OverlayFrame.level = c.level + 1
             xp.ExhaustionLevelFillBar = Region("Texture", {atlas = "UI-HUD-ExperienceBar-Fill-Prediction"}); xp.ExhaustionLevelFillBar:SetSize(0, 11)
-            xp.ExhaustionTick = Frame("tick"); xp.ExhaustionTick:SetNormalAtlas("UI-HUD-ExperienceBar-Frame-Pip")
+            xp.ExhaustionTick = Frame("tick"); xp.ExhaustionTick.level = c.level + 1; xp.ExhaustionTick:SetNormalAtlas("UI-HUD-ExperienceBar-Frame-Pip")
             function xp:UpdateStatusBarTextures(isRested) self.StatusBar:SetBarTexture(isRested and "UI-HUD-ExperienceBar-Fill-Rested" or "UI-HUD-ExperienceBar-Fill-Experience") end
-            local rep = Frame(name .. "Rep"); rep.StatusBar = AnimatedBar()
+            local rep = Frame(name .. "Rep"); rep.StatusBar = AnimatedBar(); rep.level = c.level + 1
+            rep.OverlayFrame = Frame("overlay"); rep.OverlayFrame.level = c.level + 2
             function rep:UpdateBarTextures(reaction, blue) self.StatusBar:SetBarTexture(blue and "UI-HUD-ExperienceBar-Fill-Reputation-Faction-Blue" or "UI-HUD-ExperienceBar-Fill-Reputation-Faction-Green", true) end
             -- a bar Era never had
             local honor = Frame(name .. "Honor"); honor.StatusBar = AnimatedBar(); honor.StatusBar:SetStatusBarTexture("UI-HUD-ExperienceBar-Fill-Honor")
@@ -716,22 +736,31 @@ local function NewWorld(opts)
                 end
                 self.pendingBarToShowIndex = nil
             end
-            -- Blizzard re-sizes the bars from here (ResizeContainerBars: the container less 3)
+            -- Blizzard re-sizes the bars from here (ResizeContainerBars: the container less 3) and asks
+            -- for the bottom bars to be stacked again
             function c:UpdateShownState()
                 self:SetShown(self.shownBarIndex ~= -1)
                 for _, b in pairs(self.bars) do b.StatusBar:SetSize(self.width - 3, self.height - 3) end
+                -- (the request is dropped until Edit Mode has initialized, early in a login: w.editModeAsleep)
+                if _G.EditModeManagerFrame and not w.editModeAsleep then EditModeManagerFrame:UpdateBottomActionBarPositions() end
             end
             -- the end of the fade: the pending bar is applied, then the container shown or hidden
             function c:FinishFade() self:ApplyPendingBarToShow(); self:UpdateShownState() end
             function c:ApplySystemAnchor() self:ClearAllPoints(); self:SetPoint("BOTTOM", UIParent, "BOTTOM", 0, 60); self:SetSize(571, 17) end
             function c:UpdateSystemSetting() end
-            -- an Edit Mode system: SetPoint and ClearAllPoints on the frame are Blizzard's Lua wrappers,
-            -- which keep its books (counted here); the widget's own methods are kept as ...Base
-            c.SetPointBase, c.ClearAllPointsBase = c.SetPoint, c.ClearAllPoints
+            -- an Edit Mode system: SetPoint, ClearAllPoints and SetScale on the frame are Blizzard's Lua
+            -- wrappers, which keep its books; the widget's own methods are kept as ...Base. c.books counts
+            -- the wrapper calls the ADDON makes (Blizzard's own, made while w.blizzard is set, are its business).
+            c.SetPointBase, c.ClearAllPointsBase, c.SetScaleBase = c.SetPoint, c.ClearAllPoints, c.SetScale
             c.books = 0
-            function c:SetPoint(...) self.books = self.books + 1; return self:SetPointBase(...) end
-            function c:ClearAllPoints() self.books = self.books + 1; return self:ClearAllPointsBase() end
+            local function Booked(self) if not w.blizzard then self.books = self.books + 1 end end
+            function c:SetPoint(...) Booked(self); return self:SetPointBase(...) end
+            function c:ClearAllPoints() Booked(self); return self:ClearAllPointsBase() end
+            function c:SetScale(v) Booked(self); return self:SetScaleBase(v) end
+            -- protected only when something protected hangs off it; the client's own question is whether
+            -- its protected state may be changed right now
             function c:IsProtected() return self.protectedFrame == true, false end
+            function c:CanChangeProtectedState() return not (self.protectedFrame == true and InCombatLockdown()) end
             _G[name] = c
             return c
         end
@@ -3156,7 +3185,8 @@ do
     check(CharacterBag2Slot.NormalTexture.texture == "Interface\\Buttons\\UI-Quickslot2" and keyring.NormalTexture.texture == "Interface\\Buttons\\UI-Button-KeyRing" and w.Blocked() == 0, "report: loot mid-fight: the classic art goes straight back (textures are not protected) and nothing protected is touched")
     -- (spread 2 apart with a 33px keyring, Blizzard's row is 17 longer than ours and the keyring reaches the
     -- last micro button: the micro buttons are all a level above the bag slots, so it goes under, not over)
-    check(MainMenuMicroButton.level > (BagsBar.level or 1) + 1 and CharacterMicroButton.level > MainMenuMicroButton.level, "report: every micro button is above the bag slots' level, the last one included")
+    -- (Forever: the menu 51 and flattened, the bag bar 52, its backpack and keyring 53, the bag slots 54)
+    check(MicroMenu.level == 55 and MainMenuMicroButton.level > CharacterBag3Slot.level and MainMenuMicroButton.level > keyring.level and CharacterMicroButton.level > MainMenuMicroButton.level, "report: the micro menu itself is raised over the bag slots' levels, and its buttons with it, the last one included")
     w.inCombat = false
     ab.waiter:Fire("PLAYER_REGEN_ENABLED")
     check(keyring.width == 18 and CharacterBag1Slot.width == 37 and CharacterBag1Slot.anchors[1][4] == -1 and BagsBar.width == 211 and ab.pending == nil, "report: and the bags are put right when the fight ends")
@@ -3245,6 +3275,7 @@ do
     check(MultiBarBottomLeft.anchors[1][5] == 67 and MultiBarBottomRight.anchors[1][5] == 67 and ab.holder:GetAttribute("cui-lift") == 67 and ab:Status():find("a second status bar stands on the bar", 1, true), "report: the bottom bars rise to Era's 67 for the bar standing on the stone bar, whichever container it is, clear of its top")
     -- Forever puts the bars' text and the rested tick one and two levels above the container
     check(ab.own[second].ledge.level == 2 and watch.level == 2 and second:GetFrameLevel() == 2, "report: the frame art is at the container's own level, under the bar's text and the rested tick (two levels up it was drawn across both)")
+    check(ab.own[second].ledge.level < xp2.OverlayFrame.level and ab.own[second].ledge.level < xp2.ExhaustionTick.level and watch.level < rep1.OverlayFrame.level and watch.level < xp2.OverlayFrame.level, "report: (below the experience bar's text and tick, a level up, and the reputation bar's text, two up)")
     first.level, second.level = 4, 4
     ab.Layout()
     check(ab.own[second].ledge.level == 4 and watch.level == 4, "report: and follows the container's level")
@@ -3271,8 +3302,12 @@ do
     check(xp2.StatusBar.Background.color[4] == 0 and ab.own[xp2].back ~= nil and ab.own[xp2].back.color[4] == 0.5 and ab.own[xp2].back.parent == xp2, "report: Era's half-black sits under the rested stretch, not over it")
     xp2:UpdateStatusBarTextures(false)
     check(xp2.StatusBar.barColor[1] == 0.58 and rest.vertex[1] == 0.58 and xp2.ExhaustionTick.HighlightTexture.vertex[1] == 0.58, "report: and purple again, wash and tick glow with it, when the rest runs out")
-    -- at the level cap the experience bar goes and the reputation bar drops into the stone bar, as Era's did
+    -- at the level cap the experience bar goes and the reputation bar drops into the stone bar, as Era's did.
+    -- (Done here as early in a login, before Edit Mode has initialized: the change then asks for no
+    -- restack of the bottom bars, and it is the hooks on the container itself that see it.)
+    w.editModeAsleep = true
     second:SetShownBar(-1); second:FinishFade()
+    w.editModeAsleep = nil
     check(second.shown == false and first.anchors[1][1] == "TOP" and first.anchors[1][5] == 0 and ab.own[first].ledge.shown == true and ab.own[first].watch.shown == false and MultiBarBottomLeft.anchors[1][5] == 57, "report: a reputation bar on its own goes in the stone bar, and the bottom bars come back down to 57")
     -- mid-change only Forever's second container may be showing a bar: it is then the one in the stone bar, with nothing standing on it
     first:SetShownBar(-1); first:FinishFade()
@@ -3293,14 +3328,17 @@ do
     first:FinishFade(); second:FinishFade()
     rep1.StatusBar:SetBarTexture("UI-HUD-ExperienceBar-Fill-Reputation-Faction-Green")
     check(second.anchors[1][1] == "TOP" and second.anchors[1][2] == art and second.anchors[1][5] == 0 and first.anchors[1][1] == "BOTTOM" and first.anchors[1][2] == art and first.anchors[1][5] == -3 and ab.own[second].ledge.shown == true and ab.own[first].watch.shown == true and ab.own[first].ledge.shown == false, "report: in combat the two bars still swap into their places (the containers are not protected)")
-    check(first.books == books1 and second.books == books2, "report: through the widget's own methods: Edit Mode's wrappers, whose books Blizzard's restack reads, are not called in a fight")
-    check(MultiBarBottomLeft.anchors[1][5] == 57 and ab.pending == true and w.Blocked() == 0, "report: the bottom bars' rise waits for the fight to end, and nothing protected is touched")
+    check(first.books == books1 and second.books == books2, "report: through the widget's own methods: Edit Mode's wrappers (SetPoint, ClearAllPoints, SetScale), whose books Blizzard's restack reads, are not called in a fight")
+    -- (a container changing its bar makes Blizzard stack the bottom bars again: the two above the main bar
+    -- go to its own +22 / +606 at its stack height, 36 + 4 + 12 + 17, and are its to place until the fight ends)
+    check(MultiBarBottomLeft.anchors[1][2] == MainActionBar and MultiBarBottomLeft.anchors[1][4] == 22 and MultiBarBottomLeft.anchors[1][5] == 69 and MultiBarBottomRight.anchors[1][4] == 606 and ab.pending == true and w.Blocked() == 0, "report: the bottom bars' places wait for the fight to end, and nothing protected is touched")
     check(rep1.StatusBar.barTexture == FILL and rep1.StatusBar.barColor[2] == 0.6, "report: and the fill is Era's the moment Blizzard sets its own")
     -- Blizzard's restack mid-fight (a pet dying is enough) moves both containers onto the main bar's corner
     books1, books2 = first.books, second.books
+    second.blizz, first.blizz = nil, nil
     EditModeManagerFrame:UpdateBottomActionBarPositions()
-    check(first.books == books1 + 2 and second.books == books2 + 2, "report: (Blizzard's restack moved both containers, through its wrappers)")
-    check(second.anchors[1][1] == "TOP" and second.anchors[1][2] == art and first.anchors[1][1] == "BOTTOM" and first.anchors[1][2] == art and first.anchors[1][5] == -3, "report: and they are put straight back (they sat 8 right and 4 up until the fight ended)")
+    check(second.blizz ~= nil and second.blizz[1] == 0 and second.blizz[2] == 40 and first.blizz[2] == 52, "report: (Blizzard's restack put both containers on the main bar's corner: 8 right, and 4 and 6 up)")
+    check(second.anchors[1][1] == "TOP" and second.anchors[1][2] == art and first.anchors[1][1] == "BOTTOM" and first.anchors[1][2] == art and first.anchors[1][5] == -3 and first.books == books1 and second.books == books2, "report: and they are put straight back (they sat there until the fight ended), again without Edit Mode's wrappers")
     -- a layout pass made in combat puts the fills right as well (textures are not protected)
     rep1.StatusBar:SetStatusBarTexture("UI-HUD-ExperienceBar-Fill-Reputation-Faction-Green"); rep1.StatusBar.barColor = nil
     w.ResetBlocked()
@@ -3314,7 +3352,22 @@ do
     w.ResetBlocked()
     ab.Layout()
     check(first.anchors[1][2] == MainActionBar and first.anchors[1][5] == 61 and w.Blocked() == 0 and rep1.StatusBar.barTexture == FILL and rep1.StatusBar.barColor[2] == 0.6, "report: a protected container is not moved in a fight; its fill is still put right")
+    -- a client without that question is asked whether the frame is protected...
+    local ask = first.CanChangeProtectedState
+    first.CanChangeProtectedState = nil
+    w.ResetBlocked()
+    ab.Layout()
+    check(first.anchors[1][2] == MainActionBar and w.Blocked() == 0, "report: (asked the older way, the protected container is left alone as well)")
     first.protectedFrame = nil
+    ab.Layout()
+    check(first.anchors[1][2] == art and first.anchors[1][1] == "BOTTOM", "report: (and one that is not protected is put back)")
+    -- ...and an answer that cannot be read (the client may hand it back as a secret value) means hands off
+    first:ClearAllPointsBase(); first:SetPointBase("BOTTOMLEFT", MainActionBar, "BOTTOMLEFT", 0, 61)
+    first.CanChangeProtectedState = function() error("attempt to perform a boolean test on a secret value") end
+    local errorsBefore = #w.ns.errors
+    ab.Layout()
+    check(first.anchors[1][2] == MainActionBar and first.anchors[1][5] == 61 and #w.ns.errors == errorsBefore, "report: a container the client will not answer for is left where it is, without an error")
+    first.CanChangeProtectedState = ask
     w.inCombat = false
     ab.waiter:Fire("PLAYER_REGEN_ENABLED")
     check(first.anchors[1][1] == "BOTTOM" and first.anchors[1][2] == art and second.anchors[1][1] == "TOP" and second.anchors[1][5] == 0 and MultiBarBottomLeft.anchors[1][5] == 67 and ab.pending == nil, "report: when the fight ends the bottom bars rise for the upper bar")
@@ -3468,6 +3521,48 @@ do
     w.slash("barsize 150")
     check(w.ns.modules.actionbars.stackShift == 0 and Near(MultiBarBottomRight.anchors[1][4], 9) and Near(MultiBarBottomRight.width, 498 * 1.5), "restack: on a client that does not stack its bars off the main bar the frame is left where its buttons are")
     check(#w.ns.errors == 0, "restack: no errors there either")
+end
+
+--------------------------------------------------------------------------
+-- 12. The stance and pet bars are Blizzard's to place: it stacks them off
+-- the main bar, above the bottom-left bar's frame, on every restack. Where
+-- its sum lands them against the bottom bars the addon places at Era's
+-- heights (Era keeps 7 between the two). The addon does not touch them;
+-- this pins the arithmetic so a change to the bars' sizes or rise shows.
+--------------------------------------------------------------------------
+do
+    local w = NewWorld({style = "6", forever = true, noSnippets = true})
+    local ab = w.ns.modules.actionbars
+    local first, second = MainStatusTrackingBarContainer, SecondaryStatusTrackingBarContainer
+    local function Near(a, b) return type(a) == "number" and math.abs(a - b) < 0.001 end
+    StanceBar:Show()
+    -- how far the stance bar's bottom edge is above the top of the bottom-left bar's buttons
+    local function Clear()
+        EditModeManagerFrame:UpdateBottomActionBarPositions()
+        local s = ab.scale
+        return (4 * s + StanceBar.blizz[2]) - (MultiBarBottomLeft.anchors[1][5] + MultiBarBottomLeft.height)
+    end
+    check(first.shown == true and second.shown == false and Near(Clear(), 8) and StanceBar.anchors[1][2] == MainActionBar and StanceBar.anchors[1][4] == 30, "stack: levelling (one status bar) the stance bar clears the bottom-left bar by 8")
+    w.slash("barsize 125")
+    check(Near(Clear(), 3.75), "stack: by 3.75 at 125%")
+    w.slash("barsize 100")
+    _G.C_Reputation = {GetWatchedFactionData = function() return {name = "Darnassus", reaction = 5, factionID = 69} end}
+    first:SetShownBar(1); second:SetShownBar(4)
+    first:FinishFade(); second:FinishFade()
+    check(MultiBarBottomLeft.anchors[1][5] == 67 and Near(Clear(), 10), "stack: with a reputation bar standing on the stone bar, by 10")
+    w.slash("barsize 125")
+    check(Near(Clear(), 3.25), "stack: by 3.25 at 125%")
+    w.slash("barsize 150")
+    check(Near(Clear(), -3.5), "stack: (known) at 150% with both status bars it is 3.5 into the bottom-left bar's buttons")
+    w.slash("barsize 100")
+    first:SetShownBar(-1); second:SetShownBar(-1)
+    first:FinishFade(); second:FinishFade()
+    check(MultiBarBottomLeft.anchors[1][5] == 52 and Near(Clear(), -4), "stack: (known, and older than the bar size) with no status bar at all Blizzard's sum puts it 4 into them, where Era keeps 7")
+    -- the pet bar stands on the stance bar
+    PetActionBar:Show()
+    EditModeManagerFrame:UpdateBottomActionBarPositions()
+    check(PetActionBar.blizz[2] == StanceBar.blizz[2] + 30 + 4 and PetActionBar.anchors[1][2] == MainActionBar, "stack: (the pet bar goes above the stance bar)")
+    check(w.Blocked() == 0 and #w.ns.errors == 0, "stack: the addon touches neither, and no errors")
 end
 
 realPrint(("Forever Classic UI harness: %d passed, %d failed"):format(passed, failed))

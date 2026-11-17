@@ -786,14 +786,21 @@ local function LayoutMicroMenu(art, row, plan)
     -- draws each one over the one to its left, which buries the left
     -- button's face; the row reads right stacking the other way, so the
     -- levels descend and only the trailing edges go under.
-    local base = (menu and menu.GetFrameLevel and menu:GetFrameLevel() or 1) + 1
-    -- ...and all of them above the bag slots. Mid-fight Blizzard's own bag
-    -- layout (an item lifted or dropped) spreads the slots 2 apart and
+    -- ...and the whole menu above the bag slots. Mid-fight Blizzard's own
+    -- bag layout (an item lifted or dropped) spreads the slots 2 apart and
     -- puts the keyring back to its 33px, and nothing may undo that until
-    -- the fight ends: the keyring then reaches under the last micro button
-    -- instead of over it, and the button still takes the click.
+    -- the fight ends: its row is then 17 longer than Era's and the keyring
+    -- reaches the last micro button. Forever has the menu a level below
+    -- the bag bar, and the menu flattens its render layers - it and its
+    -- buttons draw as one, at the menu's own level - so it is the menu
+    -- that is raised over the slots (one and two levels above their bar),
+    -- for the keyring to go under that button instead of over it.
     local bags = G("BagsBar")
-    if bags and bags.GetFrameLevel then base = math.max(base, bags:GetFrameLevel() + 2) end
+    if menu and menu.SetFrameLevel and menu.GetFrameLevel and bags and bags.GetFrameLevel then
+        local over = bags:GetFrameLevel() + 3
+        if menu:GetFrameLevel() < over then pcall(menu.SetFrameLevel, menu, over) end
+    end
+    local base = (menu and menu.GetFrameLevel and menu:GetFrameLevel() or 1) + 1
     for i, btn in ipairs(row) do
         if menu and btn.SetPoint then Anchor(btn, "BOTTOMLEFT", menu, "BOTTOMLEFT", (i - 1) * stride, 0) end
         if btn.SetFrameLevel then pcall(btn.SetFrameLevel, btn, base + shown - i) end
@@ -1306,10 +1313,22 @@ end
 -- protected bars; during a fight those stay exactly as Blizzard wrote
 -- them. A container something protected does hang off (a bar the player
 -- snapped to it in Edit Mode) waits for the fight to end like the rest.
+-- The client is asked its own question - may this frame's protected state
+-- be changed now - and the whole of the asking sits inside a pcall: the
+-- answer can come back as a secret value, which addon code may not test,
+-- and a frame that cannot be asked about is left alone.
+local function MayMove(frame)
+    if frame.CanChangeProtectedState then
+        if frame:CanChangeProtectedState() then return true end
+        return false
+    end
+    if frame.IsProtected and frame:IsProtected() then return false end
+    return true
+end
+
 local function FreeInCombat(frame)
-    if not frame.IsProtected then return true end
-    local ok, protected = pcall(frame.IsProtected, frame)
-    return ok and not protected
+    local ok, free = pcall(MayMove, frame)
+    return ok and free == true
 end
 
 local function AnchorInCombat(frame, point, rel, relPoint, x, y)
