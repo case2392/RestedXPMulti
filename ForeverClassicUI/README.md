@@ -385,16 +385,29 @@ usually enough to rebuild that window in the classic style.
   stopping at the first that fits: the buttons pack to 24px, where their
   faces touch (the 29px art has a few transparent pixels each side); the
   reagent bag's slot leaves the bar while no reagent bag is in it (it is
-  back the moment one is equipped); the bag slots close up, from 5 apart
-  to as little as 1; the buttons pack to 22px, their edges just
+  back the moment one is equipped; it is hidden, not faded, because
+  `SetAlpha` on one of Forever's item buttons is Blizzard's own function
+  and fades the icon alone, leaving the slot's frame on the bar); the bag
+  slots close up, from 5 apart to as little as 1; the buttons pack to 22px, their edges just
   overlapping; the four bag slots are drawn smaller, down to 28px beside
   the 37px backpack, which is what Blizzard itself did when the micro
   row grew (the Wrath client's `BAGS_BAR_SLOT_SIZE = 28`); and only then
   is the row scaled down. Eleven buttons with the keyring and an empty reagent
   slot stop at 22px with the bags 1 apart, nothing drawn smaller than Era
-  drew it; ten sit 24 apart beside bags 2 apart; nine keep Era's bags. A
-  keyring Forever has hidden (a character the game says has no use for
-  one) takes no room. Packed at all the buttons overlap a little, and
+  drew it; ten sit 24 apart beside bags 2 apart; nine keep Era's bags.
+  With a reagent bag equipped the eleven sit 22.4 apart beside 28px bag
+  slots, the reagent slot (the small one, 30px) drawn no bigger than
+  they are. A keyring Forever has hidden (a character the game says has
+  no use for one) takes no room, and neither does a reagent slot
+  something else has hidden. Blizzard lays the bag bar out again
+  whenever an item is lifted or dropped, through a callback that holds
+  the layout function it had at load - a hook on `BagsBar.Layout` never
+  sees it - so the bag manager's `OnExpandBarChanged` is hooked as well;
+  the slots are protected, so mid-fight Blizzard's layout stands until
+  the fight ends: the slots 2 apart and the keyring back at its 33px,
+  17 longer than Era's row and into the last micro button, which is why
+  the micro buttons are all a frame level above the bag slots - the
+  keyring goes under the button, not over it. Packed at all the buttons overlap a little, and
   they are stacked left over right — descending frame levels — so it is
   each button's trailing edge that goes under its neighbour, the way
   Era's own art interlocks, rather than the icon's middle. The
@@ -464,11 +477,20 @@ usually enough to rebuild that window in the classic style.
   and the classic layout put back; bar anchors are protected and wait
   for combat to end.
   The two status bars follow Era's own client (`StatusTrackingBar.xml`,
-  Classic): each is 1024x13 with an 8px `UI-StatusBar` fill through its
-  middle over half-black. The one in the bar is under the ledge; a second
-  stands on the bar, 10 higher, in the reputation watch bar's own frame
-  (`UI-ReputationWatchBar`, five pieces end to end), and the bottom bars
-  rise 9 for it. Which is which goes by what each of Forever's two
+  Classic): each is 1024x13 and so is its `UI-StatusBar` fill, over
+  half-black (the template says 8, but Era's own Lua sizes the fill to
+  its container on load); the frame art over it leaves the middle
+  showing. The one in the bar is under the ledge; a second stands on the
+  bar, 10 higher, in the reputation watch bar's own frame
+  (`UI-ReputationWatchBar`, five pieces end to end). That art is on a
+  frame at the container's own level: over the fill, which Forever keeps
+  in the LOW strata, and under the bar's text and the rested tick, which
+  Forever puts one and two levels above the container (two levels up,
+  where the ledge used to be, it was drawn across both). The bottom-left
+  and bottom-right bars follow Era's numbers too
+  (`UIParentPanelManagerOverrides.lua`): 52 up with no status bar, 57
+  over the one in the bar and 67 when a second stands on it, 4 clear of
+  its top. Which is which goes by what each of Forever's two
   containers is showing, not by which container it is: Era ranks
   experience over reputation, so its first container - the one in the
   bar - holds the experience bar, but Forever's constants rank reputation
@@ -489,7 +511,16 @@ usually enough to rebuild that window in the classic style.
   applies it whenever the bar is next reset, so the fill is put back from
   a hook on the status bar's own `SetBarTexture` as well. A bar Era never
   had (honor) keeps Forever's fill. Fills are textures and colours, so
-  they are right in combat too; the places wait for it to end.
+  they are right in combat too. So are the places: the two containers
+  are not protected (Blizzard anchors them to the main bar, not the
+  reverse), and its restack of the bottom bars mid-fight - a pet dying
+  is enough - moves them off the stone bar (8 right and 4 or 6 up),
+  where they used to stay until the fight ended. They are put straight back with the widget's own
+  `SetPoint` (`SetPointBase`): the methods on the frame are Edit Mode's
+  wrappers, which keep books that Blizzard's restack reads just before
+  it moves the protected bars, and those are not called in a fight. A
+  container something protected hangs off (a bar snapped to it in Edit
+  Mode) waits, as the bottom bars' rise does.
   The same screenshots had the last stretch of both fills a shade darker,
   a tail 4.5 times the bar's height wide that ended exactly at the value.
   Forever's fills are atlases, an atlas can carry nine-slice data, and
