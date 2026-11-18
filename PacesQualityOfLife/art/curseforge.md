@@ -54,7 +54,7 @@ file's text can go there directly.
 - Quest log: a tracking checkbox on every zone header to track or untrack the whole zone, one for all quests, and Track all / Untrack all in the list's gear menu (up to the game's 25 tracked quests, the zone on the open map first).
 - Looking For Group: tank / healer / damage buttons to show only the players listing the roles you need.
 - Objective tracker follows your zone: entering a zone tracks that zone's quests and untracks the rest.
-- Chat Channels: a microphone on community members in voice before you join (between Pace's QoL users).
+- Chat Channels: a microphone on community members in voice before you join (between Pace's QoL users: Battle.net friends, guildmates, group members, and your faction in a WoW community).
 - Every feature can be switched off: Options > AddOns > Pace's Quality of Life, or /pqol.
 ```
 

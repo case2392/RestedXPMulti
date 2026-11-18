@@ -51,25 +51,41 @@ channel get a microphone next to their name in the roster - before you
 join.
 
 The game doesn't tell add-ons who's in a voice channel you haven't
-joined, so Pace's QoL users tell each other: opening Chat Channels on a
-community asks its online members (a big community, 60 at a time,
-carrying on down the list every minute and a half while the window is
-open), and the ones in voice (who also run Pace's QoL) answer, and say
-when they join or leave. So you see people
-who run Pace's QoL - ask your friends to install it. These are invisible
-add-on messages; nothing appears in chat, and nothing is sent in
-dungeons or encounters (the game's chat lockdown). You can stop sharing
-your own voice status in the options; then nobody sees you.
+joined, so Pace's QoL users tell each other with invisible add-on
+messages (nothing appears in chat). Opening Chat Channels on a community
+asks the members the game lets an add-on reach:
+
+- your Battle.net friends who are playing Forever,
+- your guild and your party or raid (one message each),
+- in a WoW community, the members of your faction.
+
+The ones in that voice channel who also run Pace's QoL answer, and say
+when they join or leave. A big community is asked 60 at a time, every
+minute while the window is open, the people who answered before first.
+In a Battle.net community, someone who is not your Battle.net friend and
+not in your guild or group can't be reached by any add-on, so they don't
+show. Nothing is sent in dungeons, raids or encounters (the game's chat
+lockdown). You can stop answering in the options; then nobody sees you,
+except in the case below.
 
 A channel you joined earlier this session and left with the headset is
 different: the game still knows who's in it, so those people show even
 if they don't run the add-on.
+
+Only a community stream's voice is covered, in the Chat Channels window
+(not party voice, and not the Guild & Communities window).
+
+If a microphone is missing, type `/pqol voice` on both sides - the one
+looking (with Chat Channels open on the stream) and the one in voice. It
+says what was sent, what came back and what the game refused, without
+names. `/pqol voice log` lists the last messages.
 
 ## Commands
 
 - `/pqol` - the options page
 - `/pqol status` - what's on, and any errors this session
 - `/pqol <feature> on|off` - `questlog`, `lfgroles`, `zonetracker`, `voice`
+- `/pqol voice` - what voice sharing sent, heard and was refused (`/pqol voice log`: the last messages)
 
 ## Offline tests
 

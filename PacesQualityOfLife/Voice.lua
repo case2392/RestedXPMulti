@@ -2,25 +2,40 @@
 -- join it
 --
 -- Forever's Chat Channels window (Blizzard_Channels, Mainline files on
--- camelot) shows a voice channel's members only while you are in it. The
--- game itself has no voice roster for a community stream until you join
--- it, and every way of joining also activates (ChannelFrame.lua
--- TryJoinCommunityStreamChannel -> C_VoiceChat.
--- RequestJoinAndActivateCommunityStreamChannel), so no API answers "who's
--- in there?" for a channel you never joined. Two sources fill the gap:
+-- camelot) shows a voice channel's members only while you are in it, and no
+-- API says who is in a channel you never joined (every way of joining also
+-- activates: ChannelFrame.lua TryJoinCommunityStreamChannel). Two sources
+-- fill the gap:
 --   * a channel you joined this session and then left with the headset
---     stays joined but inactive (the headset calls DeactivateChannel);
---     the game keeps its members' isActive, and we show that.
+--     stays joined but inactive; the game keeps its members' isActive, and
+--     we show that.
 --   * everyone else: Pace's QoL users tell each other. Opening Chat
---     Channels on a community stream asks that community's online
---     members "who's in voice here?" (Q); the ones in it answer (J) and
---     say when they leave (L). So you only ever see people who also run
---     Pace's QoL - nothing else can know.
--- Messages are addon messages (invisible): GUILD for a guild's own club,
--- otherwise a whisper to each online member the game says we can reach
--- (C_ChatInfo.RequestCanLocalWhisperTarget, so no "no player named"
--- spam), or Battle.net game data for Battle.net friends playing Forever.
+--     Channels on a community stream asks who's in its voice (Q). Those in
+--     it answer (J); those who aren't say they're there (P, so a test can
+--     tell "never arrived" from "not in voice"); joins and leaves are told
+--     at once to whoever asked lately (J, L).
+--
+-- Who a roster row is: the club's own GUID for that member
+-- (ChannelRoster.lua: SetMemberPlayerLocationFromGuid(memberInfo.guid)). In a
+-- guild or a WoW (character) community that is the character's GUID; in a
+-- Battle.net community it is the member's Battle.net account GUID, and the
+-- row has no character at all. So an answer names the sender the way the
+-- club does (C_Club.GetMemberInfoForSelf), and the asker also pins each
+-- answer on the member it asked by that route. (1.0.0 answered with the
+-- character's GUID, which never matched a Battle.net community's rows.)
+--
+-- How messages travel - invisible add-on messages, nothing in chat:
+--   * a guild's own club: one question over GUILD, answered over GUILD.
+--   * any other community: one question over GUILD (guildmates who are in
+--     it) and one to the party or raid, then each online member the game
+--     gives a way to: Battle.net game data to every WoW Forever game account
+--     of a Battle.net friend, and in a WoW community a whisper to members of
+--     your faction. Answers go back the way the question came.
+--   * a Battle.net community member who is none of those (not a friend, not
+--     in your guild or group) cannot be reached by an add-on at all.
+-- A whisper waits for the game's "can whisper" check, but not for ever.
 -- Nothing is sent during the game's chat lockdown, when values go secret.
+-- /pqol voice prints what was sent, heard and refused, without names.
 --
 -- The microphone goes on the member's roster row, where Blizzard's own
 -- voice buttons sit while you are in the channel; ours hides as soon as
@@ -33,24 +48,39 @@ ns.Voice = M
 
 local PREFIX = "PQoLVoice"
 local MIC_ATLAS = "voicechat-icon-mic"
-local SEEN_TTL = 200       -- an answer counts this long (seconds)
+local HEARD_TTL = 200      -- an answer counts this long (seconds)
 local WATCH_TTL = 200      -- we tell an asker about joins/leaves this long
-local ASK_EVERY = 90       -- re-ask while the window stays on a stream
-local MAX_TARGETS = 60     -- whispers per question, at most (the rest next time)
-local REASK_GAP = 60       -- a member isn't asked again sooner than this
+local ASK_EVERY = 60       -- re-ask while the window stays on a stream
+local ASK_AGAIN = 10       -- one follow-up this soon after the first question
+local MAX_TARGETS = 60     -- questions per round, at most (the rest next round)
+local REASK_GAP = 50       -- a target isn't asked again sooner than this
 local SEND_GAP = 0.2       -- seconds between queued messages
-local WHISPER_OK_TTL = 300 -- how long a "can whisper" answer is trusted
+local CHECK_WAIT = 4       -- a whisper check unanswered this long: send anyway
+local CHECK_TRUST = 300    -- how long a whisper check's answer is kept
+local CHECK_GIVE_UP = 3    -- this many checks unanswered, none ever: stop asking the game
+local GUILD_J_GAP = 20     -- a guild stream's answer over GUILD at most this often
+local REPLY_GAP = 10       -- one answer per asker, route and stream this often
+local HERE_GAP = 60        -- "here, not in voice" to one asker at most this often
+local LOG_SIZE = 12
 
-local seen = {}            -- guid -> {club=, stream=, exp=}
+local heard = {}           -- "club:stream" -> {guid = {}, member = {}}; entry {exp=, inVoice=}
+local known = {}           -- "club|memberId" -> true: answered before (asked first)
+local books = {}           -- club -> what the asker knows of its members (see M.Targets)
+local reach = {}           -- club -> counts from the last look at who can be asked
 local watchers = {}        -- key -> {to=, club=, stream=, exp=}
-local whisperOK = {}       -- guid -> {ok=bool, exp=}
-local pending = {}         -- guid -> {messages waiting for the whisper check}
-local myVoice              -- {channelID=, club=, stream=, guild=bool}
-local asked = {}           -- "club:stream" -> {target key -> time asked}
-local cursor = {}          -- clubId -> where the last question stopped
+local replied = {}         -- key -> when an answer last went out
+local checks = {}          -- guid -> {ok=, exp=}: whisper checks answered
+local pending = {}         -- guid -> {items = {...}}: messages waiting for a whisper check
+local asked = {}           -- "club:stream" -> {target key -> when asked}
 local icons = setmetatable({}, {__mode = "k"})
 local hooked = setmetatable({}, {__mode = "k"})
+local myVoice              -- the community stream we're active in, as last read
 local askTicker
+local againToken = 0
+local checksAnswered, checksSilent = 0, 0
+local stats = {sent = {}, failed = {}, recv = {}, echo = {},
+               checks = {asked = 0, yes = 0, no = 0, silent = 0, skipped = 0}}
+local log = {}
 
 local function Now() return GetTime() end
 
@@ -63,163 +93,418 @@ local function Locked()
 end
 
 local function Active() return ns.IsOn("voice") end
-local function Sharing() return Active() and ns.db.voiceShare end
-
+local function Sharing() return Active() and ns.db.voiceShare and true or false end
 local function MyGUID() return UnitGUID and UnitGUID("player") end
 
-local ONLINE = {}
-if Enum and Enum.ClubMemberPresence then
-    ONLINE[Enum.ClubMemberPresence.Online] = true
-    ONLINE[Enum.ClubMemberPresence.Away] = true
-    ONLINE[Enum.ClubMemberPresence.Busy] = true
+-- a value we may keep and compare: nil when missing or secret
+local function Plain(v)
+    if v == nil or ns.IsSecret(v) then return nil end
+    return v
 end
+
+local function Bump(t, k) t[k] = (t[k] or 0) + 1 end
+
+local function Problem(text)
+    stats.problem, stats.problemAt = text, Now()
+end
+
+-- a GUID as its kind and last four characters, for the readout
+local function Short(guid)
+    if type(guid) ~= "string" or guid == "" then return "-" end
+    local kind = guid:match("^(%a+)%-")
+    local letter = kind == "Player" and "P" or kind == "BNetAccount" and "B" or
+                       (kind and kind:sub(1, 1)) or "?"
+    return letter .. ".." .. guid:sub(-4)
+end
+
+local function Log(dir, path, msg, result)
+    table.insert(log, 1, {at = Now(), dir = dir, path = path, msg = msg, result = result})
+    if #log > LOG_SIZE then table.remove(log) end
+end
+
+local function StreamKey(club, stream) return tostring(club) .. ":" .. tostring(stream) end
+
+-- a club id as the C_Club functions take it (messages carry it as text)
+local function ClubArg(club) return tonumber(club) or club end
+
+local function NameKey(name)
+    if type(name) ~= "string" then return "" end
+    return (name:lower():gsub("%s+", "-"))
+end
+
+local ONLINE = {}
+do
+    local p = Enum and Enum.ClubMemberPresence or {}
+    ONLINE[p.Online or 1] = true
+    ONLINE[p.Away or 4] = true
+    ONLINE[p.Busy or 5] = true
+end
+
+local CODES = Enum and Enum.SendAddonMessageResult or {}
+local SUCCESS = CODES.Success or 0
+local THROTTLED = {[CODES.AddonMessageThrottle or 3] = true, [CODES.ChannelThrottle or 8] = true}
 
 --------------------------------------------------------------------------
 -- sending: a small queue, so a community of sixty is not sixty messages
 -- in one frame
 --------------------------------------------------------------------------
 
-local queue, pumping = {}, false
-
-local function SendNow(item)
-    if Locked() then return true end -- dropped; asked again later anyway
-    local ok, result
-    if item.to.guild then
-        ok, result = pcall(C_ChatInfo.SendAddonMessage, PREFIX, item.msg, "GUILD")
-    elseif item.to.bn then
-        if not (C_BattleNet and C_BattleNet.SendGameData) then return true end
-        ok, result = pcall(C_BattleNet.SendGameData, item.to.bn, PREFIX, item.msg)
-    elseif item.to.name then
-        ok, result = pcall(C_ChatInfo.SendAddonMessage, PREFIX, item.msg, "WHISPER", item.to.name)
-    end
-    local codes = Enum and Enum.SendAddonMessageResult
-    if ok and codes and (result == codes.AddonMessageThrottle or result == codes.ChannelThrottle) then
-        return false -- throttled: try this one again shortly
-    end
-    return true
+local function PathOf(to)
+    if to.guild then return "GUILD" end
+    if to.group then return to.group end
+    if to.bn then return "BN" end
+    return "WHISPER"
 end
 
+-- one message out now: "ok", "throttle", or what went wrong
+local function SendNow(item)
+    if Locked() then return "lockdown" end
+    local to, msg = item.to, item.msg
+    local ok, result
+    if to.guild or to.group then
+        ok, result = pcall(C_ChatInfo.SendAddonMessage, PREFIX, msg, to.guild and "GUILD" or to.group)
+    elseif to.bn then
+        if not (C_BattleNet and C_BattleNet.SendGameData) then return "no Battle.net" end
+        ok, result = pcall(C_BattleNet.SendGameData, to.bn, PREFIX, msg)
+    elseif to.name then
+        ok, result = pcall(C_ChatInfo.SendAddonMessage, PREFIX, msg, "WHISPER", to.name)
+    else
+        return "no target"
+    end
+    if not ok then return "error", result end
+    if result == nil or result == true or result == SUCCESS then return "ok" end
+    if THROTTLED[result] then return "throttle" end
+    return "code " .. tostring(result)
+end
+
+-- a question that did not go out may be asked again at once
+local function Unstamp(item)
+    local s = item.stamp
+    if s and asked[s[1]] then asked[s[1]][s[2]] = nil end
+end
+
+local function Settle(item, outcome, err)
+    local path, kind = PathOf(item.to), item.msg:sub(1, 1)
+    if outcome == "ok" then
+        Bump(stats.sent, path .. " " .. kind)
+    else
+        Bump(stats.failed, path .. " " .. outcome)
+        Problem(("%s %s not sent: %s"):format(path, kind, err and tostring(err) or outcome))
+        Unstamp(item)
+    end
+    Log("out", path, item.msg, outcome)
+end
+
+local queue, pumping, lastPump = {}, false, 0
+
+-- (every step under pcall: one bad send can't stop the queue for good)
 local function Pump()
+    lastPump = Now()
     local item = queue[1]
     if not item then
         pumping = false
         return
     end
-    if SendNow(item) then
-        table.remove(queue, 1)
-        C_Timer.After(SEND_GAP, Pump)
-    else
+    local ok, outcome, err = pcall(SendNow, item)
+    if ok and outcome == "throttle" then
         C_Timer.After(1, Pump)
+        return
     end
+    table.remove(queue, 1)
+    if not ok then outcome, err = "error", outcome end
+    pcall(Settle, item, outcome, err)
+    C_Timer.After(SEND_GAP, Pump)
 end
 
-local function Enqueue(msg, to)
+local function Enqueue(msg, to, stamp)
+    local item = {msg = msg, to = to, stamp = stamp}
     if msg:sub(1, 1) == "Q" then
-        if #queue >= 300 then return end
-        table.insert(queue, {msg = msg, to = to})
+        if #queue >= 300 then
+            Unstamp(item)
+            return
+        end
+        table.insert(queue, item)
     else
         -- answers and join/leave news go ahead of any questions waiting
         local at = 1
         while queue[at] and queue[at].msg:sub(1, 1) ~= "Q" do at = at + 1 end
-        table.insert(queue, at, {msg = msg, to = to})
+        table.insert(queue, at, item)
     end
-    if not pumping then
-        pumping = true
+    -- (a pump that has not run for a while is gone: start another)
+    if not pumping or Now() - lastPump > 10 then
+        pumping, lastPump = true, Now()
         C_Timer.After(0, Pump)
     end
 end
 
--- a whisper only once the game says that player can be reached
--- (online, same faction, a connected realm)
-local function Send(msg, to)
-    if not to.guid or to.guild or to.bn or
-        not (C_ChatInfo and C_ChatInfo.RequestCanLocalWhisperTarget) then
-        Enqueue(msg, to)
-        return
-    end
-    local known = whisperOK[to.guid]
-    if known and known.exp > Now() then
-        if known.ok then Enqueue(msg, to) end
-        return
-    end
-    local list = pending[to.guid]
-    if not list then
-        list = {}
-        pending[to.guid] = list
-        pcall(C_ChatInfo.RequestCanLocalWhisperTarget, to.guid)
-    end
-    if #list < 5 then table.insert(list, {msg = msg, to = to}) end
-end
-
-local function OnWhisperCheck(guid, status)
-    if ns.IsSecret(guid) or ns.IsSecret(status) then return end
-    local codes = Enum and Enum.ChatWhisperTargetStatus
-    local ok = codes and (status == codes.CanWhisper or status == codes.CanWhisperGuild) or false
-    whisperOK[guid] = {ok = ok, exp = Now() + WHISPER_OK_TTL}
-    local list = pending[guid]
-    pending[guid] = nil
-    if ok and list then
-        for _, item in ipairs(list) do Enqueue(item.msg, item.to) end
-    end
+-- straight out, no queue: at logout no timer runs again
+local function SendDirect(msg, to)
+    local item = {msg = msg, to = to}
+    local ok, outcome, err = pcall(SendNow, item)
+    if not ok then outcome, err = "error", outcome end
+    pcall(Settle, item, outcome, err)
 end
 
 --------------------------------------------------------------------------
--- who to ask: a community's online members
+-- the game's "can whisper" check: asked before our own questions go to a
+-- name (no "no player named" errors), but never waited on for ever - only
+-- Blizzard's crafting orders use it, and they work without an answer
+--------------------------------------------------------------------------
+
+local function CanWhisper(status)
+    local codes = Enum and Enum.ChatWhisperTargetStatus or {}
+    return status == (codes.CanWhisper or 0) or status == (codes.CanWhisperGuild or 1)
+end
+
+local function Release(guid, send)
+    local p = pending[guid]
+    pending[guid] = nil
+    if not p then return end
+    for _, item in ipairs(p.items) do
+        if not send then
+            stats.checks.skipped = stats.checks.skipped + 1
+        elseif item.msg:sub(1, 1) == "Q" and not M.asking then
+            Unstamp(item) -- the window closed meanwhile
+        else
+            Enqueue(item.msg, item.to, item.stamp)
+        end
+    end
+end
+
+local function Send(msg, to, stamp)
+    local check = C_ChatInfo and C_ChatInfo.RequestCanLocalWhisperTarget
+    if not (to.name and to.guid and check) or (checksAnswered == 0 and checksSilent >= CHECK_GIVE_UP) then
+        Enqueue(msg, to, stamp)
+        return
+    end
+    local answer = checks[to.guid]
+    if answer and answer.exp > Now() then
+        if answer.ok then
+            Enqueue(msg, to, stamp)
+        else
+            stats.checks.skipped = stats.checks.skipped + 1
+        end
+        return
+    end
+    local item = {msg = msg, to = to, stamp = stamp}
+    local p = pending[to.guid]
+    if p then
+        if #p.items < 5 then table.insert(p.items, item) end
+        return
+    end
+    -- (the message is waiting before the game is asked: an answer that
+    -- comes inside the call still finds it)
+    p = {items = {item}}
+    local guid = to.guid
+    pending[guid] = p
+    stats.checks.asked = stats.checks.asked + 1
+    C_Timer.After(CHECK_WAIT, ns.Guard("voice", function()
+        if pending[guid] ~= p then return end
+        checksSilent = checksSilent + 1
+        stats.checks.silent = stats.checks.silent + 1
+        Release(guid, true)
+    end))
+    pcall(check, guid)
+end
+
+local function OnWhisperCheck(guid, status)
+    if guid == nil or ns.IsSecret(guid) or ns.IsSecret(status) then return end
+    checksAnswered = checksAnswered + 1
+    local ok = CanWhisper(status)
+    checks[guid] = {ok = ok, exp = Now() + CHECK_TRUST}
+    if pending[guid] then
+        if ok then
+            stats.checks.yes = stats.checks.yes + 1
+        else
+            stats.checks.no = stats.checks.no + 1
+        end
+    end
+    Release(guid, ok)
+end
+
+--------------------------------------------------------------------------
+-- who to ask: the club's online members, by every route the game gives
 --------------------------------------------------------------------------
 
 local function ClubType(clubId)
     local ok, info = pcall(C_Club.GetClubInfo, clubId)
-    return ok and info and info.clubType
+    return ok and type(info) == "table" and Plain(info.clubType) or nil
 end
 
 local function IsGuildClub(clubId)
-    return Enum and Enum.ClubType and ClubType(clubId) == Enum.ClubType.Guild
+    return Enum and Enum.ClubType and ClubType(clubId) == Enum.ClubType.Guild or false
 end
 
--- a Battle.net friend playing Forever, by their game account
-local function BattleNetTarget(bnetAccountId)
-    if not (bnetAccountId and C_BattleNet and C_BattleNet.GetAccountInfoByID) or
-        ns.IsSecret(bnetAccountId) then
-        return
+-- the GUID the club lists us under: in a Battle.net community that is our
+-- Battle.net account's, which is what the other members' rows carry
+local function ClubGUID(clubId)
+    if C_Club and C_Club.GetMemberInfoForSelf and clubId ~= nil then
+        local ok, info = pcall(C_Club.GetMemberInfoForSelf, ClubArg(clubId))
+        local guid = ok and type(info) == "table" and Plain(info.guid)
+        if type(guid) == "string" and guid ~= "" then return guid end
     end
-    local ok, account = pcall(C_BattleNet.GetAccountInfoByID, bnetAccountId)
-    local game = ok and account and account.gameAccountInfo
-    if game and game.isOnline and game.gameAccountID and
-        game.clientProgram == BNET_CLIENT_WOW and
-        (not game.wowProjectID or not WOW_PROJECT_ID or game.wowProjectID == WOW_PROJECT_ID) then
-        return {bn = game.gameAccountID}
+    return MyGUID()
+end
+
+-- our own character or our own Battle.net account (a message of ours
+-- coming back over GUILD or the party)
+local function IsMe(guid)
+    if type(guid) ~= "string" or guid == "" then return false end
+    if guid == MyGUID() then return true end
+    if C_AccountInfo and C_AccountInfo.IsGUIDRelatedToLocalAccount then
+        local ok, me = pcall(C_AccountInfo.IsGUIDRelatedToLocalAccount, guid)
+        if ok and me == true then return true end
+    end
+    return false
+end
+
+local function MyFaction()
+    if UnitFactionGroup then
+        local ok, f = pcall(UnitFactionGroup, "player")
+        if ok and type(f) == "string" then return f end
     end
 end
 
+local function MemberFaction(m)
+    local f = Plain(m.faction)
+    if f == nil or type(PLAYER_FACTION_GROUP) ~= "table" then return end
+    return PLAYER_FACTION_GROUP[f]
+end
+
+-- the name to whisper a WoW community member by: the name the club gives
+-- (what Blizzard's own Whisper uses), else the game's name for the GUID
+local function WhisperName(m)
+    local name = Plain(m.name)
+    if type(name) == "string" and name ~= "" then return name end
+    if GetPlayerInfoByGUID and m.guid then
+        local ok, _, _, _, _, _, n, r = pcall(GetPlayerInfoByGUID, m.guid)
+        if ok and type(n) == "string" and n ~= "" and not ns.IsSecret(n) then
+            if type(r) == "string" and r ~= "" and not ns.IsSecret(r) and not n:find("-", 1, true) then
+                return n .. "-" .. r
+            end
+            return n
+        end
+    end
+end
+
+-- every online WoW Forever game account of a Battle.net friend. The
+-- account's own gameAccountInfo is only the focused one, and that can be
+-- the Battle.net app; Blizzard's invite code walks them all the same way.
+local function ForeverAccounts(account)
+    local out, taken = {}, {}
+    if account == nil or not C_BattleNet then return out end
+    local function Take(g)
+        if type(g) ~= "table" then return end
+        local id = Plain(g.gameAccountID)
+        if id == nil or taken[id] or g.isOnline == false then return end
+        if BNET_CLIENT_WOW and g.clientProgram ~= BNET_CLIENT_WOW then return end
+        local project = Plain(g.wowProjectID)
+        if project and WOW_PROJECT_ID and project ~= WOW_PROJECT_ID then return end
+        taken[id] = true
+        out[#out + 1] = {id = id, guid = Plain(g.playerGuid)}
+    end
+    local index
+    if BNGetFriendIndex then
+        local ok, i = pcall(BNGetFriendIndex, account)
+        if ok then index = Plain(i) end
+    end
+    if index and C_BattleNet.GetFriendNumGameAccounts and C_BattleNet.GetFriendGameAccountInfo then
+        local ok, n = pcall(C_BattleNet.GetFriendNumGameAccounts, index)
+        if ok and type(n) == "number" and not ns.IsSecret(n) then
+            for j = 1, n do
+                local okG, g = pcall(C_BattleNet.GetFriendGameAccountInfo, index, j)
+                if okG then Take(g) end
+            end
+        end
+    end
+    if #out == 0 and C_BattleNet.GetAccountInfoByID then
+        local ok, a = pcall(C_BattleNet.GetAccountInfoByID, account)
+        if ok and type(a) == "table" then Take(a.gameAccountInfo) end
+    end
+    return out
+end
+
+local function GroupChannel()
+    if LE_PARTY_CATEGORY_INSTANCE and IsInGroup and IsInGroup(LE_PARTY_CATEGORY_INSTANCE) then
+        return "INSTANCE_CHAT"
+    end
+    if IsInRaid and IsInRaid() then return "RAID" end
+    if IsInGroup and IsInGroup() then return "PARTY" end
+end
+
+-- Who can be asked about a club's streams, and how. Also writes down what
+-- the asker knows of the club's members - their GUIDs, Battle.net accounts
+-- and the route each was asked by - so an answer finds its row whatever
+-- GUID it carries.
 function M.Targets(clubId)
-    if IsGuildClub(clubId) then return {{guild = true}} end
+    local club = tostring(clubId)
     local out = {}
-    local ok, members = pcall(C_Club.GetClubMembers, clubId)
-    if not ok or type(members) ~= "table" then return out end
-    local me = MyGUID()
-    for _, memberId in ipairs(members) do
-        local okInfo, m = pcall(C_Club.GetMemberInfo, clubId, memberId)
-        if okInfo and m and not m.isSelf and not ns.IsSecret(m.presence) and
-            ONLINE[m.presence] then
-            local target = BattleNetTarget(m.bnetAccountId)
-            if not target and m.guid and not ns.IsSecret(m.guid) and m.guid ~= me then
-                local name, realm
-                if GetPlayerInfoByGUID then
-                    local okName, _, _, _, _, _, n, r = pcall(GetPlayerInfoByGUID, m.guid)
-                    if okName then name, realm = n, r end
+    local book = {byGuid = {}, byAccount = {}, route = {}, guidOf = {}}
+    local counts = {members = 0, online = 0, bn = 0, whisper = 0, faction = 0, none = 0}
+    books[club], reach[club] = book, counts
+    local clubType = ClubType(clubId)
+    counts.clubType = clubType
+    local types = Enum and Enum.ClubType or {}
+    local guildClub = clubType ~= nil and clubType == types.Guild
+    local myFaction = MyFaction()
+    local ok, list = pcall(C_Club.GetClubMembers, clubId)
+    if ok and type(list) == "table" then
+        for _, memberId in ipairs(list) do
+            local okInfo, m = pcall(C_Club.GetMemberInfo, clubId, memberId)
+            if okInfo and type(m) == "table" then
+                counts.members = counts.members + 1
+                local guid, account = Plain(m.guid), Plain(m.bnetAccountId)
+                if guid then
+                    book.byGuid[guid] = memberId
+                    book.guidOf[memberId] = guid
                 end
-                if (not name or name == "") and m.clubType == Enum.ClubType.Character and
-                    type(m.name) == "string" and not ns.IsSecret(m.name) then
-                    name = m.name
-                end
-                if name and name ~= "" then
-                    if realm and realm ~= "" and not name:find("-", 1, true) then
-                        name = name .. "-" .. realm
+                if account then book.byAccount[account] = memberId end
+                local presence = Plain(m.presence)
+                if not guildClub and not m.isSelf and presence and ONLINE[presence] then
+                    counts.online = counts.online + 1
+                    local found = false
+                    for _, g in ipairs(ForeverAccounts(account)) do
+                        local key = "bn:" .. tostring(g.id)
+                        book.route[key] = memberId
+                        -- (a friend's character: an older Pace's QoL answers with it)
+                        if g.guid and book.byGuid[g.guid] == nil then book.byGuid[g.guid] = memberId end
+                        out[#out + 1] = {bn = g.id, key = key, memberId = memberId}
+                        found = true
                     end
-                    target = {name = name, guid = m.guid}
+                    if found then counts.bn = counts.bn + 1 end
+                    if clubType ~= nil and clubType == types.Character then
+                        local faction = MemberFaction(m)
+                        if faction and myFaction and faction ~= myFaction then
+                            counts.faction = counts.faction + 1
+                        else
+                            local name = WhisperName(m)
+                            if name then
+                                local key = "w:" .. NameKey(name)
+                                book.route[key] = memberId
+                                out[#out + 1] = {name = name, guid = guid, key = key, memberId = memberId}
+                                counts.whisper = counts.whisper + 1
+                                found = true
+                            end
+                        end
+                    end
+                    if not found then counts.none = counts.none + 1 end
                 end
             end
-            if target then out[#out + 1] = target end
+        end
+    end
+    -- one question to a whole guild or group reaches the members in it
+    if guildClub then
+        table.insert(out, 1, {guild = true, key = "guild"})
+        counts.guild = true
+    else
+        if IsInGuild and IsInGuild() then
+            table.insert(out, 1, {guild = true, key = "guild"})
+            counts.guild = true
+        end
+        local group = GroupChannel()
+        if group then
+            table.insert(out, 1, {group = group, key = "group:" .. group})
+            counts.group = group
         end
     end
     return out
@@ -253,26 +538,51 @@ local function DirectlyInVoice(channelID, guid)
     return info.isActive and not (okMe and isMe) and true or false
 end
 
-local function SeenInVoice(guid, clubId, streamId)
-    local e = seen[guid]
-    return e and e.exp > Now() and e.club == tostring(clubId) and
-               e.stream == tostring(streamId) or false
+-- the row's member: its GUID (the club's GUID for that member, nil when the
+-- club gives none) and its member id
+local function RowIdentity(button)
+    local guid, memberId
+    local loc = button.GetMemberPlayerLocation and button:GetMemberPlayerLocation()
+    if loc and loc.GetGUID then
+        local ok, g = pcall(loc.GetGUID, loc)
+        if ok and type(g) == "string" and not ns.IsSecret(g) then guid = g end
+    end
+    if button.GetMemberID then
+        local ok, id = pcall(button.GetMemberID, button)
+        if ok then memberId = Plain(id) end
+    end
+    return guid, memberId
+end
+
+-- Blizzard's own test (it knows our Battle.net account's GUID too)
+local function IsLocalRow(button, guid)
+    if button.IsLocalPlayer then
+        local ok, me = pcall(button.IsLocalPlayer, button)
+        if ok and me ~= nil and not ns.IsSecret(me) then return me and true or false end
+    end
+    return guid ~= nil and guid == MyGUID()
+end
+
+local function Lit(e, now) return e and e.inVoice and e.exp > now end
+
+local function HeardFor(clubId, streamId, guid, memberId)
+    local h = heard[StreamKey(clubId, streamId)]
+    if not h then return false end
+    local now = Now()
+    return Lit(guid and h.guid[guid], now) or Lit(memberId ~= nil and h.member[memberId], now) or false
 end
 
 function M.Decorate(button)
     if not button then return end
     local show = false
     if Active() and not Locked() then
-        local sel, clubId, streamId = SelectedStream()
-        local loc = button.GetMemberPlayerLocation and button:GetMemberPlayerLocation()
-        local okGuid, guid = false, nil
-        if loc and loc.GetGUID then okGuid, guid = pcall(loc.GetGUID, loc) end
+        local _, clubId, streamId = SelectedStream()
+        local guid, memberId = RowIdentity(button)
         local channelActive = button.IsChannelActive and button:IsChannelActive()
-        if clubId and okGuid and guid and not ns.IsSecret(guid) and not channelActive and
-            guid ~= MyGUID() then
-            local channelID = InactiveVoiceChannel(clubId, streamId)
+        if clubId and (guid or memberId ~= nil) and not channelActive and not IsLocalRow(button, guid) then
+            local channelID = guid and InactiveVoiceChannel(clubId, streamId)
             show = (channelID and DirectlyInVoice(channelID, guid)) or
-                       SeenInVoice(guid, clubId, streamId)
+                       HeardFor(clubId, streamId, guid, memberId)
         end
     end
     local icon = icons[button]
@@ -319,127 +629,267 @@ local function HookRow(frame)
 end
 
 --------------------------------------------------------------------------
--- asking, answering
+-- asking
 --------------------------------------------------------------------------
 
-local function TargetKey(to)
-    return to.guild and "guild" or to.bn and ("bn" .. tostring(to.bn)) or to.name
-end
-
--- ask the selected stream's online members who's in its voice. Nobody is
--- asked twice within REASK_GAP (the window's OnShow and its re-select
--- both land here; so does the member list arriving), and a big
--- community is asked MAX_TARGETS at a time, carrying on where the last
--- question stopped.
+-- Ask the selected stream's members who's in its voice. A target isn't
+-- asked twice within REASK_GAP, and a round asks MAX_TARGETS at most: the
+-- guild and group first, then members who answered before, then whoever
+-- has waited longest - so a big community is covered round by round and
+-- the people who run Pace's QoL are asked every time.
 function M.Ask()
     if not Active() or Locked() then return end
     local _, clubId, streamId = SelectedStream()
     if not clubId then return end
-    local streamKey = tostring(clubId) .. ":" .. tostring(streamId)
-    local msg = ("Q:%s:%s:%s"):format(tostring(clubId), tostring(streamId), MyGUID() or "")
+    local club = tostring(clubId)
+    local sk = StreamKey(clubId, streamId)
+    local msg = ("Q:%s:%s:%s"):format(club, tostring(streamId), MyGUID() or "")
     local targets = M.Targets(clubId)
-    local n = #targets
-    if n == 0 then return end
+    if #targets == 0 then return end
     local now = Now()
-    local done = asked[streamKey] or {}
-    asked[streamKey] = done
-    local start = (cursor[clubId] or 0) % n
-    local sent = 0
-    for step = 1, n do
-        local i = (start + step - 1) % n + 1
-        local to = targets[i]
-        local key = TargetKey(to)
-        if not (done[key] and now - done[key] < REASK_GAP) then
-            done[key] = now
-            Send(msg, to)
-            sent = sent + 1
-            if sent >= MAX_TARGETS then
-                cursor[clubId] = i
-                return
+    local done = asked[sk] or {}
+    asked[sk] = done
+    local candidates = {}
+    for i, t in ipairs(targets) do
+        local last = done[t.key]
+        if not (last and now - last < REASK_GAP) then
+            t.order, t.last = i, last or 0
+            t.prio = (t.guild or t.group) and 0 or
+                         (t.memberId ~= nil and known[club .. "|" .. tostring(t.memberId)]) and 1 or 2
+            candidates[#candidates + 1] = t
+        end
+    end
+    table.sort(candidates, function(a, b)
+        if a.prio ~= b.prio then return a.prio < b.prio end
+        if a.last ~= b.last then return a.last < b.last end
+        return a.order < b.order
+    end)
+    for i = 1, math.min(#candidates, MAX_TARGETS) do
+        local t = candidates[i]
+        done[t.key] = now
+        Send(msg, t, {sk, t.key})
+    end
+end
+
+-- drop questions not yet sent (window closed, feature off); they may be
+-- asked again at once next time
+local function DropQuestions()
+    for i = #queue, 1, -1 do
+        local item = queue[i]
+        if item.msg:sub(1, 1) == "Q" then
+            Unstamp(item)
+            table.remove(queue, i)
+        end
+    end
+    for _, p in pairs(pending) do
+        for i = #p.items, 1, -1 do
+            if p.items[i].msg:sub(1, 1) == "Q" then
+                Unstamp(p.items[i])
+                table.remove(p.items, i)
             end
         end
     end
-    cursor[clubId] = nil
 end
 
--- drop questions not yet sent (window closed, feature off)
-local function DropQuestions()
-    for i = #queue, 1, -1 do
-        if queue[i].msg:sub(1, 1) == "Q" then table.remove(queue, i) end
-    end
+--------------------------------------------------------------------------
+-- our own voice: read from the game, not remembered
+--------------------------------------------------------------------------
+
+-- the community stream the game says we're active in now (nil when none),
+-- and the channel type of any other voice channel we're in
+local function GameVoice()
+    if not (C_VoiceChat and C_VoiceChat.GetActiveChannelID and C_VoiceChat.GetChannel) then return end
+    local ok, id = pcall(C_VoiceChat.GetActiveChannelID)
+    if not ok or id == nil or ns.IsSecret(id) then return end
+    local okC, channel = pcall(C_VoiceChat.GetChannel, id)
+    if not okC or type(channel) ~= "table" then return nil, "?" end
+    local communities = Enum and Enum.ChatChannelType and Enum.ChatChannelType.Communities or 4
+    local kind = Plain(channel.channelType)
+    local clubId, streamId = Plain(channel.clubId), Plain(channel.streamId)
+    if kind ~= communities or clubId == nil or streamId == nil then return nil, kind end
+    return {channelID = id, clubId = clubId, club = tostring(clubId), stream = tostring(streamId)}
 end
 
-local function Announce(kind)
-    if not myVoice or Locked() then return end
-    local msg = ("%s:%s:%s:%s"):format(kind, myVoice.club, myVoice.stream, MyGUID() or "")
-    if myVoice.guild then Send(msg, {guild = true}) end
+-- J or L about one stream: over GUILD for the guild's own stream, and to
+-- everyone who asked about it lately
+local function Announce(kind, v, direct)
+    if not v then return end
+    local msg = ("%s:%s:%s:%s"):format(kind, v.club, v.stream, v.guid or ClubGUID(v.clubId) or "")
+    local send = direct and SendDirect or Enqueue
+    if v.guild then send(msg, {guild = true}) end
     local now = Now()
     for key, w in pairs(watchers) do
         if w.exp < now then
             watchers[key] = nil
-        elseif w.club == myVoice.club and w.stream == myVoice.stream then
-            Send(msg, w.to)
+        elseif w.club == v.club and w.stream == v.stream then
+            send(msg, w.to)
         end
     end
 end
 
--- our own voice channel changed
-local function OnMyVoice(event, channelID)
-    if event == "VOICE_CHAT_CHANNEL_ACTIVATED" then
-        local ok, channel = pcall(C_VoiceChat.GetChannel, channelID)
-        if ok and channel and Enum.ChatChannelType and
-            channel.channelType == Enum.ChatChannelType.Communities then
-            myVoice = {channelID = channelID, club = tostring(channel.clubId),
-                       stream = tostring(channel.streamId),
-                       guild = IsGuildClub(channel.clubId)}
-            if Sharing() then Announce("J") end
-        end
-    elseif myVoice and (event == "VOICE_CHAT_LOGOUT" or event == "PLAYER_LOGOUT" or
-        channelID == myVoice.channelID) then
-        if Sharing() then Announce("L") end
-        myVoice = nil
+-- read our voice channel from the game; a change is told to whoever needs
+-- to know (a stream switch says L for the old one first)
+function M.ReadVoice()
+    local now, other = GameVoice()
+    M.otherVoice = other
+    local old = myVoice
+    if old and now and old.club == now.club and old.stream == now.stream then return end
+    if now then
+        now.guild = IsGuildClub(now.clubId)
+        now.guid = ClubGUID(now.clubId)
+    end
+    myVoice = now
+    if Sharing() and not Locked() then
+        if old then Announce("L", old) end
+        if now then Announce("J", now) end
     end
 end
 
-local function Receive(text, replyTo)
-    if not Active() or Locked() or type(text) ~= "string" then return end
-    local kind, club, stream, guid = text:match("^(%a):([^:]*):([^:]*):(.*)$")
-    if not kind or guid == MyGUID() then return end
-    if kind == "Q" then
-        if not Sharing() or replyTo.guild then return end
-        -- remember who's looking, so a join or leave of ours reaches them
-        -- at once rather than at their next question
-        local key = replyTo.bn and ("bn" .. tostring(replyTo.bn)) or replyTo.name
-        watchers[key] = {to = replyTo, club = club, stream = stream, exp = Now() + WATCH_TTL}
-        if myVoice and myVoice.club == club and myVoice.stream == stream then
-            Send(("J:%s:%s:%s"):format(club, stream, MyGUID() or ""), replyTo)
+--------------------------------------------------------------------------
+-- answering, and hearing answers
+--------------------------------------------------------------------------
+
+-- where an answer to a question goes: back the way it came. A Battle.net
+-- sender the game does not know is reached through the character that
+-- asked, if that is a friend's.
+local function ReplyRoute(replyTo, askerGuid)
+    if replyTo.bn then
+        if C_BattleNet and C_BattleNet.GetGameAccountInfoByID then
+            local ok, g = pcall(C_BattleNet.GetGameAccountInfoByID, replyTo.bn)
+            if ok and type(g) == "table" then return replyTo end
         end
-    elseif kind == "J" and guid ~= "" then
-        seen[guid] = {club = club, stream = stream, exp = Now() + SEEN_TTL}
-        M.Refresh()
-    elseif kind == "L" and guid ~= "" then
-        local e = seen[guid]
-        if e and e.club == club and e.stream == stream then seen[guid] = nil end
-        M.Refresh()
+        if askerGuid and C_BattleNet and C_BattleNet.GetGameAccountInfoByGUID then
+            local ok, g = pcall(C_BattleNet.GetGameAccountInfoByGUID, askerGuid)
+            local id = ok and type(g) == "table" and Plain(g.gameAccountID)
+            if id then return {bn = id, key = "bn:" .. tostring(id)} end
+        end
+        return replyTo
+    end
+    -- (they just reached us: no whisper check for the way back)
+    return {name = replyTo.name, key = replyTo.key}
+end
+
+local replyCount = 0
+local function Answer(kind, club, stream, to, gapKey, gap)
+    local now = Now()
+    if replied[gapKey] and now - replied[gapKey] < gap then return end
+    replied[gapKey] = now
+    replyCount = replyCount + 1
+    if replyCount % 50 == 0 then
+        for k, t in pairs(replied) do
+            if now - t > 120 then replied[k] = nil end
+        end
+    end
+    Enqueue(("%s:%s:%s:%s"):format(kind, club, stream, ClubGUID(club) or ""), to)
+end
+
+local function OnQuestion(club, stream, askerGuid, path, replyTo)
+    if not Sharing() then return end
+    M.ReadVoice() -- what the game says now, not what we last heard
+    local inIt = myVoice and myVoice.club == club and myVoice.stream == stream
+    if path == "GUILD" and IsGuildClub(ClubArg(club)) then
+        -- the guild's own stream: one answer over GUILD serves every
+        -- guildmate looking, and joins and leaves go over GUILD anyway
+        if inIt then Answer("J", club, stream, {guild = true}, "guild|" .. club .. ":" .. stream, GUILD_J_GAP) end
+        return
+    end
+    local to = ReplyRoute(replyTo, askerGuid)
+    -- remember the asker for a while, so a join or leave reaches them at once
+    watchers[to.key .. "|" .. club .. ":" .. stream] = {to = to, club = club, stream = stream, exp = Now() + WATCH_TTL}
+    local who = (to.bn and "bn" or "w") .. "|" .. (askerGuid or to.key) .. "|" .. club .. ":" .. stream
+    if inIt then
+        Answer("J", club, stream, to, who .. "|J", REPLY_GAP)
+    elseif path == "BN" or path == "WHISPER" then
+        -- (a question to the whole guild or group is not answered by
+        -- everyone who isn't in that voice)
+        Answer("P", club, stream, to, who .. "|P", HERE_GAP)
     end
 end
 
-local function OnAddonMessage(event, prefix, text, channel, sender)
-    if prefix ~= PREFIX then return end
-    if event == "BN_CHAT_MSG_ADDON" then
-        Receive(text, {bn = sender}) -- BN: the sender's game account ID
-    elseif channel == "GUILD" then
-        -- a guild asker gets the answer by whisper, the way it was asked
-        local kind = type(text) == "string" and text:sub(1, 1)
-        if kind == "Q" then
-            local guid = text:match(":([^:]*)$")
-            Receive(text, {name = sender, guid = guid ~= "" and guid or nil})
-        else
-            Receive(text, {guild = true})
+-- which member of the club an answer is from: by the GUID it carries, by
+-- the route we asked that member by, or by the Battle.net account behind a
+-- friend's character (an older Pace's QoL answers with the character)
+local function Resolve(club, guid, replyTo)
+    local book = books[club]
+    if not book and C_Club then
+        pcall(M.Targets, ClubArg(club))
+        book = books[club]
+    end
+    if not book then return end
+    if guid and book.byGuid[guid] ~= nil then return book.byGuid[guid] end
+    if replyTo and replyTo.key then
+        local id = book.route[replyTo.key]
+        if id == nil then
+            -- (a sender with a realm after the name we whispered)
+            local short = replyTo.key:match("^(w:.+)%-[^%-]+$")
+            if short then id = book.route[short] end
+        end
+        if id ~= nil then return id end
+    end
+    if guid and C_BattleNet and C_BattleNet.GetAccountInfoByGUID then
+        local ok, a = pcall(C_BattleNet.GetAccountInfoByGUID, guid)
+        local account = ok and type(a) == "table" and Plain(a.bnetAccountID)
+        if account and book.byAccount[account] ~= nil then return book.byAccount[account] end
+    end
+end
+
+local function OnAnswer(kind, club, stream, guid, replyTo)
+    local memberId = Resolve(club, guid, replyTo)
+    local sk = StreamKey(club, stream)
+    local h = heard[sk]
+    if not h then
+        h = {guid = {}, member = {}}
+        heard[sk] = h
+    end
+    if kind == "L" then
+        if guid then h.guid[guid] = nil end
+        if memberId ~= nil then
+            h.member[memberId] = nil
+            local book = books[club]
+            local g = book and book.guidOf[memberId]
+            if g then h.guid[g] = nil end
         end
     else
-        local guid = type(text) == "string" and text:match("^Q:[^:]*:[^:]*:(.*)$")
-        Receive(text, {name = sender, guid = guid})
+        local entry = {exp = Now() + HEARD_TTL, inVoice = kind == "J"}
+        if guid then h.guid[guid] = entry end
+        if memberId ~= nil then
+            h.member[memberId] = entry
+            known[club .. "|" .. tostring(memberId)] = true
+        end
+    end
+    M.Refresh()
+end
+
+local GROUP = {PARTY = true, RAID = true, INSTANCE_CHAT = true}
+
+local function OnAddonMessage(event, prefix, text, channel, sender)
+    if prefix ~= PREFIX or type(text) ~= "string" or ns.IsSecret(text) or
+        sender == nil or ns.IsSecret(sender) then
+        return
+    end
+    if not Active() or Locked() then return end
+    local path, replyTo
+    if event == "BN_CHAT_MSG_ADDON" then
+        -- (the sender's game account id)
+        path, replyTo = "BN", {bn = sender, key = "bn:" .. tostring(sender)}
+    else
+        path = channel == "GUILD" and "GUILD" or GROUP[channel] and channel or "WHISPER"
+        replyTo = {name = sender, key = "w:" .. NameKey(sender)}
+    end
+    local kind, club, stream, guid = text:match("^(%a):([^:]*):([^:]*):([^:]*)")
+    if not kind then return end
+    stats.lastIn = Now()
+    if guid == "" then guid = nil end
+    if guid and IsMe(guid) then
+        Bump(stats.echo, path) -- our own GUILD or party message coming back
+        return
+    end
+    Bump(stats.recv, path .. " " .. kind)
+    Log("in", path, text, "")
+    if kind == "Q" then
+        OnQuestion(club, stream, guid, path, replyTo)
+    elseif kind == "J" or kind == "L" or kind == "P" then
+        OnAnswer(kind, club, stream, guid, replyTo)
     end
 end
 
@@ -448,15 +898,31 @@ end
 local function StartAsking()
     if askTicker then askTicker:Cancel() end
     askTicker = nil
+    againToken = againToken + 1
     M.Refresh()
-    if not Active() then return end
+    if not Active() then
+        M.asking = false
+        return
+    end
+    M.asking = true
     M.Ask()
-    askTicker = C_Timer.NewTicker(ASK_EVERY, function() ns.SafeCall("voice ask", M.Ask) end)
+    -- once more shortly (questions that could not go, a member list that
+    -- came late), then every minute while the window stays on the stream
+    local token = againToken
+    C_Timer.After(ASK_AGAIN, ns.Guard("voice ask", function()
+        if token == againToken and M.asking then M.Ask() end
+    end))
+    askTicker = C_Timer.NewTicker(ASK_EVERY, ns.Guard("voice ask", function()
+        M.Ask()
+        M.Refresh() -- (and answers that ran out lose their microphone)
+    end))
 end
 
 local function StopAsking()
     if askTicker then askTicker:Cancel() end
     askTicker = nil
+    againToken = againToken + 1
+    M.asking = false
     DropQuestions()
 end
 
@@ -475,9 +941,11 @@ local function OnClubMembers(clubId)
 end
 
 local function SetupChannelFrame()
+    if M.hooked then return end
     local roster = ChannelFrame and ChannelFrame.ChannelRoster
     local box = roster and roster.ScrollBox
     if not box then return end
+    M.hooked = true
     if ScrollUtil and ScrollUtil.AddInitializedFrameCallback then
         ScrollUtil.AddInitializedFrameCallback(box, function(_, frame)
             HookRow(frame)
@@ -489,19 +957,27 @@ local function SetupChannelFrame()
         hooksecurefunc(ChannelFrame, "OnUserSelectedChannel", ns.Guard("voice ask", StartAsking))
     end
     ChannelFrame:HookScript("OnShow", ns.Guard("voice ask", StartAsking))
-    ChannelFrame:HookScript("OnHide", StopAsking)
+    ChannelFrame:HookScript("OnHide", ns.Guard("voice ask", StopAsking))
 end
+
+local VOICE_EVENTS = {
+    VOICE_CHAT_CHANNEL_ACTIVATED = true, VOICE_CHAT_CHANNEL_DEACTIVATED = true,
+    VOICE_CHAT_CHANNEL_REMOVED = true, VOICE_CHAT_CHANNEL_JOINED = true,
+    VOICE_CHAT_LOGIN = true, VOICE_CHAT_LOGOUT = true,
+}
 
 function M:Init()
     if C_ChatInfo and C_ChatInfo.RegisterAddonMessagePrefix then
-        C_ChatInfo.RegisterAddonMessagePrefix(PREFIX)
+        local ok, result = pcall(C_ChatInfo.RegisterAddonMessagePrefix, PREFIX)
+        M.prefixResult = ok and result or "error"
     end
     local f = CreateFrame("Frame")
     for _, event in ipairs({"CHAT_MSG_ADDON", "BN_CHAT_MSG_ADDON",
                             "CAN_LOCAL_WHISPER_TARGET_RESPONSE",
                             "VOICE_CHAT_CHANNEL_ACTIVATED", "VOICE_CHAT_CHANNEL_DEACTIVATED",
-                            "VOICE_CHAT_CHANNEL_REMOVED", "VOICE_CHAT_LOGOUT", "PLAYER_LOGOUT",
-                            "VOICE_CHAT_CHANNEL_JOINED", "VOICE_CHAT_CHANNEL_MEMBER_ADDED",
+                            "VOICE_CHAT_CHANNEL_REMOVED", "VOICE_CHAT_CHANNEL_JOINED",
+                            "VOICE_CHAT_LOGIN", "VOICE_CHAT_LOGOUT", "PLAYER_LOGOUT",
+                            "VOICE_CHAT_CHANNEL_MEMBER_ADDED",
                             "VOICE_CHAT_CHANNEL_MEMBER_REMOVED",
                             "VOICE_CHAT_CHANNEL_MEMBER_ACTIVE_STATE_CHANGED",
                             "CLUB_MEMBERS_UPDATED", "CLUB_MEMBER_PRESENCE_UPDATED"}) do
@@ -514,48 +990,199 @@ function M:Init()
             OnWhisperCheck(...)
         elseif event == "CLUB_MEMBERS_UPDATED" or event == "CLUB_MEMBER_PRESENCE_UPDATED" then
             OnClubMembers((...))
+        elseif event == "PLAYER_LOGOUT" then
+            -- (sent there and then: no timer runs after this)
+            if myVoice and Sharing() and not Locked() then Announce("L", myVoice, true) end
         else
-            if event == "VOICE_CHAT_CHANNEL_ACTIVATED" or event == "VOICE_CHAT_CHANNEL_DEACTIVATED" or
-                event == "VOICE_CHAT_CHANNEL_REMOVED" or event == "VOICE_CHAT_LOGOUT" or
-                event == "PLAYER_LOGOUT" then
-                OnMyVoice(event, ...)
+            if VOICE_EVENTS[event] then
+                M.ReadVoice()
+                -- and once more a moment later, should the game update
+                -- after its own event
+                C_Timer.After(1, ns.Guard("voice", M.ReadVoice))
             end
             M.Refresh()
         end
     end))
     M.eventFrame = f
+    if ChannelFrame and ChannelFrame.ChannelRoster then ns.SafeCall("voice", SetupChannelFrame) end
     ns.OnAddOnLoaded("Blizzard_Channels", function() ns.SafeCall("voice", SetupChannelFrame) end)
-    -- already in a community's voice (a /reload doesn't end it): no
-    -- ACTIVATED event comes, so read it now
-    if C_VoiceChat and C_VoiceChat.GetActiveChannelID then
-        local ok, id = pcall(C_VoiceChat.GetActiveChannelID)
-        if ok and id and not ns.IsSecret(id) then OnMyVoice("VOICE_CHAT_CHANNEL_ACTIVATED", id) end
-    end
+    -- already in a community's voice (a /reload doesn't end it): no event
+    -- comes for that, so read it now
+    if Active() then M.ReadVoice() end
 end
 
 function M:Apply(on)
     if on then
-        if ChannelFrame and ChannelFrame:IsShown() then StartAsking() end
+        M.wasOn = true
+        if ChannelFrame and ChannelFrame.IsShown and ChannelFrame:IsShown() then StartAsking() end
     else
+        -- the people who asked hear we're gone rather than wait it out
+        if M.wasOn and myVoice and ns.db.voiceShare and not Locked() then Announce("L", myVoice) end
+        M.wasOn = false
         StopAsking()
-        DropQuestions()
     end
     M.Refresh()
 end
 
 -- the share box was switched: say so to the people asking right now
 function ns.VoiceShareChanged()
-    if not myVoice or not Active() then return end
-    Announce(ns.db.voiceShare and "J" or "L")
+    if not Active() or Locked() then return end
+    M.ReadVoice()
+    if myVoice then Announce(ns.db.voiceShare and "J" or "L", myVoice) end
+end
+
+--------------------------------------------------------------------------
+-- /pqol status, /pqol voice, /pqol voice log
+--------------------------------------------------------------------------
+
+-- people heard from about one stream: in voice, and here but not in it
+local function Tally(h, now)
+    local inVoice, here, seen = 0, 0, {}
+    for _, t in ipairs({h.guid, h.member}) do
+        for _, e in pairs(t) do
+            if not seen[e] and e.exp > now then
+                seen[e] = true
+                if e.inVoice then inVoice = inVoice + 1 else here = here + 1 end
+            end
+        end
+    end
+    return inVoice, here
 end
 
 function M:Status()
-    local n = 0
-    for _, e in pairs(seen) do if e.exp > Now() then n = n + 1 end end
-    return ("(%d in voice heard from other Pace's QoL users; sharing %s)"):format(
-               n, ns.db.voiceShare and "on" or "off")
+    local now, inVoice, here = Now(), 0, 0
+    for _, h in pairs(heard) do
+        local a, b = Tally(h, now)
+        inVoice, here = inVoice + a, here + b
+    end
+    return ("(%d in voice heard from other Pace's QoL users, %d more not in voice; sharing %s; /pqol voice for details)"):format(
+               inVoice, here, ns.db.voiceShare and "on" or "off")
+end
+
+local CLUB_KIND = {[0] = "Battle.net community", [1] = "WoW community", [2] = "guild", [3] = "other club"}
+
+local function Counts(t)
+    local parts = {}
+    for k, n in pairs(t) do parts[#parts + 1] = k .. " " .. n end
+    table.sort(parts)
+    return #parts > 0 and table.concat(parts, ", ") or "none"
+end
+
+local function PrefixState()
+    if C_ChatInfo and C_ChatInfo.IsAddonMessagePrefixRegistered then
+        local ok, yes = pcall(C_ChatInfo.IsAddonMessagePrefixRegistered, PREFIX)
+        if ok then return yes and "on" or ("NOT registered (" .. tostring(M.prefixResult) .. ")") end
+    end
+    return "?"
+end
+
+local function RowsOnScreen()
+    local r = {n = 0, B = 0, P = 0, none = 0, lit = 0, own = false}
+    local box = ChannelFrame and ChannelFrame.ChannelRoster and ChannelFrame.ChannelRoster.ScrollBox
+    if not (box and box.EnumerateFrames) then return r end
+    for _, frame in box:EnumerateFrames() do
+        r.n = r.n + 1
+        local guid = RowIdentity(frame)
+        local letter = Short(guid):sub(1, 1)
+        if letter == "B" then
+            r.B = r.B + 1
+        elseif letter == "P" then
+            r.P = r.P + 1
+        else
+            r.none = r.none + 1
+        end
+        if IsLocalRow(frame, guid) then r.own = true end
+        local icon = icons[frame]
+        if icon and icon.IsShown and icon:IsShown() then r.lit = r.lit + 1 end
+    end
+    return r
+end
+
+local function LiveWatchers()
+    local n, now = 0, Now()
+    for _, w in pairs(watchers) do if w.exp >= now then n = n + 1 end end
+    return n
+end
+
+-- Everything one in-game test needs to say where a microphone was lost:
+-- run it on both sides (the one looking, with Chat Channels on the stream,
+-- and the one in voice). No names, BattleTags or community names: people
+-- show as a GUID's kind and last four characters (P..3F2A a character,
+-- B..9C01 a Battle.net account).
+function M.Report()
+    local function Line(fmt, ...) print("  " .. fmt:format(...)) end
+    local open = ChannelFrame and ChannelFrame.IsShown and ChannelFrame:IsShown()
+    ns.Print("voice v%s: %s, sharing %s, chat lockdown %s, messages %s, Chat Channels %s",
+             ns.VERSION, Active() and "on" or "OFF", ns.db.voiceShare and "on" or "OFF",
+             Locked() and "YES (nothing is sent or shown)" or "no", PrefixState(),
+             M.hooked and (open and "hooked, open" or "hooked, closed") or "NOT hooked")
+    local game, other = GameVoice()
+    if game then
+        local missed = not (myVoice and myVoice.club == game.club and myVoice.stream == game.stream)
+        Line("me: in voice in club %s stream %s%s; that club knows me as %s, my character is %s",
+             game.club, game.stream, missed and " (the add-on had not noticed: it has now)" or "",
+             Short(ClubGUID(game.clubId)), Short(MyGUID()))
+    elseif other ~= nil then
+        Line("me: in a voice channel of type %s - only a community stream's voice is shared", tostring(other))
+    else
+        Line("me: not in voice%s", myVoice and " (the add-on thought I was: fixed)" or "")
+    end
+    local _, clubId, streamId = SelectedStream()
+    local rows
+    if clubId then
+        local club = tostring(clubId)
+        pcall(M.Targets, clubId) -- fresh counts; sends nothing
+        local c = reach[club] or {}
+        rows = RowsOnScreen()
+        Line("looking at: %s %s, stream %s; %d members, %d online; rows on screen %d (Battle.net account %d, character %d, none %d)%s",
+             CLUB_KIND[c.clubType] or ("club type " .. tostring(c.clubType)), club, tostring(streamId),
+             c.members or 0, c.online or 0, rows.n, rows.B, rows.P, rows.none,
+             rows.n > 0 and not rows.own and "; my own row is not among them" or "")
+        Line("can ask: guild %s, group %s, Battle.net friends on Forever %d, by whisper %d, other faction %d, no way to reach %d",
+             c.guild and "yes" or "no", c.group or "no", c.bn or 0, c.whisper or 0, c.faction or 0, c.none or 0)
+    else
+        Line("looking at: no community stream selected in Chat Channels")
+    end
+    Line("sent: %s | not sent: %s", Counts(stats.sent), Counts(stats.failed))
+    local ch = stats.checks
+    Line("whisper checks: asked %d, yes %d, no %d, no answer %d, skipped %d",
+         ch.asked, ch.yes, ch.no, ch.silent, ch.skipped)
+    Line("received: %s | my own coming back: %s | last %s", Counts(stats.recv), Counts(stats.echo),
+         stats.lastIn and (math.floor(Now() - stats.lastIn) .. "s ago") or "never")
+    if clubId then
+        local h = heard[StreamKey(clubId, streamId)]
+        local inVoice, here = 0, 0
+        if h then inVoice, here = Tally(h, Now()) end
+        Line("heard about this stream: %d in voice (%d microphones on screen), %d with the add-on but not in voice",
+             inVoice, rows and rows.lit or 0, here)
+    end
+    Line("telling %d asker(s) about my voice; last problem: %s", LiveWatchers(),
+         stats.problem and ("%s (%ds ago)"):format(stats.problem, math.floor(Now() - stats.problemAt)) or "none")
+    M.ReadVoice()
+end
+
+function M.ReportLog()
+    ns.Print("voice: the last %d messages, newest first (age, in/out, route, kind, club:stream, GUID, result)", #log)
+    local now = Now()
+    for _, e in ipairs(log) do
+        local kind, club, stream, guid = e.msg:match("^(%a):([^:]*):([^:]*):([^:]*)")
+        print(("  %ds %s %s %s %s:%s %s %s"):format(math.floor(now - e.at), e.dir, e.path, kind or "?",
+                                                   club or "?", stream or "?", Short(guid), e.result or ""))
+    end
+end
+
+-- /pqol voice [log]
+function M:Command(arg)
+    if arg == nil or arg == "" or arg == "status" then
+        M.Report()
+        return true
+    elseif arg == "log" then
+        M.ReportLog()
+        return true
+    end
+    return false
 end
 
 ns.RegisterFeature("voice",
-    "Chat Channels: show who's in a community's voice channel before you join it (a microphone on their name; works for people who also run Pace's QoL)",
+    "Chat Channels: show who's in a community's voice channel before you join it (a microphone on their name). Works between Pace's QoL users the game lets the add-on reach: Battle.net friends playing Forever, your guild and group, and members of your faction in a WoW community",
     M)

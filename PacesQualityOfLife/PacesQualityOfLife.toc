@@ -2,7 +2,7 @@
 ## Title: Pace's Quality of Life
 ## Notes: Small conveniences for WoW Forever: track or untrack every quest (or a whole zone) from the quest log, filter Looking For Group players by role, a quest tracker that follows your zone, and who's in a community voice channel before you join it. Each can be switched off.
 ## Author: case2392
-## Version: 1.0.0
+## Version: 1.1.0
 ## SavedVariables: PacesQoLDB
 ## IconTexture: Interface\Icons\INV_Misc_PocketWatch_01
 ## AddonCompartmentFunc: PacesQualityOfLife_OnAddonCompartmentClick

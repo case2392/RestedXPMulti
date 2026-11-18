@@ -153,18 +153,27 @@ function ns.HandleSlash(input)
     elseif cmd == "status" then
         PrintStatus()
     elseif ns.features[cmd] then
-        local on
-        if arg == "on" then
-            on = true
-        elseif arg == "off" then
-            on = false
+        local mod = ns.features[cmd].mod
+        if arg == "on" or arg == "off" then
+            local on = arg == "on"
+            ns.SetFeature(cmd, on)
+            ns.Print("%s %s", cmd, on and "|cFF66FF66on|r" or "|cFFFF6666off|r")
         else
-            on = not ns.IsOn(cmd)
+            -- (a bare name no longer switches a feature: "/pqol voice" typed
+            -- to see what voice sharing is doing must not turn it off)
+            local handled = false
+            if mod.Command then
+                local ok, result = ns.SafeCall(cmd, mod.Command, mod, arg)
+                handled = ok and result and true or false
+            end
+            if not handled then
+                ns.Print("%s: %s %s - |cFFFFCC00/pqol %s on|off|r switches it", cmd,
+                         ns.IsOn(cmd) and "|cFF66FF66on|r" or "|cFFFF6666off|r",
+                         mod.Status and mod:Status() or "", cmd)
+            end
         end
-        ns.SetFeature(cmd, on)
-        ns.Print("%s %s", cmd, on and "|cFF66FF66on|r" or "|cFFFF6666off|r")
     else
-        ns.Print("|cFFFFCC00/pqol|r options, |cFFFFCC00/pqol status|r what's on and any errors, |cFFFFCC00/pqol <feature> on|off|r: %s",
+        ns.Print("|cFFFFCC00/pqol|r options, |cFFFFCC00/pqol status|r what's on and any errors, |cFFFFCC00/pqol <feature> on|off|r: %s; |cFFFFCC00/pqol voice|r what voice sharing sent and heard",
                  table.concat(ns.featureOrder, ", "))
     end
 end

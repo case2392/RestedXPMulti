@@ -57,7 +57,7 @@ function ns.BuildOptions()
         y = y - h
         if key == "voice" then
             local cb, h2 = MakeCheck(panel, 44, y,
-                "Let other Pace's QoL users in my communities see when I'm in voice (needed for them to see you; only people who also run Pace's QoL can see anyone)",
+                "Answer Pace's QoL users who ask whether I'm in a community's voice channel (needed for them to see you; only people who also run Pace's QoL can see anyone)",
                 function() return ns.db.voiceShare end,
                 function(on)
                     ns.db.voiceShare = on
