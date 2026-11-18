@@ -245,17 +245,24 @@ local function NewWorld(opts)
             GetChildProfessionInfo = function()
                 if w.noChild then return {professionID = 0, professionName = "", skillLevel = 0, maxSkillLevel = 0} end
                 return {professionID = 2540, professionName = w.childName or w.openProf or "Cooking", parentProfessionName = w.openProf or "Cooking",
-                        parentProfessionID = w.openID, skillLevel = w.openRank or 20, maxSkillLevel = 75}
+                        parentProfessionID = w.openID, skillLevel = w.openRank or 20, maxSkillLevel = w.openMax or 75}
             end,
             GetBaseProfessionInfo = function()
                 -- the base line's ID is the profession's skill line (Tailoring 197)
                 local ids = {Cooking = 185, Tailoring = 197, Enchanting = 333, Alchemy = 171, Jewelcrafting = 755}
                 return {professionID = w.openID or ids[w.openProf or "Cooking"] or 0, professionName = w.openProf or "Cooking",
-                        skillLevel = w.openRank or 20, maxSkillLevel = 75}
+                        skillLevel = w.openRank or 20, maxSkillLevel = w.openMax or 75}
             end,
             GetFilteredRecipeIDs = function() return ids(false) end,
             GetAllRecipeIDs = function() if not w.noAllIDs then return ids(true) end end,
-            GetRecipeInfo = function(id) return w.recipes[id] end,
+            -- (w.noInfo: the game gives nothing for a recipe while the window is shut)
+            GetRecipeInfo = function(id) if not w.noInfo then return w.recipes[id] end end,
+            -- the profession a recipe belongs to (w.recipeProfs: id -> profession name)
+            GetProfessionInfoByRecipeID = function(id)
+                local prof = (w.recipeProfs or {})[id]
+                if prof then return {professionID = 0, professionName = prof, parentProfessionName = prof} end
+                return {professionID = 0, professionName = ""}
+            end,
             IsTradeSkillReady = function() return not w.notReady end,
             IsDataSourceChanging = function() return w.changing or false end,
             IsTradeSkillLinked = function() return w.linked or false end,
@@ -292,7 +299,7 @@ local CLASSIC_EVENTS = {"PLAYER_ENTERING_WORLD", "SKILL_LINES_CHANGED", "CHAT_MS
 -- Forever: retail's trade skill events, no TRADE_SKILL_UPDATE, no CRAFT_*
 local FOREVER_EVENTS = {"PLAYER_ENTERING_WORLD", "SKILL_LINES_CHANGED", "CHAT_MSG_SKILL", "ZONE_CHANGED_NEW_AREA",
                         "TRADE_SKILL_SHOW", "TRADE_SKILL_LIST_UPDATE", "TRADE_SKILL_DATA_SOURCE_CHANGED", "TRADE_SKILL_CLOSE",
-                        "TRAINER_SHOW", "TRAINER_UPDATE", "GET_ITEM_INFO_RECEIVED", "SPELL_DATA_LOAD_RESULT"}
+                        "TRAINER_SHOW", "TRAINER_UPDATE", "GET_ITEM_INFO_RECEIVED", "SPELL_DATA_LOAD_RESULT", "NEW_RECIPE_LEARNED"}
 
 --------------------------------------------------------------------------
 -- Classic Era: as before
@@ -300,8 +307,9 @@ local FOREVER_EVENTS = {"PLAYER_ENTERING_WORLD", "SKILL_LINES_CHANGED", "CHAT_MS
 do
     local ok, w = pcall(NewWorld, {client = "classic", events = CLASSIC_EVENTS, db = {setupDone = true, chosen = {Mining = true, Cooking = true}, show = true}})
     check(ok, "classic: loads")
-    check(#w.ns.missingEvents == 2 and w.ns.missingEvents[1] == "TRADE_SKILL_LIST_UPDATE" and w.ns.missingEvents[2] == "TRADE_SKILL_DATA_SOURCE_CHANGED",
-          "classic: only retail's list events are missing here, and they are skipped")
+    check(#w.ns.missingEvents == 3 and w.ns.missingEvents[1] == "TRADE_SKILL_LIST_UPDATE" and w.ns.missingEvents[2] == "TRADE_SKILL_DATA_SOURCE_CHANGED" and
+          w.ns.missingEvents[3] == "NEW_RECIPE_LEARNED",
+          "classic: only retail's profession events are missing here, and they are skipped")
     w.Fire("PLAYER_ENTERING_WORLD")
     check(w.ns.profs.Mining and w.ns.profs.Mining.rank == 45 and w.ns.profs.Mining.maxRank == 75 and w.ns.skillAPI == "skill lines", "classic: skills read from GetSkillLineInfo")
     local lines = w.ns.BuildProfLines("Mining", w.ns.profs.Mining)
@@ -1916,6 +1924,131 @@ do
         end
     end
     check(#missing == 0, "min/alpha: every new sentence translated (" .. (missing[1] or "all") .. ")")
+end
+
+--------------------------------------------------------------------------
+-- The report: "the guide doesn't update the patterns I do have in my
+-- knowledge. So it just says: you don't know any upgrades, talk to a
+-- trainer. But I do have them."
+--------------------------------------------------------------------------
+local CHECK_WINDOW = "(open your Tailoring window with every recipe showing - nothing filtered or folded - so I can see what still skills up)"
+local NOTHING_BETTER = "It gives no skill-ups any more, and you know nothing better - check your trainer for new recipes"
+do
+    -- classic: the window's "Have Materials" hides a known pattern; its colour is from 6 points back
+    local tailor = {name = "Tailoring", rank = 63, maxRank = 150}
+    local w = NewWorld({client = "classic", events = CLASSIC_EVENTS, level = 20, extra = {tailor},
+                        db = {setupDone = true, chosen = {Tailoring = true}, show = true}})
+    w.Fire("PLAYER_ENTERING_WORLD")
+    w.trade = {"Tailoring", {{"Linen Bag", "optimal"}, {"Simple Linen Boots", "optimal"}}}
+    w.tradeRank = 63
+    w.Fire("TRADE_SKILL_SHOW")
+    tailor.rank = 69; w.Fire("SKILL_LINES_CHANGED")
+    w.trade = {"Tailoring", {{"Linen Bag", "trivial"}}} -- (the boots: no mats, filtered out)
+    w.tradeRank = 69
+    w.Fire("TRADE_SKILL_UPDATE")
+    local text = Lines(w, "Tailoring")
+    check(text:find("Craft: Simple Linen Boots (orange at 63)", 1, true) and not text:find(NOTHING_BETTER, 1, true),
+          "known patterns: one the window's filters hid since it was seen orange is still named, not 'you know nothing better'")
+    check(text:find("(Linen Bag is grey for you now", 1, true) and text:find(CHECK_WINDOW, 1, true),
+          "known patterns: with why, and how to see its colour now")
+    -- one last seen grey stays out: grey only gets greyer
+    w.ns.db.knownRecipes.Tailoring["Simple Linen Boots"] = nil
+    w.ns.db.knownRecipes.Tailoring["Brown Linen Pants"] = "trivial"
+    w.ns.db.recipeColors.Tailoring["Brown Linen Pants"] = {seen = {trivial = {min = 60, max = 60}}, last = "trivial", lastRank = 60}
+    text = Lines(w, "Tailoring")
+    check(text:find(NOTHING_BETTER, 1, true) and text:find(CHECK_WINDOW, 1, true) and not text:find("Brown Linen Pants", 1, true),
+          "known patterns: nothing better known - said, with a nudge to show the window's whole list (it may hold more)")
+    -- a green route recipe is not swapped for a colour from further back
+    w.ns.db.knownRecipes.Tailoring["Simple Linen Boots"] = "optimal"
+    w.ns.db.recipeColors.Tailoring["Simple Linen Boots"] = {seen = {optimal = {min = 50, max = 50}}, last = "optimal", lastRank = 50}
+    w.trade = {"Tailoring", {{"Linen Bag", "easy"}}}
+    w.Fire("TRADE_SKILL_UPDATE")
+    text = Lines(w, "Tailoring")
+    check(text:find("Craft: Linen Bag (green)", 1, true) and not text:find("Simple Linen Boots", 1, true),
+          "known patterns: a green route recipe stays (a colour from 19 points back could be grey by now)")
+end
+
+do
+    -- Forever at a rank's cap: the game says nothing can skill up; the colours still count
+    local tailor = {name = "Tailoring", rank = 75, maxRank = 75}
+    local w = NewWorld({client = "forever", events = FOREVER_EVENTS, level = 20, extra = {tailor},
+                        db = {setupDone = true, chosen = {Tailoring = true}, show = true}})
+    w.Fire("PLAYER_ENTERING_WORLD")
+    w.openProf, w.openRank, w.openMax = "Tailoring", 75, 75
+    w.recipes = {[2402] = {name = "Woolen Cape", learned = true, relativeDifficulty = 1, canSkillUp = false},
+                 [2964] = {name = "Bolt of Woolen Cloth", learned = true, relativeDifficulty = 3, canSkillUp = false},
+                 [2406] = {name = "Gray Woolen Shirt", learned = true, relativeDifficulty = 0, canSkillUp = false}}
+    w.Fire("TRADE_SKILL_LIST_UPDATE")
+    local known = w.ns.GetKnownRecipes("Tailoring")
+    check(known["Woolen Cape"] == "medium" and known["Gray Woolen Shirt"] == "optimal" and known["Bolt of Woolen Cloth"] == "trivial",
+          "cap: at 75/75 the recipes keep their colours (the game's 'can't skill up' is the cap's, not theirs)")
+    local text = Lines(w, "Tailoring")
+    check(text:find("Capped! Train Journeyman at a Tailoring trainer", 1, true) and text:find("Craft: Woolen Cape (yellow)", 1, true) and
+          not text:find(NOTHING_BETTER, 1, true), "cap: says to train, and no 'you know nothing better'")
+    -- trained: the colours seen at the cap carry the advice on
+    tailor.maxRank = 150; w.Fire("SKILL_LINES_CHANGED")
+    text = Lines(w, "Tailoring")
+    check(text:find("Craft: Woolen Cape (yellow)", 1, true) and not text:find(NOTHING_BETTER, 1, true), "cap: after training, the same colours")
+    -- the cap's "can't skill up" kept the old way, below the cap: grey
+    w.openMax = 150
+    w.recipes[2402] = {name = "Woolen Cape", learned = true, relativeDifficulty = 1, canSkillUp = false}
+    w.Fire("TRADE_SKILL_LIST_UPDATE")
+    check(w.ns.GetKnownRecipes("Tailoring")["Woolen Cape"] == "trivial", "cap: below the cap, 'can't skill up' still reads as grey")
+end
+
+do
+    -- Forever: a pattern learned with the profession window shut counts at once
+    local tailor = {name = "Tailoring", rank = 80, maxRank = 150}
+    local w = NewWorld({client = "forever", events = FOREVER_EVENTS, level = 20, extra = {tailor},
+                        db = {setupDone = true, chosen = {Tailoring = true}, show = true}})
+    w.Fire("PLAYER_ENTERING_WORLD")
+    w.openProf, w.openRank, w.openMax = "Tailoring", 80, 150
+    w.recipes = {[2402] = {name = "Woolen Cape", learned = true, relativeDifficulty = 3, canSkillUp = false}}
+    w.Fire("TRADE_SKILL_LIST_UPDATE")
+    local text = Lines(w, "Tailoring")
+    check(text:find("Craft: Woolen Cape (grey)", 1, true) and text:find(NOTHING_BETTER, 1, true) and not text:find(CHECK_WINDOW, 1, true),
+          "learned: (grey and nothing better; Forever's full list needs no nudge)")
+    w.recipes[3848] = {name = "Double-Stitched Woolen Shoulders", learned = true, relativeDifficulty = 0, canSkillUp = true}
+    w.recipeProfs = {[3848] = "Tailoring", [2406] = "Tailoring"}
+    w.Fire("NEW_RECIPE_LEARNED", 3848)
+    text = Lines(w, "Tailoring")
+    check(w.ns.GetKnownRecipes("Tailoring")["Double-Stitched Woolen Shoulders"] == "optimal" and
+          text:find("Craft: Double-Stitched Woolen Shoulders (orange)", 1, true) and text:find("Mats: 3 Bolt of Woolen Cloth + 2 Fine Thread", 1, true),
+          "learned: a pattern learned with the window shut is known at once, with its colour")
+    -- the game gives no recipe info while the window is shut: known by name, colour on the next look
+    w.noInfo = true
+    _G.C_Spell = {GetSpellName = function(id) if id == 2406 then return "Gray Woolen Shirt" end end}
+    w.ns.db.knownRecipes.Tailoring["Double-Stitched Woolen Shoulders"] = nil
+    w.ns.db.recipeColors.Tailoring["Double-Stitched Woolen Shoulders"] = nil
+    w.recipes[3848] = nil -- (a second character's run, without the shoulders)
+    w.Fire("NEW_RECIPE_LEARNED", 2406)
+    text = Lines(w, "Tailoring")
+    check(w.ns.GetKnownRecipes("Tailoring")["Gray Woolen Shirt"] ~= nil and text:find(NOTHING_BETTER, 1, true) and text:find(CHECK_WINDOW, 1, true),
+          "learned: without its colour yet, the nudge to open the window comes with 'nothing better'")
+    w.noInfo = false
+    w.recipes[2406] = {name = "Gray Woolen Shirt", learned = true, relativeDifficulty = 0, canSkillUp = true}
+    w.Fire("TRADE_SKILL_LIST_UPDATE")
+    text = Lines(w, "Tailoring")
+    check(text:find("Craft: Gray Woolen Shirt (orange)", 1, true) and not text:find(CHECK_WINDOW, 1, true) and
+          (w.ns.db.recipeUnseen == nil or w.ns.db.recipeUnseen.Tailoring == nil),
+          "learned: the window's next look gives it its colour, and the nudge goes")
+    -- someone else's profession, an unknown recipe, a profession not tracked: nothing changes
+    w.recipeProfs[9999] = "Jewelcrafting"
+    local okJ = pcall(w.Fire, "NEW_RECIPE_LEARNED", 9999)
+    local okN = pcall(w.Fire, "NEW_RECIPE_LEARNED", nil)
+    check(okJ and okN and w.ns.GetKnownRecipes("Jewelcrafting") == nil, "learned: an untracked profession's recipe or a missing id is ignored")
+    _G.C_Spell = nil
+end
+
+-- the new sentence in every language, its %s kept
+do
+    local missing = {}
+    for _, locale in ipairs({"frFR", "deDE", "esES", "esMX", "ptBR", "itIT", "ruRU", "koKR", "zhCN", "zhTW"}) do
+        local wl = NewWorld({client = "classic", locale = locale, events = CLASSIC_EVENTS, db = {setupDone = true, chosen = {Mining = true}, show = true}})
+        local v = rawget(wl.ns.L, CHECK_WINDOW:gsub("Tailoring", "%%s"))
+        if v == nil or not pcall(string.format, v, "X") or not v:find("%s", 1, true) then missing[#missing + 1] = locale end
+    end
+    check(#missing == 0, "known patterns: the window nudge translated in every language (" .. (missing[1] or "all") .. ")")
 end
 
 realPrint(("RestedXP Professions harness: %d passed, %d failed"):format(passed, failed))

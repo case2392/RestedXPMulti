@@ -547,6 +547,8 @@ local function RecordWindow(prof, given, list)
     db.knownRecipes[prof] = known
     db.allRecipes = nil -- 1.0.0 dropped the "not in this game" list
     db.recipeRank[prof] = rank
+    -- (the window is read: a recipe learned since then has its colour now)
+    if db.recipeUnseen then db.recipeUnseen[prof] = nil end
     -- the window's skill is the freshest there is: a skill-up while
     -- crafting reaches it before the skills list, so the advice moves on
     -- with the colours it was given
@@ -619,13 +621,20 @@ local function ScanTradeSkillUI()
         end
     end
     if not ids then return end
+    -- At a rank's cap (75/75 until the next rank is trained) the game says
+    -- no recipe can skill up, which is about the cap, not the recipes:
+    -- their colours still say what skills up once trained, so they are
+    -- kept. (Taken as grey, every recipe read grey and the window said
+    -- "you know nothing better" to someone who knew better.)
+    local skill, cap = Plain(info.skillLevel), Plain(info.maxSkillLevel)
+    local capped = skill and cap and cap > 0 and skill >= cap
     local list, any = {}, false
     for _, id in ipairs(ids) do
         local okR, r = pcall(api.GetRecipeInfo, id)
         if okR and type(r) == "table" and type(r.name) == "string" then
             local diff = Difficulty(r.relativeDifficulty)
             -- a learned recipe the game says cannot skill up is grey
-            if r.learned and r.canSkillUp == false then diff = "trivial" end
+            if r.learned and r.canSkillUp == false and not capped then diff = "trivial" end
             list[#list + 1] = {name = r.name, diff = diff, learned = r.learned and true or false}
             if r.learned then any = true end
         end
@@ -742,6 +751,59 @@ function ns.GetKnownRecipes(prof)
     return ns.db and ns.db.knownRecipes and ns.db.knownRecipes[prof]
 end
 
+-- A recipe learned (a pattern, a trainer) while the profession's window is
+-- closed: the window would only show it next time it is opened, and until
+-- then the advice went on as if it were unknown. Forever (and the clients
+-- with retail's profession API) say which recipe at once: it is added to
+-- the profession's known ones, with its colour when the game gives it.
+function ns.NoteLearnedRecipe(recipeID)
+    local api = C_TradeSkillUI
+    if not (api and ns.db) or type(recipeID) ~= "number" then return end
+    local prof
+    if api.GetProfessionInfoByRecipeID then
+        local ok, i = pcall(api.GetProfessionInfoByRecipeID, recipeID)
+        if ok and type(i) == "table" then
+            prof = ns.ProfKey(i.parentProfessionName, i.parentProfessionID) or ns.ProfKey(i.professionName, i.professionID)
+        end
+    end
+    if not prof and api.GetTradeSkillLineForRecipe then
+        local ok, lineID, lineName, parentID = pcall(api.GetTradeSkillLineForRecipe, recipeID)
+        if ok then prof = ns.ProfKey(nil, parentID) or ns.ProfKey(lineName, lineID) end
+    end
+    if not prof or not ns.TRACKED[prof] then return end
+    local info
+    if api.GetRecipeInfo then
+        local ok, r = pcall(api.GetRecipeInfo, recipeID)
+        if ok and type(r) == "table" then info = r end
+    end
+    local name = info and type(info.name) == "string" and info.name or nil
+    if not name and C_Spell and C_Spell.GetSpellName then
+        local ok, n = pcall(C_Spell.GetSpellName, recipeID)
+        if ok and type(n) == "string" then name = n end
+    end
+    if not name and GetSpellInfo then
+        local ok, n = pcall(GetSpellInfo, recipeID)
+        if ok and type(n) == "string" then name = n end
+    end
+    if not name or name == "" then return end
+    local db = ns.db
+    db.knownRecipes = db.knownRecipes or {}
+    db.knownRecipes[prof] = db.knownRecipes[prof] or {}
+    local diff = info and Difficulty(info.relativeDifficulty) or "unknown"
+    local rank = ns.profs and ns.profs[prof] and ns.profs[prof].rank
+    if ORDER[diff] and type(rank) == "number" then
+        NoteColor(ColorStore(prof), name, diff, rank)
+    else
+        -- no colour yet: the next look at the window gives one
+        db.recipeUnseen = db.recipeUnseen or {}
+        db.recipeUnseen[prof] = true
+    end
+    if db.knownRecipes[prof][name] == nil or ORDER[diff] then db.knownRecipes[prof][name] = diff end
+    ns.dataVersion = (ns.dataVersion or 0) + 1
+    ns.UpdateUI()
+    return name
+end
+
 -- A recipe's colour at a given skill, from everything the game has shown.
 -- Returns colour, sure, seenColour, seenRank:
 --   colour - the best estimate ("optimal".."trivial"), nil when never seen
@@ -799,7 +861,8 @@ end
 -- Of the recipes the player knows, the one most likely to skill up at
 -- this skill: orange first, then yellow, then green; never grey. Among
 -- equals, a recipe the route uses wins (its mats are listed), then the
--- name. Returns name, colour, the route row it is on (if any).
+-- name. Returns name, colour, the route row it is on (if any), and
+-- whether its colour is from further back (see below).
 function ns.BestKnownRecipe(prof, rank)
     local known = ns.GetKnownRecipes(prof)
     if not known then return end
@@ -812,21 +875,36 @@ function ns.BestKnownRecipe(prof, rank)
             if name then rowOf[name] = row end
         end
     end
-    -- only a colour that holds now: pinned down at this skill, or seen at
-    -- most 5 points back (orange seen at 20 says nothing about 98)
+    -- a colour that holds now: pinned down at this skill, or seen at most
+    -- 5 points back (orange seen at 20 says nothing about 98)
     local best, bestO, bestRow
+    -- Failing that, a recipe last seen orange, yellow or green further
+    -- back: it may have greyed since, but it may not - the window only
+    -- shows what its filters and folded headers let through ("Have
+    -- Materials" hides a pattern without its mats), so a known recipe can
+    -- go unseen for many points. (A report: "you know nothing better,
+    -- talk to a trainer" to someone who knew better patterns.) The best
+    -- colour first, then the one seen most recently.
+    local old, oldO, oldRow, oldSeen
     for recipe in pairs(known) do
         local c, sure, _, seenRank = ns.RecipeColor(prof, recipe, rank)
-        local o = c and (sure or (type(rank) == "number" and rank - seenRank <= 5)) and ORDER[c]
+        local o = c and ORDER[c]
         if o and o < 3 then
             local row = rowOf[recipe]
-            local better = not bestO or o < bestO or
-                               (o == bestO and row and not bestRow) or
-                               (o == bestO and (row ~= nil) == (bestRow ~= nil) and recipe < best)
-            if better then best, bestO, bestRow = recipe, o, row end
+            if sure or (type(rank) == "number" and rank - seenRank <= 5) then
+                local better = not bestO or o < bestO or
+                                   (o == bestO and row and not bestRow) or
+                                   (o == bestO and (row ~= nil) == (bestRow ~= nil) and recipe < best)
+                if better then best, bestO, bestRow = recipe, o, row end
+            elseif type(seenRank) == "number" then
+                local better = not oldO or o < oldO or (o == oldO and seenRank > oldSeen) or
+                                   (o == oldO and seenRank == oldSeen and recipe < old)
+                if better then old, oldO, oldRow, oldSeen = recipe, o, row, seenRank end
+            end
         end
     end
-    return best, best and BY_ORDER[bestO], bestRow
+    if best then return best, BY_ORDER[bestO], bestRow, false end
+    if old then return old, BY_ORDER[oldO], oldRow, true end
 end
 
 --------------------------------------------------------------------------
@@ -1054,9 +1132,19 @@ function ns.CraftNow(name, p, current)
         end
     end
     now.routeO = ORDER[now.routeColor]
-    now.best, now.bestColor, now.bestRow = ns.BestKnownRecipe(name, p.rank)
+    now.best, now.bestColor, now.bestRow, now.bestOld = ns.BestKnownRecipe(name, p.rank)
+    -- (a colour from further back only stands in for a grey route recipe:
+    -- it can't do worse than grey, but it could than green)
     now.takeBest = (now.anyKnown and now.routeO and now.best and now.best ~= now.routeName and
-                       (now.routeO == 3 or (now.routeO == 2 and ORDER[now.bestColor] <= 1))) and true or false
+                       (now.routeO == 3 or (now.routeO == 2 and not now.bestOld and ORDER[now.bestColor] <= 1))) and true or false
+    -- what the window showed may not be all the player knows: the classic
+    -- clients' list is what its filters and folds let through, Forever's
+    -- filtered one likewise, and a recipe learned since it was read has no
+    -- colour yet
+    local db = ns.db or {}
+    now.partial = (not ns.IS_FOREVER and (GetNumTradeSkills or GetNumCrafts) and true or false) or
+                      (db.recipeFiltered and db.recipeFiltered[name] and true or false) or
+                      (db.recipeUnseen and db.recipeUnseen[name] and true or false)
     return now
 end
 
@@ -1195,6 +1283,9 @@ function ns.BuildProfLines(name, p)
                 local routeO = now.routeO
                 local best, bestColor, bestRow = now.best, now.bestColor, now.bestRow
                 local takeBest = now.takeBest
+                -- a colour from further back, or a list that may not hold
+                -- everything known: the window, opened in full, settles it
+                local checkWindow = string.format(L["(open your %s window with every recipe showing - nothing filtered or folded - so I can see what still skills up)"], label)
                 if takeBest then
                     add(string.format(L["Craft: %s (%s)"], best, ns.ColorText(name, best, p.rank) or L[ns.COLOR_WORD[bestColor]]), "normal")
                     -- grey: the game moved it; green: it only skills up some
@@ -1202,13 +1293,17 @@ function ns.BuildProfLines(name, p)
                     add(string.format(routeO == 3 and L["(%s is %s for you now - the game moved it, so this beats the route)"] or
                                           L["(%s is %s for you now and only skills up some of the time, so this beats the route)"],
                                       routeName, ns.ColorText(name, routeName, p.rank) or L[ns.COLOR_WORD[routeColor]]), "dim")
+                    if now.bestOld then add(checkWindow, "dim") end
                     local bestMats = bestRow and ns.RowMats(bestRow, best, knownMap)
                     if bestMats then add(string.format(L["Mats: %s"], bestMats), "dim") end
                 else
                     local colorText = routeName and ns.ColorText(name, routeName, p.rank)
                     add(colorText and string.format(L["Craft: %s (%s)"], display, colorText) or string.format(L["Craft: %s"], display), "normal")
-                    if routeO == 3 then
+                    -- (at the cap nothing skills up until the next rank is
+                    -- trained, which the line above already says)
+                    if routeO == 3 and not capped then
                         add(L["It gives no skill-ups any more, and you know nothing better - check your trainer for new recipes"], "warn")
+                        if now.partial then add(checkWindow, "dim") end
                     elseif routeO == 2 then
                         add(L["Green: it only skills up some of the time"], "dim")
                     end
@@ -1220,6 +1315,7 @@ function ns.BuildProfLines(name, p)
                     -- gives skill-ups: say so rather than send them shopping
                     if knownMap and not anyKnown and best then
                         add(string.format(L["Meanwhile: %s (%s)"], best, ns.ColorText(name, best, p.rank) or L[ns.COLOR_WORD[bestColor]]), "good")
+                        if now.bestOld then add(checkWindow, "dim") end
                     end
                     if fishCombo then
                         add(string.format(L["Mats: %s"], ItemName(current.fishItem) or current.fish), "dim")
@@ -1403,7 +1499,8 @@ local EVENTS = {
     "PLAYER_ENTERING_WORLD", "SKILL_LINES_CHANGED", "CHAT_MSG_SKILL",
     "ZONE_CHANGED_NEW_AREA", "TRADE_SKILL_SHOW", "TRADE_SKILL_UPDATE",
     "TRADE_SKILL_LIST_UPDATE", "TRADE_SKILL_DATA_SOURCE_CHANGED", "CRAFT_SHOW", "CRAFT_UPDATE",
-    "TRAINER_SHOW", "TRAINER_UPDATE", "GET_ITEM_INFO_RECEIVED", "SPELL_DATA_LOAD_RESULT"
+    "TRAINER_SHOW", "TRAINER_UPDATE", "GET_ITEM_INFO_RECEIVED", "SPELL_DATA_LOAD_RESULT",
+    "NEW_RECIPE_LEARNED"
 }
 ns.missingEvents = {}
 for _, event in ipairs(EVENTS) do
@@ -1415,8 +1512,11 @@ end
 -- later one - or for TRADE_SKILL_DATA_SOURCE_CHANGED, which ends the swap)
 local TRADE_EVENTS = {TRADE_SKILL_SHOW = true, TRADE_SKILL_UPDATE = true, TRADE_SKILL_LIST_UPDATE = true,
                       TRADE_SKILL_DATA_SOURCE_CHANGED = true}
-eventFrame:SetScript("OnEvent", function(_, event)
-    if event == "GET_ITEM_INFO_RECEIVED" or event == "SPELL_DATA_LOAD_RESULT" then
+eventFrame:SetScript("OnEvent", function(_, event, arg1)
+    if event == "NEW_RECIPE_LEARNED" then
+        if ns.db then pcall(ns.NoteLearnedRecipe, arg1) end
+        return
+    elseif event == "GET_ITEM_INFO_RECEIVED" or event == "SPELL_DATA_LOAD_RESULT" then
         -- an item or spell name the window asked for has arrived: redraw
         -- once, a moment later, however many arrive together
         if ns.db and not ns.itemRedraw then
