@@ -196,8 +196,9 @@ local function makePlayer(name, opts)
     env.Enum = ENUM
     env.GetTime = function() return clock end
     env.time = function() return math.floor(clock) end
-    -- /reload goes through ReloadUI (InterfaceUtil.lua: C_UI.Reload)
-    env.ReloadUI = function() P.reloadAsked = true end
+    -- /reload goes through ReloadUI, which calls C_UI.Reload (InterfaceUtil.lua)
+    env.C_UI = {Reload = function() P.reloadAsked = true end}
+    env.ReloadUI = function() env.C_UI.Reload() end
     env.UnitGUID = function(u) if u == "player" then return P.guid end end
     env.UnitName = function(u) if u == "player" then return P.name end end
     env.BNET_CLIENT_WOW = "WoW"
@@ -255,6 +256,11 @@ local function makePlayer(name, opts)
     env.C_AddOns = {
         GetAddOnMetadata = function(_, k) if k == "Version" then return "1.0.0" end end,
         IsAddOnLoaded = function(n) return P.loadedAddOns[n] or false end,
+        -- (P.addonOff: switched off in the add-on list for the next load)
+        GetAddOnEnableState = function(n, character)
+            if character ~= P.guid then return 0 end
+            return P.addonOff and 0 or 2
+        end,
     }
     P.loadedAddOns = {Blizzard_Channels = true}
     env.Settings = {
@@ -359,10 +365,11 @@ local function makePlayer(name, opts)
             local g = R and R.gameAccounts[j]
             return g and GameAccountInfo(R, g) or nil
         end,
+        -- (noGameInfo: the game no longer gives the account's info - gone offline)
         GetGameAccountInfoByID = function(id)
             for _, n in ipairs(Friends()) do
                 for _, g in ipairs(players[n].gameAccounts) do
-                    if g.gameAccountID == id then return GameAccountInfo(players[n], g) end
+                    if g.gameAccountID == id and not players[n].noGameInfo then return GameAccountInfo(players[n], g) end
                 end
             end
         end,
@@ -392,8 +399,9 @@ local function makePlayer(name, opts)
         local bn = c.type == ENUM.ClubType.BattleNet
         local guid = R.guid
         if bn then guid = (not c.noGuids) and R.accountGUID or nil end
+        -- (appearOffline: Battle.net's "Appear Offline", the member shows offline while still playing)
         return {isSelf = R == P, memberId = memberId,
-                presence = R.online and ENUM.ClubMemberPresence.Online or ENUM.ClubMemberPresence.Offline,
+                presence = R.online and not R.appearOffline and ENUM.ClubMemberPresence.Online or ENUM.ClubMemberPresence.Offline,
                 guid = guid, bnetAccountId = R.bnetAccountId, clubType = c.type,
                 name = bn and (R.bnName or R.name) or R.name, faction = R.faction == "Horde" and 0 or 1}
     end
@@ -509,7 +517,10 @@ local function makePlayer(name, opts)
         function row:IsLocalPlayer() return R == P end
         function row:IsChannelActive() return P.selectedVoiceActive and true or false end
         -- (SetIsConnected(presence ~= Offline) as the row is drawn)
-        function row:IsConnected() return (players[R.name] or R).online and true or false end
+        function row:IsConnected()
+            local C = players[R.name] or R
+            return C.online and not C.appearOffline and true or false
+        end
         -- the member's name as the club gives it (a Battle.net name in a
         -- Battle.net community): what the row shows, and must never be printed
         function row:GetMemberName()
@@ -777,9 +788,14 @@ end
 -- unless direct), its timers and frames gone and nothing heard during the
 -- loading screen, then the same character's add-on loaded again with its
 -- saved settings - the game keeps voice, friends, guild and group
+-- (how: "reloadui" the default, as /reload; "cui" C_UI.Reload called
+-- directly; "console" no Lua at all. noAddon: switched off for the next
+-- load. The hooks are assumed to run before PLAYER_LOGOUT: the old UI can't
+-- be torn down while the call is still running.)
 local function Reload(P, o)
     o = o or {}
-    if not o.direct then P.env.ReloadUI() end
+    local how = o.how or (o.direct and "console") or "reloadui"
+    if how == "reloadui" then P.env.ReloadUI() elseif how == "cui" then P.env.C_UI.Reload() end
     FireEvent(P, "PLAYER_LOGOUT")
     for _, t in ipairs(timers) do if t.owner == P then t.cancelled = true end end
     P.frames = {}
@@ -788,7 +804,8 @@ local function Reload(P, o)
     advance((o.loading or 5) - 1)
     return makePlayer(P.name, {same = P, gameAccountID = P.opts.gameAccountID, bnetAccountId = P.opts.bnetAccountId,
                                appFocused = P.opts.appFocused, faction = P.faction, voiceFile = P.opts.voiceFile,
-                               db = P.env.PacesQoLDB, beforeLoad = o.beforeLoad})
+                               db = P.env.PacesQoLDB,
+                               beforeLoad = o.noAddon and function(N) N.files = {} end or o.beforeLoad})
 end
 
 --------------------------------------------------------------------------
@@ -1683,6 +1700,16 @@ do
     advance(6)
     check(not lw.RowMic(lt) and Msgs(lt, "GUILD", "L:GL:LS:") == 1,
           "lockdown: once it lifts the leave goes out (not 200 seconds of a wrong microphone)")
+    -- and the next dungeon of the session too (clear of the viewer's 60 s round)
+    lt.JoinVoice(98, "GL", "LS")
+    advance(2)
+    check(lw.RowMic(lt), "lockdown: (back in voice, seen)")
+    lt.locked = true
+    lt.LeaveVoice(98)
+    advance(10)
+    lt.locked = false
+    advance(6)
+    check(not lw.RowMic(lt) and Msgs(lt, "GUILD", "L:GL:LS:") == 2, "lockdown: a second lockdown's leave goes out as it lifts too")
     lw.CloseChannels()
 
     -- a member who drops out without a leave (a crash): the microphone goes with Blizzard's grey row
@@ -1700,6 +1727,16 @@ do
     ot.voice[99].isActive = false -- (logged back in: not in voice)
     ow.Row(ot):Update()
     check(not ow.RowMic(ot), "offline: and logging back in isn't being in voice")
+    -- back in voice, then a second crash: the answer since the first doesn't outlive it
+    ot.LeaveVoice(99) -- (the logged-in client's own view: not in voice yet)
+    ot.JoinVoice(99, "CO", "OS")
+    advance(10)
+    check(ow.RowMic(ot), "offline: (back in voice, seen again)")
+    ot.online = false
+    ow.Row(ot):Update()
+    check(not ow.RowMic(ot), "offline: a second drop-out takes it too")
+    ot.online = true
+    ow.Row(ot):Update()
     ow.CloseChannels()
 
     -- one who stops answering (the add-on switched off) loses it as the last answer runs out, not a round later
@@ -1739,8 +1776,18 @@ do
     clubs["CR"] = {type = ENUM.ClubType.Character, members = {"ReJustin", "ReWhisper", "ReOld", "ReLogan"}}
     for _, V in ipairs({rj, rw, ro}) do V.AddRosterRow(rl) end
     rl.JoinVoice(110, "CR", "RS")
+    local t0 = clock
     for _, V in ipairs({rj, rw, ro}) do V.OpenChannels("CR", "RS") end
     advance(3)
+    -- (to a moment well clear of the askers' rounds - every 60 s, 90 s on
+    -- 1.0.0 - so that what follows can't come from a question)
+    local function Quiet()
+        for _ = 1, 200 do
+            local a, b = (clock - t0) % 60, (clock - t0) % 90
+            if a >= 2 and a < 38 and b >= 2 and b < 68 then return end
+            advance(1)
+        end
+    end
     local function AllSee(R) return rj.RowMic(R) and rw.RowMic(R) and ro.RowMic(R) end
     local function NoneSee(R) return not rj.RowMic(R) and not rw.RowMic(R) and not ro.RowMic(R) end
     check(AllSee(rl), "reload: (in voice, seen by all three)")
@@ -1786,22 +1833,49 @@ do
     check(AllSee(rl4b), "reload: (back in)")
 
     -- voice that ended across the reload: they hear the leave once the UI has looked again
+    Quiet()
     local rl5 = Reload(rl4b, {during = function(P) P.voice[110].isActive = false end})
     advance(1)
     check(AllSee(rl5), "reload: (a few seconds' grace for the game to report voice)")
     advance(11)
-    check(NoneSee(rl5), "reload: voice that ended with the reload is told as a leave")
+    check(NoneSee(rl5), "reload: voice that ended with the reload is told as a leave (the add-on looks again by itself)")
 
-    -- a real logout: everyone hears the leave at once (no timer runs after it)
+    -- C_UI.Reload called directly (another add-on's /rl, Classic UI's nameplate switch): a reload too
     rl5.JoinVoice(110, "CR", "RS")
     advance(1)
-    check(AllSee(rl5), "logout: (back in voice)")
-    rl5.Fire("PLAYER_LOGOUT")
+    check(AllSee(rl5), "reload: (back in voice)")
+    local leaves5, seen6 = Msgs(rl5, nil, "L:"), false
+    local rl6 = Reload(rl5, {how = "cui", during = function() seen6 = AllSee(rl5) end})
+    advance(1)
+    check(Msgs(rl5, nil, "L:") == leaves5 and seen6 and AllSee(rl6), "reload: C_UI.Reload called directly is taken for a reload too")
+
+    -- a reload no Lua sees (/console reloadui) with voice reported late:
+    -- back about ten seconds after the UI is up, not at the next question
+    Quiet()
+    local rl7 = Reload(rl6, {how = "console", beforeLoad = function(P) P.voiceUnreadable = true end})
+    advance(3)
+    rl7.voiceUnreadable = false
+    local early7 = AllSee(rl7)
+    advance(9)
+    check(not early7 and AllSee(rl7), "reload: one no add-on can see, voice reported late: back once the add-on looks again")
+
+    -- a real logout: everyone hears the leave at once (no timer runs after it)
+    rl7.Fire("PLAYER_LOGOUT")
     advance(0.5)
-    check(NoneSee(rl5), "logout: a logout in voice is told at once, to all three")
+    check(NoneSee(rl7), "logout: a logout in voice is told at once, to all three")
+
+    -- a reload that switches the add-on off (the add-on list, /disableaddons): told as a leave, like a logout
+    rl7.LeaveVoice(110)
+    rl7.JoinVoice(110, "CR", "RS")
+    advance(2)
+    check(AllSee(rl7), "reload: (in voice again)")
+    rl7.addonOff = true
+    local leaves7, gone8 = Msgs(rl7, nil, "L:"), false
+    local rl8 = Reload(rl7, {noAddon = true, during = function() gone8 = NoneSee(rl7) end})
+    check(Msgs(rl7, nil, "L:") - leaves7 == 4 and gone8, "reload: one that switches the add-on off tells everyone at once (nothing would after)")
 
     for _, V in ipairs({rj, rw, ro}) do V.CloseChannels() end
-    for _, R in ipairs({rj, rw, ro, rl5}) do R.online = false; players[R.name] = nil end
+    for _, R in ipairs({rj, rw, ro, rl8}) do R.online = false; players[R.name] = nil end
 end
 
 do
@@ -1831,7 +1905,135 @@ do
     check(not cj.RowMic(cl) and not cg.RowMic(cl), "club data late: so the guildmate who isn't a friend hears it too")
     cj.CloseChannels()
     cg.CloseChannels()
-    for _, R in ipairs({cj, cl, cg}) do R.online = false; players[R.name] = nil end
+
+    -- the guild's own club, its type not known yet when voice is joined:
+    -- the leave still goes over GUILD, where the guildmates asking hear it
+    local fv, ft = makePlayer("FlagView"), makePlayer("FlagTalk")
+    fv.guild, ft.guild = "GF", "GF"
+    clubs["GF"] = {type = ENUM.ClubType.Guild, members = {"FlagView", "FlagTalk"}}
+    fv.AddRosterRow(ft)
+    ft.clubsNotReady = true
+    ft.JoinVoice(121, "GF", "FS")
+    advance(2)
+    ft.clubsNotReady = false
+    fv.OpenChannels("GF", "FS")
+    advance(3)
+    check(fv.RowMic(ft), "club data late: (the guild stream, seen)")
+    ft.LeaveVoice(121)
+    advance(2)
+    check(Msgs(ft, "GUILD", "L:GF:FS:") == 1 and not fv.RowMic(ft),
+          "club data late: on the guild's own stream the leave goes over GUILD, though the club couldn't say it was the guild's")
+    fv.CloseChannels()
+    for _, R in ipairs({cj, cl, cg, fv, ft}) do R.online = false; players[R.name] = nil end
+end
+
+do
+    -- /pqol voice in voice: "telling N" counts the people asking about the stream I'm in, once each
+    local tt = makePlayer("TellTalk", {gameAccountID = 691, bnetAccountId = 9191})
+    local t1 = makePlayer("TellOne", {gameAccountID = 692, bnetAccountId = 9192}) -- a friend: asks by game data and by whisper
+    local t2 = makePlayer("TellTwo")                                           -- looks at another stream
+    tt.bnFriends.TellOne, t1.bnFriends.TellTalk = true, true
+    clubs["CT"] = {type = ENUM.ClubType.Character, members = {"TellTalk", "TellOne", "TellTwo"}}
+    t1.AddRosterRow(tt)
+    t2.AddRosterRow(tt)
+    tt.JoinVoice(122, "CT", "T1")
+    t1.OpenChannels("CT", "T1")
+    t2.OpenChannels("CT", "T2")
+    advance(3)
+    check(t1.RowMic(tt) and Msgs(t1, "BN", "Q:") >= 1 and Msgs(t1, "WHISPER", "Q:") >= 1, "readout: (asked by game data and by whisper)")
+    tt.printed = {}
+    tt.Slash("voice")
+    check(Printed(tt, "telling 1 asker(s) about my voice;"),
+          "readout: one person asking two ways counts once, and someone asking about another stream not at all")
+    t1.CloseChannels()
+    t2.CloseChannels()
+
+    -- the same client by another route: a 1.0.0 friend's leave by Battle.net clears what he said by whisper
+    local ra = makePlayer("RouteA", {gameAccountID = 693, bnetAccountId = 9193})
+    local rb = makePlayer("RouteB", {gameAccountID = 694, bnetAccountId = 9194, beforeLoad = NoAddon})
+    rb.prefix = nil -- (his messages are played below, as 1.0.0 sends them)
+    ra.bnFriends.RouteB, rb.bnFriends.RouteA = true, true
+    clubs["CW"] = {type = ENUM.ClubType.Character, members = {"RouteA", "RouteB"}}
+    ra.AddRosterRow(rb)
+    ra.OpenChannels("CW", "WS")
+    advance(3)
+    ra.Fire("CHAT_MSG_ADDON", "PQoLVoice", "J:CW:WS:" .. rb.guid, "WHISPER", "RouteB-Forever")
+    check(ra.RowMic(rb), "routes: (in voice, said by whisper)")
+    ra.Fire("BN_CHAT_MSG_ADDON", "PQoLVoice", "L:CW:WS:" .. rb.guid, "WHISPER", 694)
+    check(not ra.RowMic(rb), "routes: his leave by Battle.net game data clears it (the same client, another route)")
+    -- (and when the game no longer says whose game account it was - he logged out - his character's GUID does)
+    ra.Fire("CHAT_MSG_ADDON", "PQoLVoice", "J:CW:WS:" .. rb.guid, "WHISPER", "RouteB-Forever")
+    rb.noGameInfo = true
+    ra.Fire("BN_CHAT_MSG_ADDON", "PQoLVoice", "L:CW:WS:" .. rb.guid, "WHISPER", 694)
+    check(not ra.RowMic(rb), "routes: a leave whose game account the game can't name any more still clears it, by the character's GUID")
+    rb.noGameInfo = nil
+    ra.CloseChannels()
+
+    -- in a Battle.net community (the account's GUID on both): his own "not in voice" by game data
+    -- corrects what he said by whisper, where only the routes' names tell it's him
+    clubs["BR"] = {type = ENUM.ClubType.BattleNet, members = {"RouteA", "RouteB"}}
+    ra.OpenChannels("BR", "RS")
+    advance(3)
+    ra.Fire("CHAT_MSG_ADDON", "PQoLVoice", "J:BR:RS:" .. rb.accountGUID, "WHISPER", "RouteB-Forever")
+    check(ra.RowMic(rb), "routes: (a Battle.net community, in voice by whisper)")
+    ra.Fire("BN_CHAT_MSG_ADDON", "PQoLVoice", "P:BR:RS:" .. rb.accountGUID, "WHISPER", 694)
+    check(not ra.RowMic(rb), "routes: his own 'not in voice' by game data takes it back (the same client, another route)")
+    ra.CloseChannels()
+
+    -- asked by the guild and the party in the same round: one answer, not a second one ten seconds later
+    local dx, dy = makePlayer("DupX", {gameAccountID = 699, bnetAccountId = 9199}), makePlayer("DupY", {gameAccountID = 700, bnetAccountId = 9200})
+    dx.guild, dy.guild, dx.group, dy.group = "GDD", "GDD", "pdd", "pdd"
+    clubs["BDD"] = {type = ENUM.ClubType.BattleNet, members = {"DupX", "DupY"}}
+    dx.AddRosterRow(dy)
+    dy.JoinVoice(125, "BDD", "DS")
+    dx.OpenChannels("BDD", "DS")
+    advance(15)
+    check(dx.RowMic(dy) and Msgs(dx, "PARTY", "Q:") == 1 and Msgs(dx, "GUILD", "Q:") == 1 and Msgs(dy, "WHISPER", "J:") == 1,
+          "gap: asked by the guild and the party in one round, answered once")
+    dx.CloseChannels()
+
+    -- Battle.net "Appear Offline": the row is grey, the guildmate is in voice and answers - shown
+    local aa, ab = makePlayer("AppearA", {gameAccountID = 695, bnetAccountId = 9195}), makePlayer("AppearB", {gameAccountID = 696, bnetAccountId = 9196})
+    aa.guild, ab.guild = "GAO", "GAO"
+    ab.appearOffline = true
+    clubs["BA"] = {type = ENUM.ClubType.BattleNet, members = {"AppearA", "AppearB"}}
+    aa.AddRosterRow(ab)
+    ab.JoinVoice(123, "BA", "AS")
+    aa.OpenChannels("BA", "AS")
+    advance(3)
+    check(not aa.Row(ab):IsConnected() and aa.RowMic(ab),
+          "offline: someone showing offline (Appear Offline) who answers from voice still gets the microphone")
+    aa.CloseChannels()
+
+    -- a stream switch: rows still showing the last club's members (Blizzard refills them a moment
+    -- later) must not wipe what was heard from this club's member with the same id
+    -- (SwitchB on 1.0.0: his answer carries his character, so only the member id places it)
+    local sa2 = makePlayer("SwitchA", {gameAccountID = 697, bnetAccountId = 9197})
+    local sb2 = makePlayer("SwitchB", {gameAccountID = 698, bnetAccountId = 9198, voiceFile = OLD})
+    local so = makePlayer("SwitchOff")
+    sa2.bnFriends.SwitchB, sb2.bnFriends.SwitchA = true, true
+    clubs["BS"] = {type = ENUM.ClubType.BattleNet, members = {"SwitchA", "SwitchB"}}
+    clubs["CS2"] = {type = ENUM.ClubType.Character, members = {"SwitchA", "SwitchOff"}}
+    so.online = false
+    sa2.AddRosterRow(sb2)
+    sb2.JoinVoice(124, "BS", "SS")
+    sa2.OpenChannels("BS", "SS")
+    advance(10)
+    check(sa2.RowMic(sb2), "stream switch: (seen)")
+    -- a row as the last club left it: its member 2 is SwitchOff, offline
+    local stale = Widget("Button")
+    stale.Name = Widget("FontString", nil, stale)
+    function stale:GetMemberID() return 2 end
+    function stale:IsConnected() return false end
+    function stale:GetMemberPlayerLocation() return {GetGUID = function() return so.guid end} end
+    function stale:IsLocalPlayer() return false end
+    function stale:IsChannelActive() return false end
+    sa2.ns.Voice.Decorate(stale)
+    sa2.ns.Voice.Refresh()
+    check(sa2.RowMic(sb2), "stream switch: a row still showing the last club's offline member wipes nothing of this club's")
+    sa2.CloseChannels()
+
+    for _, R in ipairs({tt, t1, t2, ra, rb, dx, dy, aa, ab, sa2, sb2, so}) do R.online = false; players[R.name] = nil end
 end
 
 --------------------------------------------------------------------------

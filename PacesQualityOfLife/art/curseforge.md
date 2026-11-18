@@ -52,8 +52,8 @@ file's text can go there directly.
 1.1.0
 - Chat Channels voice: microphones now show in Battle.net communities. Answers name you the way the community lists you (your Battle.net account), which 1.0.0 didn't, so nothing matched there.
 - Voice: friends are found on their WoW Forever client even when their Battle.net app has the focus; guildmates and group members are found in any community; a friend still on 1.0.0 shows too, and sees you.
-- Voice: no more waiting for ever on the game's "can whisper" check; your own voice is read from the game (after a /reload, a stream switch); failed sends are retried.
-- Voice: a /reload in voice no longer hides you from the people looking; logging out tells them at once; a join or leave in a dungeon goes out once you're out; someone who goes offline loses the microphone with their grey row.
+- Voice: no more waiting for ever on the game's "can whisper" check; your own voice is read from the game (after a /reload, a stream switch); a question the game refused is asked again.
+- Voice: logging out tells the people looking at once (a /reload doesn't), and after a /reload your joins and leaves still reach them; a join or leave in a dungeon goes out once you're out; someone who goes offline loses the microphone with their grey row.
 - New: /pqol voice (and /pqol voice log) says what voice sharing sent, heard and was refused, without names.
 - A bare /pqol <feature> now shows its state instead of switching it (/pqol <feature> on|off switches).
 ```

@@ -603,16 +603,28 @@ local function Offline(button)
     return connected == false
 end
 
--- what we heard from a member who went offline is over: logging back in is
--- not being in voice (an answer from the last moments is kept: the row may
--- not have been redrawn online yet)
-local function Forget(clubId, streamId, guid, memberId)
+-- The selected club says this row's member is offline - not just a row
+-- still showing another club's member: on a stream switch Blizzard refills
+-- the rows a moment after the selection changes, and member ids are the
+-- club's own.
+local function ClubSaysOffline(clubId, memberId, guid)
+    if memberId == nil or not (C_Club and C_Club.GetMemberInfo) then return false end
+    local ok, m = pcall(C_Club.GetMemberInfo, clubId, memberId)
+    if not ok or type(m) ~= "table" or Plain(m.guid) ~= guid then return false end
+    local offline = Enum and Enum.ClubMemberPresence and Enum.ClubMemberPresence.Offline or 3
+    return Plain(m.presence) == offline
+end
+
+-- What was heard from a member before they went offline is over: logging
+-- back in is not being in voice. An answer that comes while the row is
+-- grey stands (Battle.net's "Appear Offline": still in voice, answering).
+local greySince = {}       -- "club|member" -> when the row was first seen offline
+local function Forget(clubId, streamId, guid, memberId, since)
     local h = heard[StreamKey(clubId, streamId)]
     if not h then return end
-    local now = Now()
     for _, slot in ipairs({{h.guid, guid}, {h.member, memberId}}) do
         local t, k = slot[1], slot[2]
-        if k ~= nil and t[k] and now - (t[k].at or 0) > 5 then t[k] = nil end
+        if k ~= nil and t[k] and (t[k].at or 0) < since then t[k] = nil end
     end
 end
 
@@ -624,13 +636,16 @@ function M.Decorate(button)
         local guid, memberId = RowIdentity(button)
         local channelActive = button.IsChannelActive and button:IsChannelActive()
         if clubId and (guid or memberId ~= nil) and not channelActive and not IsLocalRow(button, guid) then
-            if Offline(button) then
-                Forget(clubId, streamId, guid, memberId)
-            else
-                local channelID = guid and InactiveVoiceChannel(clubId, streamId)
-                show = (channelID and DirectlyInVoice(channelID, guid)) or
-                           HeardFor(clubId, streamId, guid, memberId)
+            local key = tostring(clubId) .. "|" .. tostring(memberId or guid)
+            if not Offline(button) then
+                greySince[key] = nil
+            elseif ClubSaysOffline(clubId, memberId, guid) then
+                greySince[key] = greySince[key] or Now()
+                Forget(clubId, streamId, guid, memberId, greySince[key])
             end
+            local channelID = guid and InactiveVoiceChannel(clubId, streamId)
+            show = (channelID and DirectlyInVoice(channelID, guid)) or
+                       HeardFor(clubId, streamId, guid, memberId)
         end
     end
     local icon = icons[button]
@@ -871,8 +886,10 @@ local function Answer(kind, club, stream, to, gapKey, gap, again)
     if last and now - last < gap then
         -- asked again inside the gap (by someone who reloaded, or a
         -- guildmate who missed the last answer over GUILD): answer once
-        -- more as the gap ends, not a round later
-        if again and not deferred[gapKey] then
+        -- more as the gap ends, not a round later. (Not when the answer
+        -- went a moment ago: that is the same round's question by another
+        -- route - GUILD and party - and it has the answer.)
+        if again and not deferred[gapKey] and now - last >= 2 then
             deferred[gapKey] = true
             C_Timer.After(gap - (now - last) + 0.1, ns.Guard("voice", function()
                 deferred[gapKey] = nil
@@ -944,12 +961,39 @@ local function Resolve(club, guid, replyTo)
     end
 end
 
+-- the client (character) a message came from, as far as its route says:
+-- a whisper, GUILD or party sender's name, or the character on the
+-- Battle.net game account that sent it; nil when the game can't say
+local function ClientOf(src)
+    if type(src) ~= "string" then return end
+    local name = src:match("^w:(.+)$")
+    if name then return name end
+    local id = tonumber(src:match("^bn:(%d+)$"))
+    if id and C_BattleNet and C_BattleNet.GetGameAccountInfoByID then
+        local ok, g = pcall(C_BattleNet.GetGameAccountInfoByID, id)
+        local n = ok and type(g) == "table" and g.characterName
+        if type(n) == "string" and n ~= "" and not ns.IsSecret(n) then return NameKey(n) end
+    end
+end
+
+-- (a sender's name comes with its realm, a game account's character without)
+local function SameClient(a, b)
+    if not (a and b) then return false end
+    return a == b or a:sub(1, #b + 1) == b .. "-" or b:sub(1, #a + 1) == a .. "-"
+end
+
 -- One Battle.net account can run two Forever clients, one in voice and one
 -- not: both are the same club member, with the same GUID. An "in voice"
 -- stands against "not in voice" (P or L) from the account's other client;
--- only the client that said it, or time, takes it back.
-local function Holds(e, src, now)
-    return e and e.inVoice and e.exp > now and e.src ~= nil and src ~= nil and e.src ~= src
+-- only the client that said it, or time, takes it back. The same client
+-- may answer by more than one route (Battle.net game data, a whisper):
+-- the same character, or the same name behind the route, is the same
+-- client. (Telling them apart by route alone kept a 1.0.0 friend's real
+-- leave from clearing his microphone.)
+local function Holds(e, src, guid, now)
+    if not (e and e.inVoice and e.exp > now and e.src ~= nil and src ~= nil and e.src ~= src) then return false end
+    if guid and e.guid == guid and guid:find("^Player%-") then return false end
+    return not SameClient(e.client, ClientOf(src))
 end
 
 local function OnAnswer(kind, club, stream, guid, replyTo)
@@ -966,13 +1010,14 @@ local function OnAnswer(kind, club, stream, guid, replyTo)
         local g = memberId ~= nil and book and book.guidOf[memberId]
         for _, slot in ipairs({{h.guid, guid}, {h.member, memberId}, {h.guid, g}}) do
             local t, k = slot[1], slot[2]
-            if k and t[k] and not Holds(t[k], src, now) then t[k] = nil end
+            if k and t[k] and not Holds(t[k], src, guid, now) then t[k] = nil end
         end
     else
-        local entry = {exp = now + HEARD_TTL, inVoice = kind == "J", src = src, at = now}
-        if guid and not (kind == "P" and Holds(h.guid[guid], src, now)) then h.guid[guid] = entry end
+        local entry = {exp = now + HEARD_TTL, inVoice = kind == "J", src = src, at = now, guid = guid,
+                       client = ClientOf(src)}
+        if guid and not (kind == "P" and Holds(h.guid[guid], src, guid, now)) then h.guid[guid] = entry end
         if memberId ~= nil then
-            if not (kind == "P" and Holds(h.member[memberId], src, now)) then h.member[memberId] = entry end
+            if not (kind == "P" and Holds(h.member[memberId], src, guid, now)) then h.member[memberId] = entry end
             known[club .. "|" .. tostring(memberId)] = true
         end
     end
@@ -1090,8 +1135,19 @@ end
 -- call) tells them apart. A logout ends voice: the people asking hear the
 -- leave there and then (no timer runs after this event). A reload keeps
 -- it: nobody is told anything, and the reloaded UI takes over who asked.
+-- (a reload that switches the add-on off - the add-on list, /disableaddons,
+-- the "too many errors" dialog - ends our part as a logout does: the
+-- people asking would hear nothing from us again)
+local function LoadsAgain()
+    if not (C_AddOns and C_AddOns.GetAddOnEnableState) then return true end
+    -- (Blizzard's add-on list asks with the character's GUID)
+    local ok, state = pcall(C_AddOns.GetAddOnEnableState, addonName, MyGUID())
+    if not ok or type(state) ~= "number" or ns.IsSecret(state) then return true end
+    return state > 0 -- Enum.AddOnEnableState.None = 0
+end
+
 function M.Logout()
-    local reloading = M.reloadAt ~= nil and Now() - M.reloadAt < RELOAD_WINDOW
+    local reloading = M.reloadAt ~= nil and Now() - M.reloadAt < RELOAD_WINDOW and LoadsAgain()
     local saidL = false
     if myVoice and Sharing() and not Locked() and not reloading then
         Announce("L", myVoice, true)
@@ -1133,13 +1189,16 @@ local function TakeHandoff()
         end
     end
     local v = h.voice
-    if not h.saidL and type(v) == "table" and type(v.club) == "string" and type(v.stream) == "string" then
+    if type(v) ~= "table" or type(v.club) ~= "string" or type(v.stream) ~= "string" then return end
+    if not h.saidL then
         -- they still have us in voice: only a change since then is news
         myVoice = {club = v.club, stream = v.stream, clubId = ClubArg(v.club), guid = v.guid, guild = v.guild,
                    channelID = v.channelID}
         M.voiceGrace = now + GRACE
-        C_Timer.After(GRACE + 0.5, ns.Guard("voice", M.ReadVoice))
     end
+    -- (and once more when the game has had time to report voice: after a
+    -- reload taken for a logout, that is when they hear we're still in)
+    C_Timer.After(GRACE + 0.5, ns.Guard("voice", M.ReadVoice))
 end
 
 local VOICE_EVENTS = {
@@ -1194,9 +1253,15 @@ function M:Init()
     M.eventFrame = f
     if ChannelFrame and ChannelFrame.ChannelRoster then ns.SafeCall("voice", SetupChannelFrame) end
     ns.OnAddOnLoaded("Blizzard_Channels", function() ns.SafeCall("voice", SetupChannelFrame) end)
-    -- (a /reload goes through ReloadUI; a logout doesn't: see M.Logout)
+    -- (a /reload goes through ReloadUI and C_UI.Reload, a logout through
+    -- neither: see M.Logout. C_UI.Reload as well, for the reloads that
+    -- call it directly or hold an older ReloadUI)
+    local function Reloading() M.reloadAt = Now() end
     if type(ReloadUI) == "function" then
-        hooksecurefunc("ReloadUI", ns.Guard("voice", function() M.reloadAt = Now() end))
+        pcall(hooksecurefunc, "ReloadUI", ns.Guard("voice", Reloading))
+    end
+    if C_UI and type(C_UI.Reload) == "function" then
+        pcall(hooksecurefunc, C_UI, "Reload", ns.Guard("voice", Reloading))
     end
     ns.SafeCall("voice", TakeHandoff)
     -- already in a community's voice (a /reload doesn't end it): no event
