@@ -147,19 +147,24 @@ You have 40 (bags 25 · bank 15) · ~140 short
 
 - "You know nothing better - check your trainer" to someone who knew
   better patterns (a report, 1.3.1). The recipes you know are read from
-  your profession window, which only shows what its filters let through:
-  with "Have Materials" ticked, or a category folded shut, a pattern you
-  lack the mats for is not in the list, so its colour was never seen
-  again, and after 5 skill points it no longer counted. Now a known
-  recipe last seen orange, yellow or green still counts when the route's
-  recipe has gone grey: it is named with the skill its colour is from
-  ("orange at 63") and a note to open the window with every recipe
-  showing. On Forever, at a rank's cap (75/75 and so on) the game says no
-  recipe can skill up; that was taken as every recipe being grey, so after
-  training they all still read grey. The cap no longer counts against a
-  recipe's colour, and while capped only the "Capped! Train ..." line asks
-  for the trainer. A pattern learned with the profession window shut also
-  counts at once on Forever (the game says which recipe it was).
+  your profession window, and on the classic clients it lists only what
+  you let it show: a category folded shut or a subclass or slot filter
+  (every classic client), "Have Materials" (TBC, Mists) or "Has skill up"
+  (Mists). A pattern hidden that way was not seen again, and its colour
+  stopped counting 5 skill points later. Now a known recipe last seen
+  orange, yellow or green up to 15 points back still counts when the
+  route's recipe has gone grey: it is named with the skill its colour is
+  from ("orange at 63"), with a note to open the window with every recipe
+  showing. When the last read was cut down that way, "you know nothing
+  better" comes with the same note. (Forever reads every recipe whatever
+  the window's filters.) On Forever, at a rank's cap (75/75 and so on) the
+  game most likely says no recipe can skill up; that was taken as every
+  recipe being grey, which held after training until the window was
+  opened again. The cap no longer counts against a recipe's colour, and
+  while capped the "Capped! Train ..." line replaces "you know nothing
+  better". A pattern learned with the profession window shut counts at
+  once on Forever when the game gives its colour, otherwise at the next
+  look at the window (not tried in game).
 - Skill data covers Classic Era / Anniversary, TBC (Outland content not
   yet covered) and World of Warcraft Forever, which has **routes of its
   own** (1.0.0). A report had RXPP recommend recipes that no longer gave

@@ -650,6 +650,33 @@ local function ScanTradeSkillUI()
     return true
 end
 
+-- Whether a classic window's list was cut down when it was read: a folded
+-- category, a subclass or slot other than "All", "Have Materials" (TBC) or
+-- the makeable and skill-up boxes (Mists). Then a recipe the player knows
+-- can be missing from it, and the advice says so. (Blizzard's own window
+-- reads the same: Blizzard_TradeSkillUI, GetTradeSkillSubClassFilter(0) == 1
+-- for "All".)
+local function FilterNotAll(fn)
+    if type(fn) ~= "function" then return false end
+    local ok, v = pcall(fn, 0)
+    return ok and v ~= 1
+end
+local function TradeListCut(folded)
+    if folded then return true end
+    if FilterNotAll(GetTradeSkillSubClassFilter) or FilterNotAll(GetTradeSkillInvSlotFilter) then return true end
+    if Says(GetOnlyShowMakeable) or Says(GetOnlyShowSkillUps) then return true end
+    local box = TradeSkillFrameAvailableFilterCheckButton
+    if type(box) == "table" and box.GetChecked then
+        local ok, checked = pcall(box.GetChecked, box)
+        if ok and checked then return true end
+    end
+    return false
+end
+local function NoteCut(prof, cut)
+    ns.db.recipeCut = ns.db.recipeCut or {}
+    ns.db.recipeCut[prof] = cut or nil
+end
+
 function ns.ScanOpenTradeSkill()
     -- Forever's window is C_TradeSkillUI's, whatever old globals linger
     if ns.IS_FOREVER or not (GetTradeSkillLine and GetNumTradeSkills) then
@@ -659,16 +686,19 @@ function ns.ScanOpenTradeSkill()
     local line, rank = GetTradeSkillLine()
     local prof = ns.ProfKey(line)
     if not prof or not ns.TRACKED[prof] then return end
-    local list = {}
+    local list, folded = {}, false
     for i = 1, GetNumTradeSkills() or 0 do
-        local rname, rtype = GetTradeSkillInfo(i)
+        local rname, rtype, _, expanded = GetTradeSkillInfo(i)
         if rname and not NOT_RECIPE[rtype] then
             list[#list + 1] = {name = rname, diff = Difficulty(rtype)}
+        elseif NOT_RECIPE[rtype] and not expanded then
+            folded = true
         end
     end
     if #list == 0 then return end
     ns.recipeAPI = "GetTradeSkillInfo"
     RecordWindow(prof, rank, list)
+    NoteCut(prof, TradeListCut(folded))
     ns.UpdateUI()
 end
 
@@ -734,16 +764,19 @@ function ns.ScanOpenCraft() -- Enchanting uses the separate Craft API on older c
     local line, rank = GetCraftDisplaySkillLine()
     local prof = ns.ProfKey(line)
     if not prof or not ns.TRACKED[prof] then return end
-    local list = {}
+    local list, folded = {}, false
     for i = 1, GetNumCrafts() or 0 do
-        local rname, _, rtype = GetCraftInfo(i)
+        local rname, _, rtype, _, expanded = GetCraftInfo(i)
         if rname and not NOT_RECIPE[rtype] then
             list[#list + 1] = {name = rname, diff = Difficulty(rtype)}
+        elseif NOT_RECIPE[rtype] and not expanded then
+            folded = true
         end
     end
     if #list == 0 then return end
     ns.recipeAPI = "GetCraftInfo"
     RecordWindow(prof, rank, list)
+    NoteCut(prof, folded)
     ns.UpdateUI()
 end
 
@@ -787,8 +820,10 @@ function ns.NoteLearnedRecipe(recipeID)
     end
     if not name or name == "" then return end
     local db = ns.db
-    db.knownRecipes = db.knownRecipes or {}
-    db.knownRecipes[prof] = db.knownRecipes[prof] or {}
+    -- (only to a list a look at the window made: one recipe is not all
+    -- the player knows, and the advice would call the rest unknown - a
+    -- profession never read keeps its "open your window once")
+    if type(db.knownRecipes) ~= "table" or type(db.knownRecipes[prof]) ~= "table" then return end
     local diff = info and Difficulty(info.relativeDifficulty) or "unknown"
     local rank = ns.profs and ns.profs[prof] and ns.profs[prof].rank
     if ORDER[diff] and type(rank) == "number" then
@@ -878,13 +913,15 @@ function ns.BestKnownRecipe(prof, rank)
     -- a colour that holds now: pinned down at this skill, or seen at most
     -- 5 points back (orange seen at 20 says nothing about 98)
     local best, bestO, bestRow
-    -- Failing that, a recipe last seen orange, yellow or green further
-    -- back: it may have greyed since, but it may not - the window only
-    -- shows what its filters and folded headers let through ("Have
-    -- Materials" hides a pattern without its mats), so a known recipe can
-    -- go unseen for many points. (A report: "you know nothing better,
-    -- talk to a trainer" to someone who knew better patterns.) The best
-    -- colour first, then the one seen most recently.
+    -- Failing that, a recipe last seen orange, yellow or green a little
+    -- further back (up to 15 points): it may have greyed since, but it may
+    -- not - a classic window only lists what its folded categories and
+    -- filters let through ("Have Materials" hides a pattern without its
+    -- mats), so a known recipe can go unseen for a while. (A report: "you
+    -- know nothing better, talk to a trainer" to someone who knew better
+    -- patterns.) Further back than that it is a guess no better than the
+    -- trainer advice (orange at 20 says nothing about 98). The best colour
+    -- first, then the one seen most recently.
     local old, oldO, oldRow, oldSeen
     for recipe in pairs(known) do
         local c, sure, _, seenRank = ns.RecipeColor(prof, recipe, rank)
@@ -896,7 +933,7 @@ function ns.BestKnownRecipe(prof, rank)
                                    (o == bestO and row and not bestRow) or
                                    (o == bestO and (row ~= nil) == (bestRow ~= nil) and recipe < best)
                 if better then best, bestO, bestRow = recipe, o, row end
-            elseif type(seenRank) == "number" then
+            elseif type(seenRank) == "number" and type(rank) == "number" and rank - seenRank <= 15 then
                 local better = not oldO or o < oldO or (o == oldO and seenRank > oldSeen) or
                                    (o == oldO and seenRank == oldSeen and recipe < old)
                 if better then old, oldO, oldRow, oldSeen = recipe, o, row, seenRank end
@@ -1137,12 +1174,12 @@ function ns.CraftNow(name, p, current)
     -- it can't do worse than grey, but it could than green)
     now.takeBest = (now.anyKnown and now.routeO and now.best and now.best ~= now.routeName and
                        (now.routeO == 3 or (now.routeO == 2 and not now.bestOld and ORDER[now.bestColor] <= 1))) and true or false
-    -- what the window showed may not be all the player knows: the classic
-    -- clients' list is what its filters and folds let through, Forever's
-    -- filtered one likewise, and a recipe learned since it was read has no
+    -- what the window showed may not be all the player knows: its last
+    -- read was cut down (a folded category or a filter on a classic
+    -- client, Forever's filtered list), or a recipe learned since has no
     -- colour yet
     local db = ns.db or {}
-    now.partial = (not ns.IS_FOREVER and (GetNumTradeSkills or GetNumCrafts) and true or false) or
+    now.partial = (db.recipeCut and db.recipeCut[name] and true or false) or
                       (db.recipeFiltered and db.recipeFiltered[name] and true or false) or
                       (db.recipeUnseen and db.recipeUnseen[name] and true or false)
     return now

@@ -57,6 +57,8 @@ local function NewWorld(opts)
     for _, k in ipairs({"GetNumSkillLines", "GetSkillLineInfo", "C_SkillInfo", "GetProfessions", "GetProfessionInfo",
                         "GetTradeSkillLine", "GetNumTradeSkills", "GetTradeSkillInfo", "C_TradeSkillUI",
                         "GetCraftDisplaySkillLine", "GetNumCrafts", "GetCraftInfo", "LibStub", "RXPProfessionsDB", "GetBuildInfo",
+                        "GetTradeSkillSubClassFilter", "GetTradeSkillInvSlotFilter", "GetOnlyShowMakeable", "GetOnlyShowSkillUps",
+                        "TradeSkillFrameAvailableFilterCheckButton",
                         "GetLocale", "GetSpellInfo", "GetItemInfo", "C_Map", "C_Item", "C_Spell", "EllesmereUI", "C_Texture"}) do
         _G[k] = nil
     end
@@ -202,7 +204,22 @@ local function NewWorld(opts)
         _G.GetNumCrafts = function() return w.craft and #w.craft[3] or 0 end
         _G.GetCraftInfo = function(i) local r = w.craft[3][i]; return r[1], "", r[2], 0, true, 0, 0 end
         _G.GetNumTradeSkills = function() return w.trade and #w.trade[2] or 0 end
-        _G.GetTradeSkillInfo = function(i) local r = w.trade[2][i]; return r[1], r[2] end
+        -- name, type, numAvailable, isExpanded: a header row {name, "header", false} is folded
+        _G.GetTradeSkillInfo = function(i)
+            local r = w.trade[2][i]
+            local header = r[2] == "header" or r[2] == "subheader"
+            return r[1], r[2], 0, header and r[3] ~= false or nil
+        end
+        -- the window's filters: index 0 is "All" (1 when it is picked)
+        _G.GetTradeSkillSubClassFilter = function(i) if i == 0 and w.subclassFilter then return 0 end return 1 end
+        _G.GetTradeSkillInvSlotFilter = function(i) return 1 end
+        -- TBC's "Have Materials" box; Mists' makeable and skill-up filters
+        if opts.client == "tbc" then
+            _G.TradeSkillFrameAvailableFilterCheckButton = {GetChecked = function() return w.haveMaterials or false end}
+        elseif opts.client == "mists" then
+            _G.GetOnlyShowMakeable = function() return w.haveMaterials or false end
+            _G.GetOnlyShowSkillUps = function() return w.skillUpsOnly or false end
+        end
         _G.IsTradeSkillLinked = function() return w.linked or false end
         _G.GetNumSkillLines = function() return #visible() end
         _G.GetSkillLineInfo = function(i) local l = visible()[i]; return l.name, l.header or false, l.header and not l.folded or nil, l.rank, nil, nil, l.maxRank end
@@ -295,7 +312,7 @@ end
 
 local CLASSIC_EVENTS = {"PLAYER_ENTERING_WORLD", "SKILL_LINES_CHANGED", "CHAT_MSG_SKILL", "ZONE_CHANGED_NEW_AREA",
                         "TRADE_SKILL_SHOW", "TRADE_SKILL_UPDATE", "CRAFT_SHOW", "CRAFT_UPDATE", "TRAINER_SHOW", "TRAINER_UPDATE",
-                        "GET_ITEM_INFO_RECEIVED", "SPELL_DATA_LOAD_RESULT"}
+                        "GET_ITEM_INFO_RECEIVED", "SPELL_DATA_LOAD_RESULT", "NEW_RECIPE_LEARNED"}
 -- Forever: retail's trade skill events, no TRADE_SKILL_UPDATE, no CRAFT_*
 local FOREVER_EVENTS = {"PLAYER_ENTERING_WORLD", "SKILL_LINES_CHANGED", "CHAT_MSG_SKILL", "ZONE_CHANGED_NEW_AREA",
                         "TRADE_SKILL_SHOW", "TRADE_SKILL_LIST_UPDATE", "TRADE_SKILL_DATA_SOURCE_CHANGED", "TRADE_SKILL_CLOSE",
@@ -307,9 +324,8 @@ local FOREVER_EVENTS = {"PLAYER_ENTERING_WORLD", "SKILL_LINES_CHANGED", "CHAT_MS
 do
     local ok, w = pcall(NewWorld, {client = "classic", events = CLASSIC_EVENTS, db = {setupDone = true, chosen = {Mining = true, Cooking = true}, show = true}})
     check(ok, "classic: loads")
-    check(#w.ns.missingEvents == 3 and w.ns.missingEvents[1] == "TRADE_SKILL_LIST_UPDATE" and w.ns.missingEvents[2] == "TRADE_SKILL_DATA_SOURCE_CHANGED" and
-          w.ns.missingEvents[3] == "NEW_RECIPE_LEARNED",
-          "classic: only retail's profession events are missing here, and they are skipped")
+    check(#w.ns.missingEvents == 2 and w.ns.missingEvents[1] == "TRADE_SKILL_LIST_UPDATE" and w.ns.missingEvents[2] == "TRADE_SKILL_DATA_SOURCE_CHANGED",
+          "classic: only retail's list events are missing here, and they are skipped")
     w.Fire("PLAYER_ENTERING_WORLD")
     check(w.ns.profs.Mining and w.ns.profs.Mining.rank == 45 and w.ns.profs.Mining.maxRank == 75 and w.ns.skillAPI == "skill lines", "classic: skills read from GetSkillLineInfo")
     local lines = w.ns.BuildProfLines("Mining", w.ns.profs.Mining)
@@ -771,6 +787,16 @@ do
     local text = Lines(w, "Tailoring")
     check(text:find("Craft: Bolt of Woolen Cloth (green)", 1, true) and not text:find("Craft: Bolt of Linen Cloth", 1, true),
           "review: a colour seen 78 points ago does not replace the route")
+    -- nor a grey route recipe (the trainer advice stands), nor fill in for one not learned yet
+    w.trade, w.tradeRank = {"Tailoring", {{"Bolt of Woolen Cloth", "trivial"}}}, 98
+    w.Fire("TRADE_SKILL_UPDATE")
+    text = Lines(w, "Tailoring")
+    check(text:find("It gives no skill-ups any more, and you know nothing better", 1, true) and not text:find("Bolt of Linen Cloth", 1, true),
+          "review: nor for a grey route recipe - an orange from 78 points back is no better a guess than the trainer")
+    w.ns.db.knownRecipes.Tailoring["Bolt of Woolen Cloth"] = nil
+    text = Lines(w, "Tailoring")
+    check(not text:find("Meanwhile", 1, true) and not text:find("Bolt of Linen Cloth", 1, true),
+          "review: nor offered as 'Meanwhile' for a route recipe not learned yet")
 
     -- Mists: trainers teach every First Aid / Cooking / Fishing rank, and ranks go on past 375
     local mf = {name = "First Aid", rank = 150, maxRank = 150}
@@ -1934,16 +1960,16 @@ end
 local CHECK_WINDOW = "(open your Tailoring window with every recipe showing - nothing filtered or folded - so I can see what still skills up)"
 local NOTHING_BETTER = "It gives no skill-ups any more, and you know nothing better - check your trainer for new recipes"
 do
-    -- classic: the window's "Have Materials" hides a known pattern; its colour is from 6 points back
+    -- classic: a folded category hides a known pattern; its colour is from 6 points back
     local tailor = {name = "Tailoring", rank = 63, maxRank = 150}
     local w = NewWorld({client = "classic", events = CLASSIC_EVENTS, level = 20, extra = {tailor},
                         db = {setupDone = true, chosen = {Tailoring = true}, show = true}})
     w.Fire("PLAYER_ENTERING_WORLD")
-    w.trade = {"Tailoring", {{"Linen Bag", "optimal"}, {"Simple Linen Boots", "optimal"}}}
+    w.trade = {"Tailoring", {{"Linen Bag", "optimal"}, {"Boots", "header"}, {"Simple Linen Boots", "optimal"}}}
     w.tradeRank = 63
     w.Fire("TRADE_SKILL_SHOW")
     tailor.rank = 69; w.Fire("SKILL_LINES_CHANGED")
-    w.trade = {"Tailoring", {{"Linen Bag", "trivial"}}} -- (the boots: no mats, filtered out)
+    w.trade = {"Tailoring", {{"Linen Bag", "trivial"}, {"Boots", "header", false}}} -- (the boots' category folded)
     w.tradeRank = 69
     w.Fire("TRADE_SKILL_UPDATE")
     local text = Lines(w, "Tailoring")
@@ -1957,7 +1983,19 @@ do
     w.ns.db.recipeColors.Tailoring["Brown Linen Pants"] = {seen = {trivial = {min = 60, max = 60}}, last = "trivial", lastRank = 60}
     text = Lines(w, "Tailoring")
     check(text:find(NOTHING_BETTER, 1, true) and text:find(CHECK_WINDOW, 1, true) and not text:find("Brown Linen Pants", 1, true),
-          "known patterns: nothing better known - said, with a nudge to show the window's whole list (it may hold more)")
+          "known patterns: nothing better known - said, with a nudge to show the window's whole list (a category was folded)")
+    -- the whole list read (nothing folded, no filter): "nothing better" stands on its own
+    w.trade = {"Tailoring", {{"Linen Bag", "trivial"}, {"Boots", "header"}}}
+    w.Fire("TRADE_SKILL_UPDATE")
+    text = Lines(w, "Tailoring")
+    check(text:find(NOTHING_BETTER, 1, true) and not text:find(CHECK_WINDOW, 1, true),
+          "known patterns: once the window was read whole, no nudge")
+    -- a subclass filter cuts the list as well
+    w.subclassFilter = true
+    w.Fire("TRADE_SKILL_UPDATE")
+    check(Lines(w, "Tailoring"):find(CHECK_WINDOW, 1, true), "known patterns: a subclass filter on the window brings the nudge back")
+    w.subclassFilter = nil
+    w.Fire("TRADE_SKILL_UPDATE")
     -- a green route recipe is not swapped for a colour from further back
     w.ns.db.knownRecipes.Tailoring["Simple Linen Boots"] = "optimal"
     w.ns.db.recipeColors.Tailoring["Simple Linen Boots"] = {seen = {optimal = {min = 50, max = 50}}, last = "optimal", lastRank = 50}
@@ -2038,6 +2076,38 @@ do
     local okN = pcall(w.Fire, "NEW_RECIPE_LEARNED", nil)
     check(okJ and okN and w.ns.GetKnownRecipes("Jewelcrafting") == nil, "learned: an untracked profession's recipe or a missing id is ignored")
     _G.C_Spell = nil
+end
+
+do
+    -- Forever: a recipe learned before the profession's window was ever read starts no list of its own
+    -- (the rest would read "You don't know this recipe yet!"); "open your window once" stays
+    local tailor = {name = "Tailoring", rank = 80, maxRank = 150}
+    local w = NewWorld({client = "forever", events = FOREVER_EVENTS, level = 20, extra = {tailor},
+                        db = {setupDone = true, chosen = {Tailoring = true}, show = true}})
+    w.Fire("PLAYER_ENTERING_WORLD")
+    w.recipes = {[3848] = {name = "Double-Stitched Woolen Shoulders", learned = true, relativeDifficulty = 0, canSkillUp = true}}
+    w.recipeProfs = {[3848] = "Tailoring"}
+    w.Fire("NEW_RECIPE_LEARNED", 3848)
+    local text = Lines(w, "Tailoring")
+    check(w.ns.GetKnownRecipes("Tailoring") == nil and text:find("open your Tailoring window once", 1, true) and
+          not text:find("You don't know this recipe yet!", 1, true),
+          "learned: before the window was ever read, no half list (no false 'You don't know this recipe yet!')")
+
+    -- TBC's "Have Materials" and Mists' makeable / skill-up filters cut the list the window gives
+    for _, case in ipairs({{"tbc", "haveMaterials"}, {"mists", "haveMaterials"}, {"mists", "skillUpsOnly"}}) do
+        local t = {name = "Tailoring", rank = 63, maxRank = 150}
+        local wc = NewWorld({client = case[1], events = CLASSIC_EVENTS, level = 20, extra = {t},
+                             db = {setupDone = true, chosen = {Tailoring = true}, show = true}})
+        wc.Fire("PLAYER_ENTERING_WORLD")
+        wc.trade, wc.tradeRank = {"Tailoring", {{"Linen Bag", "trivial"}}}, 63
+        wc[case[2]] = true
+        wc.Fire("TRADE_SKILL_SHOW")
+        local cut = wc.ns.db.recipeCut and wc.ns.db.recipeCut.Tailoring
+        wc[case[2]] = false
+        wc.Fire("TRADE_SKILL_UPDATE")
+        check(cut == true and (wc.ns.db.recipeCut.Tailoring == nil),
+              ("known patterns: %s's %s is seen as a cut-down list, and its absence as a whole one"):format(case[1], case[2]))
+    end
 end
 
 -- the new sentence in every language, its %s kept
