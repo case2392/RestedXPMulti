@@ -34,7 +34,11 @@
 --   * a Battle.net community member who is none of those (not a friend, not
 --     in your guild or group) cannot be reached by an add-on at all.
 -- A whisper waits for the game's "can whisper" check, but not for ever.
--- Nothing is sent during the game's chat lockdown, when values go secret.
+-- Nothing is sent during the game's chat lockdown, when values go secret;
+-- a join or leave made in it goes out once it lifts.
+-- A /reload keeps voice, and the people asking keep seeing you: the leave
+-- goes out only at a real logout, and the reloaded UI takes over who asked
+-- (PLAYER_LOGOUT comes for both, so ReloadUI tells them apart).
 -- /pqol voice prints what was sent, heard and refused, without names.
 --
 -- The microphone goes on the member's roster row, where Blizzard's own
@@ -60,22 +64,27 @@ local CHECK_TRUST = 300    -- how long a whisper check's answer is kept
 local CHECK_GIVE_UP = 3    -- this many checks unanswered, none ever: stop asking the game
 local GUILD_J_GAP = 20     -- a guild stream's answer over GUILD at most this often
 local REPLY_GAP = 10       -- one answer per asker, route and stream this often
-local HERE_GAP = 60        -- "here, not in voice" to one asker at most this often
+local HERE_GAP = 10        -- "here, not in voice" to one asker at most this often
+local LOCK_POLL = 5        -- after a voice change in the lockdown, look this often for its end
+local RELOAD_WINDOW = 5    -- ReloadUI this soon before PLAYER_LOGOUT: a /reload
+local HANDOFF_MAX = 120    -- a reload's saved askers are taken over if it took less than this
+local GRACE = 10           -- after a /reload, voice not readable yet isn't "left" for this long
 local LOG_SIZE = 12
 
-local heard = {}           -- "club:stream" -> {guid = {}, member = {}}; entry {exp=, inVoice=}
+local heard = {}           -- "club:stream" -> {guid = {}, member = {}}; entry {exp=, inVoice=, src=, at=}
 local known = {}           -- "club|memberId" -> true: answered before (asked first)
 local books = {}           -- club -> what the asker knows of its members (see M.Targets)
 local reach = {}           -- club -> counts from the last look at who can be asked
-local watchers = {}        -- key -> {to=, club=, stream=, exp=}
+local watchers = {}        -- key -> {to=, club=, stream=, asker=, exp=}
 local replied = {}         -- key -> when an answer last went out
+local deferred = {}        -- key -> true: an answer held back by its gap goes when the gap ends
 local checks = {}          -- guid -> {ok=, exp=}: whisper checks answered
 local pending = {}         -- guid -> {items = {...}}: messages waiting for a whisper check
 local asked = {}           -- "club:stream" -> {target key -> when asked}
 local icons = setmetatable({}, {__mode = "k"})
 local hooked = setmetatable({}, {__mode = "k"})
-local myVoice              -- the community stream we're active in, as last read
-local askTicker
+local myVoice              -- the community stream we're active in, as last read and told
+local askTicker, lockPoll, expiryAt
 local againToken = 0
 local checksAnswered, checksSilent = 0, 0
 local stats = {sent = {}, failed = {}, recv = {}, echo = {},
@@ -336,14 +345,25 @@ local function IsGuildClub(clubId)
 end
 
 -- the GUID the club lists us under: in a Battle.net community that is our
--- Battle.net account's, which is what the other members' rows carry
-local function ClubGUID(clubId)
+-- Battle.net account's, which is what the other members' rows carry. Nil
+-- while the club can't say (its data not loaded yet).
+local function SelfGUID(clubId)
     if C_Club and C_Club.GetMemberInfoForSelf and clubId ~= nil then
         local ok, info = pcall(C_Club.GetMemberInfoForSelf, ClubArg(clubId))
         local guid = ok and type(info) == "table" and Plain(info.guid)
         if type(guid) == "string" and guid ~= "" then return guid end
     end
-    return MyGUID()
+end
+
+local function ClubGUID(clubId) return SelfGUID(clubId) or MyGUID() end
+
+-- what our voice is told as - the club's GUID for us, and whether it is the
+-- guild's own club - read again whenever the club can say (it may not have
+-- been able to when we joined, or at login after a /reload)
+local function Identity(v)
+    local kind = ClubType(v.clubId)
+    if kind ~= nil then v.guild = Enum and Enum.ClubType and kind == Enum.ClubType.Guild or false end
+    v.guid = SelfGUID(v.clubId) or v.guid
 end
 
 -- our own character or our own Battle.net account (a message of ours
@@ -460,8 +480,10 @@ function M.Targets(clubId)
                 end
                 if account then book.byAccount[account] = memberId end
                 local presence = Plain(m.presence)
-                if not guildClub and not m.isSelf and presence and ONLINE[presence] then
-                    counts.online = counts.online + 1
+                local online = not m.isSelf and presence and ONLINE[presence]
+                if online then counts.online = counts.online + 1 end
+                -- (a guild's own club: the one GUILD question below reaches them)
+                if online and not guildClub then
                     local found = false
                     for _, g in ipairs(ForeverAccounts(account)) do
                         local key = "bn:" .. tostring(g.id)
@@ -572,6 +594,28 @@ local function HeardFor(clubId, streamId, guid, memberId)
     return Lit(guid and h.guid[guid], now) or Lit(memberId ~= nil and h.member[memberId], now) or false
 end
 
+-- Blizzard greys a row whose member is offline (RosterButton.lua,
+-- IsConnected): someone who crashed or lost connection sent no leave
+local function Offline(button)
+    if not button.IsConnected then return false end
+    local ok, connected = pcall(button.IsConnected, button)
+    if not ok or ns.IsSecret(connected) then return false end
+    return connected == false
+end
+
+-- what we heard from a member who went offline is over: logging back in is
+-- not being in voice (an answer from the last moments is kept: the row may
+-- not have been redrawn online yet)
+local function Forget(clubId, streamId, guid, memberId)
+    local h = heard[StreamKey(clubId, streamId)]
+    if not h then return end
+    local now = Now()
+    for _, slot in ipairs({{h.guid, guid}, {h.member, memberId}}) do
+        local t, k = slot[1], slot[2]
+        if k ~= nil and t[k] and now - (t[k].at or 0) > 5 then t[k] = nil end
+    end
+end
+
 function M.Decorate(button)
     if not button then return end
     local show = false
@@ -580,9 +624,13 @@ function M.Decorate(button)
         local guid, memberId = RowIdentity(button)
         local channelActive = button.IsChannelActive and button:IsChannelActive()
         if clubId and (guid or memberId ~= nil) and not channelActive and not IsLocalRow(button, guid) then
-            local channelID = guid and InactiveVoiceChannel(clubId, streamId)
-            show = (channelID and DirectlyInVoice(channelID, guid)) or
-                       HeardFor(clubId, streamId, guid, memberId)
+            if Offline(button) then
+                Forget(clubId, streamId, guid, memberId)
+            else
+                local channelID = guid and InactiveVoiceChannel(clubId, streamId)
+                show = (channelID and DirectlyInVoice(channelID, guid)) or
+                           HeardFor(clubId, streamId, guid, memberId)
+            end
         end
     end
     local icon = icons[button]
@@ -613,11 +661,33 @@ function M.Decorate(button)
     end
 end
 
+-- redraw once more when the first answer on screen runs out (a member who
+-- stopped answering loses the microphone then, not a round later)
+local function WatchExpiry()
+    local _, clubId, streamId = SelectedStream()
+    local h = clubId and heard[StreamKey(clubId, streamId)]
+    if not h then return end
+    local now, soonest = Now(), nil
+    for _, t in ipairs({h.guid, h.member}) do
+        for _, e in pairs(t) do
+            if e.inVoice and e.exp > now and (not soonest or e.exp < soonest) then soonest = e.exp end
+        end
+    end
+    if soonest and not (expiryAt and expiryAt > now and expiryAt <= soonest) then
+        expiryAt = soonest
+        C_Timer.After(soonest - now + 0.1, ns.Guard("voice", function()
+            if expiryAt == soonest then expiryAt = nil end
+            M.Refresh()
+        end))
+    end
+end
+
 function M.Refresh()
     local roster = ChannelFrame and ChannelFrame.ChannelRoster
     local box = roster and roster.ScrollBox
     if not (box and ChannelFrame:IsShown()) then return end
     for _, frame in box:EnumerateFrames() do M.Decorate(frame) end
+    WatchExpiry()
 end
 
 local function HookRow(frame)
@@ -714,7 +784,8 @@ end
 -- everyone who asked about it lately
 local function Announce(kind, v, direct)
     if not v then return end
-    local msg = ("%s:%s:%s:%s"):format(kind, v.club, v.stream, v.guid or ClubGUID(v.clubId) or "")
+    Identity(v)
+    local msg = ("%s:%s:%s:%s"):format(kind, v.club, v.stream, v.guid or MyGUID() or "")
     local send = direct and SendDirect or Enqueue
     if v.guild then send(msg, {guild = true}) end
     local now = Now()
@@ -727,19 +798,43 @@ local function Announce(kind, v, direct)
     end
 end
 
+-- in the lockdown nothing can be told: look for its end, then read again
+-- (a leave made in a dungeon is still news once out of it)
+local function ReadAfterLockdown()
+    if lockPoll then return end
+    lockPoll = C_Timer.NewTicker(LOCK_POLL, ns.Guard("voice", function()
+        if Locked() then return end
+        if lockPoll then lockPoll:Cancel() end
+        lockPoll = nil
+        M.ReadVoice()
+    end))
+end
+
 -- read our voice channel from the game; a change is told to whoever needs
--- to know (a stream switch says L for the old one first)
+-- to know (a stream switch says L for the old one first). myVoice is what
+-- they were last told, so a change the lockdown kept us from telling is
+-- told after it.
 function M.ReadVoice()
+    if Locked() then
+        ReadAfterLockdown()
+        return
+    end
     local now, other = GameVoice()
     M.otherVoice = other
     local old = myVoice
-    if old and now and old.club == now.club and old.stream == now.stream then return end
+    -- (just reloaded: the game may not report the channel yet)
+    if now == nil and old and M.voiceGrace and Now() < M.voiceGrace then return end
+    M.voiceGrace = nil
+    if old and now and old.club == now.club and old.stream == now.stream then
+        Identity(old)
+        return
+    end
     if now then
         now.guild = IsGuildClub(now.clubId)
-        now.guid = ClubGUID(now.clubId)
+        now.guid = SelfGUID(now.clubId)
     end
     myVoice = now
-    if Sharing() and not Locked() then
+    if Sharing() then
         if old then Announce("L", old) end
         if now then Announce("J", now) end
     end
@@ -770,9 +865,22 @@ local function ReplyRoute(replyTo, askerGuid)
 end
 
 local replyCount = 0
-local function Answer(kind, club, stream, to, gapKey, gap)
+local function Answer(kind, club, stream, to, gapKey, gap, again)
     local now = Now()
-    if replied[gapKey] and now - replied[gapKey] < gap then return end
+    local last = replied[gapKey]
+    if last and now - last < gap then
+        -- asked again inside the gap (by someone who reloaded, or a
+        -- guildmate who missed the last answer over GUILD): answer once
+        -- more as the gap ends, not a round later
+        if again and not deferred[gapKey] then
+            deferred[gapKey] = true
+            C_Timer.After(gap - (now - last) + 0.1, ns.Guard("voice", function()
+                deferred[gapKey] = nil
+                again()
+            end))
+        end
+        return
+    end
     replied[gapKey] = now
     replyCount = replyCount + 1
     if replyCount % 50 == 0 then
@@ -784,25 +892,28 @@ local function Answer(kind, club, stream, to, gapKey, gap)
 end
 
 local function OnQuestion(club, stream, askerGuid, path, replyTo)
-    if not Sharing() then return end
+    if not Sharing() or Locked() then return end
     M.ReadVoice() -- what the game says now, not what we last heard
     local inIt = myVoice and myVoice.club == club and myVoice.stream == stream
+    -- (the same question once more, for an answer its gap held back)
+    local function again() OnQuestion(club, stream, askerGuid, path, replyTo) end
     if path == "GUILD" and IsGuildClub(ClubArg(club)) then
         -- the guild's own stream: one answer over GUILD serves every
         -- guildmate looking, and joins and leaves go over GUILD anyway
-        if inIt then Answer("J", club, stream, {guild = true}, "guild|" .. club .. ":" .. stream, GUILD_J_GAP) end
+        if inIt then Answer("J", club, stream, {guild = true}, "guild|" .. club .. ":" .. stream, GUILD_J_GAP, again) end
         return
     end
     local to = ReplyRoute(replyTo, askerGuid)
     -- remember the asker for a while, so a join or leave reaches them at once
-    watchers[to.key .. "|" .. club .. ":" .. stream] = {to = to, club = club, stream = stream, exp = Now() + WATCH_TTL}
+    watchers[to.key .. "|" .. club .. ":" .. stream] = {to = to, club = club, stream = stream, asker = askerGuid,
+                                                         exp = Now() + WATCH_TTL}
     local who = (to.bn and "bn" or "w") .. "|" .. (askerGuid or to.key) .. "|" .. club .. ":" .. stream
     if inIt then
-        Answer("J", club, stream, to, who .. "|J", REPLY_GAP)
+        Answer("J", club, stream, to, who .. "|J", REPLY_GAP, again)
     elseif path == "BN" or path == "WHISPER" then
         -- (a question to the whole guild or group is not answered by
         -- everyone who isn't in that voice)
-        Answer("P", club, stream, to, who .. "|P", HERE_GAP)
+        Answer("P", club, stream, to, who .. "|P", HERE_GAP, again)
     end
 end
 
@@ -833,6 +944,14 @@ local function Resolve(club, guid, replyTo)
     end
 end
 
+-- One Battle.net account can run two Forever clients, one in voice and one
+-- not: both are the same club member, with the same GUID. An "in voice"
+-- stands against "not in voice" (P or L) from the account's other client;
+-- only the client that said it, or time, takes it back.
+local function Holds(e, src, now)
+    return e and e.inVoice and e.exp > now and e.src ~= nil and src ~= nil and e.src ~= src
+end
+
 local function OnAnswer(kind, club, stream, guid, replyTo)
     local memberId = Resolve(club, guid, replyTo)
     local sk = StreamKey(club, stream)
@@ -841,19 +960,19 @@ local function OnAnswer(kind, club, stream, guid, replyTo)
         h = {guid = {}, member = {}}
         heard[sk] = h
     end
+    local now, src = Now(), replyTo and replyTo.key
     if kind == "L" then
-        if guid then h.guid[guid] = nil end
-        if memberId ~= nil then
-            h.member[memberId] = nil
-            local book = books[club]
-            local g = book and book.guidOf[memberId]
-            if g then h.guid[g] = nil end
+        local book = books[club]
+        local g = memberId ~= nil and book and book.guidOf[memberId]
+        for _, slot in ipairs({{h.guid, guid}, {h.member, memberId}, {h.guid, g}}) do
+            local t, k = slot[1], slot[2]
+            if k and t[k] and not Holds(t[k], src, now) then t[k] = nil end
         end
     else
-        local entry = {exp = Now() + HEARD_TTL, inVoice = kind == "J"}
-        if guid then h.guid[guid] = entry end
+        local entry = {exp = now + HEARD_TTL, inVoice = kind == "J", src = src, at = now}
+        if guid and not (kind == "P" and Holds(h.guid[guid], src, now)) then h.guid[guid] = entry end
         if memberId ~= nil then
-            h.member[memberId] = entry
+            if not (kind == "P" and Holds(h.member[memberId], src, now)) then h.member[memberId] = entry end
             known[club .. "|" .. tostring(memberId)] = true
         end
     end
@@ -930,13 +1049,15 @@ end
 -- picked: ask the ones not asked yet once they're in
 local reaskArmed = false
 local function OnClubMembers(clubId)
-    if not Active() or reaskArmed or not (ChannelFrame and ChannelFrame:IsShown()) then return end
+    if not Active() or reaskArmed or not M.asking or not (ChannelFrame and ChannelFrame:IsShown()) then return end
     local _, selClub = SelectedStream()
     if not selClub or ns.IsSecret(clubId) or tostring(clubId) ~= tostring(selClub) then return end
     reaskArmed = true
+    local token = againToken
     C_Timer.After(2, function()
         reaskArmed = false
-        ns.SafeCall("voice ask", M.Ask)
+        -- (not if the window closed meanwhile: closing dropped those questions)
+        if token == againToken and M.asking then ns.SafeCall("voice ask", M.Ask) end
     end)
 end
 
@@ -958,6 +1079,67 @@ local function SetupChannelFrame()
     end
     ChannelFrame:HookScript("OnShow", ns.Guard("voice ask", StartAsking))
     ChannelFrame:HookScript("OnHide", ns.Guard("voice ask", StopAsking))
+end
+
+--------------------------------------------------------------------------
+-- logout and /reload
+--------------------------------------------------------------------------
+
+-- PLAYER_LOGOUT comes for a /reload as well as a logout, and doesn't say
+-- which; ReloadUI (what /reload, the add-on list and Blizzard's dialogs
+-- call) tells them apart. A logout ends voice: the people asking hear the
+-- leave there and then (no timer runs after this event). A reload keeps
+-- it: nobody is told anything, and the reloaded UI takes over who asked.
+function M.Logout()
+    local reloading = M.reloadAt ~= nil and Now() - M.reloadAt < RELOAD_WINDOW
+    local saidL = false
+    if myVoice and Sharing() and not Locked() and not reloading then
+        Announce("L", myVoice, true)
+        saidL = true
+    end
+    if not ns.db then return end
+    local list, now = {}, Now()
+    for key, w in pairs(watchers) do
+        if w.exp > now and #list < 100 then
+            list[#list + 1] = {key = key, to = w.to, club = w.club, stream = w.stream, asker = w.asker,
+                               left = w.exp - now}
+        end
+    end
+    local v = myVoice
+    ns.db.voiceHandoff = {char = MyGUID(), at = time and time() or nil, clock = now, saidL = saidL,
+                          voice = v and {club = v.club, stream = v.stream, guid = v.guid, guild = v.guild,
+                                          channelID = v.channelID} or nil,
+                          watchers = list}
+end
+
+-- after a /reload: the people who asked, and what they were last told
+local function TakeHandoff()
+    local h = ns.db and ns.db.voiceHandoff
+    if ns.db then ns.db.voiceHandoff = nil end
+    if type(h) ~= "table" or h.char ~= MyGUID() then return end
+    local elapsed
+    if h.at and time then
+        elapsed = time() - h.at
+    else
+        elapsed = Now() - (tonumber(h.clock) or -1e9)
+    end
+    if type(elapsed) ~= "number" or elapsed < 0 or elapsed > HANDOFF_MAX then return end
+    local now = Now()
+    for _, w in ipairs(type(h.watchers) == "table" and h.watchers or {}) do
+        local to, left = w.to, (tonumber(w.left) or 0) - elapsed
+        if left > 0 and type(w.key) == "string" and type(to) == "table" and type(to.key) == "string" and
+            (type(to.bn) == "number" or type(to.name) == "string") then
+            watchers[w.key] = {to = to, club = w.club, stream = w.stream, asker = w.asker, exp = now + left}
+        end
+    end
+    local v = h.voice
+    if not h.saidL and type(v) == "table" and type(v.club) == "string" and type(v.stream) == "string" then
+        -- they still have us in voice: only a change since then is news
+        myVoice = {club = v.club, stream = v.stream, clubId = ClubArg(v.club), guid = v.guid, guild = v.guild,
+                   channelID = v.channelID}
+        M.voiceGrace = now + GRACE
+        C_Timer.After(GRACE + 0.5, ns.Guard("voice", M.ReadVoice))
+    end
 end
 
 local VOICE_EVENTS = {
@@ -991,10 +1173,16 @@ function M:Init()
         elseif event == "CLUB_MEMBERS_UPDATED" or event == "CLUB_MEMBER_PRESENCE_UPDATED" then
             OnClubMembers((...))
         elseif event == "PLAYER_LOGOUT" then
-            -- (sent there and then: no timer runs after this)
-            if myVoice and Sharing() and not Locked() then Announce("L", myVoice, true) end
+            M.Logout()
         else
             if VOICE_EVENTS[event] then
+                -- (our channel going inactive is the game reporting now: no
+                -- grace after a reload for that)
+                local id = ...
+                if M.voiceGrace and (event == "VOICE_CHAT_CHANNEL_DEACTIVATED" or event == "VOICE_CHAT_CHANNEL_REMOVED") and
+                    not ns.IsSecret(id) and (myVoice == nil or myVoice.channelID == nil or id == myVoice.channelID) then
+                    M.voiceGrace = nil
+                end
                 M.ReadVoice()
                 -- and once more a moment later, should the game update
                 -- after its own event
@@ -1006,6 +1194,11 @@ function M:Init()
     M.eventFrame = f
     if ChannelFrame and ChannelFrame.ChannelRoster then ns.SafeCall("voice", SetupChannelFrame) end
     ns.OnAddOnLoaded("Blizzard_Channels", function() ns.SafeCall("voice", SetupChannelFrame) end)
+    -- (a /reload goes through ReloadUI; a logout doesn't: see M.Logout)
+    if type(ReloadUI) == "function" then
+        hooksecurefunc("ReloadUI", ns.Guard("voice", function() M.reloadAt = Now() end))
+    end
+    ns.SafeCall("voice", TakeHandoff)
     -- already in a community's voice (a /reload doesn't end it): no event
     -- comes for that, so read it now
     if Active() then M.ReadVoice() end
@@ -1098,9 +1291,19 @@ local function RowsOnScreen()
     return r
 end
 
-local function LiveWatchers()
-    local n, now = 0, Now()
-    for _, w in pairs(watchers) do if w.exp >= now then n = n + 1 end end
+-- the people told about our voice as it changes: those who asked lately
+-- about the stream we're in, each once however many ways they asked
+local function Telling()
+    local v = myVoice
+    if not v then return 0 end
+    local n, seen, now = 0, {}, Now()
+    for _, w in pairs(watchers) do
+        local who = w.asker or (w.to and w.to.key)
+        if w.exp >= now and w.club == v.club and w.stream == v.stream and who and not seen[who] then
+            seen[who] = true
+            n = n + 1
+        end
+    end
     return n
 end
 
@@ -1117,16 +1320,22 @@ function M.Report()
              Locked() and "YES (nothing is sent or shown)" or "no", PrefixState(),
              M.hooked and (open and "hooked, open" or "hooked, closed") or "NOT hooked")
     local game, other = GameVoice()
+    local later = Locked() and " (the add-on tells the others once the lockdown ends)"
     if game then
         local missed = not (myVoice and myVoice.club == game.club and myVoice.stream == game.stream)
         Line("me: in voice in club %s stream %s%s; that club knows me as %s, my character is %s",
-             game.club, game.stream, missed and " (the add-on had not noticed: it has now)" or "",
+             game.club, game.stream, missed and (later or " (the add-on had not noticed: it has now)") or "",
              Short(ClubGUID(game.clubId)), Short(MyGUID()))
-    elseif other ~= nil then
-        Line("me: in a voice channel of type %s - only a community stream's voice is shared", tostring(other))
     else
-        Line("me: not in voice%s", myVoice and " (the add-on thought I was: fixed)" or "")
+        local grace = M.voiceGrace and Now() < M.voiceGrace and " (just reloaded: it looks again in a few seconds)"
+        local note = myVoice and (later or grace or " (the add-on thought I was: fixed)") or ""
+        if other ~= nil then
+            Line("me: in a voice channel of type %s - only a community stream's voice is shared%s", tostring(other), note)
+        else
+            Line("me: not in voice%s", note)
+        end
     end
+    M.ReadVoice() -- (what the next lines count is then up to date)
     local _, clubId, streamId = SelectedStream()
     local rows
     if clubId then
@@ -1156,9 +1365,9 @@ function M.Report()
         Line("heard about this stream: %d in voice (%d microphones on screen), %d with the add-on but not in voice",
              inVoice, rows and rows.lit or 0, here)
     end
-    Line("telling %d asker(s) about my voice; last problem: %s", LiveWatchers(),
+    Line("telling %d asker(s) about my voice%s; last problem: %s", Telling(),
+         myVoice and myVoice.guild and " (and the guild, over GUILD)" or "",
          stats.problem and ("%s (%ds ago)"):format(stats.problem, math.floor(Now() - stats.problemAt)) or "none")
-    M.ReadVoice()
 end
 
 function M.ReportLog()

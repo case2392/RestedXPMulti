@@ -171,7 +171,14 @@ local function makePlayer(name, opts)
             table.insert(P.gameAccounts, {gameAccountID = opts.gameAccountID + 1000, clientProgram = "App", hasFocus = true})
         end
         table.insert(P.gameAccounts, {gameAccountID = opts.gameAccountID, clientProgram = "WoW", wowProjectID = 18,
-                                      hasFocus = not opts.appFocused, forever = true})
+                                      hasFocus = not opts.appFocused, forever = true, owner = P})
+    end
+    -- the same character after a /reload: what the game keeps
+    local same = opts.same
+    if same then
+        P.guid, P.accountGUID, P.realm, P.bnName = same.guid, same.accountGUID, same.realm, same.bnName
+        P.voice, P.bnFriends, P.guild, P.group = same.voice, same.bnFriends, same.guild, same.group
+        P.hideGuid = same.hideGuid
     end
     players[name] = P
     local env = {}
@@ -188,6 +195,9 @@ local function makePlayer(name, opts)
     end
     env.Enum = ENUM
     env.GetTime = function() return clock end
+    env.time = function() return math.floor(clock) end
+    -- /reload goes through ReloadUI (InterfaceUtil.lua: C_UI.Reload)
+    env.ReloadUI = function() P.reloadAsked = true end
     env.UnitGUID = function(u) if u == "player" then return P.guid end end
     env.UnitName = function(u) if u == "player" then return P.name end end
     env.BNET_CLIENT_WOW = "WoW"
@@ -287,7 +297,8 @@ local function makePlayer(name, opts)
             if P.checkMode == "silent" then return end
             local R = playerByGUID(guid)
             local status = ENUM.ChatWhisperTargetStatus.Offline
-            if R and R.online then
+            -- (cantWhisper: the club lists them online, the game says offline)
+            if R and R.online and not R.cantWhisper then
                 status = R.faction == P.faction and ENUM.ChatWhisperTargetStatus.CanWhisper or ENUM.ChatWhisperTargetStatus.WrongFaction
             end
             if P.checkMode == "sync" then
@@ -303,15 +314,21 @@ local function makePlayer(name, opts)
         table.sort(names)
         return names
     end
+    -- (a game account's client: its owner, a second Forever client of the
+    -- same Battle.net account included; hideGuid: the game gives no
+    -- character GUID for it)
     local function GameAccountInfo(R, g)
+        local C = g.owner and (players[g.owner.name] or g.owner) or R
         return {gameAccountID = g.gameAccountID, clientProgram = g.clientProgram, wowProjectID = g.wowProjectID,
-                isOnline = R.online, hasFocus = g.hasFocus, playerGuid = g.forever and R.guid or nil,
-                characterName = g.forever and R.name or nil}
+                isOnline = C.online, hasFocus = g.hasFocus,
+                playerGuid = g.forever and not C.hideGuid and C.guid or nil,
+                characterName = g.forever and C.name or nil}
     end
     local function AccountInfo(R)
         local focused = {gameAccountID = 0, clientProgram = "", isOnline = false, hasFocus = false}
         for _, g in ipairs(R.gameAccounts) do if g.hasFocus then focused = GameAccountInfo(R, g) end end
-        return {bnetAccountID = R.bnetAccountId, isFriend = true, gameAccountInfo = focused}
+        return {bnetAccountID = R.bnetAccountId, isFriend = true, gameAccountInfo = focused,
+                accountName = R.bnName or R.name, battleTag = R.name .. "#1234"}
     end
     env.BNGetFriendIndex = function(bnetAccountId)
         for i, n in ipairs(Friends()) do if players[n].bnetAccountId == bnetAccountId then return i end end
@@ -352,14 +369,14 @@ local function makePlayer(name, opts)
         GetGameAccountInfoByGUID = function(guid)
             for _, n in ipairs(Friends()) do
                 local R = players[n]
-                if R.guid == guid then
+                if R.guid == guid and not R.hideGuid then
                     for _, g in ipairs(R.gameAccounts) do if g.forever then return GameAccountInfo(R, g) end end
                 end
             end
         end,
         GetAccountInfoByGUID = function(guid)
             for _, n in ipairs(Friends()) do
-                if players[n].guid == guid then return AccountInfo(players[n]) end
+                if players[n].guid == guid and not players[n].hideGuid then return AccountInfo(players[n]) end
             end
         end,
     }
@@ -380,8 +397,12 @@ local function makePlayer(name, opts)
                 guid = guid, bnetAccountId = R.bnetAccountId, clubType = c.type,
                 name = bn and (R.bnName or R.name) or R.name, faction = R.faction == "Horde" and 0 or 1}
     end
+    -- (clubsNotReady: this client's club data not loaded yet)
     env.C_Club = {
-        GetClubInfo = function(id) local c = clubs[id]; if c then return {clubId = id, clubType = c.type} end end,
+        GetClubInfo = function(id)
+            local c = clubs[id]
+            if c and not P.clubsNotReady then return {clubId = id, clubType = c.type} end
+        end,
         GetClubMembers = function(id)
             local c = clubs[id]; if not c or c.notReady then return {} end
             local out = {}
@@ -393,10 +414,18 @@ local function makePlayer(name, opts)
             if not R then return nil end
             return MemberInfo(c, memberId, R)
         end,
+        -- (in a Battle.net community the member is the account: a second
+        -- client of it is the same member)
         GetMemberInfoForSelf = function(id)
             local c = clubs[id]
-            if not c then return nil end
-            for i, n in ipairs(c.members) do if n == P.name then return MemberInfo(c, i, P) end end
+            if not c or P.clubsNotReady then return nil end
+            for i, n in ipairs(c.members) do
+                local R = players[n]
+                if n == P.name or (c.type == ENUM.ClubType.BattleNet and R and R.bnetAccountId and
+                                   R.bnetAccountId == P.bnetAccountId) then
+                    return MemberInfo(c, i, P)
+                end
+            end
         end,
     }
 
@@ -479,7 +508,16 @@ local function makePlayer(name, opts)
         function row:GetMemberID() return (Member()) end
         function row:IsLocalPlayer() return R == P end
         function row:IsChannelActive() return P.selectedVoiceActive and true or false end
+        -- (SetIsConnected(presence ~= Offline) as the row is drawn)
+        function row:IsConnected() return (players[R.name] or R).online and true or false end
+        -- the member's name as the club gives it (a Battle.net name in a
+        -- Battle.net community): what the row shows, and must never be printed
+        function row:GetMemberName()
+            local _, c = Member()
+            return c and c.type == ENUM.ClubType.BattleNet and (R.bnName or R.name) or R.name
+        end
         function row:Update()
+            self.Name:SetText(self:GetMemberName())
             self.Name:SetWidth(140) -- Blizzard's UpdateNameSize with no voice buttons
         end
         table.insert(box.rows, row)
@@ -735,6 +773,24 @@ local function SentCount(P, pred)
     return n
 end
 
+-- a /reload: PLAYER_LOGOUT on the old UI (after ReloadUI, as /reload does,
+-- unless direct), its timers and frames gone and nothing heard during the
+-- loading screen, then the same character's add-on loaded again with its
+-- saved settings - the game keeps voice, friends, guild and group
+local function Reload(P, o)
+    o = o or {}
+    if not o.direct then P.env.ReloadUI() end
+    FireEvent(P, "PLAYER_LOGOUT")
+    for _, t in ipairs(timers) do if t.owner == P then t.cancelled = true end end
+    P.frames = {}
+    advance(1)
+    if o.during then o.during(P) end -- (a second into the loading screen)
+    advance((o.loading or 5) - 1)
+    return makePlayer(P.name, {same = P, gameAccountID = P.opts.gameAccountID, bnetAccountId = P.opts.bnetAccountId,
+                               appFocused = P.opts.appFocused, faction = P.faction, voiceFile = P.opts.voiceFile,
+                               db = P.env.PacesQoLDB, beforeLoad = o.beforeLoad})
+end
+
 --------------------------------------------------------------------------
 -- core: options page, slash command, saved settings
 --------------------------------------------------------------------------
@@ -832,6 +888,14 @@ do
     check(SentCount(justin, function(s) return s.kind == "GUILD" and s.msg:sub(1, 2) == "Q:" end) >= 1,
           "voice: a guild club is asked over GUILD")
     check(justin.RowMic(logan), "voice: Logan in the guild's voice shows")
+    justin.printed = {}
+    justin.Slash("voice")
+    check(Printed(justin, "looking at: guild G1, stream GS; 2 members, 1 online;"),
+          "readout: a guild's own stream counts its online members too")
+    logan.printed = {}
+    logan.Slash("voice")
+    check(Printed(logan, "telling 0 asker(s) about my voice (and the guild, over GUILD);"),
+          "readout: in the guild's voice, the guild is told (askers about other streams don't count)")
     justin.CloseChannels()
 
     -- Logan stops sharing: Justin no longer sees him after the answer runs out
@@ -1298,16 +1362,22 @@ do
     check(Printed(justin, "BN J 2, BN P 1"), "readout: what came back")
     check(Printed(justin, "heard about this stream: 2 in voice (2 microphones on screen), 1 with the add-on but not in voice"),
           "readout: who was heard, and how many microphones that made")
-    local named = false
-    for _, l in ipairs(justin.printed) do
-        for _, R in ipairs({justin, logan, stranger, appy, plain, idle}) do
-            if l:find(R.name, 1, true) or (R.bnName and l:find(R.bnName, 1, true)) then named = true end
+    local function Named(P)
+        for _, l in ipairs(P.printed) do
+            for _, R in ipairs({justin, logan, stranger, appy, plain, idle}) do
+                if l:find(R.name, 1, true) or (R.bnName and l:find(R.bnName, 1, true)) or l:find("#1234", 1, true) then
+                    return true
+                end
+            end
         end
+        return false
     end
-    check(not named, "readout: no names or Battle.net names in it")
+    check(justin.Row(logan).Name:GetText() == "Logan Broeker", "readout: (the rows show Battle.net names, as the game's do)")
+    check(not Named(justin), "readout: no names, Battle.net names or BattleTags in it")
     justin.printed = {}
     justin.Slash("voice log")
     check(Printed(justin, "out BN Q B1:BS P.."), "readout: /pqol voice log lists the last messages")
+    check(not Named(justin), "readout: nor in the log")
 
     -- leaves and joins reach the asker at once
     logan.LeaveVoice(70)
@@ -1317,8 +1387,20 @@ do
     advance(1)
     check(justin.RowMic(logan), "bn club: and comes back when he rejoins")
 
+    -- the readout on the side in voice: the stream, and the GUID its answers carry
+    logan.printed = {}
+    logan.Slash("voice")
+    check(Printed(logan, "me: in voice in club B1 stream BS; that club knows me as B.." .. logan.accountGUID:sub(-4) ..
+                         ", my character is P.." .. logan.guid:sub(-4)),
+          "readout: in voice: which stream, and the GUID my answers carry (my Battle.net account's, as the club lists me)")
+    check(Printed(logan, "telling 1 asker(s) about my voice;"), "readout: in voice: how many people hear my joins and leaves")
+    check(not Named(logan), "readout: in voice: no names either")
+
     -- a friend still on 1.0.0 answers with the character's GUID: pinned on the member asked
     local old = makePlayer("OldLoganB", {gameAccountID = 606, bnetAccountId = 9106, voiceFile = OLD})
+    -- (the game gives no character GUID for his game account: only the
+    -- route he was asked by can place his answer)
+    old.hideGuid = true
     justin.bnFriends.OldLoganB, old.bnFriends.JustinB = true, true
     table.insert(clubs["B1"].members, "OldLoganB")
     justin.AddRosterRow(old)
@@ -1339,12 +1421,25 @@ do
     oldJ.OpenChannels("B1", "BS")
     advance(3)
     check(oldJ.RowMic(logan), "1.0.0: an asker who hasn't updated sees an updated friend")
+    -- (and hears his leaves and joins: they carry the GUID its rows have)
+    logan.LeaveVoice(70)
+    advance(1)
+    check(not oldJ.RowMic(logan) and not justin.RowMic(logan), "1.0.0: the asker who hasn't updated hears him leave")
+    logan.JoinVoice(70, "B1", "BS")
+    advance(1)
+    check(oldJ.RowMic(logan) and justin.RowMic(logan), "1.0.0: and rejoin")
 
-    -- logging out in voice: the leave goes out there and then
-    local before = SentCount(logan)
+    -- logging out in voice: the leave goes out there and then, to everyone who asked
+    local before = #logan.sent
     logan.Fire("PLAYER_LOGOUT")
-    check(SentCount(logan) > before and SentCount(logan, function(x) return x.msg:sub(1, 2) == "L:" end) >= 2,
-          "logout: the leave goes to the people who asked at once (no timer runs after logout)")
+    local told = {}
+    for i = before + 1, #logan.sent do
+        local s = logan.sent[i]
+        if s.kind == "BN" and s.msg == "L:B1:BS:" .. logan.accountGUID then told[s.to] = true end
+    end
+    check(told[601] and told[607], "logout: the leave goes at once to both people who asked (no timer runs after logout)")
+    advance(0.5)
+    check(not justin.RowMic(logan) and not oldJ.RowMic(logan), "logout: neither shows him any more (the one on 1.0.0 included)")
 
     justin.CloseChannels()
     oldJ.CloseChannels()
@@ -1358,15 +1453,19 @@ end
 do
     local ga = makePlayer("GuildA", {gameAccountID = 611, bnetAccountId = 9111})
     local gb = makePlayer("GuildB", {gameAccountID = 612, bnetAccountId = 9112})
-    ga.guild, gb.guild = "GX", "GX"
-    clubs["B2"] = {type = ENUM.ClubType.BattleNet, members = {"GuildA", "GuildB"}}
+    local gc = makePlayer("GuildC", {gameAccountID = 613, bnetAccountId = 9113}) -- has the add-on, not in voice
+    ga.guild, gb.guild, gc.guild = "GX", "GX", "GX"
+    clubs["B2"] = {type = ENUM.ClubType.BattleNet, members = {"GuildA", "GuildB", "GuildC"}}
     ga.AddRosterRow(gb)
+    ga.AddRosterRow(gc)
     gb.JoinVoice(80, "B2", "BS2")
     ga.OpenChannels("B2", "BS2")
     advance(3)
     check(ga.RowMic(gb), "guild: guildmates who aren't Battle.net friends find each other (one question over GUILD)")
     check(Msgs(gb, "WHISPER", "J:B2:BS2:") >= 1 and Msgs(gb, "GUILD", "J:") == 0,
           "guild: (answered by whisper: a Battle.net community's GUIDs aren't told to the whole guild)")
+    check(SentCount(gc) == 0 and not ga.RowMic(gc),
+          "guild: a guildmate not in that voice stays quiet (a question to the whole guild gets no 'not in voice')")
     ga.printed = {}
     ga.Slash("voice")
     check(Printed(ga, "my own coming back: GUILD 1"), "readout: our own GUILD question coming back is counted (GUILD messages flow)")
@@ -1374,13 +1473,15 @@ do
 
     local pa = makePlayer("PartyA", {gameAccountID = 621, bnetAccountId = 9121})
     local pb = makePlayer("PartyB", {gameAccountID = 622, bnetAccountId = 9122})
-    pa.group, pb.group = "grp", "grp"
-    clubs["B3"] = {type = ENUM.ClubType.BattleNet, members = {"PartyA", "PartyB"}}
+    local pc = makePlayer("PartyC", {gameAccountID = 623, bnetAccountId = 9123}) -- has the add-on, not in voice
+    pa.group, pb.group, pc.group = "grp", "grp", "grp"
+    clubs["B3"] = {type = ENUM.ClubType.BattleNet, members = {"PartyA", "PartyB", "PartyC"}}
     pa.AddRosterRow(pb)
     pb.JoinVoice(81, "B3", "BS3")
     pa.OpenChannels("B3", "BS3")
     advance(3)
     check(pa.RowMic(pb), "group: party members who aren't Battle.net friends find each other (one question to the party)")
+    check(SentCount(pc) == 0, "group: a party member not in that voice stays quiet")
     pa.CloseChannels()
 
     -- the club gives no GUID: the row is matched by its member id
@@ -1416,7 +1517,7 @@ do
     check(fa.RowMic(fb), "refused: the follow-up asks again (no 50-second wait for a question that never left)")
     fa.CloseChannels()
 
-    for _, R in ipairs({ga, gb, pa, pb, na, nb, fa, fb}) do R.online = false; players[R.name] = nil end
+    for _, R in ipairs({ga, gb, gc, pa, pb, pc, na, nb, fa, fb}) do R.online = false; players[R.name] = nil end
 end
 
 --------------------------------------------------------------------------
@@ -1460,6 +1561,27 @@ do
     check(SentCount(ya, function(x) return x.kind == "WHISPER" and x.to == "HordeH" end) == 0,
           "whisper: the other faction is left out before any check")
     ya.CloseChannels()
+
+    -- the game says someone the club lists as online can't be whispered: not whispered, then or later
+    local na, nw, nt = makePlayer("NoA"), makePlayer("NoWhisper"), makePlayer("NoTalker")
+    nw.cantWhisper = true
+    clubs["CN"] = {type = ENUM.ClubType.Character, members = {"NoA", "NoWhisper", "NoTalker"}}
+    nt.JoinVoice(86, "CN", "SN")
+    na.AddRosterRow(nt)
+    na.AddRosterRow(nw)
+    na.OpenChannels("CN", "SN")
+    advance(3)
+    local function ToNoWhisper() return SentCount(na, function(x) return x.kind == "WHISPER" and x.to == "NoWhisper" end) end
+    check(na.RowMic(nt) and ToNoWhisper() == 0, "whisper check: a 'can't whisper' answer means no whisper")
+    na.printed = {}
+    na.Slash("voice")
+    check(Printed(na, "whisper checks: asked 2, yes 1, no 1, no answer 0, skipped 1"), "readout: a 'can't whisper' is counted")
+    advance(60)
+    na.printed = {}
+    na.Slash("voice")
+    check(ToNoWhisper() == 0 and Printed(na, "whisper checks: asked 2, yes 1, no 1, no answer 0, skipped 2"),
+          "whisper check: the next round goes by the stored answer, and still doesn't whisper")
+    na.CloseChannels()
 
     -- our own voice: not readable at login, read again when a question comes
     local late = makePlayer("LateVoice", {voiceAtLoad = {id = 90, club = "C9", stream = "S9"},
@@ -1523,15 +1645,268 @@ do
     endOne.JoinVoice(95, "C10", "S10")
     closer.AddRosterRow(endOne)
     closer.OpenChannels("C10", "S10")
-    advance(1)
+    advance(0.5)
+    -- (a presence update right after opening arms a re-ask; the window closes before it runs)
+    closer.Fire("CLUB_MEMBER_PRESENCE_UPDATED", "C10", 1, 1)
+    advance(0.5)
     closer.CloseChannels()
+    local whispersQ = function() return Msgs(closer, "WHISPER", "Q:") end
+    local atClose = whispersQ()
+    advance(6)
+    check(atClose < 21 and whispersQ() == atClose,
+          "window: closing drops the questions not yet sent, and nothing (a re-ask armed before) sends them while closed")
     closer.OpenChannels("C10", "S10")
     advance(6)
-    check(closer.RowMic(endOne), "window: questions dropped on closing are asked again at once on reopening")
+    check(closer.RowMic(endOne) and SentCount(closer, function(x) return x.to == "EndOne" and x.msg:sub(1, 2) == "Q:" end) == 1,
+          "window: questions dropped on closing are asked at once on reopening, once")
     closer.CloseChannels()
 
-    for _, R in ipairs({sa, sb, ya, yb, fh, late, asker, sw, sv, g1, g2, gt, closer, endOne}) do R.online = false; players[R.name] = nil end
+    -- leaving voice in a dungeon (chat lockdown): nothing can be sent then, the leave goes once it lifts
+    local lw, lt = makePlayer("LockView"), makePlayer("LockTalk")
+    lw.guild, lt.guild = "GL", "GL"
+    clubs["GL"] = {type = ENUM.ClubType.Guild, members = {"LockView", "LockTalk"}}
+    lt.JoinVoice(98, "GL", "LS")
+    lw.AddRosterRow(lt)
+    lw.OpenChannels("GL", "LS")
+    advance(3)
+    check(lw.RowMic(lt), "lockdown: (in the guild's voice, seen)")
+    lt.locked = true
+    lt.LeaveVoice(98)
+    advance(2)
+    lt.printed = {}
+    lt.Slash("voice")
+    check(Printed(lt, "me: not in voice (the add-on tells the others once the lockdown ends)"),
+          "lockdown: the readout says the leave waits for the lockdown's end")
+    advance(20)
+    check(lw.RowMic(lt) and Msgs(lt, nil, "L:") == 0, "lockdown: (nothing sent in it)")
+    lt.locked = false
+    advance(6)
+    check(not lw.RowMic(lt) and Msgs(lt, "GUILD", "L:GL:LS:") == 1,
+          "lockdown: once it lifts the leave goes out (not 200 seconds of a wrong microphone)")
+    lw.CloseChannels()
+
+    -- a member who drops out without a leave (a crash): the microphone goes with Blizzard's grey row
+    local ow, ot = makePlayer("OffView"), makePlayer("OffTalk")
+    clubs["CO"] = {type = ENUM.ClubType.Character, members = {"OffView", "OffTalk"}}
+    ot.JoinVoice(99, "CO", "OS")
+    ow.AddRosterRow(ot)
+    ow.OpenChannels("CO", "OS")
+    advance(10)
+    check(ow.RowMic(ot), "offline: (in voice, seen)")
+    ot.online = false
+    ow.Row(ot):Update() -- (Blizzard redraws the row on the presence change)
+    check(not ow.RowMic(ot), "offline: a member who went offline loses the microphone with the grey row")
+    ot.online = true
+    ot.voice[99].isActive = false -- (logged back in: not in voice)
+    ow.Row(ot):Update()
+    check(not ow.RowMic(ot), "offline: and logging back in isn't being in voice")
+    ow.CloseChannels()
+
+    -- one who stops answering (the add-on switched off) loses it as the last answer runs out, not a round later
+    local ev, et = makePlayer("ExpView"), makePlayer("ExpTalk")
+    clubs["CE"] = {type = ENUM.ClubType.Character, members = {"ExpView", "ExpTalk"}}
+    et.JoinVoice(100, "CE", "ES")
+    ev.AddRosterRow(et)
+    local opened = clock
+    ev.OpenChannels("CE", "ES")
+    advance(3)
+    check(ev.RowMic(et), "expiry: (in voice, seen)")
+    et.prefix = nil
+    advance(opened + 195 - clock)
+    check(ev.RowMic(et), "expiry: (still within the answer's 200 seconds)")
+    advance(opened + 202 - clock)
+    check(not ev.RowMic(et), "expiry: the microphone goes as the answer runs out")
+    ev.CloseChannels()
+
+    for _, R in ipairs({sa, sb, ya, yb, fh, na, nw, nt, late, asker, sw, sv, g1, g2, gt, closer, endOne, lw, lt, ow, ot, ev, et}) do
+        R.online = false; players[R.name] = nil
+    end
     for _, F in ipairs(quiet) do F.online = false; players[F.name] = nil end
+end
+
+--------------------------------------------------------------------------
+-- voice: /reload. PLAYER_LOGOUT comes for a reload too; voice goes on
+-- through it, so the people looking must go on seeing you.
+--------------------------------------------------------------------------
+do
+    -- a WoW community: a Battle.net friend (asked by game data and by
+    -- whisper), someone asked only by whisper, and someone still on 1.0.0
+    local rj = makePlayer("ReJustin", {gameAccountID = 661, bnetAccountId = 9161})
+    local rw = makePlayer("ReWhisper")
+    local ro = makePlayer("ReOld", {voiceFile = OLD})
+    local rl = makePlayer("ReLogan", {gameAccountID = 662, bnetAccountId = 9162})
+    rj.bnFriends.ReLogan, rl.bnFriends.ReJustin = true, true
+    clubs["CR"] = {type = ENUM.ClubType.Character, members = {"ReJustin", "ReWhisper", "ReOld", "ReLogan"}}
+    for _, V in ipairs({rj, rw, ro}) do V.AddRosterRow(rl) end
+    rl.JoinVoice(110, "CR", "RS")
+    for _, V in ipairs({rj, rw, ro}) do V.OpenChannels("CR", "RS") end
+    advance(3)
+    local function AllSee(R) return rj.RowMic(R) and rw.RowMic(R) and ro.RowMic(R) end
+    local function NoneSee(R) return not rj.RowMic(R) and not rw.RowMic(R) and not ro.RowMic(R) end
+    check(AllSee(rl), "reload: (in voice, seen by all three)")
+
+    -- /reload: no leave, and everyone keeps the microphone through it
+    local seen = true
+    local rl2 = Reload(rl, {during = function() seen = AllSee(rl) end})
+    check(Msgs(rl, nil, "L:") == 0 and seen, "reload: a /reload in voice tells nobody it left (it didn't)")
+    advance(3)
+    check(AllSee(rl2) and Msgs(rl2, nil, "J:") == 0, "reload: after it everyone still sees him, with no message needed")
+    -- the reloaded UI took over who asked: his leave reaches them at once
+    rl2.LeaveVoice(110)
+    advance(1)
+    check(NoneSee(rl2), "reload: the people who asked before the reload hear his leave after it")
+    rl2.JoinVoice(110, "CR", "RS")
+    advance(1)
+    check(AllSee(rl2), "reload: and his rejoin")
+
+    -- a reload that doesn't come through ReloadUI looks like a logout:
+    -- the leave goes, and the reloaded UI says at once it is still in
+    local leaves = Msgs(rl2, nil, "L:")
+    local gone = false
+    local rl3 = Reload(rl2, {direct = true, during = function() gone = NoneSee(rl2) end})
+    check(Msgs(rl2, nil, "L:") - leaves == 4 and gone, "reload: (one the add-on can't tell from a logout says goodbye to all four routes)")
+    advance(1)
+    check(AllSee(rl3), "reload: and is back with everyone as soon as the UI is up, not a minute later")
+
+    -- voice not readable yet just after a reload is not a leave
+    local rl4 = Reload(rl3, {beforeLoad = function(P) P.voiceUnreadable = true end})
+    advance(3)
+    rl4.voiceUnreadable = false
+    advance(10)
+    check(Msgs(rl4, nil, "L:") == 0 and AllSee(rl4), "reload: voice the game reports a moment late is not taken for a leave")
+    -- (but a leave the game does report in those seconds goes at once)
+    local rl4b = Reload(rl4, {beforeLoad = function(P) P.voiceUnreadable = true end})
+    advance(1)
+    rl4b.voiceUnreadable = false
+    rl4b.LeaveVoice(110)
+    advance(1)
+    check(NoneSee(rl4b), "reload: a leave the game reports during those seconds goes out at once")
+    rl4b.JoinVoice(110, "CR", "RS")
+    advance(1)
+    check(AllSee(rl4b), "reload: (back in)")
+
+    -- voice that ended across the reload: they hear the leave once the UI has looked again
+    local rl5 = Reload(rl4b, {during = function(P) P.voice[110].isActive = false end})
+    advance(1)
+    check(AllSee(rl5), "reload: (a few seconds' grace for the game to report voice)")
+    advance(11)
+    check(NoneSee(rl5), "reload: voice that ended with the reload is told as a leave")
+
+    -- a real logout: everyone hears the leave at once (no timer runs after it)
+    rl5.JoinVoice(110, "CR", "RS")
+    advance(1)
+    check(AllSee(rl5), "logout: (back in voice)")
+    rl5.Fire("PLAYER_LOGOUT")
+    advance(0.5)
+    check(NoneSee(rl5), "logout: a logout in voice is told at once, to all three")
+
+    for _, V in ipairs({rj, rw, ro}) do V.CloseChannels() end
+    for _, R in ipairs({rj, rw, ro, rl5}) do R.online = false; players[R.name] = nil end
+end
+
+do
+    -- a Battle.net community whose data the client hasn't loaded when voice
+    -- is joined (as at login after a /reload): what is told later still
+    -- carries the GUID the club lists him under
+    local cj = makePlayer("ClubJustin", {gameAccountID = 671, bnetAccountId = 9171})
+    local cl = makePlayer("ClubLogan", {gameAccountID = 672, bnetAccountId = 9172})
+    local cg = makePlayer("ClubGuildie", {gameAccountID = 673, bnetAccountId = 9173}) -- a guildmate, not a friend
+    cj.bnFriends.ClubLogan, cl.bnFriends.ClubJustin = true, true
+    cl.guild, cg.guild = "GC", "GC"
+    clubs["B7"] = {type = ENUM.ClubType.BattleNet, members = {"ClubJustin", "ClubLogan", "ClubGuildie"}}
+    cj.AddRosterRow(cl)
+    cg.AddRosterRow(cl)
+    cl.clubsNotReady = true
+    cl.JoinVoice(120, "B7", "CS")
+    advance(2)
+    cl.clubsNotReady = false
+    cj.OpenChannels("B7", "CS")
+    cg.OpenChannels("B7", "CS")
+    advance(3)
+    check(cj.RowMic(cl) and cg.RowMic(cl), "club data late: (seen by a friend and by a guildmate who isn't one)")
+    cl.LeaveVoice(120)
+    advance(1)
+    check(Msgs(cl, nil, "L:B7:CS:" .. cl.accountGUID) == 2 and Msgs(cl, nil, "L:B7:CS:" .. cl.guid) == 0,
+          "club data late: the leave carries the club's GUID for him, though the club couldn't say when he joined")
+    check(not cj.RowMic(cl) and not cg.RowMic(cl), "club data late: so the guildmate who isn't a friend hears it too")
+    cj.CloseChannels()
+    cg.CloseChannels()
+    for _, R in ipairs({cj, cl, cg}) do R.online = false; players[R.name] = nil end
+end
+
+--------------------------------------------------------------------------
+-- voice: an answer held back by its gap goes when the gap ends; one
+-- Battle.net account with two Forever clients
+--------------------------------------------------------------------------
+do
+    -- the asker reloads and asks again within seconds: answered within the gap's 10 seconds, not a round later
+    local av = makePlayer("GapView")
+    local at = makePlayer("GapTalk")
+    clubs["CG"] = {type = ENUM.ClubType.Character, members = {"GapView", "GapTalk"}}
+    at.JoinVoice(130, "CG", "GS")
+    av.AddRosterRow(at)
+    av.OpenChannels("CG", "GS")
+    advance(2)
+    check(av.RowMic(at), "gap: (seen)")
+    local av2 = Reload(av, {loading = 2})
+    av2.AddRosterRow(at)
+    av2.OpenChannels("CG", "GS")
+    advance(2)
+    local early = av2.RowMic(at)
+    advance(10)
+    check(not early and av2.RowMic(at), "gap: someone who asks again inside the reply gap gets the answer as it ends")
+    av2.CloseChannels()
+
+    -- the guild's own stream: a guildmate who missed the last answer over GUILD (in a dungeon then)
+    local q1, q2, qt = makePlayer("GapG1"), makePlayer("GapG2"), makePlayer("GapGT")
+    for _, R in ipairs({q1, q2, qt}) do R.guild = "GQ" end
+    clubs["GQ"] = {type = ENUM.ClubType.Guild, members = {"GapG1", "GapG2", "GapGT"}}
+    qt.JoinVoice(131, "GQ", "QS")
+    advance(250)
+    local before = Msgs(qt, "GUILD", "J:")
+    q1.AddRosterRow(qt)
+    q2.AddRosterRow(qt)
+    q2.locked = true
+    q1.OpenChannels("GQ", "QS")
+    advance(2)
+    check(q1.RowMic(qt), "guild gap: (the first guildmate sees him)")
+    q2.locked = false
+    advance(10)
+    q2.OpenChannels("GQ", "QS")
+    advance(2)
+    local early2 = q2.RowMic(qt)
+    advance(8)
+    check(not early2 and q2.RowMic(qt) and Msgs(qt, "GUILD", "J:") - before == 2,
+          "guild gap: the second, asking inside the 20 seconds, gets an answer over GUILD as they end")
+    q1.CloseChannels()
+    q2.CloseChannels()
+
+    -- one Battle.net account, two Forever clients: the one in voice is not undone by the other's "not in voice"
+    local dv = makePlayer("DualView", {gameAccountID = 681, bnetAccountId = 9181})
+    local d1 = makePlayer("DualOne", {gameAccountID = 682, bnetAccountId = 9182})
+    local d2 = makePlayer("DualTwo", {gameAccountID = 683, bnetAccountId = 9182})
+    d2.accountGUID = d1.accountGUID
+    table.insert(d1.gameAccounts, d2.gameAccounts[1]) -- (the friend's game accounts: both clients)
+    dv.bnFriends.DualOne, d1.bnFriends.DualView, d2.bnFriends.DualView = true, true, true
+    clubs["BD"] = {type = ENUM.ClubType.BattleNet, members = {"DualView", "DualOne"}}
+    dv.AddRosterRow(d1)
+    d1.JoinVoice(140, "BD", "DS")
+    dv.OpenChannels("BD", "DS")
+    advance(3)
+    check(Msgs(dv, "BN", "Q:") == 2 and Msgs(d2, "BN", "P:BD:DS:" .. d1.accountGUID) == 1,
+          "two clients: (both asked; the one not in voice says so, under the same account)")
+    check(dv.RowMic(d1), "two clients: the account shows in voice (the idle client's answer doesn't undo it)")
+    advance(60)
+    check(dv.RowMic(d1), "two clients: round after round")
+    d1.LeaveVoice(140)
+    advance(1)
+    check(not dv.RowMic(d1), "two clients: the client in voice leaving takes it back")
+    d2.JoinVoice(141, "BD", "DS")
+    advance(1)
+    check(dv.RowMic(d1), "two clients: the other client joining shows it again")
+    dv.CloseChannels()
+
+    for _, R in ipairs({av2, at, q1, q2, qt, dv, d1, d2}) do R.online = false; players[R.name] = nil end
 end
 
 realPrint(("Pace's Quality of Life harness: %d passed, %d failed"):format(passed, failed))

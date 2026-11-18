@@ -40,11 +40,23 @@ file's text can go there directly.
 
 | Field | Value |
 |---|---|
-| File | `dist/PacesQualityOfLife-1.0.0.zip` (contains the `PacesQualityOfLife` folder) |
-| Display name | Pace's Quality of Life 1.0.0 |
-| Release type | Beta (not tried in game yet; switch to Release once it has been) |
+| File | `dist/PacesQualityOfLife-1.1.0.zip` (contains the `PacesQualityOfLife` folder) |
+| Display name | Pace's Quality of Life 1.1.0 |
+| Release type | Beta (1.1.0's voice changes not tried in game yet; switch to Release once they have been) |
 | Game version | WoW Forever |
-| Changelog | below |
+| Changelog | below: 1.1.0's, and 1.0.0's under it if 1.0.0 was never uploaded |
+
+## Changelog (1.1.0)
+
+```
+1.1.0
+- Chat Channels voice: microphones now show in Battle.net communities. Answers name you the way the community lists you (your Battle.net account), which 1.0.0 didn't, so nothing matched there.
+- Voice: friends are found on their WoW Forever client even when their Battle.net app has the focus; guildmates and group members are found in any community; a friend still on 1.0.0 shows too, and sees you.
+- Voice: no more waiting for ever on the game's "can whisper" check; your own voice is read from the game (after a /reload, a stream switch); failed sends are retried.
+- Voice: a /reload in voice no longer hides you from the people looking; logging out tells them at once; a join or leave in a dungeon goes out once you're out; someone who goes offline loses the microphone with their grey row.
+- New: /pqol voice (and /pqol voice log) says what voice sharing sent, heard and was refused, without names.
+- A bare /pqol <feature> now shows its state instead of switching it (/pqol <feature> on|off switches).
+```
 
 ## Changelog (1.0.0)
 
@@ -54,7 +66,7 @@ file's text can go there directly.
 - Quest log: a tracking checkbox on every zone header to track or untrack the whole zone, one for all quests, and Track all / Untrack all in the list's gear menu (up to the game's 25 tracked quests, the zone on the open map first).
 - Looking For Group: tank / healer / damage buttons to show only the players listing the roles you need.
 - Objective tracker follows your zone: entering a zone tracks that zone's quests and untracks the rest.
-- Chat Channels: a microphone on community members in voice before you join (between Pace's QoL users: Battle.net friends, guildmates, group members, and your faction in a WoW community).
+- Chat Channels: a microphone on community members in voice before you join (between Pace's QoL users).
 - Every feature can be switched off: Options > AddOns > Pace's Quality of Life, or /pqol.
 ```
 

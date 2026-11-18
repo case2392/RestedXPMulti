@@ -65,8 +65,10 @@ minute while the window is open, the people who answered before first.
 In a Battle.net community, someone who is not your Battle.net friend and
 not in your guild or group can't be reached by any add-on, so they don't
 show. Nothing is sent in dungeons, raids or encounters (the game's chat
-lockdown). You can stop answering in the options; then nobody sees you,
-except in the case below.
+lockdown); a join or leave made there is told once you're out of it. A
+/reload while in voice doesn't hide you from the people looking, and
+logging out tells them at once. You can stop answering in the options;
+then nobody sees you, except in the case below.
 
 A channel you joined earlier this session and left with the headset is
 different: the game still knows who's in it, so those people show even
