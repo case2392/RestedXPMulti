@@ -40,18 +40,26 @@ file's text can go there directly.
 
 | Field | Value |
 |---|---|
-| File | `dist/PacesQualityOfLife-1.2.0.zip` (contains the `PacesQualityOfLife` folder) |
-| Display name | Pace's Quality of Life 1.2.0 |
-| Release type | Beta (1.2.0's party pets, voice volumes and voice fix not tried in game yet; switch to Release once they have been) |
+| File | `dist/PacesQualityOfLife-1.2.1.zip` (contains the `PacesQualityOfLife` folder) |
+| Display name | Pace's Quality of Life 1.2.1 |
+| Release type | Beta (1.2's party pets, voice volumes and voice fix not tried in game yet; switch to Release once they have been) |
 | Game version | WoW Forever |
-| Changelog | below: 1.2.0's, and the older ones under it if they were never uploaded |
+| Changelog | below: 1.2.1's (1.2.0 is already uploaded) |
+
+## Changelog (1.2.1)
+
+```
+1.2.1
+- Voice volumes: a change made from a member list opened inside a dungeon or raid (Chat Channels, Communities), where the game doesn't say whose a change is, is now kept once you're out only for someone whose volume was kept before. 1.2.0 also kept a first change that way, which could tie it to the wrong name for that person (someone in a Battle.net community with you who isn't your Battle.net friend has one name in the community and another in party voice) and later undo a newer change. Such a first change still applies; to keep it, set it again from their party frame, or from the list once you've closed and opened it again.
+- /pqol voicevolume says "from a list drawn in a dungeon or raid" for those changes.
+```
 
 ## Changelog (1.2.0)
 
 ```
 1.2.0
 - New: your party's pets. The standard party frames can show a pet under each party member, but WoW Forever's options have no switch for it: tick "Party frames: show your party members' pets" (or /pqol partypets on). It takes effect at your next /reload - the options page has a Reload now button - so the party frames take it cleanly and keep working in combat. If the game refuses the switch, you're told what to type instead.
-- New: voice volumes kept. The volume you set for someone in voice (right-click them, or their party frame in party voice: the slider) is remembered and set again whenever they're in voice with you, the next time you play too. One volume per person: a Battle.net friend in a Battle.net community with you, set from their party frame and from the community's roster, gets the one you set last. In dungeons and raids nothing is set; a change you make there is kept once you're out, not undone - except from a member list opened in there, where the game doesn't say whose a change is: then it is kept only for someone whose volume was kept before, and not at 100%, where everyone starts. /pqol voicevolume forget forgets them all.
+- New: voice volumes kept. The volume you set for someone in voice (right-click them, or their party frame in party voice: the slider) is remembered and set again whenever they're in voice with you, the next time you play too. One volume per person: a Battle.net friend in a Battle.net community with you, set from their party frame and from the community's roster, gets the one you set last. In dungeons and raids nothing is set; a change you make there is kept once you're out, not undone (except a change to 100% from a member list opened in there: everyone starts at 100%, so whose it was can't be told). /pqol voicevolume forget forgets them all.
 - Voice: a Battle.net friend in a Battle.net community is now asked even when the community gives no Battle.net account for them (it is read from their GUID, as the game's own menus do). 1.1.0 asked nobody then - one possible reason a friend in voice never showed. /pqol voice says when it happened.
 ```
 
