@@ -13,6 +13,10 @@
 -- and could leave the frames unable to show a pet or move in combat until
 -- the next reload. At logout the old UI is on its way out; after the reload
 -- the frames read the setting afresh. Nothing is changed in combat.
+--
+-- Whether it took is read back from the setting itself: the game refuses a
+-- setting it keeps from add-ons by returning nothing at all
+-- (CVarDocumentation.lua: FailureMode "ReturnNothing"), not false.
 
 local addonName, ns = ...
 
@@ -29,10 +33,36 @@ local function Current()
     return v ~= "0"
 end
 
--- a switch waiting for the next reload: {want =, from = the setting then}
+-- the game keeps the setting from add-ons - read-only, or one only its own
+-- code may change (SetCVar's RequiresNonReadOnlyCVar and
+-- RequiresNonSecureCVar): nothing here can switch it
+local function Kept()
+    if not (C_CVar and C_CVar.GetCVarInfo) then return false end
+    local ok, _, _, _, _, _, secure, readOnly = pcall(C_CVar.GetCVarInfo, CVAR)
+    if not ok then return false end
+    return (secure == true and not ns.IsSecret(secure)) or (readOnly == true and not ns.IsSecret(readOnly))
+end
+
+-- this character, whose switch it is (the saved settings are the account's)
+local function Me()
+    if not UnitGUID then return nil end
+    local ok, g = pcall(UnitGUID, "player")
+    if ok and type(g) == "string" and g ~= "" and not ns.IsSecret(g) then return g end
+end
+
+-- a switch waiting for the next reload: {want =, from = the setting then,
+-- who = the character it was asked on (another character's is dropped at
+-- login)}
 local function Pending()
     local p = ns.db and ns.db.partyPetsPending
     if type(p) == "table" and type(p.want) == "boolean" and type(p.from) == "boolean" then return p end
+end
+
+-- the game refused the last switch: {want =, from = the setting then}; it
+-- stands until the setting changes or a new switch is asked for
+local function Refused()
+    local r = ns.db and ns.db.partyPetsRefused
+    if type(r) == "table" and type(r.want) == "boolean" and type(r.from) == "boolean" then return r end
 end
 
 local function InCombat() return InCombatLockdown and InCombatLockdown() and true or false end
@@ -43,7 +73,7 @@ function M:IsOn()
     return Current() == true
 end
 
-function M.Available() return Current() ~= nil end
+function M.Available() return Current() ~= nil and not Kept() end
 
 -- what the options page and /pqol say under the switch, and whether a
 -- reload is waiting
@@ -52,24 +82,30 @@ function M.Note()
     if now == nil then
         return "This client has no party pet frames (no showPartyPets setting): nothing to switch.", false
     end
+    if Kept() then
+        return "The game keeps this setting from add-ons, so it can't be switched here.", false
+    end
     if p then
         return ("Party pets will be %s after your next /reload (the game's party frames take this from an add-on only then)."):format(
                    p.want and "shown" or "hidden"), true
     end
-    if ns.db and ns.db.partyPetsRefused then
-        return "The game didn't take the switch from the add-on at your last reload. Type /console showPartyPets 1 (0 hides them), then /reload.", false
+    local r = Refused()
+    if r and r.from == now then
+        return ("The game didn't take the switch from the add-on at your last reload. Type /console showPartyPets %d, then /reload."):format(
+                   r.want and 1 or 0), false
     end
     return "The game's own pet frames, under each party member. A switch takes effect at your next /reload.", false
 end
 
 function M:Set(on)
     local now = Current()
-    if now == nil then return (M.Note()) end
+    if now == nil or Kept() then return (M.Note()) end
+    ns.db.partyPetsRefused = nil -- (a new switch: the old refusal no longer says anything)
     if on == now then
         ns.db.partyPetsPending = nil
         return ("party pets are %s (the game's setting)"):format(now and "shown" or "hidden")
     end
-    ns.db.partyPetsPending = {want = on, from = now}
+    ns.db.partyPetsPending = {want = on, from = now, who = Me()}
     return ("party pets %s after your next |cFFFFCC00/reload|r"):format(on and "shown" or "hidden")
 end
 
@@ -82,7 +118,8 @@ function M.ReloadNow()
     if ReloadUI then ReloadUI() elseif C_UI and C_UI.Reload then C_UI.Reload() end
 end
 
--- the reload (or logout): the switch goes through now
+-- the reload (or logout): the switch goes through now. (The saved settings
+-- are written after PLAYER_LOGOUT, so what is cleared here stays cleared.)
 function M.Logout()
     local p = Pending()
     if not p then return end
@@ -93,22 +130,37 @@ function M.Logout()
         return
     end
     if InCombat() then return end -- (kept for the next reload)
-    local ok, done = pcall(C_CVar.SetCVar, CVAR, p.want and "1" or "0")
-    if not ok or done == false then p.refused = true end
+    pcall(C_CVar.SetCVar, CVAR, p.want and "1" or "0")
+    if Current() == p.want then
+        -- done: nothing is left to do, or to do again later
+        ns.db.partyPetsPending = nil
+        ns.db.partyPetsRefused = nil
+    else
+        p.refused = true
+    end
 end
 
 function M:Init()
-    -- a switch that went through at the last reload is done; one that
-    -- couldn't (a reload in combat) waits for the next; one the game
-    -- refused is dropped, and the options page says what to type instead
+    -- a switch that went through is done; one that couldn't (a reload in
+    -- combat) waits for the next; one the game refused is dropped, and the
+    -- options page says what to type instead. Another character's switch,
+    -- left by a reload in combat, isn't this one's to make.
+    local raw, me = ns.db.partyPetsPending, Me()
+    if raw ~= nil and (not Pending() or (raw.who ~= nil and me ~= nil and raw.who ~= me)) then
+        ns.db.partyPetsPending = nil -- (another character's, or not one this add-on made)
+    end
     local p, now = Pending(), Current()
     if p and (now == nil or now == p.want or now ~= p.from) then
         ns.db.partyPetsPending = nil
-        ns.db.partyPetsRefused = nil
+        if now == p.want then ns.db.partyPetsRefused = nil end
     elseif p and p.refused then
         ns.db.partyPetsPending = nil
-        ns.db.partyPetsRefused = true
+        ns.db.partyPetsRefused = {want = p.want, from = now}
         ns.Print("party pets: the game didn't take the switch from the add-on - type |cFFFFCC00/console showPartyPets %d|r, then /reload", p.want and 1 or 0)
+    end
+    local r = ns.db.partyPetsRefused
+    if r ~= nil and (not Refused() or now == nil or r.from ~= now) then
+        ns.db.partyPetsRefused = nil -- (the setting changed since: the report is out of date)
     end
     local f = CreateFrame("Frame")
     f:RegisterEvent("PLAYER_LOGOUT")
@@ -119,6 +171,7 @@ end
 function M:Status()
     local now = Current()
     if now == nil then return "(this client has no party pet setting)" end
+    if Kept() then return ("(the game's setting: %s; the game keeps it from add-ons)"):format(now and "shown" or "hidden") end
     local p = Pending()
     return ("(the game's setting: %s%s)"):format(now and "shown" or "hidden",
                                                  p and ("; %s at your next /reload"):format(p.want and "shown" or "hidden") or "")

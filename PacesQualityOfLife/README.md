@@ -90,20 +90,34 @@ possible reason for a report of a friend in voice who never showed
 
 ## Voice chat: each person's volume, kept
 
-Right-click someone in a voice channel and the slider under their name
-sets how loud they are - but the game doesn't keep it. Pace's QoL
-remembers the volume you set for each person and sets it again whenever
-they're in voice with you: when they join your channel, when you join
-theirs, after a /reload, and the next time you play. It sets nothing when
-the volume already matches, and keeps only what you set with the slider
-(never the game's own resets). Nothing is read or set during the game's
-chat lockdown (dungeons, raids, encounters); it catches up after.
+Right-click someone in a voice channel (or their party frame, in party
+voice) and the slider under their name sets how loud they are - but the
+game doesn't keep it. Pace's QoL remembers the volume you set for each
+person and sets it again whenever they're in voice with you: when they
+join your channel, when you join theirs, after a /reload, and the next
+time you play. It sets nothing when the volume already matches, and keeps
+only what you set with the slider (never the game's own resets).
 
-A person is known by the GUID the voice channel gives - their character,
-or in a Battle.net community their Battle.net account - and in a
-Battle.net community also by their place in it, should the account's
-GUID change between sessions. Up to 500 are kept, the oldest change going
-first; `/pqol voicevolume forget` forgets them all. Not tried in game yet.
+One person goes by several names, and the volume is kept under all of
+them, the newest winning: their character; in a Battle.net community
+their Battle.net account and their place in the community (which still
+finds them should the account's GUID change between sessions); and for a
+Battle.net friend both the account and the character they're playing. So
+a friend set from their party frame and from a community's roster has
+one volume: the one you set last.
+
+In dungeons and raids (the game's chat lockdown) nothing is set and no
+community list is read. A change you make there is kept under what the
+game still says, and under the rest of the person's names once you're
+out. When the game doesn't say whose it was (a roster drawn inside the
+dungeon), the volume is noted, and once you're out the person found at
+exactly that volume keeps it instead of being set back - except at the
+top (100%), where everyone starts, so that can't be told. Such a change
+is lost if you log out before leaving the dungeon.
+
+Up to 1000 names are kept (one person can have a few), the oldest change
+going first. `/pqol voicevolume` says how many people that is, and
+`/pqol voicevolume forget` forgets them all. Not tried in game yet.
 
 ## Party frames: your party's pets
 
@@ -121,7 +135,14 @@ reload anyway. At the reload they read it afresh. Nothing is changed in
 combat: a reload during a fight leaves it for the next one. It is the
 game's own setting (`showPartyPets`, the same as typing
 `/console showPartyPets 1` and then reloading), so it stays as it is
-even with Pace's QoL removed. Not tried in game yet.
+even with Pace's QoL removed.
+
+Whether the switch took is read back from the setting itself. If the
+game refuses it, it isn't tried again: you're told once what to type
+instead, and the options page says so until the setting changes. If the
+game marks the setting as one add-ons can't change, the box can't be
+ticked and says so. A switch is made at the logout of the character it
+was asked on. Not tried in game yet.
 
 ## Commands
 

@@ -443,6 +443,7 @@ local function ForeverAccounts(account)
     end
     return out
 end
+M.ForeverAccounts = ForeverAccounts -- (voice volumes: the characters a friend plays)
 
 -- The Battle.net account behind a Battle.net community member's GUID. The
 -- club's member info may carry no account id (bnetAccountId is nilable);
