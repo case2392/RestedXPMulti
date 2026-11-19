@@ -3308,6 +3308,12 @@ do
     -- login switches back
     local pc5 = Keep(Login(makePlayer("LayA", {same = lap3, db = pc.env.PacesQoLDB})))
     pc5 = Keep(Reloaded(Reload(pc5)))
+    -- (a loading screen mid-session - an instance, a portal, a boat: the
+    -- world entered again as neither a login nor a /reload)
+    pc5.Fire("PLAYER_ENTERING_WORLD", false, false)
+    advance(2)
+    check(Log(pc5) == "apply:5" and not pc5.reloadAsked and pc5.ns.db.layoutDue == nil,
+          "layout: a loading screen mid-session: nothing switched, no login's look made due")
     pc5.printed = {}
     Pick(pc5, 4)
     check(Printed(pc5, "j pace is on until you log out - this computer switches to PC as you log in") and
@@ -3319,6 +3325,10 @@ do
     local pc6 = Keep(Reloaded(Reload(pc5)))
     check(Log(pc6) == "apply:4" and not pc6.reloadAsked and not Printed(pc6, "Edit Mode"),
           "layout: a /reload keeps the layout picked (on until you log out): nothing switched, no reload")
+    pc6.printed = {}
+    Pick(pc6, 5); Pick(pc6, 4)
+    check(Printed(pc6, "j pace is on until you log out - this computer switches to PC as you log in"),
+          "layout: (after a /reload, another layout picked: said too)")
     local pc7 = Keep(Login(Relog(pc6)))
     check(Log(pc7) == "apply:4 set:addon:5 apply:5 reload", "layout: (and the next login switches back)")
     pc7 = Keep(Reloaded(Reload(pc7)))
@@ -3377,8 +3387,12 @@ do
           "layout: (another picked, the switch given up: no switch at login promised)")
     Pick(pc10, 5)
     pc10.Slash("layout use")
-    editModeServer.active[pc10.guid] = 6
-    local pc11 = Keep(Login(Relog(pc10)))
+    Pick(pc10, 4)
+    local pc10r = Keep(Reloaded(Reload(pc10)))
+    check(Log(pc10r) == "apply:4" and not pc10r.reloadAsked,
+          "layout: (chosen again after a given-up login, another picked, then a /reload: nothing switched)")
+    editModeServer.active[pc10r.guid] = 6
+    local pc11 = Keep(Login(Relog(pc10r)))
     check(Log(pc11) == "apply:6 set:addon:5 apply:5 reload", "layout: chosen again: switched again")
     local pc12 = Keep(Reloaded(Reload(pc11)))
 
@@ -3469,13 +3483,21 @@ do
     editModeServer.active[pc18.guid] = 6
     local pc19 = Keep(Login(Relog(pc18)))
     check(Log(pc19) == "apply:6" and not pc19.reloadAsked, "layout: switched off: nothing switched as you log in")
+    pc19.printed = {}
+    Pick(pc19, 4)
+    check(not Printed(pc19, "as you log in"), "layout: (switched off: a layout picked promises no switch at login)")
+    Pick(pc19, 6)
     pc19.Slash("layout on")
     check(Note(pc19):find("every character is switched to it as it logs in here", 1, true),
           "layout: (switched on again: the options page says it is switched to)")
     pc19.Fire("EDIT_MODE_LAYOUTS_UPDATED", pc19.env.C_EditMode.GetLayouts(), false)
     pc19.Fire("PLAYER_REGEN_ENABLED")
     advance(2)
-    check(Log(pc19) == "apply:6 apply:6" and not pc19.reloadAsked, "layout: (switched on mid-session: nothing until the next login)")
+    check(Log(pc19) == "apply:6 set:player:4 apply:4 set:player:6 apply:6 apply:6" and not pc19.reloadAsked,
+          "layout: (switched on mid-session: nothing until the next login)")
+    pc19 = Keep(Reloaded(Reload(pc19)))
+    check(Log(pc19) == "apply:6" and not pc19.reloadAsked,
+          "layout: (switched on mid-session, then a /reload: still nothing until the next login)")
     local pc20 = Keep(Login(Relog(pc19)))
     check(Log(pc20) == "apply:6 set:addon:5 apply:5 reload", "layout: (and at the next login, switched)")
     local pc21 = Keep(Reloaded(Reload(pc20)))
@@ -3526,7 +3548,15 @@ do
     pc25c.env.EditModeManagerFrame:Show()
     Login(pc25c)
     check(Log(pc25c) == "apply:6" and not pc25c.reloadAsked, "layout: Edit Mode open as it would switch: left to the player")
+    -- (and it stays left to them: another layout picked in it, Edit Mode
+    -- closed, a fight's end later - nothing switched, no reload)
+    Pick(pc25c, 4)
+    advance(2)
     pc25c.env.EditModeManagerFrame:Hide()
+    pc25c.Fire("PLAYER_REGEN_ENABLED")
+    advance(2)
+    check(Log(pc25c) == "apply:6 set:player:4 apply:4" and not pc25c.reloadAsked,
+          "layout: (a layout picked in it stays once Edit Mode is closed: not switched later)")
     Pick(pc25c, 5)
     pc25 = Keep(Login(Relog(pc25c)))
 
@@ -3538,6 +3568,15 @@ do
     check(Log(pc26) == "apply:6 set:addon:5 apply:5 reload" and pc26.ns.db.layoutFailed == nil,
           "layout: a switch marker from long ago isn't taken as one just made: switched as usual")
     local pc27 = Keep(Reloaded(Reload(pc26)))
+    -- (one from long ago seen at a /reload - its reload's look held up past
+    -- it - isn't taken as one just made either: nothing given up)
+    Pick(pc27, 6)
+    pc27.ns.db.layoutSwitch = {name = "PC", at = math.floor(clock) - 1000}
+    pc27 = Keep(Reloaded(Reload(pc27)))
+    check(Log(pc27) == "apply:6" and not pc27.reloadAsked and pc27.ns.db.layoutFailed == nil and
+          not Printed(pc27, "Edit Mode"),
+          "layout: (a switch marker from long ago at a /reload: nothing given up, nothing said)")
+    Pick(pc27, 5)
 
     -- an account's layout and a character's own with the same name: the kept
     -- one's own kind first; a character without one of its kind: the other
@@ -3573,6 +3612,55 @@ do
     for _, e in ipairs(pc30.ns.errors) do if e:find("^layout:") then errs = errs + 1 end end
     check(errs == 1 and not pc30.reloadAsked and pc30.ns.db.layoutFailed == nil and pc30.ns.db.layoutSwitch == nil,
           "layout: the game's call failing: noted as an error, no reload, not given up on")
+
+    -- a session ending without saving just after the add-on's switch and
+    -- its reload (a crash, a disconnect): the saved settings still have the
+    -- switch's marker. A login isn't that switch's reload: nothing taken as
+    -- its own, nothing given up on
+    do
+        local function copy(t)
+            if type(t) ~= "table" then return t end
+            local o = {}
+            for k, v in pairs(t) do o[k] = copy(v) end
+            return o
+        end
+        local function Crash(P)
+            for _, t in ipairs(timers) do if t.owner == P then t.cancelled = true end end
+            P.frames = {}
+        end
+        LogOut(pc30)
+        local function SwitchedThenCrashed(from)
+            editModeServer.active[from.guid] = 6
+            local a = Keep(Login(makePlayer("LayA", {same = from, db = from.env.PacesQoLDB})))
+            local r = Reload(a)
+            local file = copy(r.env.PacesQoLDB) -- (as the reload wrote it)
+            r = Keep(Reloaded(r))
+            Crash(r)
+            advance(60)
+            return r, file
+        end
+        local la, file = SwitchedThenCrashed(pc30)
+        local same = Keep(Login(makePlayer("LayA", {same = la, db = copy(file)})))
+        check(Log(same) == "apply:5" and not Printed(same, "Edit Mode"),
+              "layout: a crash just after the add-on's switch: that character logging in again - nothing done, nothing said")
+        LogOut(same)
+        local lb = Keep(Login(makePlayer("LayB", {same = alt4, db = file,
+                                                 beforeLoad = function(N) editModeServer.active[N.guid] = 6 end})))
+        check(Log(lb) == "apply:6 set:addon:5 apply:5 reload" and lb.ns.db.layoutFailed == nil,
+              "layout: (another character logging in soon after: switched, nothing given up)")
+        local lb2 = Keep(Reloaded(Reload(lb)))
+        LogOut(lb2)
+        local _, file2 = SwitchedThenCrashed(same)
+        local lb3 = Keep(Login(makePlayer("LayB", {same = lb2, db = file2,
+                                                  beforeLoad = function(N) editModeServer.active[N.guid] = 6; N.inCombat = true end})))
+        lb3 = Keep(Reloaded(Reload(lb3, {beforeLoad = function(N) N.inCombat = true end})))
+        lb3.inCombat = false
+        lb3.Fire("PLAYER_REGEN_ENABLED")
+        advance(2)
+        check(Log(lb3) == "apply:6 set:addon:5 apply:5 reload" and lb3.ns.db.layoutFailed == nil,
+              "layout: (nor when its login's look waits for a fight, across a /reload)")
+        LogOut(Keep(Reloaded(Reload(lb3))))
+    end
 
     for _, R in ipairs(gone) do R.online = false end
     players["LayA"], players["LayB"] = nil, nil

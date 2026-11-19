@@ -310,6 +310,10 @@ local function OnEvent(_, event, a1, a2)
             reloaded = true
         else
             ns.db.layoutDue = true
+            -- (a login is never the UI that follows the add-on's switch - that
+            -- switch's reload is: a marker left by a session that ended
+            -- without saving, a crash or a disconnect, is dropped)
+            if Plain(a1) == true then ns.db.layoutSwitch = nil end
         end
     end
     if done then
