@@ -31,11 +31,16 @@
 -- are secret, so nothing is set and no list is read. A change made then is
 -- kept under what can be told - the GUID when the row still gives one; the
 -- rest of the person's names once the lockdown lifts. When the game can't
--- say whose a change was (a row drawn in the lockdown), what was set is
--- noted, and once the lockdown lifts a person found at exactly that volume
--- keeps it: it is taken as yours, not undone - a first change for someone
--- too. Not at the slider's top, where the game starts everyone: who is
--- there can't be told from who was set there, so it is set back as usual.
+-- say whose a change was (a row drawn in the lockdown - it stays that way
+-- after it, until the list is drawn again), what was set is noted, and a
+-- person with a volume kept who is then found at exactly that volume keeps
+-- it: it is taken as yours, not undone. Not a first change for someone:
+-- the game's volume is one per person, set from any of their names, so
+-- someone found at it with nothing kept under the names seen there may be
+-- at a volume kept under another (a Battle.net community member who isn't
+-- your friend: the community knows the account, party voice the
+-- character). Nor at the slider's top, where the game starts everyone: who
+-- is there can't be told from who was set there, so it is set back.
 
 local addonName, ns = ...
 
@@ -407,7 +412,7 @@ local function OnSet(loc, volume)
     local new = NewChange(guid, loc)
     if not guid then
         -- (the game doesn't say whose - a row drawn in the lockdown: what was
-        -- set is noted, to know it as yours once someone is found at it)
+        -- set is noted, to know it as yours once someone kept is found at it)
         if new or #unseen == 0 then
             stats.unseen = stats.unseen + 1
             unseen[#unseen + 1] = {v = volume, at = Clock()}
@@ -461,8 +466,7 @@ local function ApplyFor(memberID, channelID, again)
         return
     end
     local store = Store()
-    -- (nothing kept, and no change waiting to be told whose: nothing to look up)
-    if (not store or next(store) == nil) and #unseen == 0 then return end
+    if not store or next(store) == nil then return end -- (nothing kept: nothing to look up)
     if memberID == nil or channelID == nil or not (C_VoiceChat and C_VoiceChat.GetMemberGUID) then return end
     if C_VoiceChat.IsMemberLocalPlayer then
         local ok, me = pcall(C_VoiceChat.IsMemberLocalPlayer, memberID, channelID)
@@ -495,19 +499,19 @@ local function ApplyFor(memberID, channelID, again)
         end
     end
     local saved = Lookup(names)
-    if (not saved and #unseen == 0) or not (PlayerLocation and PlayerLocation.CreateFromGUID) then return end
+    if not saved or not (PlayerLocation and PlayerLocation.CreateFromGUID) then return end
     local okL, loc = pcall(PlayerLocation.CreateFromGUID, PlayerLocation, guid)
     if not okL or type(loc) ~= "table" then return end
     local okV, now = pcall(C_VoiceChat.GetMemberVolume, loc)
     now = okV and Plain(now) or nil
-    if saved and type(now) == "number" and math.abs(now - saved.v) < SAME then
+    if type(now) == "number" and math.abs(now - saved.v) < SAME then
         stats.same = stats.same + 1
         return
     end
     -- (a change of yours the game didn't say whose, made since, left them at
-    -- just this volume: it was this one, and it is newer - kept, not undone;
-    -- the first one for them too)
-    local u = type(now) == "number" and UnseenAt(now, saved and saved.at or 0)
+    -- just this volume: it was this one, and it is newer - kept, not undone.
+    -- Only over a volume kept for them: see the top of the file)
+    local u = type(now) == "number" and UnseenAt(now, saved.at or 0)
     if u then
         Write(names, now, u.at)
         if not u.taken then
@@ -516,7 +520,6 @@ local function ApplyFor(memberID, channelID, again)
         end
         return
     end
-    if not saved then return end
     applying = true
     local ok = pcall(C_VoiceChat.SetMemberVolume, loc, saved.v)
     applying = false
@@ -640,7 +643,7 @@ function M:Status()
     return ("(%s kept; this session %d change(s) of yours kept, %d set again%s%s)"):format(
                n == 1 and "1 person's volume" or ("%d people's volumes"):format(n),
                stats.saved, stats.applied,
-               stats.unseen > 0 and ("; %d change(s) the game didn't say whose (in a dungeon or raid), %d of them kept after it"):format(
+               stats.unseen > 0 and ("; %d change(s) the game didn't say whose (from a list drawn in a dungeon or raid), %d of them kept after it"):format(
                    stats.unseen, stats.adopted) or "",
                M.hooked and "" or "; the game's volume slider could NOT be watched, so nothing new is kept")
 end

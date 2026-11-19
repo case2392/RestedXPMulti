@@ -108,18 +108,27 @@ party frame and from the community's roster has one volume - the one you
 set last - and it follows them to another character. A Battle.net friend
 you share no Battle.net community with is known by their character alone
 (nothing gives an add-on a lasting name for their account): a volume set
-for one of their characters isn't set for their others.
+for one of their characters isn't set for their others. And someone in a
+Battle.net community with you who isn't your Battle.net friend is known
+by their account in the community and by their character in party
+voice, with nothing to link the two: each keeps the volume set under it.
 
 In dungeons and raids (the game's chat lockdown) nothing is set and no
 community list is read. A change you make there is kept under what the
 game still says, and under the rest of the person's names once you're
-out. When the game doesn't say whose it was (a roster drawn inside the
-dungeon), the volume is noted, and once you're out the person found at
-exactly that volume keeps it instead of being set back - the first time
-you set someone too. Not a change to the top (100%): everyone starts
-there, so who was set to it can't be told, and someone with a volume kept
-is set back to it once you're out (set them again then). A change made
-this way is lost if you log out before leaving the dungeon.
+out.
+
+A member list drawn inside the dungeon (Chat Channels, Communities)
+doesn't say whose a change is - nor once you're out, until the window is
+opened again. A change made from it is noted, and once you're out
+someone whose volume was kept before, found at exactly that volume, keeps
+it instead of being set back. A first change for someone isn't kept that
+way (someone found at that volume could be at a volume kept under another
+of their names), nor is one to the top (100%), where everyone starts:
+whoever has a volume kept is set back to it. Set them again from their
+party frame, or from the list once you've closed and opened it again. A
+change made from such a list is lost if you log out before leaving the
+dungeon.
 
 Up to 1000 names are kept (one person can have a few), the oldest change
 going first. `/pqol voicevolume` says how many people that is, and
