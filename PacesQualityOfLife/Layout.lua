@@ -22,11 +22,15 @@
 --     the character's layout isn't this computer's already. (Should the game
 --     apply it later instead, outside the call, it is its own and no reload
 --     is needed.)
---   * Once per login, a moment after the world is entered and the game has
---     its layouts, and never in combat (it waits for the fight to end). A
---     switch the game didn't take, or that didn't last across its reload,
---     isn't tried again - no reload after reload - until this computer's
---     layout is chosen again (/pqol layout use, or the options page).
+--   * At a login, not a /reload (PLAYER_ENTERING_WORLD says which): a layout
+--     the player picked stays until they log out. A moment after the world is
+--     entered and the game has its layouts, never in combat (it waits for the
+--     fight to end - across a /reload too) nor with Edit Mode open. A switch
+--     the game didn't take, or that didn't last across its reload, isn't
+--     tried again - no reload after reload - until this computer's layout is
+--     chosen again (/pqol layout use, or the options page).
+--   * Another layout coming on during the session (Edit Mode's menu, a new or
+--     imported layout, the game's own) is said once: it lasts until logout.
 
 local addonName, ns = ...
 
@@ -37,13 +41,22 @@ local SETTLE = 1           -- once the world is entered and the layouts are know
 local FRESH = 300          -- a switch made longer ago than this isn't the one this reload follows
 
 local entered = false      -- PLAYER_ENTERING_WORLD seen by this UI
-local done = false         -- this login's look taken
+local reloaded = false     -- ... and it said this UI is a /reload's, not a login's
+local done = false         -- this UI's look taken
 local soon = false         -- a look scheduled
+local inCall, appliedInCall = false, false -- (the game applying a layout inside our switch)
+local seen                 -- the layout on, as last looked at once this UI's look was taken
+local watching = false     -- a look at it scheduled
 local hinted = false       -- "another layout is on" said this session
 
 local function Active() return ns.IsOn("layout") end
 local function Clock() return time and time() or 0 end
 local function InCombat() return InCombatLockdown and InCombatLockdown() and true or false end
+
+local function Plain(v)
+    if v == nil or ns.IsSecret(v) then return nil end
+    return v
+end
 
 local function LayoutType(name, default)
     return Enum and Enum.EditModeLayoutType and Enum.EditModeLayoutType[name] or default
@@ -89,10 +102,23 @@ local function Valid(r)
                (type(r.preset) == "number" or type(r.kind) == "number")
 end
 
+-- one layout's key, to tell one from another whatever their index
+local function Key(r) return r and (r.name .. "\0" .. tostring(r.preset or r.kind)) or nil end
+
 -- this computer's layout, if one is kept
 local function Here()
     local r = ns.db and ns.db.layoutHere
     if Valid(r) then return r end
+end
+
+local function Label(r)
+    if not r then return "none" end
+    if r.preset then
+        local fmt = type(HUD_EDIT_MODE_PRESET_LAYOUT) == "string" and HUD_EDIT_MODE_PRESET_LAYOUT or "%s (Preset)"
+        local ok, text = pcall(string.format, fmt, r.name)
+        return ok and text or r.name
+    end
+    return r.name
 end
 
 -- a switch to it the game didn't take, or that didn't last across its
@@ -108,9 +134,10 @@ local function GiveUp(want, why)
              why)
 end
 
--- where a kept layout is in the game's list now: a preset by its number, a
--- saved one by its name (of its own kind first: an account's and a
--- character's layout may share one)
+-- where a kept layout is in the game's list now: a preset by its number (its
+-- name follows the client's language), a saved one by its name - of its own
+-- kind first (an account's and a character's own layout may share a name),
+-- else one of that name of the other kind
 local function Find(list, want)
     if not (list and want) then return end
     if want.preset then
@@ -127,16 +154,6 @@ local function Find(list, want)
         end
     end
     return other
-end
-
-local function Label(r)
-    if not r then return "none" end
-    if r.preset then
-        local fmt = type(HUD_EDIT_MODE_PRESET_LAYOUT) == "string" and HUD_EDIT_MODE_PRESET_LAYOUT or "%s (Preset)"
-        local ok, text = pcall(string.format, fmt, r.name)
-        return ok and text or r.name
-    end
-    return r.name
 end
 
 -- the layout on now
@@ -178,23 +195,25 @@ end
 --------------------------------------------------------------------------
 
 local function Look()
-    soon = false
     if done or not entered then return end
     local want = Active() and Here()
     if not want or GaveUp(want) then
         -- (switched on, or a layout chosen, later: from the next login)
         done = true
-        ns.db.layoutSwitch = nil
+        ns.db.layoutSwitch, ns.db.layoutDue = nil, nil
         return
     end
     if InCombat() then return end -- (PLAYER_REGEN_ENABLED looks again)
     local list, active = List()
     if not list then return end -- (EDIT_MODE_LAYOUTS_UPDATED looks again)
     done = true
-    -- (a switch made just before this reload)
-    local pending = ns.db.layoutSwitch
-    ns.db.layoutSwitch = nil
+    -- (a switch made just before this reload; a login's look not yet taken)
+    local pending, due = ns.db.layoutSwitch, ns.db.layoutDue
+    ns.db.layoutSwitch, ns.db.layoutDue = nil, nil
     if type(pending) ~= "table" or type(pending.at) ~= "number" or Clock() - pending.at >= FRESH then pending = nil end
+    -- (a /reload, its login's look taken: the layout on is the player's until
+    -- they log out - only the add-on's own switch, just before it, is looked at)
+    if reloaded and not due and not pending then return end
     if not EditModeAllowed() or EditModeOpen() then return end
     local i = Find(list, want)
     if not i then
@@ -212,10 +231,12 @@ local function Look()
     end
     if not (C_EditMode and C_EditMode.SetActiveLayout) or not CanReload() then return end
     ns.db.layoutSwitch = {name = want.name, at = Clock()}
+    inCall, appliedInCall = true, false
     local ok, err = pcall(C_EditMode.SetActiveLayout, i)
-    local _, applied = List()
-    if applied == i then
-        -- (applied inside that call, as add-on code: thrown away at once)
+    inCall = false
+    if appliedInCall then
+        -- (the game applied a layout inside that call, as add-on code: thrown
+        -- away at once - the next UI says whether the switch lasted)
         Reload()
         return
     end
@@ -230,34 +251,79 @@ local function Look()
     end
 end
 
-local function Soon()
-    if soon or done then return end
-    soon = true
-    C_Timer.After(SETTLE, ns.Guard("layout", Look))
-end
-
-local function OnEvent(_, event)
-    if event == "PLAYER_ENTERING_WORLD" then entered = true end
-    Soon()
-end
-
--- a layout picked in Edit Mode that isn't this computer's: it lasts until
--- logout - say so, once a session (the first time ever, when this computer
--- has none, how to keep it)
-local function OnPicked()
+-- another layout on: it lasts until logout - said once a session (the
+-- first time ever, when this computer has none, how to keep it)
+local function Hint()
     if not Active() then return end
     local cur = Current()
     if not cur then return end
     local want = Here()
-    if want then
-        local list, active = List()
-        if hinted or Find(list, want) == active then return end
-        hinted = true
+    if not want then
+        if not ns.db.layoutHinted then
+            ns.db.layoutHinted = true
+            ns.Print("Edit Mode: to have this computer switch to %s whenever you log in on it, type |cFFFFCC00/pqol layout use|r",
+                     Label(cur))
+        end
+        return
+    end
+    local list, active = List()
+    local i = Find(list, want)
+    if hinted or i == active then return end
+    hinted = true
+    if GaveUp(want) then
+        ns.Print("Edit Mode: %s is on - this computer's layout, %s, isn't switched to as you log in (its last switch didn't take); |cFFFFCC00/pqol layout use|r makes %s this computer's",
+                 Label(cur), Label(want), Label(cur))
+    elseif not i then
+        ns.Print("Edit Mode: %s is on - this computer's layout, %s, isn't one this character has (renamed or deleted?); |cFFFFCC00/pqol layout use|r makes %s this computer's",
+                 Label(cur), Label(want), Label(cur))
+    else
         ns.Print("Edit Mode: %s is on until you log out - this computer switches to %s as you log in (|cFFFFCC00/pqol layout use|r makes %s this computer's)",
                  Label(cur), Label(want), Label(cur))
-    elseif not ns.db.layoutHinted then
-        ns.db.layoutHinted = true
-        ns.Print("Edit Mode: to have this computer switch to %s whenever you log in on it, type |cFFFFCC00/pqol layout use|r", Label(cur))
+    end
+end
+
+-- the layout on, looked at once this UI's look is taken: another one than
+-- before is hinted at
+local function Watch()
+    watching = false
+    if not done then return end
+    local key = Key(Current())
+    if key == nil then return end
+    if seen ~= nil and key ~= seen then Hint() end
+    seen = key
+end
+
+local function LookSoon()
+    soon = false
+    Look()
+    if done and seen == nil then seen = Key(Current()) end
+end
+
+local function OnEvent(_, event, a1, a2)
+    if event == "EDIT_MODE_LAYOUTS_UPDATED" and inCall then appliedInCall = true end
+    if event == "PLAYER_ENTERING_WORLD" and not entered then
+        -- (the UI's first: a login's or a /reload's - a zone change's says
+        -- neither. A login's look is due until it is taken, across a /reload
+        -- if a fight held it up)
+        entered = true
+        if Plain(a2) == true and Plain(a1) ~= true then
+            reloaded = true
+        else
+            ns.db.layoutDue = true
+        end
+    end
+    if done then
+        if event == "EDIT_MODE_LAYOUTS_UPDATED" or (event == "PLAYER_SPECIALIZATION_CHANGED" and Plain(a1) == "player") then
+            if not watching then
+                watching = true
+                C_Timer.After(0, ns.Guard("layout", Watch))
+            end
+        end
+        return
+    end
+    if not soon then
+        soon = true
+        C_Timer.After(SETTLE, ns.Guard("layout", LookSoon))
     end
 end
 
@@ -288,6 +354,10 @@ end
 -- the options page's line under the switch
 function M.Note()
     local want = Here()
+    if want and not Active() then
+        return ("This computer: %s - not switched to while this is off. The button makes the layout on now this computer's, and switches this on."):format(
+                   Label(want))
+    end
     if want and GaveUp(want) then
         return ("This computer: %s - but the last switch to it didn't take, so it isn't tried again. Pick it in Edit Mode, then press the button to try again."):format(
                    Label(want))
@@ -301,17 +371,12 @@ end
 
 function M:Init()
     local f = CreateFrame("Frame")
-    for _, event in ipairs({"PLAYER_ENTERING_WORLD", "EDIT_MODE_LAYOUTS_UPDATED", "PLAYER_REGEN_ENABLED"}) do
+    for _, event in ipairs({"PLAYER_ENTERING_WORLD", "EDIT_MODE_LAYOUTS_UPDATED", "PLAYER_REGEN_ENABLED",
+                            "PLAYER_SPECIALIZATION_CHANGED"}) do
         pcall(f.RegisterEvent, f, event)
     end
     f:SetScript("OnEvent", ns.Guard("layout", OnEvent))
     M.eventFrame = f
-    -- (after the game's own: the layout picked in its menu)
-    if type(EditModeManagerFrame) == "table" and type(EditModeManagerFrame.SelectLayout) == "function" and hooksecurefunc then
-        M.hooked = pcall(hooksecurefunc, EditModeManagerFrame, "SelectLayout", function()
-            ns.SafeCall("layout", OnPicked)
-        end)
-    end
 end
 
 function M:Status()

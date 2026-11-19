@@ -179,16 +179,23 @@ action bars and frames it places - would be applied as add-on code, which
 can leave them unable to change in combat for the rest of the session.
 So the add-on switches and reloads the UI at once, and the reloaded UI
 applies the layout as the game's own. That's one extra loading screen,
-only when the character's layout isn't the computer's already - that is,
-the first login on a computer after playing on the other one. In combat
-it waits for the fight to end.
+only at a login (never at a /reload) and only when the character's
+layout isn't the computer's already - that is, the first login on a
+computer after playing on the other one. In combat it waits for the
+fight to end (a /reload meanwhile doesn't lose it); with Edit Mode open
+it leaves the layout to you.
 
-Picking another layout in Edit Mode keeps it until you log out (it says
-so); press **Use current** to make it the computer's instead.
-`/pqol layout forget` stops the switching. If the computer's layout is
-renamed or deleted, or is another character's own layout, nothing is
-switched and you're told. If a switch doesn't take, it isn't tried again
-(no reload after reload) until you choose the layout again.
+Another layout put on during a session - picked in Edit Mode, or a new,
+copied or imported one - stays until you log out, a /reload included
+(it says so); press **Use current** to make it the computer's instead.
+`/pqol layout forget` stops the switching.
+
+The computer's layout is found by its name (a preset by its number): one
+of the kind you kept first - the account's, or a character's own - else
+one of that name of the other kind. A character with no layout of that
+name (it was renamed or deleted, or it's another character's own) isn't
+switched, and you're told. If a switch doesn't take, it isn't tried
+again (no reload after reload) until you choose the layout again.
 
 "This computer" means this computer's own saved settings for Pace's QoL
 (in WoW's `WTF` folder, never sent to the game's servers). If you copy or

@@ -50,7 +50,7 @@ file's text can go there directly.
 
 ```
 1.3.0
-- New: each computer its own Edit Mode layout. Edit Mode's layouts are your account's, and so is which one each character has on, so playing on your laptop after your PC brings the PC's layout. Pick a computer's layout in Edit Mode, then press Use current next to "Edit Mode: each computer its own layout" in the options (or /pqol layout use) - once on each computer. Every character logging in there is then switched to it. The switch reloads the UI once, so the game applies the layout as its own and your bars keep working in combat; it only happens when the layout isn't the computer's already, and never in combat. /pqol layout forget stops it.
+- New: each computer its own Edit Mode layout. Edit Mode's layouts are your account's, and so is which one each character has on, so playing on your laptop after your PC brings the PC's layout. Pick a computer's layout in Edit Mode, then press Use current next to "Edit Mode: each computer its own layout" in the options (or /pqol layout use) - once on each computer. Every character logging in there is then switched to it. The switch reloads the UI once, so the game applies the layout as its own and your bars keep working in combat; it only happens at a login (not a /reload) when the layout isn't the computer's already, and never in combat. A layout you put on during a session stays until you log out. /pqol layout forget stops it.
 ```
 
 ## Changelog (1.2.1)

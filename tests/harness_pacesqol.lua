@@ -744,7 +744,10 @@ local function makePlayer(name, opts)
         local em = Widget("Frame", "EditModeManagerFrame")
         em.shown = false -- (shown while Edit Mode is open)
         em:RegisterEvent("EDIT_MODE_LAYOUTS_UPDATED")
-        em:SetScript("OnEvent", function(self, _, info)
+        em:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
+        em:SetScript("OnEvent", function(self, event, info)
+            -- (a spec change: the game reads its layouts again, EditModeManager.lua)
+            if event == "PLAYER_SPECIALIZATION_CHANGED" then info = env.C_EditMode.GetLayouts() end
             local layouts = {}
             for _, l in ipairs(EM_PRESETS) do
                 layouts[#layouts + 1] = {layoutName = l.layoutName, layoutType = 0, layoutIndex = l.layoutIndex, systems = {}}
@@ -767,6 +770,15 @@ local function makePlayer(name, opts)
         env.EditModeManagerFrame:SelectLayout(i)
         P.picking = false
     end
+    -- a new layout made in Edit Mode (New Layout, Copy, Import): the game
+    -- turns it on through C_EditMode.OnLayoutAdded, not SelectLayout
+    P.NewLayout = function(name)
+        table.insert(editModeServer.layouts, {layoutName = name, layoutType = 1})
+        editModeServer.active[P.guid] = #EM_PRESETS + #SavedLayouts()
+        table.insert(P.editModeLog, "new:" .. name)
+        FireEvent(P, "EDIT_MODE_LAYOUTS_UPDATED", env.C_EditMode.GetLayouts(), false)
+    end
+    env.HUD_EDIT_MODE_PRESET_LAYOUT = "%s (Preset)"
 
     -- the game's volume slider on someone's menu, built when the menu first
     -- opens: it takes C_VoiceChat.SetMemberVolume as it is then, and calls
@@ -3195,13 +3207,29 @@ do
         {layoutName = "Laptop", layoutType = 1},
     }
     -- (the game's list: 1 Modern, 2 Classic, 3 Gamepad, 4 j pace, 5 PC, 6 Laptop)
-    -- logging in: the game loads its layouts, the world is entered, a moment
+    -- a login: the game loads its layouts, the world is entered (as a
+    -- login), a moment; a /reload's UI (the add-on's own, or the player's):
+    -- the world is entered as a reload's
     local function Login(P)
         P.EditModeLoad()
         P.Fire("PLAYER_ENTERING_WORLD", true, false)
         advance(2)
         return P
     end
+    local function Reloaded(P)
+        P.EditModeLoad()
+        P.Fire("PLAYER_ENTERING_WORLD", false, true)
+        advance(2)
+        return P
+    end
+    -- logging out and in again on this computer (a character not logged in
+    -- yet: beforeLoad)
+    local function Relog(P, beforeLoad)
+        LogOut(P)
+        return makePlayer(P.name, {same = P, db = P.env.PacesQoLDB, beforeLoad = beforeLoad})
+    end
+    -- the player picking a layout in Edit Mode's menu, or making a new one
+    local function Pick(P, i) P.Pick(i); advance(0.1) end
     local function Log(P) return table.concat(P.editModeLog, " ") end
     local function Note(P)
         return P.optionsPanel and P.optionsPanel.layoutNote and P.optionsPanel.layoutNote.text or ""
@@ -3216,11 +3244,11 @@ do
     check(Note(pc):find("This computer: none yet", 1, true), "layout: (the options page says none is chosen)")
     -- a layout picked in Edit Mode: how to keep it for this computer, said once
     pc.printed = {}
-    pc.Pick(5)
+    Pick(pc, 5)
     check(Printed(pc, "to have this computer switch to PC whenever you log in on it, type"),
           "layout: a layout picked in Edit Mode, this computer having none: it says how to keep it")
     pc.printed = {}
-    pc.Pick(4); pc.Pick(5)
+    Pick(pc, 4); Pick(pc, 5)
     check(not Printed(pc, "to have this computer"), "layout: (said once only)")
     -- kept for this computer
     pc.printed = {}
@@ -3239,7 +3267,7 @@ do
     local lap = Keep(Login(makePlayer("LayA", {same = pc, db = {}})))
     check(lap.ns.db.layoutHere == nil and Log(lap) == "apply:5" and not lap.reloadAsked,
           "layout: the laptop comes up with the PC's layout (the account's), nothing chosen there: left as it is")
-    lap.Pick(6)
+    Pick(lap, 6)
     local use
     for _, f in ipairs(lap.frames) do if f.kind == "Button" and f.text == "Use current" then use = f end end
     lap.printed = {}
@@ -3255,113 +3283,167 @@ do
     local pc2 = Keep(Login(makePlayer("LayA", {same = lap, db = pc.env.PacesQoLDB})))
     check(Log(pc2) == "apply:6 set:addon:5 apply:5 reload",
           "layout: back on the PC with the laptop's layout on: switched to the PC's, the UI reloaded at once")
-    local pc3 = Keep(Login(Reload(pc2)))
+    local pc3 = Keep(Reloaded(Reload(pc2)))
     check(Log(pc3) == "apply:5" and Printed(pc3, "this computer's layout, PC, is on (switched as you logged in)") and
           pc3.ns.db.layoutSwitch == nil,
           "layout: after the reload the PC's is on, said so, nothing switched again")
-    local pc4 = Keep(Login(Reload(pc3)))
+    local pc4 = Keep(Login(Relog(pc3)))
     check(Log(pc4) == "apply:5" and not Printed(pc4, "Edit Mode"), "layout: (logging in with it on: nothing done, nothing said)")
     -- and the laptop again: switched to the laptop's
     LogOut(pc4)
     local lap2 = Keep(Login(makePlayer("LayA", {same = pc4, db = lap.env.PacesQoLDB})))
     check(Log(lap2) == "apply:5 set:addon:6 apply:6 reload", "layout: and on the laptop again: switched to the laptop's")
-    local lap3 = Keep(Login(Reload(lap2)))
+    local lap3 = Keep(Reloaded(Reload(lap2)))
     LogOut(lap3)
 
     -- another character on the PC, last played on the laptop: switched too
     local alt = Keep(Login(makePlayer("LayB", {db = pc.env.PacesQoLDB,
                                               beforeLoad = function(N) editModeServer.active[N.guid] = 6 end})))
     check(Log(alt) == "apply:6 set:addon:5 apply:5 reload", "layout: another character on the PC: switched to the PC's too")
-    local alt2 = Keep(Login(Reload(alt)))
+    local alt2 = Keep(Reloaded(Reload(alt)))
     LogOut(alt2)
 
     -- a layout picked in Edit Mode that isn't this computer's: it lasts until
-    -- logout, and it says so (once a session); the next login switches back
+    -- logout - a /reload too - and it says so (once a session); the next
+    -- login switches back
     local pc5 = Keep(Login(makePlayer("LayA", {same = lap3, db = pc.env.PacesQoLDB})))
-    pc5 = Keep(Login(Reload(pc5)))
+    pc5 = Keep(Reloaded(Reload(pc5)))
     pc5.printed = {}
-    pc5.Pick(4)
+    Pick(pc5, 4)
     check(Printed(pc5, "j pace is on until you log out - this computer switches to PC as you log in") and
           pc5.ns.db.layoutHere.name == "PC",
           "layout: another layout picked in Edit Mode: on until you log out, and it says so")
     pc5.printed = {}
-    pc5.Pick(5); pc5.Pick(4)
+    Pick(pc5, 5); Pick(pc5, 4)
     check(not Printed(pc5, "until you log out"), "layout: (said once a session)")
-    local pc6 = Keep(Login(Reload(pc5)))
-    check(Log(pc6) == "apply:4 set:addon:5 apply:5 reload", "layout: (and switched back at the next login)")
-    local pc7 = Keep(Login(Reload(pc6)))
-
-    -- logging in in combat: nothing switched until the fight is over
+    local pc6 = Keep(Reloaded(Reload(pc5)))
+    check(Log(pc6) == "apply:4" and not pc6.reloadAsked and not Printed(pc6, "Edit Mode"),
+          "layout: a /reload keeps the layout picked (on until you log out): nothing switched, no reload")
+    local pc7 = Keep(Login(Relog(pc6)))
+    check(Log(pc7) == "apply:4 set:addon:5 apply:5 reload", "layout: (and the next login switches back)")
+    pc7 = Keep(Reloaded(Reload(pc7)))
+    -- a layout made new in Edit Mode (not through its menu), and the game's
+    -- own switch at a spec change: said too
+    pc7.printed = {}
+    pc7.NewLayout("PC 2")
+    advance(0.1)
+    check(Printed(pc7, "PC 2 is on until you log out - this computer switches to PC as you log in"),
+          "layout: a new layout made in Edit Mode: on until you log out, and it says so")
+    local pc7b = Keep(Login(Relog(pc7)))
+    check(Log(pc7b) == "apply:7 set:addon:5 apply:5 reload", "layout: (the next login switches back)")
+    table.remove(editModeServer.layouts)
+    pc7 = Keep(Reloaded(Reload(pc7b)))
+    pc7.printed = {}
     editModeServer.active[pc7.guid] = 6
-    local pc8 = Keep(Login(Reload(pc7, {beforeLoad = function(N) N.inCombat = true end})))
+    pc7.Fire("PLAYER_SPECIALIZATION_CHANGED", "player")
+    advance(0.1)
+    check(Printed(pc7, "Laptop is on until you log out - this computer switches to PC as you log in"),
+          "layout: the game switching at a spec change: said too")
+    editModeServer.active[pc7.guid] = 5
+    pc7.Fire("PLAYER_SPECIALIZATION_CHANGED", "player")
+    advance(0.1)
+
+    -- logging in in combat: nothing switched until the fight is over - a
+    -- /reload meanwhile too
+    editModeServer.active[pc7.guid] = 6
+    local pc8 = Keep(Login(Relog(pc7, function(N) N.inCombat = true end)))
     check(Log(pc8) == "apply:6" and not pc8.reloadAsked, "layout: logging in in combat: nothing switched")
+    pc8 = Keep(Reloaded(Reload(pc8, {beforeLoad = function(N) N.inCombat = true end})))
+    check(Log(pc8) == "apply:6" and not pc8.reloadAsked, "layout: (a /reload still in combat: nothing switched)")
     pc8.inCombat = false
     pc8.Fire("PLAYER_REGEN_ENABLED")
     advance(2)
-    check(Log(pc8) == "apply:6 set:addon:5 apply:5 reload", "layout: (switched once the fight is over)")
+    check(Log(pc8) == "apply:6 set:addon:5 apply:5 reload", "layout: (switched once the fight is over, the login's look kept across the /reload)")
 
     -- a switch that doesn't last across its reload: not tried again (no
     -- reload after reload) until the layout is chosen again
-    local pc9 = Keep(Login(Reload(pc8, {beforeLoad = function(N) editModeServer.active[N.guid] = 6 end})))
+    local pc9 = Keep(Reloaded(Reload(pc8, {beforeLoad = function(N) editModeServer.active[N.guid] = 6 end})))
     check(Log(pc9) == "apply:6" and not pc9.reloadAsked and Printed(pc9, "didn't last across the reload - not tried again"),
           "layout: a switch that didn't last across its reload: not tried again, and it says so")
-    local pc10 = Keep(Login(Reload(pc9)))
+    local pc10 = Keep(Login(Relog(pc9)))
     pc10.printed = {}
     pc10.Slash("layout")
     check(Log(pc10) == "apply:6" and not pc10.reloadAsked and Printed(pc10, "not switched to: the last switch didn't take") and
           Note(pc10):find("didn't take", 1, true),
           "layout: (nor at the next login; /pqol layout and the options page say why)")
-    pc10.Pick(5)
+    -- this computer's own layout picked (as it says to): nothing said; then
+    -- another: no switch at login promised
+    pc10.printed = {}
+    Pick(pc10, 5)
+    check(not Printed(pc10, "Edit Mode:"), "layout: this computer's own layout picked in Edit Mode: nothing said")
+    Pick(pc10, 4)
+    check(not Printed(pc10, "switches to PC as you log in") and
+          Printed(pc10, "j pace is on - this computer's layout, PC, isn't switched to as you log in (its last switch didn't take)"),
+          "layout: (another picked, the switch given up: no switch at login promised)")
+    Pick(pc10, 5)
     pc10.Slash("layout use")
     editModeServer.active[pc10.guid] = 6
-    local pc11 = Keep(Login(Reload(pc10)))
+    local pc11 = Keep(Login(Relog(pc10)))
     check(Log(pc11) == "apply:6 set:addon:5 apply:5 reload", "layout: chosen again: switched again")
-    local pc12 = Keep(Login(Reload(pc11)))
+    local pc12 = Keep(Reloaded(Reload(pc11)))
 
     -- the game not taking the switch (it returns nothing): no reload, not tried again
     editModeServer.active[pc12.guid] = 6
-    local pc13 = Keep(Login(Reload(pc12, {beforeLoad = function(N) N.editModeRefuses = true end})))
+    local pc13 = Keep(Login(Relog(pc12, function(N) N.editModeRefuses = true end)))
     check(Log(pc13) == "apply:6" and not pc13.reloadAsked and Printed(pc13, "the game didn't take the switch") and
           pc13.ns.db.layoutSwitch == nil,
           "layout: the game not taking the switch: no reload, and it says so")
     pc13.editModeRefuses = false
-    pc13.Pick(5)
+    Pick(pc13, 5)
     pc13.Slash("layout use")
 
     -- a game applying the layout after the call instead (as its own): no
     -- reload needed
     editModeServer.active[pc13.guid] = 6
-    local pc14 = Keep(Login(Reload(pc13, {beforeLoad = function(N) N.editModeAsync = true end})))
+    local pc14 = Keep(Login(Relog(pc13, function(N) N.editModeAsync = true end)))
     check(Log(pc14) == "apply:6 set:addon:5 apply:5" and not pc14.reloadAsked and
-          Printed(pc14, "this computer's layout, PC, is on (switched as you logged in)") and pc14.ns.db.layoutSwitch == nil,
+          Printed(pc14, "this computer's layout, PC, is on (switched as you logged in)") and pc14.ns.db.layoutSwitch == nil and
+          not Printed(pc14, "until you log out"),
           "layout: the game applying the switch after the call, as its own: no reload")
     pc14.editModeAsync = false
 
-    -- a preset as this computer's layout
-    pc14.Pick(2)
+    -- a preset as this computer's layout: kept by its number, said by its name
+    Pick(pc14, 2)
     pc14.Slash("layout use")
     check(pc14.ns.db.layoutHere and pc14.ns.db.layoutHere.preset == 1, "layout: (a preset kept by its number)")
     editModeServer.active[pc14.guid] = 6
-    local pc15 = Keep(Login(Reload(pc14)))
+    local pc15 = Keep(Login(Relog(pc14)))
     check(Log(pc15) == "apply:6 set:addon:2 apply:2 reload", "layout: a preset as this computer's layout: switched to it")
-    local pc16 = Keep(Login(Reload(pc15)))
-    check(Printed(pc16, "is on (switched as you logged in)"), "layout: (and said, with its name)")
-    pc16.Pick(5)
+    local pc16 = Keep(Reloaded(Reload(pc15)))
+    check(Printed(pc16, "this computer's layout, Classic (Preset), is on (switched as you logged in)"),
+          "layout: (and said, with its name)")
+    -- (found by its number, not its name: the game's preset names follow the
+    -- client's language)
+    EM_PRESETS[2].layoutName = "Klassisch"
+    editModeServer.active[pc16.guid] = 6
+    local pc16b = Keep(Login(Relog(pc16)))
+    check(Log(pc16b) == "apply:6 set:addon:2 apply:2 reload",
+          "layout: (a preset found by its number: its name in the client's language changed)")
+    pc16 = Keep(Reloaded(Reload(pc16b)))
+    EM_PRESETS[2].layoutName = "Classic"
+    pc16.EditModeLoad()
+    Pick(pc16, 5)
     pc16.Slash("layout use")
 
-    -- this computer's layout renamed or deleted (by name): nothing switched, said so
+    -- this computer's layout renamed or deleted (by name): nothing switched,
+    -- said so - and a layout picked then promises no switch either
     editModeServer.layouts[2].layoutName = "Desk"
     editModeServer.active[pc16.guid] = 6
-    local pc17 = Keep(Login(Reload(pc16)))
+    local pc17 = Keep(Login(Relog(pc16)))
     check(Log(pc17) == "apply:6" and not pc17.reloadAsked and Printed(pc17, "this computer's layout, PC, isn't one this character has"),
           "layout: this computer's layout renamed or deleted: nothing switched, and it says so")
+    pc17.printed = {}
+    Pick(pc17, 4)
+    check(not Printed(pc17, "until you log out") and Printed(pc17, "j pace is on - this computer's layout, PC, isn't one this character has"),
+          "layout: (a layout picked then: no switch at login promised)")
     editModeServer.layouts[2].layoutName = "PC"
+    pc17.EditModeLoad()
 
     -- a character's own layout as this computer's: another character, who
-    -- doesn't have it, isn't switched
+    -- has none of that name, isn't switched
     table.insert(editModeServer.layouts, {layoutName = "Mine", layoutType = 2, owner = pc17.guid})
     pc17.EditModeLoad()
-    pc17.Pick(7)
+    Pick(pc17, 7)
     pc17.Slash("layout use")
     check(pc17.ns.db.layoutHere and pc17.ns.db.layoutHere.name == "Mine" and pc17.ns.db.layoutHere.kind == 2,
           "layout: (a character's own layout kept, with its kind)")
@@ -3369,112 +3451,124 @@ do
     local alt3 = Keep(Login(makePlayer("LayB", {same = alt2, db = pc17.env.PacesQoLDB})))
     check(not alt3.reloadAsked and Printed(alt3, "this computer's layout, Mine, isn't one this character has"),
           "layout: a character's own layout as this computer's: another character isn't switched, and is told")
+    alt3.printed = {}
+    Pick(alt3, 4)
+    check(not Printed(alt3, "until you log out") and Printed(alt3, "this computer's layout, Mine, isn't one this character has"),
+          "layout: (a layout that character picks: no switch at login promised)")
     LogOut(alt3)
     table.remove(editModeServer.layouts)
     local pc18 = Keep(Login(makePlayer("LayA", {same = pc17, db = pc17.env.PacesQoLDB})))
-    pc18.Pick(5)
+    Pick(pc18, 5)
     pc18.Slash("layout use")
 
-    -- switched off: nothing switched at login; switched on mid-session:
-    -- nothing until the next login
+    -- switched off: nothing switched at login, and the options page says so;
+    -- switched on mid-session: nothing until the next login
     pc18.Slash("layout off")
+    check(Note(pc18):find("This computer: PC - not switched to while this is off", 1, true),
+          "layout: switched off: the options page says it isn't switched to")
     editModeServer.active[pc18.guid] = 6
-    local pc19 = Keep(Login(Reload(pc18)))
+    local pc19 = Keep(Login(Relog(pc18)))
     check(Log(pc19) == "apply:6" and not pc19.reloadAsked, "layout: switched off: nothing switched as you log in")
     pc19.Slash("layout on")
+    check(Note(pc19):find("every character is switched to it as it logs in here", 1, true),
+          "layout: (switched on again: the options page says it is switched to)")
     pc19.Fire("EDIT_MODE_LAYOUTS_UPDATED", pc19.env.C_EditMode.GetLayouts(), false)
-    pc19.inCombat = true; pc19.inCombat = false
     pc19.Fire("PLAYER_REGEN_ENABLED")
     advance(2)
     check(Log(pc19) == "apply:6 apply:6" and not pc19.reloadAsked, "layout: (switched on mid-session: nothing until the next login)")
-    local pc20 = Keep(Login(Reload(pc19)))
+    local pc20 = Keep(Login(Relog(pc19)))
     check(Log(pc20) == "apply:6 set:addon:5 apply:5 reload", "layout: (and at the next login, switched)")
-    local pc21 = Keep(Login(Reload(pc20)))
+    local pc21 = Keep(Reloaded(Reload(pc20)))
 
     -- forgotten: nothing switched
     pc21.Slash("layout forget")
     editModeServer.active[pc21.guid] = 6
-    local pc22 = Keep(Login(Reload(pc21)))
+    local pc22 = Keep(Login(Relog(pc21)))
     check(pc22.ns.db.layoutHere == nil and Log(pc22) == "apply:6" and not pc22.reloadAsked,
           "layout: /pqol layout forget: nothing switched as you log in")
 
     -- Edit Mode off by a game rule: nothing switched
-    pc22.Slash("layout use") -- (Laptop, on now)
-    pc22.Pick(5); pc22.Slash("layout use")
+    Pick(pc22, 5); pc22.Slash("layout use")
     editModeServer.active[pc22.guid] = 6
     ENUM.GameRule = {EditModeDisabled = 9}
-    local pc23 = Keep(Login(Reload(pc22, {beforeLoad = function(N, env)
+    local pc23 = Keep(Login(Relog(pc22, function(N, env)
         env.C_GameRules = {IsGameRuleActive = function(rule) return rule == 9 end}
-    end})))
+    end)))
     check(Log(pc23) == "apply:6" and not pc23.reloadAsked, "layout: Edit Mode off by a game rule: nothing switched")
     ENUM.GameRule = nil
 
     -- the layouts known before the world is entered: nothing until it is
-    pc23.Slash("layout use")
-    pc23.Pick(5); pc23.Slash("layout use")
+    Pick(pc23, 5)
     editModeServer.active[pc23.guid] = 6
-    local pc24 = Keep(Reload(pc23))
+    local pc24 = Keep(Relog(pc23))
     pc24.EditModeLoad()
     advance(5)
     check(Log(pc24) == "apply:6" and not pc24.reloadAsked, "layout: (nothing switched before the world is entered)")
     pc24.Fire("PLAYER_ENTERING_WORLD", true, false)
     advance(2)
     check(Log(pc24) == "apply:6 set:addon:5 apply:5 reload", "layout: (switched once it is)")
-    local pc25 = Keep(Login(Reload(pc24)))
+    local pc25 = Keep(Reloaded(Reload(pc24)))
 
     -- the world entered before the game has its layouts: switched once it has
     editModeServer.active[pc25.guid] = 6
-    local pc25b = Keep(Reload(pc25))
+    local pc25b = Keep(Relog(pc25))
     pc25b.Fire("PLAYER_ENTERING_WORLD", true, false)
     advance(5)
     check(Log(pc25b) == "" and not pc25b.reloadAsked, "layout: (nothing before the game has its layouts)")
     pc25b.EditModeLoad()
     advance(2)
     check(Log(pc25b) == "apply:6 set:addon:5 apply:5 reload", "layout: the world entered before the game has its layouts: switched once it has")
-    pc25 = Keep(Login(Reload(pc25b)))
+    pc25 = Keep(Reloaded(Reload(pc25b)))
 
     -- Edit Mode open as it would switch: left to the player
     editModeServer.active[pc25.guid] = 6
-    local pc25c = Keep(Reload(pc25))
+    local pc25c = Keep(Relog(pc25))
     pc25c.env.EditModeManagerFrame:Show()
     Login(pc25c)
     check(Log(pc25c) == "apply:6" and not pc25c.reloadAsked, "layout: Edit Mode open as it would switch: left to the player")
     pc25c.env.EditModeManagerFrame:Hide()
-    pc25c.Pick(5)
-    pc25 = Keep(Login(Reload(pc25c)))
+    Pick(pc25c, 5)
+    pc25 = Keep(Login(Relog(pc25c)))
 
     -- a switch marker from long ago (its reload never came): not taken as
-    -- this reload's - switched as usual
+    -- one just made - switched as usual
     editModeServer.active[pc25.guid] = 6
     pc25.ns.db.layoutSwitch = {name = "PC", at = math.floor(clock) - 1000}
-    local pc26 = Keep(Login(Reload(pc25)))
+    local pc26 = Keep(Login(Relog(pc25)))
     check(Log(pc26) == "apply:6 set:addon:5 apply:5 reload" and pc26.ns.db.layoutFailed == nil,
-          "layout: a switch marker from long ago isn't this reload's: switched as usual")
-    local pc27 = Keep(Login(Reload(pc26)))
+          "layout: a switch marker from long ago isn't taken as one just made: switched as usual")
+    local pc27 = Keep(Reloaded(Reload(pc26)))
 
     -- an account's layout and a character's own with the same name: the kept
-    -- one's own kind first
+    -- one's own kind first; a character without one of its kind: the other
     table.insert(editModeServer.layouts, {layoutName = "PC", layoutType = 2, owner = pc27.guid})
     pc27.EditModeLoad()
-    pc27.Pick(7)
+    Pick(pc27, 7)
     pc27.Slash("layout use")
     check(pc27.ns.db.layoutHere.kind == 2, "layout: (this character's own PC kept)")
-    pc27.Pick(5)
-    local pc28 = Keep(Login(Reload(pc27)))
+    Pick(pc27, 5)
+    local pc28 = Keep(Login(Relog(pc27)))
     check(Log(pc28) == "apply:5 set:addon:7 apply:7 reload",
           "layout: an account's and a character's layout of one name: the kept one's own kind is switched to")
-    local pc29 = Keep(Login(Reload(pc28)))
+    local pc29 = Keep(Reloaded(Reload(pc28)))
+    LogOut(pc29)
+    local alt4 = Keep(Login(makePlayer("LayB", {same = alt3, db = pc29.env.PacesQoLDB,
+                                               beforeLoad = function(N) editModeServer.active[N.guid] = 6 end})))
+    check(Log(alt4) == "apply:6 set:addon:5 apply:5 reload",
+          "layout: another character's own layout as this computer's, the account's of that name: that one switched to")
+    LogOut(Keep(Reloaded(Reload(alt4))))
+    pc29 = Keep(Login(makePlayer("LayA", {same = pc29, db = pc29.env.PacesQoLDB})))
     table.remove(editModeServer.layouts)
     pc29.EditModeLoad()
-    pc29.Pick(5)
+    Pick(pc29, 5)
     pc29.Slash("layout use")
 
     -- the game's call failing outright: an error noted (/pqol status), no
     -- reload, tried again next time (not given up on)
     editModeServer.active[pc29.guid] = 6
-    local pc30 = Keep(Login(Reload(pc29, {beforeLoad = function(N)
+    local pc30 = Keep(Login(Relog(pc29, function(N)
         N.env.C_EditMode.SetActiveLayout = function() error("no such layout") end
-    end})))
+    end)))
     local errs = 0
     for _, e in ipairs(pc30.ns.errors) do if e:find("^layout:") then errs = errs + 1 end end
     check(errs == 1 and not pc30.reloadAsked and pc30.ns.db.layoutFailed == nil and pc30.ns.db.layoutSwitch == nil,
