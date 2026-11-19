@@ -82,12 +82,54 @@ looking (with Chat Channels open on the stream) and the one in voice. It
 says what was sent, what came back and what the game refused, without
 names. `/pqol voice log` lists the last messages.
 
+Since 1.2.0 a Battle.net friend is also asked when the community gives
+no Battle.net account for them: the account is then read from their
+GUID, as the game's own menus do. 1.1.0 asked nobody in that case - one
+possible reason for a report of a friend in voice who never showed
+(`/pqol voice` says when it happened). Not tried in game yet.
+
+## Voice chat: each person's volume, kept
+
+Right-click someone in a voice channel and the slider under their name
+sets how loud they are - but the game doesn't keep it. Pace's QoL
+remembers the volume you set for each person and sets it again whenever
+they're in voice with you: when they join your channel, when you join
+theirs, after a /reload, and the next time you play. It sets nothing when
+the volume already matches, and keeps only what you set with the slider
+(never the game's own resets). Nothing is read or set during the game's
+chat lockdown (dungeons, raids, encounters); it catches up after.
+
+A person is known by the GUID the voice channel gives - their character,
+or in a Battle.net community their Battle.net account - and in a
+Battle.net community also by their place in it, should the account's
+GUID change between sessions. Up to 500 are kept, the oldest change going
+first; `/pqol voicevolume forget` forgets them all. Not tried in game yet.
+
+## Party frames: your party's pets
+
+The game's standard party frames (not the raid-style ones) have a pet
+frame under each party member, but WoW Forever's options have no switch
+for it, so a hunter's or warlock's pet never shows. Tick **Party frames:
+show your party members' pets** in the options (or `/pqol partypets on`)
+and they show **after your next /reload** - the options page has a
+**Reload now** button. Untick it to hide them again (also at a reload).
+
+Why a reload: the party frames act on this setting the moment it
+changes, and changed from an add-on that would run as add-on code,
+which could leave them unable to show a pet or move in combat until a
+reload anyway. At the reload they read it afresh. Nothing is changed in
+combat: a reload during a fight leaves it for the next one. It is the
+game's own setting (`showPartyPets`, the same as typing
+`/console showPartyPets 1` and then reloading), so it stays as it is
+even with Pace's QoL removed. Not tried in game yet.
+
 ## Commands
 
 - `/pqol` - the options page
 - `/pqol status` - what's on, and any errors this session
-- `/pqol <feature> on|off` - `questlog`, `lfgroles`, `zonetracker`, `voice`
+- `/pqol <feature> on|off` - `questlog`, `lfgroles`, `zonetracker`, `voice`, `voicevolume`, `partypets`
 - `/pqol voice` - what voice sharing sent, heard and was refused (`/pqol voice log`: the last messages)
+- `/pqol voicevolume` - how many volumes are kept (`/pqol voicevolume forget`: forget them all)
 
 ## Offline tests
 

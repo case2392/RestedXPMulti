@@ -27,12 +27,20 @@ local function MakeCheck(parent, x, y, text, get, set)
     return cb, math.max(30, h + 12)
 end
 
+local function Dim(cb, on)
+    if on then cb:Enable() else cb:Disable() end
+    cb.label:SetFontObject(on and "GameFontHighlight" or "GameFontDisable")
+end
+
 function ns.RefreshOptions()
     for _, cb in ipairs(checks) do cb:SetChecked(cb.get() and true or false) end
-    if panel and panel.voiceShare then
-        local on = ns.IsOn("voice")
-        if on then panel.voiceShare:Enable() else panel.voiceShare:Disable() end
-        panel.voiceShare.label:SetFontObject(on and "GameFontHighlight" or "GameFontDisable")
+    if panel and panel.voiceShare then Dim(panel.voiceShare, ns.IsOn("voice")) end
+    local pets = ns.PartyPets
+    if panel and panel.petsNote and pets then
+        local text, waiting = pets.Note()
+        panel.petsNote:SetText(text)
+        panel.petsReload:SetShown(waiting and true or false)
+        if panel.petsCheck then Dim(panel.petsCheck, pets.Available()) end
     end
 end
 
@@ -51,10 +59,27 @@ function ns.BuildOptions()
     local y = -64
     for _, key in ipairs(ns.featureOrder) do
         local feature = ns.features[key]
-        local _, h = MakeCheck(panel, 16, y, feature.label,
-                               function() return ns.IsOn(key) end,
-                               function(on) ns.SetFeature(key, on) end)
+        local check, h = MakeCheck(panel, 16, y, feature.label,
+                                   function() return ns.IsOn(key) end,
+                                   function(on) ns.SetFeature(key, on) end)
         y = y - h
+        if key == "partypets" then
+            -- what the switch waits for, and a button for the reload
+            local note = panel:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
+            note:SetPoint("TOPLEFT", 48, y + 4)
+            note:SetWidth(LABEL_WIDTH - 160)
+            note:SetJustifyH("LEFT")
+            if note.SetWordWrap then note:SetWordWrap(true) end
+            local reload = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+            reload:SetSize(110, 22)
+            reload:SetPoint("TOPLEFT", LABEL_WIDTH - 96, y + 6)
+            reload:SetText("Reload now")
+            reload:SetScript("OnClick", function()
+                if ns.PartyPets then ns.SafeCall("partypets", ns.PartyPets.ReloadNow) end
+            end)
+            panel.petsCheck, panel.petsNote, panel.petsReload = check, note, reload
+            y = y - 30
+        end
         if key == "voice" then
             local cb, h2 = MakeCheck(panel, 44, y,
                 "Answer Pace's QoL users who ask whether I'm in a community's voice channel (needed for them to see you; only people who also run Pace's QoL can see anyone)",

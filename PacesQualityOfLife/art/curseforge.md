@@ -27,7 +27,7 @@ rather match "Classic UI (Forever)" and "CrossTalk (Forever)", use
 
 ## Summary
 
-> Track or untrack a whole zone's quests in one click, filter Looking For Group players by role, keep the quest tracker on your zone, and see who's in voice.
+> Track or untrack a whole zone's quests in one click, filter Looking For Group players by role, keep the quest tracker on your zone, see who's in voice, keep each person's voice volume, and see your party's pets.
 
 ## Description
 
@@ -40,11 +40,20 @@ file's text can go there directly.
 
 | Field | Value |
 |---|---|
-| File | `dist/PacesQualityOfLife-1.1.0.zip` (contains the `PacesQualityOfLife` folder) |
-| Display name | Pace's Quality of Life 1.1.0 |
-| Release type | Beta (1.1.0's voice changes not tried in game yet; switch to Release once they have been) |
+| File | `dist/PacesQualityOfLife-1.2.0.zip` (contains the `PacesQualityOfLife` folder) |
+| Display name | Pace's Quality of Life 1.2.0 |
+| Release type | Beta (1.2.0's party pets, voice volumes and voice fix not tried in game yet; switch to Release once they have been) |
 | Game version | WoW Forever |
-| Changelog | below: 1.1.0's, and 1.0.0's under it if 1.0.0 was never uploaded |
+| Changelog | below: 1.2.0's, and the older ones under it if they were never uploaded |
+
+## Changelog (1.2.0)
+
+```
+1.2.0
+- New: your party's pets. The standard party frames can show a pet under each party member, but WoW Forever's options have no switch for it: tick "Party frames: show your party members' pets" (or /pqol partypets on). It takes effect at your next /reload - the options page has a Reload now button - so the party frames take it cleanly and keep working in combat.
+- New: voice volumes kept. The volume you set for someone in voice (right-click them, the slider) is remembered and set again whenever they're in voice with you, the next time you play too. /pqol voicevolume forget forgets them all.
+- Voice: a Battle.net friend in a Battle.net community is now asked even when the community gives no Battle.net account for them (it is read from their GUID, as the game's own menus do). 1.1.0 asked nobody then - one possible reason a friend in voice never showed. /pqol voice says when it happened.
+```
 
 ## Changelog (1.1.0)
 

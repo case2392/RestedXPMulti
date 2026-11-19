@@ -444,6 +444,22 @@ local function ForeverAccounts(account)
     return out
 end
 
+-- The Battle.net account behind a Battle.net community member's GUID. The
+-- club's member info may carry no account id (bnetAccountId is nilable);
+-- Blizzard's own menus then read it from the GUID like this
+-- (UnitPopupSharedUtil.GetBNetIDAccount).
+local function AccountFromGUID(guid)
+    if type(guid) ~= "string" or not (C_AccountInfo and C_AccountInfo.IsGUIDBattleNetAccountType and
+                                          C_AccountInfo.GetIDFromBattleNetAccountGUID) then
+        return
+    end
+    local ok, isBN = pcall(C_AccountInfo.IsGUIDBattleNetAccountType, guid)
+    if not ok or ns.IsSecret(isBN) or isBN ~= true then return end
+    local okID, id = pcall(C_AccountInfo.GetIDFromBattleNetAccountGUID, guid)
+    id = okID and Plain(id) or nil
+    if type(id) == "number" and id > 0 then return id end
+end
+
 local function GroupChannel()
     if LE_PARTY_CATEGORY_INSTANCE and IsInGroup and IsInGroup(LE_PARTY_CATEGORY_INSTANCE) then
         return "INSTANCE_CHAT"
@@ -460,7 +476,7 @@ function M.Targets(clubId)
     local club = tostring(clubId)
     local out = {}
     local book = {byGuid = {}, byAccount = {}, route = {}, guidOf = {}}
-    local counts = {members = 0, online = 0, bn = 0, whisper = 0, faction = 0, none = 0}
+    local counts = {members = 0, online = 0, bn = 0, whisper = 0, faction = 0, none = 0, viaGuid = 0}
     books[club], reach[club] = book, counts
     local clubType = ClubType(clubId)
     counts.clubType = clubType
@@ -474,6 +490,11 @@ function M.Targets(clubId)
             if okInfo and type(m) == "table" then
                 counts.members = counts.members + 1
                 local guid, account = Plain(m.guid), Plain(m.bnetAccountId)
+                local viaGuid = false
+                if account == nil and not m.isSelf then
+                    account = AccountFromGUID(guid)
+                    viaGuid = account ~= nil
+                end
                 if guid then
                     book.byGuid[guid] = memberId
                     book.guidOf[memberId] = guid
@@ -493,7 +514,10 @@ function M.Targets(clubId)
                         out[#out + 1] = {bn = g.id, key = key, memberId = memberId}
                         found = true
                     end
-                    if found then counts.bn = counts.bn + 1 end
+                    if found then
+                        counts.bn = counts.bn + 1
+                        if viaGuid then counts.viaGuid = counts.viaGuid + 1 end
+                    end
                     if clubType ~= nil and clubType == types.Character then
                         local faction = MemberFaction(m)
                         if faction and myFaction and faction ~= myFaction then
@@ -1412,8 +1436,9 @@ function M.Report()
              CLUB_KIND[c.clubType] or ("club type " .. tostring(c.clubType)), club, tostring(streamId),
              c.members or 0, c.online or 0, rows.n, rows.B, rows.P, rows.none,
              rows.n > 0 and not rows.own and "; my own row is not among them" or "")
-        Line("can ask: guild %s, group %s, Battle.net friends on Forever %d, by whisper %d, other faction %d, no way to reach %d",
-             c.guild and "yes" or "no", c.group or "no", c.bn or 0, c.whisper or 0, c.faction or 0, c.none or 0)
+        Line("can ask: guild %s, group %s, Battle.net friends on Forever %d, by whisper %d, other faction %d, no way to reach %d%s",
+             c.guild and "yes" or "no", c.group or "no", c.bn or 0, c.whisper or 0, c.faction or 0, c.none or 0,
+             (c.viaGuid or 0) > 0 and ("; for %d of those friends the community gave no account, read from the GUID"):format(c.viaGuid) or "")
     else
         Line("looking at: no community stream selected in Chat Channels")
     end

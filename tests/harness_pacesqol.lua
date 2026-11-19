@@ -7,6 +7,12 @@
 
 local ROOT = arg and arg[1] or "."
 local realPrint = print
+-- the add-on's files, in the toc's order
+local TOC_FILES = {}
+for line in io.lines(ROOT .. "/PacesQualityOfLife/PacesQualityOfLife.toc") do
+    local f = line:match("^([%w_]+%.lua)%s*$")
+    if f then TOC_FILES[#TOC_FILES + 1] = f end
+end
 local passed, failed = 0, 0
 local function check(cond, label)
     if cond then
@@ -179,6 +185,7 @@ local function makePlayer(name, opts)
         P.guid, P.accountGUID, P.realm, P.bnName = same.guid, same.accountGUID, same.realm, same.bnName
         P.voice, P.bnFriends, P.guild, P.group = same.voice, same.bnFriends, same.guild, same.group
         P.hideGuid = same.hideGuid
+        P.cvars, P.volumes = same.cvars, same.volumes
     end
     players[name] = P
     local env = {}
@@ -206,7 +213,15 @@ local function makePlayer(name, opts)
     env.PLAYER_FACTION_GROUP = {[0] = "Horde", [1] = "Alliance", Horde = 0, Alliance = 1}
     env.UnitFactionGroup = function(u) if u == "player" then return P.faction end end
     env.RegionalUniqueNamesEnabled = function() return true end
-    env.C_AccountInfo = {IsGUIDRelatedToLocalAccount = function(g) return g == P.guid or g == P.accountGUID end}
+    env.C_AccountInfo = {
+        IsGUIDRelatedToLocalAccount = function(g) return g == P.guid or g == P.accountGUID end,
+        IsGUIDBattleNetAccountType = function(g) return type(g) == "string" and g:find("^BNetAccount%-") ~= nil end,
+        -- (the account id behind a Battle.net account GUID; 0 when unknown)
+        GetIDFromBattleNetAccountGUID = function(g)
+            for _, R in pairs(players) do if R.accountGUID == g then return R.bnetAccountId or 0 end end
+            return 0
+        end,
+    }
     env.IsInGuild = function() return P.guild ~= nil end
     env.IsInGroup = function(category) if category then return false end return P.group ~= nil end
     env.IsInRaid = function() return false end
@@ -402,7 +417,8 @@ local function makePlayer(name, opts)
         -- (appearOffline: Battle.net's "Appear Offline", the member shows offline while still playing)
         return {isSelf = R == P, memberId = memberId,
                 presence = R.online and not R.appearOffline and ENUM.ClubMemberPresence.Online or ENUM.ClubMemberPresence.Offline,
-                guid = guid, bnetAccountId = R.bnetAccountId, clubType = c.type,
+                -- (noAccountIds: the community gives no Battle.net account id - nilable)
+                guid = guid, bnetAccountId = (not c.noAccountIds) and R.bnetAccountId or nil, clubType = c.type,
                 name = bn and (R.bnName or R.name) or R.name, faction = R.faction == "Horde" and 0 or 1}
     end
     -- (clubsNotReady: this client's club data not loaded yet)
@@ -412,6 +428,7 @@ local function makePlayer(name, opts)
             if c and not P.clubsNotReady then return {clubId = id, clubType = c.type} end
         end,
         GetClubMembers = function(id)
+            P.clubMemberReads = (P.clubMemberReads or 0) + 1
             local c = clubs[id]; if not c or c.notReady then return {} end
             local out = {}
             for i in ipairs(c.members) do out[i] = i end
@@ -438,11 +455,44 @@ local function makePlayer(name, opts)
     }
 
     -- voice: P.voice[channelID] = {clubId=, streamId=, isActive=, members = {guid -> isActive}}
+    -- (a member's id is the GUID the channel names them by; the volume the
+    -- game holds for a person, across channels, is P.volumes[name], nil
+    -- being its default of 100)
+    local function Person(guid)
+        if type(guid) ~= "string" then return end
+        for _, R in pairs(players) do if R.guid == guid or R.accountGUID == guid then return R end end
+    end
+    P.volumes = P.volumes or {}
+    P.volumeSets = {}
+    env.PlayerLocation = {CreateFromGUID = function(_, guid)
+        return {guid = guid, GetGUID = function(l) return l.guid end, IsGUID = function(l) return l.guid ~= nil end,
+                IsVoiceID = function() return false end}
+    end}
     env.C_VoiceChat = {
         GetChannel = function(id)
             local v = P.voice[id]
-            if v then return {channelID = id, channelType = ENUM.ChatChannelType.Communities, clubId = v.clubId,
-                              streamId = v.streamId, isActive = v.isActive} end
+            if v then
+                local members = {}
+                for m, active in pairs(v.members) do members[#members + 1] = {memberID = m, isActive = active} end
+                table.sort(members, function(a, b) return a.memberID < b.memberID end)
+                return {channelID = id, channelType = ENUM.ChatChannelType.Communities, clubId = v.clubId,
+                        streamId = v.streamId, isActive = v.isActive, members = members}
+            end
+        end,
+        GetMemberGUID = function(memberID, channelID)
+            local v = P.voice[channelID]
+            if v and v.members[memberID] ~= nil then return memberID end
+        end,
+        GetMemberVolume = function(loc)
+            local R = Person(loc and loc.guid)
+            if R then return P.volumes[R.name] or 100 end
+        end,
+        SetMemberVolume = function(loc, volume)
+            local R = Person(loc and loc.guid)
+            if R then
+                P.volumes[R.name] = volume
+                table.insert(P.volumeSets, {who = R.name, volume = volume, at = clock})
+            end
         end,
         GetChannelForCommunityStream = function(clubId, streamId)
             for id, v in pairs(P.voice) do
@@ -452,9 +502,16 @@ local function makePlayer(name, opts)
                 end
             end
         end,
+        -- (and as the game's roster does, a Battle.net account GUID finds the
+        -- member the channel names by that account's character)
         GetMemberID = function(channelID, guid)
             local v = P.voice[channelID]
-            if v and v.members[guid] ~= nil then return guid end
+            if not v then return end
+            if v.members[guid] ~= nil then return guid end
+            for m in pairs(v.members) do
+                local R = Person(m)
+                if R and R.accountGUID == guid then return m end
+            end
         end,
         GetMemberInfo = function(memberID, channelID)
             local v = P.voice[channelID]
@@ -576,6 +633,30 @@ local function makePlayer(name, opts)
         P.voice[newID] = {clubId = clubId, streamId = streamId, isActive = true, members = {}}
         FireEvent(P, "VOICE_CHAT_CHANNEL_ACTIVATED", newID)
         FireEvent(P, "VOICE_CHAT_CHANNEL_DEACTIVATED", oldID)
+    end
+
+    -- the game's settings (CVars): kept across a /reload; a change fires
+    -- CVAR_UPDATE inside the call, as the game's does. cvars = {} for a
+    -- client without showPartyPets.
+    P.cvars = P.cvars or opts.cvars or {showPartyPets = "0"}
+    P.cvarSets = {}
+    env.C_CVar = {
+        GetCVar = function(n) return P.cvars[n] end,
+        SetCVar = function(n, v)
+            -- (cvarRefused: the game won't let an add-on set it)
+            if P.cvars[n] == nil or P.cvarRefused then return false end
+            P.cvars[n] = tostring(v)
+            table.insert(P.cvarSets, {name = n, value = P.cvars[n], inCombat = P.inCombat or false})
+            FireEvent(P, "CVAR_UPDATE", n, P.cvars[n])
+            return true
+        end,
+    }
+    -- the game's volume slider on someone's menu, built when the menu first
+    -- opens: it takes C_VoiceChat.SetMemberVolume as it is then, and calls
+    -- it with a location from the row's GUID
+    P.Slide = function(guid, volume)
+        P.slider = P.slider or env.C_VoiceChat.SetMemberVolume
+        P.slider(env.PlayerLocation:CreateFromGUID(guid), volume)
     end
 
     -- misc game API
@@ -762,7 +843,7 @@ local function makePlayer(name, opts)
     if opts.beforeLoad then opts.beforeLoad(P, env) end
     local ns = {}
     P.ns = ns
-    for _, file in ipairs(P.files or {"Core.lua", "Options.lua", "QuestLog.lua", "LFG.lua", "ZoneTracker.lua", "Voice.lua"}) do
+    for _, file in ipairs(P.files or TOC_FILES) do
         local path = ROOT .. "/PacesQualityOfLife/" .. file
         if file == "Voice.lua" and opts.voiceFile then path = ROOT .. "/" .. opts.voiceFile end
         local chunk = assert(loadfile(path))
@@ -813,7 +894,8 @@ end
 --------------------------------------------------------------------------
 do
     local P = makePlayer("Coretest")
-    check(P.ns.db and P.ns.db.voice == true and P.ns.db.voiceShare == true, "core: every feature on by default")
+    check(P.ns.db and P.ns.db.voice == true and P.ns.db.voiceShare == true and P.ns.db.voicevolume == true,
+          "core: every feature on by default")
     check(P.optionsPanel ~= nil, "core: an options page under AddOns")
     P.Slash("")
     check(P.openedCategory == 77, "core: /pqol opens it")
@@ -1514,6 +1596,33 @@ do
           "no GUID: a row without one still gets its microphone (matched by member id)")
     na.CloseChannels()
 
+    -- the report after 1.1.0 ("I know Sam is in voice chat but it doesn't
+    -- show", both updated): the community's member info carries no
+    -- Battle.net account id (it is nilable), so 1.1.0 found no way to ask a
+    -- friend at all. The account is read from the member's GUID, as
+    -- Blizzard's own menus do.
+    local aj = makePlayer("AcctJustin", {gameAccountID = 651, bnetAccountId = 9151})
+    local as = makePlayer("AcctSam", {gameAccountID = 652, bnetAccountId = 9152})
+    local ax = makePlayer("AcctStranger", {gameAccountID = 653, bnetAccountId = 9153})
+    aj.bnFriends.AcctSam, as.bnFriends.AcctJustin = true, true
+    clubs["B6"] = {type = ENUM.ClubType.BattleNet, members = {"AcctJustin", "AcctSam", "AcctStranger"}, noAccountIds = true}
+    aj.AddRosterRow(as)
+    aj.AddRosterRow(ax)
+    as.JoinVoice(84, "B6", "BS6")
+    ax.JoinVoice(85, "B6", "BS6")
+    aj.OpenChannels("B6", "BS6")
+    advance(3)
+    check(aj.RowMic(as), "no account id: a Battle.net friend in voice gets his microphone (the account read from his GUID)")
+    check(SentCount(aj, function(x) return x.kind == "BN" and x.to == 652 end) >= 1,
+          "no account id: (asked on his Forever game account)")
+    check(not aj.RowMic(ax) and SentCount(aj, function(x) return x.kind == "BN" and x.to == 653 end) == 0,
+          "no account id: someone who isn't a friend still can't be reached")
+    aj.printed = {}
+    aj.Slash("voice")
+    check(Printed(aj, "Battle.net friends on Forever 1, by whisper 0, other faction 0, no way to reach 1; for 1 of those friends the community gave no account, read from the GUID"),
+          "readout: says when a friend's account came from the GUID")
+    aj.CloseChannels()
+
     -- a refused send is counted, and the question goes again at the next chance
     local fa = makePlayer("FailA", {gameAccountID = 641, bnetAccountId = 9141})
     local fb = makePlayer("FailB", {gameAccountID = 642, bnetAccountId = 9142})
@@ -1534,7 +1643,7 @@ do
     check(fa.RowMic(fb), "refused: the follow-up asks again (no 50-second wait for a question that never left)")
     fa.CloseChannels()
 
-    for _, R in ipairs({ga, gb, gc, pa, pb, pc, na, nb, fa, fb}) do R.online = false; players[R.name] = nil end
+    for _, R in ipairs({ga, gb, gc, pa, pb, pc, na, nb, fa, fb, aj, as, ax}) do R.online = false; players[R.name] = nil end
 end
 
 --------------------------------------------------------------------------
@@ -2109,6 +2218,225 @@ do
     dv.CloseChannels()
 
     for _, R in ipairs({av2, at, q1, q2, qt, dv, d1, d2}) do R.online = false; players[R.name] = nil end
+end
+
+--------------------------------------------------------------------------
+-- party pets: the game's own pet frames under the party frames, through
+-- its showPartyPets setting - switched at the next /reload, never on the
+-- spot (the party frames act on the change at once, as add-on code)
+--------------------------------------------------------------------------
+local function OptionFrames(P)
+    local box, reload
+    for _, f in ipairs(P.frames) do
+        if f.kind == "CheckButton" and f.label and (f.label.text or ""):find("^Party frames") then box = f end
+        if f.kind == "Button" and f.text == "Reload now" then reload = f end
+    end
+    return box, reload
+end
+do
+    local P = makePlayer("PetsA")
+    check(not P.ns.IsOn("partypets") and P.cvars.showPartyPets == "0", "pets: off while the game's setting is off")
+    check(P.ns.db.partypets == nil and P.ns.db.partyPetsPending == nil, "pets: nothing of it in the saved settings")
+    local box, reload = OptionFrames(P)
+    check(box and not box:GetChecked() and box:IsEnabled() and reload and not reload:IsShown(),
+          "pets: the options page: a box, unticked, and no Reload button")
+    P.printed = {}
+    P.Slash("partypets on")
+    check(P.cvars.showPartyPets == "0" and #P.cvarSets == 0,
+          "pets: switching it on changes nothing on the spot (the party frames would take it as add-on code)")
+    check(P.ns.IsOn("partypets") and Printed(P, "partypets |cFF66FF66on|r - party pets shown after your next |cFFFFCC00/reload|r"),
+          "pets: it says when: after the next /reload")
+    check(box:GetChecked() and reload:IsShown() and
+          (P.optionsPanel.petsNote.text or ""):find("shown after your next /reload", 1, true),
+          "pets: the options page: ticked, the note says when, and a Reload button")
+    P.printed = {}
+    P.Slash("partypets")
+    check(Printed(P, "(the game's setting: hidden; shown at your next /reload)"), "pets: a bare /pqol partypets says where it stands")
+
+    -- the reload: the switch goes through at logout, and the new UI reads it
+    local N = Reload(P)
+    check(#P.cvarSets == 1 and P.cvarSets[1].value == "1" and not P.cvarSets[1].inCombat and N.cvars.showPartyPets == "1",
+          "pets: the reload switches the game's setting (at logout)")
+    check(N.ns.IsOn("partypets") and N.ns.db.partyPetsPending == nil, "pets: after it, on - and nothing left waiting")
+    local _, reload2 = OptionFrames(N)
+    check(reload2 and not reload2:IsShown(), "pets: no Reload button once it went through")
+    check(#N.cvarSets == 0, "pets: (nothing set at login)")
+
+    -- off, then back on before a reload: nothing waits
+    N.Slash("partypets off")
+    check(N.ns.db.partyPetsPending ~= nil and not N.ns.IsOn("partypets") and N.cvars.showPartyPets == "1",
+          "pets: switching it off waits for the reload too")
+    N.Slash("partypets on")
+    check(N.ns.db.partyPetsPending == nil and N.ns.IsOn("partypets"), "pets: and back on before it: nothing waits")
+
+    -- a reload in combat: nothing is changed in combat; the next reload does it
+    N.Slash("partypets off")
+    N.inCombat = true
+    local N2 = Reload(N)
+    check(#N.cvarSets == 0 and N2.cvars.showPartyPets == "1" and N2.ns.db.partyPetsPending ~= nil and not N2.ns.IsOn("partypets"),
+          "pets: a reload in combat changes nothing; the switch keeps waiting")
+    local N3 = Reload(N2)
+    check(N3.cvars.showPartyPets == "0" and N3.ns.db.partyPetsPending == nil and not N3.ns.IsOn("partypets"),
+          "pets: and goes through at the next one out of combat")
+
+    -- changed another way meanwhile (/console showPartyPets 1): that stands
+    N3.Slash("partypets on")
+    N3.cvars.showPartyPets = "1"
+    local N4 = Reload(N3)
+    check(#N3.cvarSets == 0 and N4.cvars.showPartyPets == "1" and N4.ns.db.partyPetsPending == nil,
+          "pets: changed some other way before the reload: left as it is, nothing waits")
+
+    -- the Reload button
+    N4.Slash("partypets off")
+    N4.inCombat = true
+    N4.printed = {}
+    N4.ns.PartyPets.ReloadNow()
+    check(not N4.reloadAsked and Printed(N4, "not in combat"), "pets: the Reload button does nothing in combat, and says why")
+    N4.inCombat = false
+    N4.ns.PartyPets.ReloadNow()
+    check(N4.reloadAsked, "pets: out of combat it reloads")
+
+    -- the game refusing the setting from an add-on: said once, with what to type
+    N4.cvarRefused = true
+    local N5 = Reload(N4)
+    check(N5.cvars.showPartyPets == "1" and N5.ns.db.partyPetsPending == nil and
+          Printed(N5, "type |cFFFFCC00/console showPartyPets 0|r, then /reload"),
+          "pets: the game refusing the switch: nothing left waiting for ever, and it says what to type")
+    check((N5.optionsPanel.petsNote.text or ""):find("/console showPartyPets 1", 1, true),
+          "pets: (the options page says it too)")
+
+    -- a client without the setting
+    local Q = makePlayer("PetsB", {cvars = {}})
+    Q.printed = {}
+    Q.Slash("partypets on")
+    check(not Q.ns.IsOn("partypets") and Q.ns.db.partyPetsPending == nil and #Q.cvarSets == 0 and
+          Printed(Q, "This client has no party pet frames"),
+          "pets: a client without the setting says so and switches nothing")
+    local qbox = OptionFrames(Q)
+    check(qbox and not qbox:IsEnabled(), "pets: (its box can't be ticked)")
+    for _, R in ipairs({P, N, N2, N3, N4, N5, Q}) do R.online = false end
+    players["PetsA"], players["PetsB"] = nil, nil
+end
+
+--------------------------------------------------------------------------
+-- voice volume: what you set for each person is kept, and set again when
+-- they're in voice with you - the next session too ("Can it also remember
+-- the voice volume I have set for each person?")
+--------------------------------------------------------------------------
+do
+    local vj = makePlayer("VolJustin", {gameAccountID = 701, bnetAccountId = 9201})
+    local vs = makePlayer("VolSam", {gameAccountID = 702, bnetAccountId = 9202})
+    local vl = makePlayer("VolLogan", {gameAccountID = 703, bnetAccountId = 9203})
+    clubs["VC"] = {type = ENUM.ClubType.Character, members = {"VolJustin", "VolSam", "VolLogan"}}
+    vj.voice[150] = {clubId = "VC", streamId = "VS", isActive = true, members = {[vj.guid] = true, [vs.guid] = true}}
+    check(vj.ns.VoiceVolume.hooked, "volume: the game's volume setter is watched")
+    vj.Slide(vs.guid, 38)
+    check(vj.volumes.VolSam == 38, "volume: (the slider sets Sam to 38%)")
+    local kept = vj.ns.db.voiceVolumes
+    check(kept and kept[vs.guid] and kept[vs.guid].v == 38, "volume: and it is kept, under Sam's GUID")
+    vj.Slide(vs.guid, 41)
+    check(kept[vs.guid].v == 41, "volume: the latest setting is the one kept")
+    vj.Fire("VOICE_CHAT_CHANNEL_MEMBER_VOLUME_CHANGED", vs.guid, 150, 100)
+    check(kept[vs.guid].v == 41, "volume: the game's own volume event (a reset) changes nothing kept")
+
+    -- the next session: the game starts Sam at its default again
+    local nj = Reload(vj, {beforeLoad = function(N) N.volumes = {}; N.voice[150].members[vs.guid] = nil end})
+    check(nj.volumes.VolSam == nil, "volume: (a new session starts Sam at the game's default)")
+    nj.voice[150].members[vs.guid] = true
+    nj.Fire("VOICE_CHAT_CHANNEL_MEMBER_ADDED", vs.guid, 150)
+    check(nj.volumes.VolSam == 41, "volume: Sam joining the channel gets the 41% set last session")
+    check((nj.clubMemberReads or 0) == 0, "volume: (a WoW community's member list isn't read for it: its members' GUIDs last)")
+    local at = nj.ns.db.voiceVolumes[vs.guid].at
+    nj.volumes.VolSam = 100 -- (the game setting its own as he finishes joining)
+    advance(3.5)
+    check(nj.volumes.VolSam == 41, "volume: looked at again a moment later, and set again")
+    check(nj.ns.db.voiceVolumes[vs.guid].at == at and nj.ns.db.voiceVolumes[vs.guid].v == 41,
+          "volume: setting it again is not taken as a change of Justin's")
+    local sets = #nj.volumeSets
+    nj.Fire("VOICE_CHAT_CHANNEL_MEMBER_ACTIVE_STATE_CHANGED", vs.guid, 150, true)
+    advance(4)
+    check(#nj.volumeSets == sets, "volume: nothing is set when it already matches")
+    nj.voice[150].members[vl.guid] = true
+    nj.Fire("VOICE_CHAT_CHANNEL_MEMBER_ADDED", vl.guid, 150)
+    advance(4)
+    check(nj.volumes.VolLogan == nil, "volume: someone whose volume was never set is left alone")
+
+    -- joining a channel Sam is already in: everyone in it is looked at
+    local j2 = Reload(nj, {beforeLoad = function(N) N.volumes = {}; N.voice[150].isActive = false end})
+    check(j2.volumes.VolSam == nil, "volume: (not in voice at login: nothing set)")
+    j2.voice[150].isActive = true
+    j2.Fire("VOICE_CHAT_CHANNEL_ACTIVATED", 150)
+    check(j2.volumes.VolSam == 41, "volume: joining the channel sets Sam's at once")
+    -- after a /reload while in voice: no event comes, so it is looked at at login
+    local j3 = Reload(j2, {beforeLoad = function(N) N.volumes = {} end})
+    check(j3.volumes.VolSam == 41, "volume: logging in while in voice sets it too")
+
+    -- the chat lockdown: nothing read or set; once it lifts, the channel is looked at
+    local s2 = Reload(j3, {beforeLoad = function(N) N.volumes = {}; N.voice[150].members[vs.guid] = nil end})
+    s2.locked = true
+    s2.voice[150].members[vs.guid] = true
+    s2.Fire("VOICE_CHAT_CHANNEL_MEMBER_ADDED", {__secret = true}, {__secret = true})
+    check(s2.volumes.VolSam == nil, "volume: in the chat lockdown nothing is set")
+    s2.locked = false
+    advance(6)
+    check(s2.volumes.VolSam == 41, "volume: once it lifts, the channel is looked at and Sam set again")
+
+    -- switched off: nothing kept, nothing set
+    s2.Slash("voicevolume off")
+    s2.Slide(vs.guid, 70)
+    check(s2.ns.db.voiceVolumes[vs.guid].v == 41, "volume: switched off, nothing new is kept")
+    s2.volumes.VolSam = 100
+    s2.Fire("VOICE_CHAT_CHANNEL_MEMBER_ADDED", vs.guid, 150)
+    check(s2.volumes.VolSam == 100, "volume: nor set again")
+    s2.Slash("voicevolume on")
+    check(s2.volumes.VolSam == 41, "volume: switched back on, the channel is looked at at once")
+    s2.printed = {}
+    s2.Slash("voicevolume")
+    check(Printed(s2, "voicevolume: |cFF66FF66on|r (1 people's volume kept;"), "volume: /pqol voicevolume says how many are kept")
+    s2.Slash("voicevolume forget")
+    check(s2.ns.db.voiceVolumes == nil and Printed(s2, "every remembered volume forgotten"), "volume: /pqol voicevolume forget forgets them")
+
+    -- a Battle.net community: the row is the Battle.net account. That GUID
+    -- may not last into the next session; the membership does
+    local bj = makePlayer("VolBJ", {gameAccountID = 711, bnetAccountId = 9211})
+    local bs = makePlayer("VolBS", {gameAccountID = 712, bnetAccountId = 9212})
+    bj.bnFriends.VolBS, bs.bnFriends.VolBJ = true, true
+    clubs["VB"] = {type = ENUM.ClubType.BattleNet, members = {"VolBJ", "VolBS"}}
+    bj.voice[160] = {clubId = "VB", streamId = "VBS", isActive = true, members = {[bj.accountGUID] = true, [bs.accountGUID] = true}}
+    bj.Slide(bs.accountGUID, 25)
+    local bkept = bj.ns.db.voiceVolumes
+    check(bkept and bkept[bs.accountGUID] and bkept[bs.accountGUID].v == 25 and bkept["club:VB:2"] and bkept["club:VB:2"].v == 25,
+          "volume: in a Battle.net community it is kept under the account's GUID and the membership")
+    bs.accountGUID = "BNetAccount-0-00000000BEEF"
+    local nb = Reload(bj, {beforeLoad = function(N) N.volumes = {}; N.voice[160].members = {[N.accountGUID] = true} end})
+    nb.voice[160].members[bs.accountGUID] = true
+    nb.Fire("VOICE_CHAT_CHANNEL_MEMBER_ADDED", bs.accountGUID, 160)
+    check(nb.volumes.VolBS == 25, "volume: another account GUID next session: found by the membership, set again")
+    -- a channel that names him by his character while the community names
+    -- his account; an older setting kept under the character (set from his
+    -- party frame, say) gives way to the newer one
+    local nb2 = Reload(nb, {beforeLoad = function(N) N.volumes = {}; N.voice[160].members = {} end})
+    nb2.voice[160].members[bs.guid] = true
+    nb2.Fire("VOICE_CHAT_CHANNEL_MEMBER_ADDED", bs.guid, 160)
+    check(nb2.volumes.VolBS == 25, "volume: a channel naming him by his character still finds him (through the community, as its roster does)")
+    bkept[bs.guid] = {v = 80, at = 1}
+    local nb3 = Reload(nb2, {beforeLoad = function(N) N.volumes = {}; N.voice[160].members = {} end})
+    nb3.voice[160].members[bs.guid] = true
+    nb3.Fire("VOICE_CHAT_CHANNEL_MEMBER_ADDED", bs.guid, 160)
+    check(nb3.volumes.VolBS == 25, "volume: the newest setting of all his names wins (25, not an older 80 kept under his character)")
+
+    -- only so many kept: the oldest change goes first
+    local many = {}
+    for i = 1, 510 do many[("Player-9-%05d"):format(i)] = {v = 50, at = i} end
+    local pp = makePlayer("VolPrune", {db = {voiceVolumes = many}})
+    pp.Slide("Player-9-99999", 60)
+    local n = 0
+    for _ in pairs(pp.ns.db.voiceVolumes) do n = n + 1 end
+    check(n == 500 and pp.ns.db.voiceVolumes["Player-9-99999"] and pp.ns.db.voiceVolumes["Player-9-00011"] == nil and
+          pp.ns.db.voiceVolumes["Player-9-00012"] ~= nil,
+          "volume: at most 500 kept, the oldest changes going first")
+
+    for _, R in ipairs({vj, vs, vl, nj, j2, j3, s2, bj, bs, nb, nb2, nb3, pp}) do R.online = false; players[R.name] = nil end
 end
 
 realPrint(("Pace's Quality of Life harness: %d passed, %d failed"):format(passed, failed))

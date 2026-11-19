@@ -10,6 +10,10 @@
 --                 it tracks that zone's quests and untracks the rest
 --   voice       - Chat Channels: a microphone on the people in a
 --                 community's voice channel, before you join it
+--   voicevolume - the volume you set for each person in voice, kept and
+--                 set again whenever they're in voice with you
+--   partypets   - the party frames show party members' pets (the game's
+--                 own setting, switched at the next /reload)
 -- Rules: widget calls plus hooksecurefunc only, nothing of ours written
 -- into Blizzard's tables, secret values read under pcall, Lua 5.1.
 
@@ -29,6 +33,7 @@ local DEFAULTS = {
     voice = true,
     -- tell other Pace's QoL users in your communities when you're in voice
     voiceShare = true,
+    voicevolume = true,
     -- the Looking For Group role filter's last choice
     lfgTank = true,
     lfgHealer = true,
@@ -83,24 +88,40 @@ function ns.OnAddOnLoaded(name, fn)
 end
 
 -- key, label for the options page, module with optional :Init() (once,
--- at login) and :Apply(on) (at login and on every switch)
+-- at login) and :Apply(on) (at login and on every switch). A feature whose
+-- state is the game's own (party pets: a game setting) has :IsOn() and
+-- :Set(on) instead, and nothing of it in the saved settings; :Set returns
+-- what to say about the switch.
 function ns.RegisterFeature(key, label, mod)
     ns.features[key] = {label = label, mod = mod}
     table.insert(ns.featureOrder, key)
 end
 
 function ns.IsOn(key)
+    local feature = ns.features[key]
+    if feature and feature.mod.IsOn then
+        if not ns.db then return false end
+        local ok, on = pcall(feature.mod.IsOn, feature.mod)
+        return ok and on and true or false
+    end
     return ns.db and ns.db[key] ~= false
 end
 
 function ns.SetFeature(key, on)
     local feature = ns.features[key]
     if not feature then return end
-    ns.db[key] = on and true or false
-    if feature.mod.Apply then
-        ns.SafeCall(key, feature.mod.Apply, feature.mod, ns.db[key])
+    local note
+    if feature.mod.Set then
+        local ok, said = ns.SafeCall(key, feature.mod.Set, feature.mod, on and true or false)
+        if ok and type(said) == "string" then note = said end
+    else
+        ns.db[key] = on and true or false
+        if feature.mod.Apply then
+            ns.SafeCall(key, feature.mod.Apply, feature.mod, ns.db[key])
+        end
     end
     if ns.RefreshOptions then ns.RefreshOptions() end
+    return note
 end
 
 local function InitDB()
@@ -155,9 +176,9 @@ function ns.HandleSlash(input)
     elseif ns.features[cmd] then
         local mod = ns.features[cmd].mod
         if arg == "on" or arg == "off" then
-            local on = arg == "on"
-            ns.SetFeature(cmd, on)
-            ns.Print("%s %s", cmd, on and "|cFF66FF66on|r" or "|cFFFF6666off|r")
+            local note = ns.SetFeature(cmd, arg == "on")
+            ns.Print("%s %s%s", cmd, ns.IsOn(cmd) and "|cFF66FF66on|r" or "|cFFFF6666off|r",
+                     note and (" - " .. note) or "")
         else
             -- (a bare name no longer switches a feature: "/pqol voice" typed
             -- to see what voice sharing is doing must not turn it off)
@@ -173,7 +194,7 @@ function ns.HandleSlash(input)
             end
         end
     else
-        ns.Print("|cFFFFCC00/pqol|r options, |cFFFFCC00/pqol status|r what's on and any errors, |cFFFFCC00/pqol <feature> on|off|r: %s; |cFFFFCC00/pqol voice|r what voice sharing sent and heard",
+        ns.Print("|cFFFFCC00/pqol|r options, |cFFFFCC00/pqol status|r what's on and any errors, |cFFFFCC00/pqol <feature> on|off|r: %s; |cFFFFCC00/pqol voice|r what voice sharing sent and heard; |cFFFFCC00/pqol voicevolume forget|r forgets the volumes kept",
                  table.concat(ns.featureOrder, ", "))
     end
 end
