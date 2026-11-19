@@ -99,21 +99,27 @@ time you play. It sets nothing when the volume already matches, and keeps
 only what you set with the slider (never the game's own resets).
 
 One person goes by several names, and the volume is kept under all of
-them, the newest winning: their character; in a Battle.net community
-their Battle.net account and their place in the community (which still
-finds them should the account's GUID change between sessions); and for a
-Battle.net friend both the account and the character they're playing. So
-a friend set from their party frame and from a community's roster has
-one volume: the one you set last.
+them that can be told, the newest winning: their character; in a
+Battle.net community you share, their Battle.net account and their place
+in the community (which still finds them should the account's GUID change
+between sessions); and for a Battle.net friend in such a community, both
+the account and the character they're playing. So a friend set from their
+party frame and from the community's roster has one volume - the one you
+set last - and it follows them to another character. A Battle.net friend
+you share no Battle.net community with is known by their character alone
+(nothing gives an add-on a lasting name for their account): a volume set
+for one of their characters isn't set for their others.
 
 In dungeons and raids (the game's chat lockdown) nothing is set and no
 community list is read. A change you make there is kept under what the
 game still says, and under the rest of the person's names once you're
 out. When the game doesn't say whose it was (a roster drawn inside the
 dungeon), the volume is noted, and once you're out the person found at
-exactly that volume keeps it instead of being set back - except at the
-top (100%), where everyone starts, so that can't be told. Such a change
-is lost if you log out before leaving the dungeon.
+exactly that volume keeps it instead of being set back - the first time
+you set someone too. Not a change to the top (100%): everyone starts
+there, so who was set to it can't be told, and someone with a volume kept
+is set back to it once you're out (set them again then). A change made
+this way is lost if you log out before leaving the dungeon.
 
 Up to 1000 names are kept (one person can have a few), the oldest change
 going first. `/pqol voicevolume` says how many people that is, and
@@ -137,12 +143,14 @@ game's own setting (`showPartyPets`, the same as typing
 `/console showPartyPets 1` and then reloading), so it stays as it is
 even with Pace's QoL removed.
 
-Whether the switch took is read back from the setting itself. If the
-game refuses it, it isn't tried again: you're told once what to type
-instead, and the options page says so until the setting changes. If the
-game marks the setting as one add-ons can't change, the box can't be
-ticked and says so. A switch is made at the logout of the character it
-was asked on. Not tried in game yet.
+Each character's switch is its own: it is made at that character's own
+reload or logout, and your other characters neither see it nor make it.
+Whether it took is read back from the setting itself. If the game
+refuses it, it isn't tried again: at that character's next login you're
+told once what to type instead, and its options page says so until the
+setting changes or you ask for another switch. If the game marks the
+setting as one add-ons can't change, the box can't be ticked and says
+so. Not tried in game yet.
 
 ## Commands
 

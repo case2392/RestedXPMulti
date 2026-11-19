@@ -18,9 +18,12 @@
 --     party voice - or in a Battle.net community the Battle.net account's),
 --     their membership of each Battle.net community you share (club and
 --     member id: it still says who they are should the account's GUID not
---     last from one session to the next), and for a Battle.net friend both
---     the account and the character they play. So the party frame's slider
---     and the community roster's set one volume.
+--     last from one session to the next), and for a Battle.net friend in
+--     such a community both the account and the character they play. So the
+--     party frame's slider and the community roster's set one volume. (A
+--     friend you share no Battle.net community with is known by the
+--     character alone: nothing gives an add-on a lasting name for the
+--     account.)
 --   * Setting it again: when they join a channel you're in, or you join
 --     theirs, and once more a few seconds later (should the game set its
 --     own as they finish joining). Nothing is set when it already matches.
@@ -28,9 +31,11 @@
 -- are secret, so nothing is set and no list is read. A change made then is
 -- kept under what can be told - the GUID when the row still gives one; the
 -- rest of the person's names once the lockdown lifts. When the game can't
--- say whose a change was, what was set is noted, and once the lockdown
--- lifts a person found at exactly that volume keeps it: it is taken as
--- yours, not undone.
+-- say whose a change was (a row drawn in the lockdown), what was set is
+-- noted, and once the lockdown lifts a person found at exactly that volume
+-- keeps it: it is taken as yours, not undone - a first change for someone
+-- too. Not at the slider's top, where the game starts everyone: who is
+-- there can't be told from who was set there, so it is set back as usual.
 
 local addonName, ns = ...
 
@@ -41,7 +46,7 @@ local KEEP = 1000          -- names remembered, at most (the oldest change goes 
 local RECHECK = 3          -- a volume set as someone joins is looked at again this much later
 local SAME = 0.5           -- volumes closer than this are the same
 local LOCK_POLL = 5        -- in the lockdown, look this often for its end
-local CLUB_FRESH = 30      -- a member not found in a club's list: read it again after this
+local CLUB_FRESH = 30      -- a member not found in the channel's community: read its list again after this
 local CLUB_MAX = 500       -- members walked to match a voice member to the club, at most
 local DRAG = 2             -- slider moves of one person closer together than this are one change
 local TOP = 100            -- the slider's top (UnitPopupCustomControls.xml), where the game starts everyone
@@ -53,8 +58,8 @@ local bnClubs = {list = {}} -- your Battle.net communities: {at=, list = {clubId
 local rechecks = {}        -- guid -> true: a look again is waiting
 local lockPoll
 local waiting = {}         -- guid -> {v=, at=}: changed in the lockdown, the other names to fill in
-local unseen = {}          -- changes the game didn't say whose: {v=, at=}
-local last                 -- the last change seen: {guid=, t=} (one drag, one change)
+local unseen = {}          -- changes the game didn't say whose: {v=, at=, taken = true once someone kept it}
+local last                 -- the last change seen: {guid=, loc=, t=} (one drag, one change)
 local stats = {saved = 0, applied = 0, same = 0, unseen = 0, adopted = 0}
 
 local function Now() return GetTime() end
@@ -173,9 +178,27 @@ local function ActiveChannel()
     if ok then return Plain(id) end
 end
 
--- a club's members: read once, and again when the club's list changes or a
--- GUID isn't in it (at most every CLUB_FRESH seconds). In the lockdown
--- nothing is read: the list as it was, if any.
+-- one member of a club, as the game has them now, into its book (false
+-- when the game gives nothing to go by)
+local function AddMember(book, clubId, memberId)
+    local id = Plain(memberId)
+    local okM, m = pcall(C_Club.GetMemberInfo, clubId, memberId)
+    local g = okM and type(m) == "table" and Plain(m.guid)
+    if id == nil or type(g) ~= "string" or g == "" then return false end
+    local new = book.byGuid[g] == nil
+    book.byGuid[g] = id
+    -- (the account id is nilable: then it is read from the GUID)
+    local account = Plain(m.bnetAccountId)
+    if type(account) ~= "number" or account <= 0 then account = AccountOf(g, IsBattleNetGUID(g)) end
+    if account ~= nil then book.byAccount[account] = g end
+    if new and #book.list < CLUB_MAX then book.list[#book.list + 1] = g end
+    return true
+end
+
+-- a club's members: read once, and again when the game says its list
+-- changed, or - given a GUID to find, for the channel's community - when it
+-- isn't in it (at most every CLUB_FRESH seconds). In the lockdown nothing
+-- is read: the list as it was, if any.
 local function ClubBook(clubId, guid)
     if clubId == nil then return end
     local key = tostring(clubId)
@@ -188,19 +211,7 @@ local function ClubBook(clubId, guid)
     local ok, list = pcall(C_Club.GetClubMembers, clubId)
     if ok and type(list) == "table" and not ns.IsSecret(list) then
         pcall(function()
-            for _, memberId in ipairs(list) do
-                local id = Plain(memberId)
-                local okM, m = pcall(C_Club.GetMemberInfo, clubId, memberId)
-                local g = okM and type(m) == "table" and Plain(m.guid)
-                if id ~= nil and type(g) == "string" and g ~= "" then
-                    book.byGuid[g] = id
-                    -- (the account id is nilable: then it is read from the GUID)
-                    local account = Plain(m.bnetAccountId)
-                    if type(account) ~= "number" or account <= 0 then account = AccountOf(g, IsBattleNetGUID(g)) end
-                    if account ~= nil then book.byAccount[account] = g end
-                    if #book.list < CLUB_MAX then book.list[#book.list + 1] = g end
-                end
-            end
+            for _, memberId in ipairs(list) do AddMember(book, clubId, memberId) end
         end)
     end
     clubs[key] = book
@@ -248,16 +259,24 @@ local function Names(guid, hints)
     local bn = IsBattleNetGUID(guid)
     local account = AccountOf(guid, bn)
     if bn or account ~= nil then
-        local order, done = {}, {}
+        local order, done, hinted = {}, {}, {}
         for _, id in ipairs(hints or {}) do
-            if IsBattleNetClub(id) then order[#order + 1] = id end
+            if IsBattleNetClub(id) then
+                order[#order + 1] = id
+                hinted[tostring(id)] = true
+            end
         end
         for _, id in ipairs(BattleNetClubs()) do order[#order + 1] = id end
         for _, clubId in ipairs(order) do
             local key = tostring(clubId)
             if not done[key] then
                 done[key] = true
-                local book = ClubBook(clubId, bn and guid or nil)
+                -- (missing from the community the channel or window points
+                -- at, they may have just joined it: its list is read again.
+                -- In your other communities they usually just aren't a
+                -- member: a list there is read again only when the game
+                -- says it changed)
+                local book = ClubBook(clubId, (bn and hinted[key]) and guid or nil)
                 local g
                 if book then
                     if bn and book.byGuid[guid] ~= nil then g = guid elseif account ~= nil then g = book.byAccount[account] end
@@ -369,11 +388,14 @@ local function GuidOf(loc)
 end
 
 -- (a slider drag calls the setter at every step: one person's steps close
--- together are one change)
-local function NewChange(guid)
+-- together are one change. When the game doesn't say whose, the menu tells
+-- one person from the next: its slider passes the menu's own location at
+-- every step, and each menu opened makes a new one - UnitPopupShared.lua,
+-- UnitPopupCustomControls.lua)
+local function NewChange(guid, loc)
     local t = Now()
-    local same = last ~= nil and last.guid == guid and t - last.t < DRAG
-    last = {guid = guid, t = t}
+    local same = last ~= nil and last.guid == guid and (guid ~= nil or last.loc == loc) and t - last.t < DRAG
+    last = {guid = guid, loc = loc, t = t}
     return not same
 end
 
@@ -382,10 +404,10 @@ local function OnSet(loc, volume)
     volume = Plain(volume)
     if type(volume) ~= "number" then return end
     local guid, channelID = GuidOf(loc)
-    local new = NewChange(guid)
+    local new = NewChange(guid, loc)
     if not guid then
-        -- (the game doesn't say whose - the lockdown: what was set is noted,
-        -- to know it as yours once it's over)
+        -- (the game doesn't say whose - a row drawn in the lockdown: what was
+        -- set is noted, to know it as yours once someone is found at it)
         if new or #unseen == 0 then
             stats.unseen = stats.unseen + 1
             unseen[#unseen + 1] = {v = volume, at = Clock()}
@@ -393,7 +415,9 @@ local function OnSet(loc, volume)
         else
             unseen[#unseen].v, unseen[#unseen].at = volume, Clock()
         end
-        if Locked() then ReadAfterLockdown() end
+        -- (looked for once the lockdown is over - or in a moment, for a row
+        -- drawn in it and moved after it)
+        ReadAfterLockdown()
         return
     end
     if new then stats.saved = stats.saved + 1 end
@@ -418,8 +442,10 @@ end
 --------------------------------------------------------------------------
 
 -- a change the game didn't say whose, newer than what is kept, that set
--- someone to this volume
+-- someone to this volume. (Never the slider's top: the game starts everyone
+-- there, so who is at it can't be told from who was set to it.)
 local function UnseenAt(volume, after)
+    if math.abs(volume - TOP) < SAME then return end
     for i = #unseen, 1, -1 do
         local u = unseen[i]
         if u.at >= after and math.abs(u.v - volume) < SAME then return u end
@@ -435,7 +461,8 @@ local function ApplyFor(memberID, channelID, again)
         return
     end
     local store = Store()
-    if not store or next(store) == nil then return end -- (nothing kept: nothing to look up)
+    -- (nothing kept, and no change waiting to be told whose: nothing to look up)
+    if (not store or next(store) == nil) and #unseen == 0 then return end
     if memberID == nil or channelID == nil or not (C_VoiceChat and C_VoiceChat.GetMemberGUID) then return end
     if C_VoiceChat.IsMemberLocalPlayer then
         local ok, me = pcall(C_VoiceChat.IsMemberLocalPlayer, memberID, channelID)
@@ -468,27 +495,28 @@ local function ApplyFor(memberID, channelID, again)
         end
     end
     local saved = Lookup(names)
-    if not saved or not (PlayerLocation and PlayerLocation.CreateFromGUID) then return end
+    if (not saved and #unseen == 0) or not (PlayerLocation and PlayerLocation.CreateFromGUID) then return end
     local okL, loc = pcall(PlayerLocation.CreateFromGUID, PlayerLocation, guid)
     if not okL or type(loc) ~= "table" then return end
     local okV, now = pcall(C_VoiceChat.GetMemberVolume, loc)
     now = okV and Plain(now) or nil
-    if type(now) == "number" and math.abs(now - saved.v) < SAME then
+    if saved and type(now) == "number" and math.abs(now - saved.v) < SAME then
         stats.same = stats.same + 1
         return
     end
     -- (a change of yours the game didn't say whose, made since, left them at
-    -- just this volume: it was this one, and it is newer - kept, not undone.
-    -- At the slider's top, where the game starts everyone, that can't be
-    -- told: left as it is.)
-    local u = type(now) == "number" and UnseenAt(now, saved.at or 0)
+    -- just this volume: it was this one, and it is newer - kept, not undone;
+    -- the first one for them too)
+    local u = type(now) == "number" and UnseenAt(now, saved and saved.at or 0)
     if u then
-        if math.abs(now - TOP) >= SAME then
-            Write(names, now, u.at)
+        Write(names, now, u.at)
+        if not u.taken then
+            u.taken = true
             stats.adopted = stats.adopted + 1
         end
         return
     end
+    if not saved then return end
     applying = true
     local ok = pcall(C_VoiceChat.SetMemberVolume, loc, saved.v)
     applying = false
@@ -528,7 +556,9 @@ end
 ReadAfterLockdown = function()
     if lockPoll then return end
     lockPoll = C_Timer.NewTicker(LOCK_POLL, ns.Guard("voicevolume", function()
-        if Locked() then return end
+        -- (over - and no slider still being dragged: a person is looked for
+        -- at the volume it ends at)
+        if Locked() or (last ~= nil and Now() - last.t < DRAG) then return end
         if lockPoll then lockPoll:Cancel() end
         lockPoll = nil
         FillIn()
@@ -554,8 +584,16 @@ local function OnEvent(_, event, ...)
         end
     elseif event == "CLUB_ADDED" or event == "CLUB_REMOVED" then
         bnClubs.at = nil
-    elseif event == "CLUB_MEMBERS_UPDATED" or event == "CLUB_MEMBER_ADDED" or event == "CLUB_MEMBER_UPDATED" or
-        event == "CLUB_MEMBER_REMOVED" then
+    elseif event == "CLUB_MEMBER_ADDED" or event == "CLUB_MEMBER_UPDATED" then
+        -- (one member: read into the club's list there and then - in the
+        -- lockdown, the whole list is read again after it)
+        local clubId, memberId = ...
+        clubId = Plain(clubId)
+        local book = clubId ~= nil and clubs[tostring(clubId)]
+        if book and (Locked() or not (C_Club and C_Club.GetMemberInfo) or not AddMember(book, clubId, memberId)) then
+            book.dirty = true
+        end
+    elseif event == "CLUB_MEMBERS_UPDATED" or event == "CLUB_MEMBER_REMOVED" then
         local clubId = Plain((...))
         local book = clubId ~= nil and clubs[tostring(clubId)]
         if book then book.dirty = true end

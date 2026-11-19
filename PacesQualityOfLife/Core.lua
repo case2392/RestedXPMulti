@@ -188,9 +188,16 @@ function ns.HandleSlash(input)
                 handled = ok and result and true or false
             end
             if not handled then
-                ns.Print("%s: %s %s - |cFFFFCC00/pqol %s on|off|r switches it", cmd,
+                -- (no "switches it" for a feature that says it can't be switched)
+                local can = true
+                if mod.Available then
+                    local ok, yes = pcall(mod.Available)
+                    can = not ok or yes ~= false
+                end
+                ns.Print("%s: %s %s%s", cmd,
                          ns.IsOn(cmd) and "|cFF66FF66on|r" or "|cFFFF6666off|r",
-                         mod.Status and mod:Status() or "", cmd)
+                         mod.Status and mod:Status() or "",
+                         can and (" - |cFFFFCC00/pqol %s on|off|r switches it"):format(cmd) or "")
             end
         end
     else

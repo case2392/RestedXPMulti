@@ -187,9 +187,12 @@ local function makePlayer(name, opts)
         P.hideGuid = same.hideGuid
         P.cvars, P.volumes = same.cvars, same.volumes
         P.strictLockdown, P.cvarSecure = same.strictLockdown, same.cvarSecure
+        P.cvarReadOnly, P.cvarLocked = same.cvarReadOnly, same.cvarLocked
     end
     if opts.strictLockdown then P.strictLockdown = true end
     if opts.cvarSecure then P.cvarSecure = true end
+    if opts.cvarReadOnly then P.cvarReadOnly = true end
+    if opts.cvarLocked then P.cvarLocked = true end
     players[name] = P
     local env = {}
     P.env = env
@@ -459,6 +462,8 @@ local function makePlayer(name, opts)
         end,
         GetClubMembers = function(id)
             P.clubMemberReads = (P.clubMemberReads or 0) + 1
+            P.clubReadsBy = P.clubReadsBy or {}
+            P.clubReadsBy[id] = (P.clubReadsBy[id] or 0) + 1
             if ClubRead() then return {__secret = true} end
             local c = clubs[id]; if not c or c.notReady then return {} end
             local out = {}
@@ -678,10 +683,11 @@ local function makePlayer(name, opts)
     env.C_CVar = {
         GetCVar = function(n) return P.cvars[n] end,
         -- value, default, server account, server character, locked from the
-        -- user, secure (only the game's own code may set it), read-only
+        -- user (cvarLocked: an add-on may still set it), secure (only the
+        -- game's own code may set it), read-only
         GetCVarInfo = function(n)
             if P.cvars[n] == nil then return end
-            return P.cvars[n], "0", false, false, false, P.cvarSecure or false, P.cvarReadOnly or false
+            return P.cvars[n], "0", false, false, P.cvarLocked or false, P.cvarSecure or false, P.cvarReadOnly or false
         end,
         SetCVar = function(n, v)
             -- (cvarRefused: the game won't let an add-on set it. A refusal
@@ -696,11 +702,17 @@ local function makePlayer(name, opts)
     }
     -- the game's volume slider on someone's menu, built when the menu first
     -- opens: it takes C_VoiceChat.SetMemberVolume as it is then, and calls
-    -- it with a location from the row's GUID
+    -- it with the menu's location, made from the row's GUID when the menu
+    -- opens (one menu stays open while the same row's slider moves; another
+    -- row's, or P.CloseMenu(), opens a new one)
     P.Slide = function(guid, volume)
         P.slider = P.slider or env.C_VoiceChat.SetMemberVolume
-        P.slider(env.PlayerLocation:CreateFromGUID(guid), volume)
+        if not P.menuLoc or P.menuFor ~= guid then
+            P.menuLoc, P.menuFor = env.PlayerLocation:CreateFromGUID(guid), guid
+        end
+        P.slider(P.menuLoc, volume)
     end
+    P.CloseMenu = function() P.menuLoc, P.menuFor = nil, nil end
 
     -- misc game API
     env.InCombatLockdown = function() return P.inCombat or false end
@@ -930,6 +942,16 @@ local function Reload(P, o)
                                appFocused = P.opts.appFocused, faction = P.faction, voiceFile = P.opts.voiceFile,
                                db = P.env.PacesQoLDB,
                                beforeLoad = o.noAddon and function(N) N.files = {} end or o.beforeLoad})
+end
+
+-- a logout to character select: the old UI's PLAYER_LOGOUT, its timers and
+-- frames gone (another character of the account may log in next, with the
+-- same saved settings)
+local function LogOut(P)
+    FireEvent(P, "PLAYER_LOGOUT")
+    for _, t in ipairs(timers) do if t.owner == P then t.cancelled = true end end
+    P.frames = {}
+    advance(5)
 end
 
 --------------------------------------------------------------------------
@@ -2294,7 +2316,8 @@ do
           "pets: the options page: ticked, the note says when, and a Reload button")
     P.printed = {}
     P.Slash("partypets")
-    check(Printed(P, "(the game's setting: hidden; shown at your next /reload)"), "pets: a bare /pqol partypets says where it stands")
+    check(Printed(P, "(the game's setting: hidden; shown at your next /reload)") and
+          Printed(P, "|cFFFFCC00/pqol partypets on|off|r switches it"), "pets: a bare /pqol partypets says where it stands")
 
     -- the reload: the switch goes through at logout, and the new UI reads it
     local N = Reload(P)
@@ -2346,12 +2369,14 @@ do
     check(N5.cvars.showPartyPets == "1" and N5.ns.db.partyPetsPending == nil and
           Printed(N5, "type |cFFFFCC00/console showPartyPets 0|r, then /reload"),
           "pets: the game refusing the switch: nothing left waiting for ever, and it says what to type")
-    check((N5.optionsPanel.petsNote.text or ""):find("Type /console showPartyPets 0, then /reload.", 1, true),
-          "pets: (the options page says it too)")
+    check((N5.optionsPanel.petsNote.text or ""):find("Type /console showPartyPets 0, then /reload.", 1, true) and
+          not (N5.optionsPanel.petsNote.text or ""):find("last reload", 1, true),
+          "pets: (the options page says it too, naming no time it may outlast)")
     local N5b = Reload(N5)
     check(N5b.ns.db.partyPetsPending == nil and #N5.cvarSets == 0 and
-          (N5b.optionsPanel.petsNote.text or ""):find("didn't take the switch", 1, true),
-          "pets: (nothing tried again at the next reload, and the note stays while the setting is as it was)")
+          (N5b.optionsPanel.petsNote.text or ""):find("didn't take the add-on's switch", 1, true) and
+          not Printed(N5b, "didn't take"),
+          "pets: (nothing tried again at the next reload, nor said again in chat; the note stays while the setting is as it was)")
     -- doing what it says (/console, then /reload): the note goes
     N5b.cvars.showPartyPets = "0"
     local N6 = Reload(N5b)
@@ -2360,7 +2385,7 @@ do
           "pets: once the setting is changed the way it said, the refusal note goes")
     -- a refusal is also forgotten when a new switch is asked for
     N6.cvars.showPartyPets = "1"
-    N6.ns.db.partyPetsRefused = {want = false, from = true}
+    N6.ns.db.partyPetsRefused = {[N6.guid] = {want = false, from = true}}
     N6.Slash("partypets off")
     check(N6.ns.db.partyPetsRefused == nil and N6.ns.db.partyPetsPending ~= nil,
           "pets: (a new switch forgets the old refusal)")
@@ -2390,18 +2415,54 @@ do
     check(crashed.ns.db.partyPetsPending == nil and crashed.ns.IsOn("partypets"),
           "pets: after a crash, a switch the setting already has is done, not left waiting")
 
-    -- another character's switch (left by a reload in combat) isn't made on this one
+    -- each character's switch is its own: one kept by a reload in combat
+    -- waits for that character, whoever logs in meanwhile
     crashed.Slash("partypets off")
     crashed.inCombat = true
     local still = Reload(crashed)
-    check(still.ns.db.partyPetsPending ~= nil and still.ns.db.partyPetsPending.who == still.guid,
+    check(still.ns.db.partyPetsPending ~= nil and still.ns.db.partyPetsPending[still.guid] ~= nil,
           "pets: a reload in combat keeps the switch, for this character")
     local other = makePlayer("PetsAlt", {db = still.env.PacesQoLDB, cvars = {showPartyPets = "1"}})
     local otherBox = OptionFrames(other)
-    check(other.ns.IsOn("partypets") and otherBox and otherBox:GetChecked() and other.ns.db.partyPetsPending == nil,
-          "pets: another character of the account isn't shown it (its own setting is), and it is dropped")
+    check(other.ns.IsOn("partypets") and otherBox and otherBox:GetChecked() and
+          other.ns.db.partyPetsPending[still.guid] ~= nil and other.ns.db.partyPetsPending[other.guid] == nil,
+          "pets: another character of the account isn't shown it (its own setting is), and it is left for the one that asked")
     local other2 = Reload(other)
     check(#other.cvarSets == 0 and other2.cvars.showPartyPets == "1", "pets: (nor switched at that character's logout)")
+    LogOut(other2)
+    local again = makePlayer("PetsA", {same = still, db = other2.env.PacesQoLDB})
+    check(not again.ns.IsOn("partypets") and again.ns.db.partyPetsPending[again.guid] ~= nil,
+          "pets: the character that asked comes back: its switch still waits")
+    local again2 = Reload(again)
+    check(again2.cvars.showPartyPets == "0" and again2.ns.db.partyPetsPending == nil, "pets: and is made at its own logout")
+
+    -- refused at one character's logout, another logging in next: that one
+    -- isn't told (not its switch) and leaves it; the one that asked is told
+    -- at its next login. Another character's setting doesn't clear the report.
+    again2.Slash("partypets on")
+    again2.cvarRefused = true
+    LogOut(again2)
+    local alt = makePlayer("PetsAlt", {same = other2, db = again2.env.PacesQoLDB})
+    check(not Printed(alt, "didn't take") and not (alt.optionsPanel.petsNote.text or ""):find("didn't take", 1, true) and
+          alt.ns.db.partyPetsPending and alt.ns.db.partyPetsPending[again2.guid] and
+          alt.ns.db.partyPetsPending[again2.guid].refused == true,
+          "pets: refused at one character's logout: the next character in isn't told, and leaves it for the one that asked")
+    local alt2 = Reload(alt)
+    LogOut(alt2)
+    local X = makePlayer("PetsA", {same = again2, db = alt2.env.PacesQoLDB})
+    check(Printed(X, "type |cFFFFCC00/console showPartyPets 1|r, then /reload") and X.ns.db.partyPetsPending == nil and
+          (X.optionsPanel.petsNote.text or ""):find("Type /console showPartyPets 1, then /reload.", 1, true),
+          "pets: the character that asked is told at its next login, and its options page says what to type")
+    LogOut(X)
+    local alt3 = makePlayer("PetsAlt", {same = alt2, db = X.env.PacesQoLDB})
+    check(alt3.cvars.showPartyPets == "1" and alt3.ns.db.partyPetsRefused and alt3.ns.db.partyPetsRefused[X.guid] ~= nil and
+          not (alt3.optionsPanel.petsNote.text or ""):find("didn't take", 1, true),
+          "pets: another character, its own setting not the one refused: neither shown the report nor clearing it")
+    LogOut(alt3)
+    local X2 = makePlayer("PetsA", {same = X, db = alt3.env.PacesQoLDB})
+    check((X2.optionsPanel.petsNote.text or ""):find("Type /console showPartyPets 1, then /reload.", 1, true) and
+          not Printed(X2, "didn't take"),
+          "pets: back on the character that asked, the note is still there (said in chat once only)")
 
     -- a client without the setting
     local Q = makePlayer("PetsB", {cvars = {}})
@@ -2412,6 +2473,9 @@ do
           "pets: a client without the setting says so and switches nothing")
     local qbox = OptionFrames(Q)
     check(qbox and not qbox:IsEnabled(), "pets: (its box can't be ticked)")
+    Q.printed = {}
+    Q.Slash("partypets")
+    check(Printed(Q, "partypets:") and not Printed(Q, "switches it"), "pets: (a bare /pqol partypets there offers no switch)")
 
     -- a client whose setting the game keeps from add-ons (secure)
     local K = makePlayer("PetsK", {cvarSecure = true})
@@ -2422,8 +2486,34 @@ do
           Printed(K, "The game keeps this setting from add-ons") and
           (K.optionsPanel.petsNote.text or ""):find("keeps this setting from add-ons", 1, true),
           "pets: a setting the game keeps from add-ons: said so, nothing waits, the box can't be ticked")
-    for _, R in ipairs({P, N, N2, N3, N4, N5, N5b, N6, off, back, back2, crashed, still, other, other2, Q, K}) do R.online = false end
+    K.printed = {}
+    K.Slash("partypets")
+    check(Printed(K, "the game keeps it from add-ons") and not Printed(K, "switches it"),
+          "pets: (a bare /pqol partypets there offers no switch)")
+    -- read-only: the same
+    local RO = makePlayer("PetsRO", {cvarReadOnly = true})
+    RO.printed = {}
+    RO.Slash("partypets on")
+    local robox = OptionFrames(RO)
+    check(not RO.ns.IsOn("partypets") and RO.ns.db.partyPetsPending == nil and robox and not robox:IsEnabled() and
+          Printed(RO, "The game keeps this setting from add-ons"),
+          "pets: a read-only setting: the same, the box can't be ticked")
+    -- locked from the player only, not from add-ons: switched as usual
+    local LK = makePlayer("PetsLK", {cvarLocked = true})
+    LK.Slash("partypets on")
+    local lkbox = OptionFrames(LK)
+    check(LK.ns.IsOn("partypets") and LK.ns.db.partyPetsPending ~= nil and lkbox and lkbox:IsEnabled(),
+          "pets: a setting locked from the player only: the add-on's switch waits for the reload as usual")
+    -- (whose switch it is was read at login: a logout where the game no
+    -- longer says who the player is still makes it)
+    LK.env.UnitGUID = function() return nil end
+    local LK2 = Reload(LK)
+    check(LK2.cvars.showPartyPets == "1" and LK2.ns.db.partyPetsPending == nil,
+          "pets: (the character read at login: the logout makes its switch whatever the game says then)")
+    for _, R in ipairs({P, N, N2, N3, N4, N5, N5b, N6, off, back, back2, crashed, still, other, other2, again, again2,
+                        alt, alt2, X, alt3, X2, Q, K, RO, LK, LK2}) do R.online = false end
     players["PetsA"], players["PetsB"], players["PetsAlt"], players["PetsK"] = nil, nil, nil, nil
+    players["PetsRO"], players["PetsLK"] = nil, nil
 end
 
 --------------------------------------------------------------------------
@@ -2516,10 +2606,12 @@ do
     check(bkept and bkept[bs.accountGUID] and bkept[bs.accountGUID].v == 25 and bkept["club:VB:2"] and bkept["club:VB:2"].v == 25,
           "volume: in a Battle.net community it is kept under the account's GUID and the membership")
     bs.accountGUID = "BNetAccount-0-00000000BEEF"
+    bj.bnFriends.VolBS = nil -- (not his friend this time: only the membership can find him)
     local nb = Reload(bj, {beforeLoad = function(N) N.volumes = {}; N.voice[160].members = {[N.accountGUID] = true} end})
     nb.voice[160].members[bs.accountGUID] = true
     nb.Fire("VOICE_CHAT_CHANNEL_MEMBER_ADDED", bs.accountGUID, 160)
     check(nb.volumes.VolBS == 25, "volume: another account GUID next session: found by the membership, set again")
+    nb.bnFriends.VolBS = true
     -- a channel that names him by his character while the community names
     -- his account; an older setting kept under the character (set from his
     -- party frame, say) gives way to the newer one
@@ -2649,7 +2741,8 @@ do
     check(Printed(pj3, "1 change(s) the game didn't say whose (in a dungeon or raid), 1 of them kept after it"),
           "volume: /pqol voicevolume says so (one drag, one change)")
     -- at the slider's top - where the game starts everyone - it can't be
-    -- told whose: nobody found there is taken as set to it
+    -- told whose: nobody found there is taken as set to it, each is set
+    -- back to their own - then, and whenever found there later
     advance(5)
     pj3.locked = true
     pj3.Slide(secretSam, 100)
@@ -2658,8 +2751,15 @@ do
     pj3.voice[180].members[pl.accountGUID] = true
     pj3.locked = false
     advance(6)
-    check(kept(pj3)["club:PB:3"].v == 45 and kept(pj3)["club:PB:2"].v == 30 and pj3.volumes.PvSam == 100,
-          "volume: a change to the top in a dungeon: nobody at the top is taken as set to it (nor undone)")
+    check(kept(pj3)["club:PB:3"].v == 45 and kept(pj3)["club:PB:2"].v == 30 and pj3.volumes.PvSam == 30 and
+          pj3.volumes.PvLogan == 45,
+          "volume: a change to the top in a dungeon can't be told from the game's own start: nobody taken as set to it, each set back to their own")
+    advance(60)
+    pj3.voice[180].members[pl.accountGUID] = nil
+    pj3.volumes.PvLogan = nil
+    pj3.voice[180].members[pl.accountGUID] = true
+    pj3.Fire("VOICE_CHAT_CHANNEL_MEMBER_ADDED", pl.accountGUID, 180)
+    check(pj3.volumes.PvLogan == 45, "volume: (and someone found at the top later is set again as usual)")
     -- one older than what is kept since isn't taken either
     advance(2)
     local later = math.floor(clock) + 1
@@ -2692,28 +2792,41 @@ do
     check(kept(pj4)["club:PB:2"].v == 40 and kept(pj4)[ps.guid].v == 40 and kept(pj4)[ps.accountGUID].v == 40,
           "volume: a change made just after the lockdown, before the one in it is filled in, stays")
 
-    -- next session, his account GUID another: through the membership
+    -- next session, his account GUID another: through the membership (not
+    -- his friend then, so nothing else can find him)
     ps.accountGUID = "BNetAccount-0-00000000CAFE"
+    pj4.bnFriends.PvSam = nil
     local pj5 = Reload(pj4, {beforeLoad = function(N)
         N.volumes = {}
         N.voice[180].members = {[N.accountGUID] = true, [ps.accountGUID] = true}
     end})
     check(pj5.volumes.PvSam == 40, "volume: next session, with another account GUID: 40, through the membership")
-    -- someone new in the community: its list is read again, and his
-    -- membership kept with what is set for him
+    pj5.bnFriends.PvSam = true
+    -- someone new in the community: he is read into its list (not the whole
+    -- list again), and his membership kept with what is set for him
     advance(5)
     local pn = makePlayer("PvNew", {gameAccountID = 724, bnetAccountId = 9304})
     table.insert(clubs["PB"].members, "PvNew")
+    local pbReads = (pj5.clubReadsBy or {})["PB"] or 0
     pj5.Fire("CLUB_MEMBER_ADDED", "PB", 4)
     pj5.Slide(pn.accountGUID, 52)
-    check(kept(pj5)["club:PB:4"] and kept(pj5)["club:PB:4"].v == 52,
-          "volume: someone who just joined the community: his membership is read and kept")
-    -- the community's list changed (it would be read again), then a dungeon:
-    -- the list as it was is used, none read
+    check(kept(pj5)["club:PB:4"] and kept(pj5)["club:PB:4"].v == 52 and ((pj5.clubReadsBy or {})["PB"] or 0) == pbReads,
+          "volume: someone who just joined the community: he alone is read, and his membership kept")
+    -- the game saying the whole list changed: it is read again at its next use
     advance(5)
-    pj5.Fire("CLUB_MEMBER_UPDATED", "PB", 2)
+    local pn2 = makePlayer("PvNew2", {gameAccountID = 725, bnetAccountId = 9305})
+    table.insert(clubs["PB"].members, "PvNew2")
+    pj5.Fire("CLUB_MEMBERS_UPDATED", "PB")
+    pj5.Slide(pn2.accountGUID, 44)
+    check(kept(pj5)["club:PB:5"] and kept(pj5)["club:PB:5"].v == 44,
+          "volume: (the community's whole list changed: read again, the newcomer's membership kept)")
+    -- the community's list changed (it would be read again), then a dungeon:
+    -- the list as it was is used, none read - a member changing in there too
+    advance(5)
+    pj5.Fire("CLUB_MEMBERS_UPDATED", "PB")
     pj5.locked = true
     reads = pj5.lockedClubReads or 0
+    pj5.Fire("CLUB_MEMBER_UPDATED", "PB", 3)
     pj5.Slide(ps.accountGUID, 35)
     check(kept(pj5)["club:PB:2"].v == 35 and (pj5.lockedClubReads or 0) == reads,
           "volume: (in a dungeon, the community's list as read before it gives his membership at once)")
@@ -2721,7 +2834,7 @@ do
     advance(6)
     pj5.printed = {}
     pj5.Slash("voicevolume")
-    check(Printed(pj5, "(3 people's volumes kept;"), "volume: (Sam, Logan and the newcomer: three people, however many names)")
+    check(Printed(pj5, "(4 people's volumes kept;"), "volume: (Sam, Logan and the two newcomers: four people, however many names)")
     -- forgetting in a dungeon: nothing comes back once out
     advance(5)
     pj5.locked = true
@@ -2731,8 +2844,140 @@ do
     advance(6)
     check(pj5.ns.db.voiceVolumes == nil, "volume: forgotten in a dungeon: nothing filled in once out")
 
-    for _, R in ipairs({pj, ps, pl, pn, pj2, pj3, pj4, pj5}) do R.online = false; players[R.name] = nil end
+    for _, R in ipairs({pj, ps, pl, pn, pn2, pj2, pj3, pj4, pj5}) do R.online = false; players[R.name] = nil end
     clubs["PB"] = nil
+end
+
+--------------------------------------------------------------------------
+-- voice volume: changes the game doesn't say whose (rows drawn in a
+-- dungeon), and which community lists are read for whom
+--------------------------------------------------------------------------
+do
+    local fj = makePlayer("FcJustin", {gameAccountID = 731, bnetAccountId = 9401, strictLockdown = true})
+    local fs = makePlayer("FcSam", {gameAccountID = 732, bnetAccountId = 9402})
+    local fl = makePlayer("FcLogan", {gameAccountID = 733, bnetAccountId = 9403})
+    clubs["FC"] = {type = ENUM.ClubType.BattleNet, members = {"FcJustin", "FcSam", "FcLogan"}}
+    fj.voice[190] = {clubId = "FC", streamId = "FCS", isActive = true,
+                     members = {[fj.accountGUID] = true, [fs.accountGUID] = true, [fl.accountGUID] = true}}
+    local function kept(P) return P.ns.db.voiceVolumes or {} end
+    local secretSam = {__secret = true, real = fs.accountGUID}
+    local secretLogan = {__secret = true, real = fl.accountGUID}
+
+    -- the first change for someone, made in a dungeon from a row drawn
+    -- there, with nothing kept at all yet: kept once out, set next session
+    advance(5)
+    fj.locked = true
+    fj.Slide(secretSam, 40)
+    check(fj.volumes.FcSam == 40 and fj.ns.db.voiceVolumes == nil,
+          "volume: (a first change in a dungeon, the game not saying whose: nothing kept yet)")
+    fj.locked = false
+    advance(6)
+    check(kept(fj)[fs.accountGUID] and kept(fj)[fs.accountGUID].v == 40 and kept(fj)["club:FC:2"] and
+          kept(fj)["club:FC:2"].v == 40 and fj.volumes.FcLogan == nil,
+          "volume: once out, the one found at it keeps it - his first change too (the others, at the game's own, untouched)")
+    -- someone else's first, with others kept
+    advance(5)
+    fj.locked = true
+    fj.Slide(secretLogan, 35)
+    fj.locked = false
+    advance(6)
+    check(kept(fj)["club:FC:3"] and kept(fj)["club:FC:3"].v == 35 and kept(fj)["club:FC:2"].v == 40,
+          "volume: (someone's first with others kept: kept too)")
+    -- later, in party voice, his character (not a friend: nothing says whose
+    -- character it is) is found at that volume: it keeps it too - still the
+    -- one change, kept
+    fj.voice[190].isActive = false
+    fj.voice[191] = {channelType = ENUM.ChatChannelType.PrivateParty, isActive = true,
+                     members = {[fj.guid] = true, [fs.guid] = true}}
+    fj.Fire("VOICE_CHAT_CHANNEL_ACTIVATED", 191)
+    check(kept(fj)[fs.guid] and kept(fj)[fs.guid].v == 40,
+          "volume: (his character, found at it in party voice later, keeps it too)")
+    fj.voice[191].isActive, fj.voice[190].isActive = false, true
+    fj.printed = {}
+    fj.Slash("voicevolume")
+    check(Printed(fj, "2 change(s) the game didn't say whose (in a dungeon or raid), 2 of them kept after it"),
+          "volume: (each counted once)")
+    local fj2 = Reload(fj, {beforeLoad = function(N) N.volumes = {} end})
+    check(fj2.volumes.FcSam == 40 and fj2.volumes.FcLogan == 35, "volume: and both set again next session")
+
+    -- two people changed there moments apart, one menu then the next row's:
+    -- two changes, each kept, neither undone
+    advance(5)
+    fj2.locked = true
+    fj2.Slide(secretSam, 20)
+    advance(1.5)
+    fj2.Slide(secretLogan, 80)
+    fj2.locked = false
+    advance(6)
+    check(fj2.volumes.FcSam == 20 and fj2.volumes.FcLogan == 80 and kept(fj2)["club:FC:2"].v == 20 and
+          kept(fj2)["club:FC:3"].v == 80,
+          "volume: two people changed in a dungeon moments apart: two changes, each kept, neither undone")
+    fj2.printed = {}
+    fj2.Slash("voicevolume")
+    check(Printed(fj2, "2 change(s) the game didn't say whose (in a dungeon or raid), 2 of them kept after it"),
+          "volume: (counted as two)")
+
+    -- a row drawn in the dungeon, moved once out of it: looked for in a moment
+    advance(5)
+    fj2.Slide(secretSam, 66)
+    advance(6)
+    check(fj2.volumes.FcSam == 66 and kept(fj2)["club:FC:2"].v == 66,
+          "volume: a row drawn in a dungeon, its slider moved once out of it: kept a moment later")
+
+    -- a drag still going as the dungeon ends: looked for once it stops, at
+    -- the volume it ends at
+    advance(5)
+    fj2.locked = true
+    fj2.Slide(secretLogan, 70)
+    advance(4.5)
+    fj2.locked = false
+    fj2.Slide(secretLogan, 60)
+    advance(1)
+    check(kept(fj2)["club:FC:3"].v == 80, "volume: (nothing taken while the slider is still moving)")
+    fj2.Slide(secretLogan, 50)
+    advance(5)
+    check(fj2.volumes.FcLogan == 50 and kept(fj2)["club:FC:3"].v == 50,
+          "volume: a drag going on as the dungeon ends: what it ends at is kept")
+
+    -- your other Battle.net communities: read once, not again at each
+    -- arrival who isn't in them (only the channel's own is read again for
+    -- someone it doesn't have, at most every 30 seconds)
+    clubs["FX"] = {type = ENUM.ClubType.BattleNet, members = {"FcJustin", "FcLogan"}}
+    local fj3 = Reload(fj2, {beforeLoad = function(N) N.volumes = {} end})
+    local before = (fj3.clubReadsBy or {})["FX"] or 0
+    for _ = 1, 3 do
+        advance(40)
+        fj3.voice[190].members[fs.accountGUID] = nil
+        fj3.volumes.FcSam = nil
+        fj3.voice[190].members[fs.accountGUID] = true
+        fj3.Fire("VOICE_CHAT_CHANNEL_MEMBER_ADDED", fs.accountGUID, 190)
+    end
+    check(before == 1 and fj3.volumes.FcSam == 66 and ((fj3.clubReadsBy or {})["FX"] or 0) == before,
+          "volume: a community he isn't in is read once, not again at each of his arrivals")
+    -- the channel's own community, someone in it the list as read doesn't
+    -- have (no word from the game): read again for him
+    local fn = makePlayer("FcNew", {gameAccountID = 734, bnetAccountId = 9404})
+    table.insert(clubs["FC"].members, "FcNew")
+    advance(40)
+    fj3.Slide(fn.accountGUID, 33)
+    check(kept(fj3)["club:FC:4"] and kept(fj3)["club:FC:4"].v == 33,
+          "volume: someone the channel's community list didn't have: read again, his membership kept")
+    -- one member updated over and over: the list voice members are matched
+    -- against still has room for a newcomer (not a friend, in the channel by
+    -- his character: only the community's own match finds him)
+    for _ = 1, 600 do fj3.Fire("CLUB_MEMBER_UPDATED", "FC", 2) end
+    local fn2 = makePlayer("FcNew2", {gameAccountID = 735, bnetAccountId = 9405})
+    table.insert(clubs["FC"].members, "FcNew2")
+    fj3.Fire("CLUB_MEMBER_ADDED", "FC", 5)
+    fj3.Slide(fn2.accountGUID, 27)
+    fj3.volumes.FcNew2 = nil
+    fj3.voice[190].members[fn2.guid] = true
+    fj3.Fire("VOICE_CHAT_CHANNEL_MEMBER_ADDED", fn2.guid, 190)
+    check(fj3.volumes.FcNew2 == 27,
+          "volume: a member updated over and over doesn't crowd a newcomer out of the community's match")
+
+    for _, R in ipairs({fj, fs, fl, fn, fn2, fj2, fj3}) do R.online = false; players[R.name] = nil end
+    clubs["FC"], clubs["FX"] = nil, nil
 end
 
 realPrint(("Pace's Quality of Life harness: %d passed, %d failed"):format(passed, failed))
