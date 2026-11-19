@@ -161,13 +161,48 @@ setting changes or you ask for another switch. If the game marks the
 setting as one add-ons can't change, the box can't be ticked and says
 so. Not tried in game yet.
 
+## Edit Mode: each computer its own layout
+
+Edit Mode's layouts are your account's, and so is which one each
+character has on: play on your laptop after your PC and the character
+comes up with the PC's layout, until you switch it in Edit Mode. Pace's
+QoL keeps a layout for each computer and switches to it as you log in.
+
+Setting it up, once on each computer: pick the computer's layout in Edit
+Mode, then press **Use current** next to "Edit Mode: each computer its
+own layout" in the options (or type `/pqol layout use`). From then on,
+every character logging in on that computer is switched to its layout.
+
+How the switch is made: the game applies a layout from inside the call
+that switches it, so switched from an add-on, the whole layout - the
+action bars and frames it places - would be applied as add-on code, which
+can leave them unable to change in combat for the rest of the session.
+So the add-on switches and reloads the UI at once, and the reloaded UI
+applies the layout as the game's own. That's one extra loading screen,
+only when the character's layout isn't the computer's already - that is,
+the first login on a computer after playing on the other one. In combat
+it waits for the fight to end.
+
+Picking another layout in Edit Mode keeps it until you log out (it says
+so); press **Use current** to make it the computer's instead.
+`/pqol layout forget` stops the switching. If the computer's layout is
+renamed or deleted, or is another character's own layout, nothing is
+switched and you're told. If a switch doesn't take, it isn't tried again
+(no reload after reload) until you choose the layout again.
+
+"This computer" means this computer's own saved settings for Pace's QoL
+(in WoW's `WTF` folder, never sent to the game's servers). If you copy or
+sync that folder between computers, they can't be told apart. Not tried
+in game yet.
+
 ## Commands
 
 - `/pqol` - the options page
 - `/pqol status` - what's on, and any errors this session
-- `/pqol <feature> on|off` - `questlog`, `lfgroles`, `zonetracker`, `voice`, `voicevolume`, `partypets`
+- `/pqol <feature> on|off` - `questlog`, `lfgroles`, `zonetracker`, `voice`, `voicevolume`, `partypets`, `layout`
 - `/pqol voice` - what voice sharing sent, heard and was refused (`/pqol voice log`: the last messages)
 - `/pqol voicevolume` - how many volumes are kept (`/pqol voicevolume forget`: forget them all)
+- `/pqol layout` - this computer's Edit Mode layout and the one on now (`/pqol layout use`: make the one on now this computer's; `/pqol layout forget`: stop switching)
 
 ## Offline tests
 

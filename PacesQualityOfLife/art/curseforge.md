@@ -27,7 +27,7 @@ rather match "Classic UI (Forever)" and "CrossTalk (Forever)", use
 
 ## Summary
 
-> Track or untrack a whole zone's quests in one click, filter Looking For Group players by role, keep the quest tracker on your zone, see who's in voice, keep each person's voice volume, and see your party's pets.
+> Track or untrack a whole zone's quests in one click, filter Looking For Group players by role, keep the quest tracker on your zone, see who's in voice, keep each person's voice volume, see your party's pets, and give each computer its own Edit Mode layout.
 
 ## Description
 
@@ -40,11 +40,18 @@ file's text can go there directly.
 
 | Field | Value |
 |---|---|
-| File | `dist/PacesQualityOfLife-1.2.1.zip` (contains the `PacesQualityOfLife` folder) |
-| Display name | Pace's Quality of Life 1.2.1 |
-| Release type | Beta (1.2's party pets, voice volumes and voice fix not tried in game yet; switch to Release once they have been) |
+| File | `dist/PacesQualityOfLife-1.3.0.zip` (contains the `PacesQualityOfLife` folder) |
+| Display name | Pace's Quality of Life 1.3.0 |
+| Release type | Beta (1.3.0's Edit Mode layouts and 1.2's party pets, voice volumes and voice fix not tried in game yet; switch to Release once they have been) |
 | Game version | WoW Forever |
-| Changelog | below: 1.2.1's (1.2.0 is already uploaded) |
+| Changelog | below: 1.3.0's (1.2.1 is already uploaded) |
+
+## Changelog (1.3.0)
+
+```
+1.3.0
+- New: each computer its own Edit Mode layout. Edit Mode's layouts are your account's, and so is which one each character has on, so playing on your laptop after your PC brings the PC's layout. Pick a computer's layout in Edit Mode, then press Use current next to "Edit Mode: each computer its own layout" in the options (or /pqol layout use) - once on each computer. Every character logging in there is then switched to it. The switch reloads the UI once, so the game applies the layout as its own and your bars keep working in combat; it only happens when the layout isn't the computer's already, and never in combat. /pqol layout forget stops it.
+```
 
 ## Changelog (1.2.1)
 

@@ -14,6 +14,8 @@
 --                 set again whenever they're in voice with you
 --   partypets   - the party frames show party members' pets (the game's
 --                 own setting, switched at the next /reload)
+--   layout      - Edit Mode: each computer its own layout, switched to as
+--                 you log in on it
 -- Rules: widget calls plus hooksecurefunc only, nothing of ours written
 -- into Blizzard's tables, secret values read under pcall, Lua 5.1.
 
@@ -34,6 +36,8 @@ local DEFAULTS = {
     -- tell other Pace's QoL users in your communities when you're in voice
     voiceShare = true,
     voicevolume = true,
+    -- (nothing is switched until a layout is chosen for this computer)
+    layout = true,
     -- the Looking For Group role filter's last choice
     lfgTank = true,
     lfgHealer = true,

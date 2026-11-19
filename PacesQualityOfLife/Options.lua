@@ -42,6 +42,22 @@ function ns.RefreshOptions()
         panel.petsReload:SetShown(waiting and true or false)
         if panel.petsCheck then Dim(panel.petsCheck, pets.Available()) end
     end
+    if panel and panel.layoutNote and ns.Layout then panel.layoutNote:SetText(ns.Layout.Note()) end
+end
+
+-- a note under a feature's checkbox, and a button at its right
+local function NoteAndButton(y, buttonText, onClick)
+    local note = panel:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
+    note:SetPoint("TOPLEFT", 48, y + 4)
+    note:SetWidth(LABEL_WIDTH - 160)
+    note:SetJustifyH("LEFT")
+    if note.SetWordWrap then note:SetWordWrap(true) end
+    local button = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+    button:SetSize(110, 22)
+    button:SetPoint("TOPLEFT", LABEL_WIDTH - 96, y + 6)
+    button:SetText(buttonText)
+    button:SetScript("OnClick", onClick)
+    return note, button
 end
 
 function ns.BuildOptions()
@@ -65,19 +81,20 @@ function ns.BuildOptions()
         y = y - h
         if key == "partypets" then
             -- what the switch waits for, and a button for the reload
-            local note = panel:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
-            note:SetPoint("TOPLEFT", 48, y + 4)
-            note:SetWidth(LABEL_WIDTH - 160)
-            note:SetJustifyH("LEFT")
-            if note.SetWordWrap then note:SetWordWrap(true) end
-            local reload = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
-            reload:SetSize(110, 22)
-            reload:SetPoint("TOPLEFT", LABEL_WIDTH - 96, y + 6)
-            reload:SetText("Reload now")
-            reload:SetScript("OnClick", function()
+            local note, reload = NoteAndButton(y, "Reload now", function()
                 if ns.PartyPets then ns.SafeCall("partypets", ns.PartyPets.ReloadNow) end
             end)
             panel.petsCheck, panel.petsNote, panel.petsReload = check, note, reload
+            y = y - 30
+        end
+        if key == "layout" then
+            -- this computer's layout, and a button making the one on now it
+            local note, use = NoteAndButton(y, "Use current", function()
+                if ns.Layout then
+                    ns.SafeCall("layout", function() ns.Print("%s", ns.Layout.UseCurrent()) end)
+                end
+            end)
+            panel.layoutNote, panel.layoutUse = note, use
             y = y - 30
         end
         if key == "voice" then
