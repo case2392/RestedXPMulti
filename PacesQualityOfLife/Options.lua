@@ -105,7 +105,7 @@ function ns.BuildOptions()
         if key == "gold" then
             -- how fresh the prices are, and a button opening the window
             local note, open = NoteAndButton(y, "Open", function()
-                if ns.Gold then ns.SafeCall("gold", ns.Gold.Toggle) end
+                if ns.Gold then ns.SafeCall("gold", ns.Gold.Open or ns.Gold.Toggle) end
             end)
             panel.goldNote, panel.goldOpen = note, open
             y = y - 30

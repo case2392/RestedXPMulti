@@ -10,11 +10,13 @@
 --     data changes), sorts a copy when a column was clicked, and fills the
 --     14 rows. Nothing here walks the price book, and nothing runs per frame:
 --     a refresh follows a click, the wheel, or Gold.lua saying something
---     changed (at most one every 0.2 s), and a one-second tick runs only
---     while a countdown or a job's progress is on screen.
+--     changed (at most one every 0.2 s), a one-second tick runs only while
+--     a countdown or a job's progress is on screen, and while the window is
+--     open it is refreshed once a minute (the header says how old the
+--     prices are).
 --   * Search only puts the item's name into the auction house's search box
---     (or hands it to Auctionator): the player presses Enter. Nothing is
---     bought, bid on or posted from here.
+--     (or hands it to Auctionator): the player clicks Search there. Nothing
+--     is bought, bid on or posted from here.
 --   * The auction house button is ours, parented to AuctionHouseFrame and
 --     sitting just above its top right corner; nothing is written into
 --     Blizzard's frames.
@@ -43,8 +45,8 @@ local QUALITY = {[0] = "9d9d9d", [1] = "ffffff", [2] = "1eff00", [3] = "0070dd",
 local COIN_G = "|TInterface\\MoneyFrame\\UI-GoldIcon:0|t"
 local COIN_S = "|TInterface\\MoneyFrame\\UI-SilverIcon:0|t"
 local COIN_C = "|TInterface\\MoneyFrame\\UI-CopperIcon:0|t"
-local ARROW_UP = " |TInterface\\Buttons\\Arrow-Up-Up:0|t"
-local ARROW_DOWN = " |TInterface\\Buttons\\Arrow-Down-Up:0|t"
+local ARROW_UP = "Interface\\Buttons\\Arrow-Up-Up"
+local ARROW_DOWN = "Interface\\Buttons\\Arrow-Down-Up"
 local UNKNOWN_ICON = "Interface\\Icons\\INV_Misc_QuestionMark"
 
 local TABS = {{"crafts", "Crafts"}, {"bargains", "Bargains"}, {"vendors", "Vendors"}, {"bags", "Your bags"}}
@@ -120,6 +122,8 @@ end
 local function BestCell(row)
     if not row.confident then return GREY .. tostring(row.bestText or "?") .. "|r" end
     if not row.best then return GREY .. "-|r" end
+    -- (an auction price that isn't proven keeps its mark here too)
+    if row.bestHow == "Auction" and row.mark then return "Auction " .. SellsCell(row.best, row.mark) end
     return tostring(row.bestHow) .. " " .. Coins(row.best, true)
 end
 
@@ -163,8 +167,10 @@ local COLUMNS = {
         {"Item", 180, "name", NameCell, icon = true},
         {"Count", 44, "count", function(r) return r.count and Gold.Count(r.count) end, right = true},
         {"Vendor", 76, "vendor", function(r) return Cell(r.vendor) end, right = true},
-        {"Auction", 76, "auction", function(r) return r.auctionText and (GREY .. r.auctionText .. "|r") or Cell(r.auction) end,
-         right = true},
+        {"Auction", 76, "auction", function(r)
+            if r.auctionText then return GREY .. r.auctionText .. "|r" end
+            return r.auction and SellsCell(r.auction, r.mark) or ""
+        end, right = true},
         {"Disenchant", 76, "disenchant", function(r) return Cell(r.disenchant) end, right = true},
         {"Best", 212, "best", BestCell},
     },
@@ -197,8 +203,8 @@ end
 -- keep the selection on the same item when the list was rebuilt
 local function Reselect(list)
     local sel = U.selected
-    if not sel then return end
-    for _, row in ipairs(list) do if row == sel then return end end
+    if not (sel or U.selSig) then return end
+    for _, row in ipairs(list) do if sel and row == sel then return end end
     U.selected = nil
     for _, row in ipairs(list) do
         if Sig(row) == U.selSig then
@@ -224,6 +230,14 @@ local function LayOut(view)
             head:SetPoint("TOPLEFT", U.frame, "TOPLEFT", LEFT + x, LIST_TOP + 20)
             head:SetSize(col[2], 18)
             head.label:SetJustifyH(col.right and "RIGHT" or "LEFT")
+            -- (the sort arrow sits over the head's top edge, on the side the
+            -- title is on: the narrow columns have no room beside the title)
+            head.arrow:ClearAllPoints()
+            if col.right then
+                head.arrow:SetPoint("BOTTOMRIGHT", head, "TOPRIGHT", -3, -4)
+            else
+                head.arrow:SetPoint("BOTTOMLEFT", head, "TOPLEFT", 3, -4)
+            end
             head:Show()
             local left = x + (col.icon and 22 or 3)
             for _, b in ipairs(U.rows) do
@@ -252,11 +266,19 @@ end
 local function FillHeads(view)
     local sort = U.sort[view]
     for i, col in ipairs(COLUMNS[view]) do
-        local text = col[1]
-        if sort and sort.field == col[3] then text = text .. (sort.desc and ARROW_DOWN or ARROW_UP) end
-        U.heads[i].label:SetText(text)
+        local head = U.heads[i]
+        head.label:SetText(col[1])
+        if sort and sort.field == col[3] then
+            head.arrow:SetTexture(sort.desc and ARROW_DOWN or ARROW_UP)
+            head.arrow:Show()
+        else
+            head.arrow:Hide()
+        end
     end
 end
+
+-- (defined with the tooltips, below)
+local RowTip
 
 local function FillRows()
     local list, cols = U.list or {}, COLUMNS[U.view or "crafts"]
@@ -291,6 +313,15 @@ local function FillRows()
     else
         U.count:SetText("")
     end
+    -- the tooltip of the row under the mouse follows what the row now shows
+    local tt = GameTooltip
+    if type(tt) == "table" and type(tt.IsOwned) == "function" then
+        for _, b in ipairs(U.rows) do
+            if tt:IsOwned(b) and b.row ~= U.tipRow then
+                if b.row then RowTip(b) else tt:Hide() end
+            end
+        end
+    end
 end
 
 -- what an empty list says instead
@@ -311,7 +342,8 @@ end
 -- the line under the list
 local function FootText(view, list, meta)
     if view == "bags" then
-        return #list > 0 and Gold.BagTotals(list, Coins).text or ""
+        -- (short coins: three sums and what to press have to fit one line)
+        return #list > 0 and Gold.BagTotals(list, U.ShortCoins).text or ""
     elseif view == "enchants" then
         return #list > 0 and Gold.ENCHANT_FOOTER or ""
     elseif view == "bargains" and meta then
@@ -324,6 +356,8 @@ local function FootText(view, list, meta)
     end
     return ""
 end
+
+function U.ShortCoins(copper) return Coins(copper, true) end
 
 local function SetButton(b, label, enabled, tip)
     b:SetText(label)
@@ -346,14 +380,34 @@ local function Footer()
         SetButton(U.search, "Search", false, "Still loading this item's name")
     else
         SetButton(U.search, "Search", true,
-                  ("Looks for %s in the auction house. Pace's QoL never buys for you."):format(sel.name))
+                  ("Puts %s into the auction house's search box - then click Search there. Pace's QoL never buys for you."):format(
+                      sel.name))
     end
+    -- (a note is about the moment it was said in: gone once a job starts or
+    -- ends, or the auction house opens or closes)
+    if U.note and (st.state ~= U.noteState or st.ahOpen ~= U.noteAh) then U.note = nil end
     -- (the warning that our own auctions may be counted stays beside
     -- whatever the last job said)
     local said = st.message
     if said and st.hint then said = said .. " " .. st.hint end
     U.status:SetText(U.note or said or st.hint or "")
     return st.state ~= "idle" or st.scan.label ~= "Scan"
+end
+
+-- what a click has to say, on the line above the buttons: until the state
+-- it was said in changes, and for 8 seconds at most (a job's progress and
+-- how it ended belong on that line too)
+local function SetNote(text)
+    U.note = text
+    U.noteTok = (U.noteTok or 0) + 1
+    if not text then return end
+    local st, tok = Gold.State(), U.noteTok
+    U.noteState, U.noteAh = st.state, st.ahOpen
+    Later(8, function()
+        if tok ~= U.noteTok or not U.note then return end
+        U.note = nil
+        if U.frame and U.frame:IsShown() then Footer() end
+    end)
 end
 
 local function Tick()
@@ -380,8 +434,12 @@ function U.Refresh()
     U.list, U.view = list, view
     Reselect(list)
     U.offset = math.max(0, math.min(U.offset, MaxOffset()))
+    -- (a new range can move the slider's old value, and the slider then says
+    -- so: that isn't the player scrolling)
+    U.syncing = true
     U.slider:SetMinMaxValues(0, MaxOffset())
     U.slider:SetValue(U.offset)
+    U.syncing = false
     U.slider:SetShown(MaxOffset() > 0)
 
     for _, tab in ipairs(TABS) do
@@ -408,6 +466,15 @@ function U.Refresh()
         U.ticking = true
         Later(1, Tick)
     end
+    -- the header's "25 min ago" (and what is too old to show) moves with
+    -- the clock: once a minute while the window is open
+    if not U.minute then
+        U.minute = true
+        Later(60, function()
+            U.minute = false
+            U.Refresh()
+        end)
+    end
 end
 
 -- a refresh soon: once per 0.2 s however often it is asked for
@@ -430,7 +497,8 @@ end
 
 local function SetTab(key)
     if U.tab == key then return end
-    U.tab, U.offset, U.selected, U.selSig, U.note = key, 0, nil, nil, nil
+    U.tab, U.offset, U.selected, U.selSig = key, 0, nil, nil
+    SetNote(nil)
     U.Refresh()
 end
 U.SetTab = SetTab
@@ -442,15 +510,28 @@ U.SetTab = SetTab
 local function HideTip() GameTooltip:Hide() end
 
 -- a row: the item's own tooltip, then how the row was worked out
-local function RowTip(b)
+-- (SetHyperlink and SetItemByID say false, and hide the tooltip, when the
+-- game has nothing to show for the item: not having thrown isn't enough)
+local function TipItem(tt, method, arg)
+    if type(tt[method]) ~= "function" then return false end
+    local ok, shown = pcall(tt[method], tt, arg)
+    return ok and shown ~= false
+end
+
+function RowTip(b)
     local row = b.row
     if not row then return end
+    U.tipRow = row
     local tt = GameTooltip
     tt:SetOwner(b, "ANCHOR_RIGHT")
     local item = false
-    if row.link then item = pcall(tt.SetHyperlink, tt, row.link) end
-    if not item and row.id then item = pcall(tt.SetItemByID, tt, row.id) end
-    if not item then tt:AddLine(row.name or "?") end
+    if row.link then item = TipItem(tt, "SetHyperlink", row.link) end
+    if not item and row.id then item = TipItem(tt, "SetItemByID", row.id) end
+    if not item then
+        -- (ours again: a tooltip that hid itself has let go of its owner)
+        tt:SetOwner(b, "ANCHOR_RIGHT")
+        tt:AddLine(row.name or (row.id and ("item #" .. tostring(row.id))) or "?")
+    end
     local lines = Gold.Tip(row)
     if row.confident == false and row.bestText then table.insert(lines, 1, row.bestText) end
     if #lines > 0 then tt:AddLine(" ") end
@@ -483,7 +564,8 @@ end
 local function ClickRow(b)
     local row = b.row
     if not row then return end
-    U.selected, U.selSig, U.note = row, Sig(row), nil
+    U.selected, U.selSig = row, Sig(row)
+    SetNote(nil)
     for _, other in ipairs(U.rows) do other.sel:SetShown(other.row == row) end
     Footer()
 end
@@ -507,13 +589,13 @@ end
 
 local function ClickScan()
     local ok, why = Gold.StartScan()
-    U.note = (not ok and type(why) == "string") and (why:sub(1, 1):upper() .. why:sub(2)) or nil
+    SetNote((not ok and type(why) == "string") and (why:sub(1, 1):upper() .. why:sub(2)) or nil)
     U.Refresh()
 end
 
 local function ClickCheck()
     local ok, why = Gold.StartCheck()
-    U.note = (not ok and type(why) == "string") and (why:sub(1, 1):upper() .. why:sub(2)) or nil
+    SetNote((not ok and type(why) == "string") and (why:sub(1, 1):upper() .. why:sub(2)) or nil)
     U.Refresh()
 end
 
@@ -522,7 +604,7 @@ end
 local function ClickSearch()
     local row = U.selected
     if not row then return end
-    U.note = Gold.Search(row.name)
+    SetNote(Gold.Search(row.name))
     Footer()
 end
 
@@ -646,7 +728,8 @@ local function Build()
     check.label:SetText("Enchants: what they cost")
     check:SetScript("OnClick", ns.Guard("gold", function(self)
         U.enchants = self:GetChecked() and true or false
-        U.offset, U.selected, U.selSig, U.note = 0, nil, nil, nil
+        U.offset, U.selected, U.selSig = 0, nil, nil
+        SetNote(nil)
         U.Refresh()
     end))
     U.enchantCheck = check
@@ -661,6 +744,9 @@ local function Build()
         head.label = Text(head, "GameFontNormalSmall")
         head.label:SetPoint("LEFT", head, "LEFT", 3, 0)
         head.label:SetPoint("RIGHT", head, "RIGHT", -3, 0)
+        head.arrow = head:CreateTexture(nil, "OVERLAY")
+        head.arrow:SetSize(9, 9)
+        head.arrow:Hide()
         head:RegisterForClicks("LeftButtonUp", "RightButtonUp")
         head:SetScript("OnClick", ns.Guard("gold", ClickHead))
         WithTip(head, nil, "Click to sort by this column, again to reverse. Right-click: the list's own order.")
@@ -693,6 +779,8 @@ local function Build()
     if slider.SetObeyStepOnDrag then slider:SetObeyStepOnDrag(true) end
     slider:SetValue(0)
     slider:SetScript("OnValueChanged", ns.Guard("gold", function(self, value)
+        -- (our own setting of its range and value isn't a scroll)
+        if U.syncing then return end
         -- (the value as handed over, else as the slider has it)
         local v = tonumber(value)
         if not v then
@@ -711,23 +799,28 @@ local function Build()
     local footY = LIST_TOP - ROWS * ROW_H - 5
     U.foot = Text(f, "GameFontHighlightSmall")
     U.foot:SetPoint("TOPLEFT", f, "TOPLEFT", LEFT + 4, footY)
-    U.foot:SetWidth(LIST_W - 110)
+    U.foot:SetWidth(LIST_W - 96)
     U.count = Text(f, "GameFontDisableSmall", "RIGHT")
     U.count:SetPoint("TOPRIGHT", f, "TOPLEFT", LEFT + LIST_W, footY)
-    U.count:SetWidth(104)
-    -- what a job is doing, how it ended, or what Search asks of the player
+    U.count:SetWidth(90)
+    -- what a job is doing, how it ended, or what Search asks of the player:
+    -- two lines' worth (the longest of them end with what to do next)
     U.status = Text(f, "GameFontNormalSmall")
     U.status:SetPoint("TOPLEFT", f, "TOPLEFT", LEFT + 4, footY - 17)
     U.status:SetWidth(LIST_W)
+    if U.status.SetWordWrap then U.status:SetWordWrap(true) end
+    if U.status.SetMaxLines then U.status:SetMaxLines(2) end
+    if U.status.SetJustifyV then U.status:SetJustifyV("TOP") end
 
+    -- (8 up: clear of the inset's bottom border)
     U.scan = Button(f, "Scan", 130, ClickScan)
-    U.scan:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", LEFT, 4)
+    U.scan:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", LEFT, 8)
     WithTip(U.scan, "Scan")
     U.check = Button(f, "Price my items", 130, ClickCheck)
     U.check:SetPoint("LEFT", U.scan, "RIGHT", 6, 0)
     WithTip(U.check, "Price my items")
     U.search = Button(f, "Search", 110, ClickSearch)
-    U.search:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -LEFT, 4)
+    U.search:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -LEFT, 8)
     WithTip(U.search, "Search")
 
     U.frame = f
@@ -736,8 +829,11 @@ end
 
 function U.Open()
     local f = U.frame or Build()
-    U.note = nil
+    SetNote(nil)
     f:Show()
+    -- (on top of whatever else is at this strata: the Settings panel, which
+    -- holds the options page's Open button, would cover it whole)
+    if f.Raise then f:Raise() end
     U.Refresh()
 end
 
@@ -766,8 +862,9 @@ local function AHButton()
     local b = CreateFrame("Button", nil, ah, "UIPanelButtonTemplate")
     U.ahButton = b
     b:SetSize(96, 22)
-    -- (above the frame's top edge: none of Blizzard's controls are there)
-    b:SetPoint("BOTTOMRIGHT", ah, "TOPRIGHT", -4, 1)
+    -- (above the frame's top edge and left of its close button, which
+    -- reaches 3 px over that edge: none of Blizzard's controls are there)
+    b:SetPoint("BOTTOMRIGHT", ah, "TOPRIGHT", -30, 1)
     b:SetText("Gold finder")
     b:SetScript("OnClick", ns.Guard("gold", function() Gold.Toggle() end))
     WithTip(b, nil, "Gold finder (Pace's QoL)")

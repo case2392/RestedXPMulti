@@ -26,8 +26,9 @@
 -- Nothing here creates or touches a frame of the window.
 --
 -- The window tells this file about itself:
---   Gold.ui = {Toggle = function() end}   called by Gold.Toggle() (/pqol gold,
---                                         the options page's Open button)
+--   Gold.ui = {Toggle = function() end,   called by Gold.Toggle() (/pqol gold)
+--              Open = function() end}     called by Gold.Open() (the options
+--                                         page's Open button)
 --   Gold.Listen(fn)   fn(what, arg) is called (under ns.SafeCall) with
 --        "apply", on    the feature was switched on / off (off: hide the
 --                       window and the auction house button)
@@ -88,10 +89,13 @@
 -- Gold.BagRows() -> rows, one per item in the bags (bound and unbound
 --   apart): count, bound, vendor, auction, auctionText ("?" when it could be
 --   auctioned but has no price, else nil), disenchant, best, bestHow,
---   bestText, confident (false: show bestText in grey), keep (the craft that
---   uses it, or nil). Totals are nil where there is nothing to show.
--- Gold.BagTotals(rows, money) -> {vendor, auction, best, unpriced, text}
---   (money: the window's own way of writing a price into text; else Gold.Money)
+--   bestText, confident (false: show bestText in grey), mark ("unproven" |
+--   "none listed" | nil: the mark beside Auction, as on Crafts), keep (the
+--   craft that uses it, or nil). Totals are nil where there is nothing to show.
+-- Gold.BagTotals(rows, money) -> {vendor, auction, best, unpriced, unproven,
+--   text}: a stack at an unproven price is counted in `unproven`, not in
+--   auction or best (money: the window's own way of writing a price into
+--   text; else Gold.Money)
 --
 -- The header and the buttons (ask for the tab's rows first: the header then
 -- knows whether any shown price was Auctionator's):
@@ -107,10 +111,12 @@
 -- Gold.StartScan() -> ok, why      Gold.StartCheck() -> ok, why (pressed
 --   while a check runs it stops it)  Gold.StopCheck()  Gold.Abort(reason)
 -- Gold.Search(name) -> hint   the Search button: Auctionator's exact search
---   when it is there, else the name into the auction house's search box;
---   the hint is what to show the player. Call it only from a click.
+--   when it is there, else the name into the auction house's search box
+--   (the player then clicks Search there); the hint is what to show the
+--   player. Call it only from a click.
 -- Gold.Forget() -> n   forgets the current realm's prices
 -- Gold.Toggle()   opens / closes the window through Gold.ui.Toggle
+-- Gold.Open()     opens it (Gold.ui.Open), never closes it
 -- Gold.Note() -> the options page's line under the checkbox
 --
 -- Prices (all for a book key; nil plus a reason when unknown):
@@ -152,6 +158,7 @@ local ANALYSIS_BATCH = 250
 local BROWSE_BATCH = 500
 local LOADS_PER_TICK = 20
 local QUEUE_CAP = 2000
+local LOAD_WAIT = 3           -- how long "Price my items" waits for an item's data
 local HISTORY_DAYS = 14
 local CALLER = "PacesQualityOfLife" -- who we tell Auctionator we are
 local SILVER = 100
@@ -168,6 +175,7 @@ S.neutral = false        -- this auction house session is a neutral house's
 S.listeners = {}
 S.info, S.waiting, S.class = {}, {}, {}      -- the item cache
 S.front, S.queue, S.qHead, S.queued, S.asked = {}, {}, 1, {}, {} -- the load queue
+S.qTail = 0              -- (the queue is S.queue[S.qHead .. S.qTail])
 S.qGen = 0
 S.own = {}               -- our own auctions, as the Auctions tab listed them
 S.debounce = {}
@@ -330,7 +338,8 @@ function L.Vendors()
 end
 
 function L.ValidRec(rec)
-    return type(rec) == "table" and type(rec.m) == "number" and type(rec.q) == "number" and type(rec.t) == "number"
+    return type(rec) == "table" and type(rec.m) == "number" and type(rec.q) == "number" and type(rec.t) == "number" and
+               (rec.z == nil or type(rec.z) == "number")
 end
 function L.Rec(key)
     local book = L.Book()
@@ -453,21 +462,26 @@ function L.MakeRecord(old, map, source, now, partial)
             h = L.AddHistory(old and old.h, v, q >= 5)}
 end
 
--- known to have none listed: the last price seen stays (m = 0: never seen)
+-- known to have none listed: the last price seen stays (m = 0: never seen).
+-- t is when that was last checked; z when it was last seen listed (or first
+-- found gone) - what the 30-day prune goes by, so that a sold-out record
+-- isn't kept alive by every scan that doesn't see it. A record made anew
+-- (MakeRecord, a browse row) has no z.
 function L.MarkNone(book, key, now, source)
     local rec = book.items[key]
     if not L.ValidRec(rec) then
         rec = {m = 0}
         book.items[key] = rec
     end
-    rec.q, rec.l, rec.p, rec.t, rec.s = 0, nil, nil, now, source
+    local z = rec.z or ((rec.q or 0) > 0 and rec.t) or now
+    rec.q, rec.l, rec.p, rec.t, rec.s, rec.z = 0, nil, nil, now, source, z
 end
 
 -- drop what is too old to mean anything; returns how many records are left
 function L.PruneBook(book, now)
     local today, left = math.floor(now / DAY), 0
     for key, rec in pairs(book.items) do
-        if not L.ValidRec(rec) or now - rec.t > 30 * DAY then
+        if not L.ValidRec(rec) or now - (rec.q == 0 and rec.z or rec.t) > 30 * DAY then
             book.items[key] = nil
         else
             left = left + 1
@@ -531,6 +545,8 @@ function L.NextQueued()
         S.queue[S.qHead] = nil
         S.qHead = S.qHead + 1
     end
+    -- (run dry: from the start again)
+    if S.qHead > S.qTail then S.qHead, S.qTail = 1, 0 end
     return id
 end
 
@@ -553,8 +569,10 @@ function L.Queue(id, front)
     if front then
         table.insert(S.front, id)
     else
-        if #S.queue - S.qHead + 1 >= QUEUE_CAP then return end
-        S.queue[#S.queue + 1] = id
+        -- (the tail is counted, never "#": the head of the table is emptied as it is read)
+        if S.qTail - S.qHead + 1 >= QUEUE_CAP then return end
+        S.qTail = S.qTail + 1
+        S.queue[S.qTail] = id
     end
     S.queued[id] = true
     L.Pump()
@@ -563,7 +581,7 @@ end
 function L.StopQueue()
     S.qGen = S.qGen + 1
     S.pumping = false
-    S.front, S.queue, S.qHead, S.queued = {}, {}, 1, {}
+    S.front, S.queue, S.qHead, S.qTail, S.queued = {}, {}, 1, 0, {}
 end
 
 function M.Info(id, front)
@@ -668,10 +686,13 @@ function L.Index()
     local x = L.Memo("index")
     if x.list then return x end
     x.list, x.makes, x.uses, x.enchanters, x.chars = {}, {}, {}, {}, 0
-    local me = L.CallStr(UnitGUID, "player")
+    local me, realm = L.CallStr(UnitGUID, "player"), L.Realm()
+    x.me = me
     for guid, ch in pairs(L.Recipes()) do
-        x.chars = x.chars + 1
-        for pname, prof in pairs(type(ch.profs) == "table" and ch.profs or {}) do
+        -- (a character of another realm can't craft for, or disenchant on, this one)
+        local here = not (type(ch.realm) == "string" and realm and ch.realm ~= realm)
+        if here then x.chars = x.chars + 1 end
+        for pname, prof in pairs(here and type(ch.profs) == "table" and ch.profs or {}) do
             local enchants = pname == "Enchanting"
             for rid, r in pairs(type(prof.list) == "table" and prof.list or {}) do
                 if type(r) == "table" then
@@ -857,7 +878,13 @@ end
 function L.SellOf(key)
     local now, why, source = M.Now(key)
     local usual = M.Usual(key)
-    if now and usual then return math.min(now, usual) end
+    if now and usual then
+        -- (one or two units, on no day ever five: still one seller's hope,
+        -- however many days it has been seen)
+        local rec = source ~= "a" and L.Rec(key)
+        if rec and rec.q <= 2 and not M.UsualDeep(key) then return math.min(now, usual), "unproven" end
+        return math.min(now, usual)
+    end
     if now then
         local rec = source ~= "a" and L.Rec(key)
         if not rec or rec.q <= 2 or #L.Points(rec) < 2 then return now, "unproven" end
@@ -865,6 +892,19 @@ function L.SellOf(key)
     end
     if why == "none listed" and usual then return usual, "none listed" end
     return nil, why
+end
+
+-- what to say of an unproven price: only what was really seen
+function L.UnprovenLine(key)
+    local rec = L.Rec(key)
+    if not rec or rec.s == "b" or time() - rec.t > RECENT then
+        -- (a browse row or Auctionator's price: a lowest price and no more)
+        return "Lowest price only - how many sell at it isn't known."
+    end
+    if rec.q <= 2 then
+        return ("Only %d%s listed - this is one seller's asking price, not proof it sells."):format(rec.q, rec.p and "+" or "")
+    end
+    return ("All %s are listed at one price - it may be one seller."):format(M.Count(rec.q))
 end
 
 -- what a vendor charges for one: a merchant's own unlimited price, else the
@@ -897,21 +937,27 @@ function L.BuyCost(id, qty)
     if vendor then
         return cost + left * vendor, bought > 0 and "auction + vendor" or "vendor"
     end
-    -- deeper than what is listed: the rest at the last price seen
-    local flag = rec and qty > rec.q and ("only %d listed"):format(rec.q) or nil
+    -- deeper than what is listed, or than the price points kept: the rest
+    -- at the last price seen - a guess, and said to be one
+    local flag
+    if rec then flag = qty > rec.q and ("only %d listed"):format(rec.q) or ("last %d at a guessed price"):format(left) end
     return cost + left * last, "auction", flag
 end
 
--- one craft's reagents; nil and why when one has no price
+L.GUESSED = "materials partly at a guessed price"
+
+-- one craft's reagents; nil and why when one has no price. The third result
+-- says that one of them was priced past what is listed
 function L.ReagentCost(recipe, visiting, depth)
-    local total = 0
+    local total, guessed = 0, nil
     for _, reagent in ipairs(recipe.reagents) do
         if visiting[reagent[1]] then return nil, "made from itself" end
-        local c, why = L.CostOf(reagent[1], reagent[2], visiting, depth)
+        local c, why, flag = L.CostOf(reagent[1], reagent[2], visiting, depth)
         if not c then return nil, why end
+        if flag then guessed = L.GUESSED end
         total = total + c
     end
-    return total
+    return total, nil, guessed
 end
 
 function L.CostOf(id, qty, visiting, depth)
@@ -921,20 +967,22 @@ function L.CostOf(id, qty, visiting, depth)
     if depth < 3 then
         local x = L.Index()
         for _, recipe in ipairs(x.makes[id] or {}) do
-            local one = L.ReagentCost(recipe, visiting, depth + 1)
+            local one, _, guessed = L.ReagentCost(recipe, visiting, depth + 1)
             local c = one and math.ceil(one / recipe.avg) * qty
-            if c and (not best or c < best) then best, from, flag = c, "your own craft", nil end
+            if c and (not best or c < best) then best, from, flag = c, "your own craft", guessed end
         end
         local pair = x.enchanter and L.essence[id]
         if pair and not visiting[pair.other] then
-            local c, how
+            local c, how, guessed, _
             if pair.lesser then
-                local greater = L.CostOf(pair.other, 1, visiting, depth + 1)
+                local greater
+                greater, _, guessed = L.CostOf(pair.other, 1, visiting, depth + 1)
                 c, how = greater and math.ceil(greater / 3) * qty, "buy Greater and split"
             else
-                c, how = L.CostOf(pair.other, 3 * qty, visiting, depth + 1), "buy 3 Lesser and combine"
+                c, _, guessed = L.CostOf(pair.other, 3 * qty, visiting, depth + 1)
+                how = "buy 3 Lesser and combine"
             end
-            if c and (not best or c < best) then best, from, flag = c, how, nil end
+            if c and (not best or c < best) then best, from, flag = c, how, guessed and L.GUESSED or nil end
         end
     end
     visiting[id] = nil
@@ -1429,7 +1477,8 @@ function L.ReadScanRows(scan)
     -- (the list can shrink while it is read)
     local n = Plain(C_AuctionHouse.GetNumReplicateItems())
     if n and n < scan.n then scan.n = n end
-    local last = math.min(scan.n, scan.i + SCAN_BATCH)
+    -- (scan.i only ever grows: it is how many rows were read)
+    local last = math.max(scan.i, math.min(scan.n, scan.i + SCAN_BATCH))
     for i = scan.i, last - 1 do
         if not pcall(L.ReadScanRow, scan, i) then scan.bad = scan.bad + 1 end
     end
@@ -1508,17 +1557,26 @@ function L.CommitEnd(scan)
         n = n + 1
     end
     -- what the book knew and the scan didn't see is sold out - unless too
-    -- much of the list couldn't be read to say so
-    if scan.bad * 20 <= scan.rows then
+    -- much of the list couldn't be read to say so. Rows the list lost while
+    -- it was read (it shrank, or another add-on's scan replaced it) weren't
+    -- read either
+    local unread = math.max(0, scan.rows - scan.i)
+    if (scan.bad + unread) * 20 <= scan.rows then
         for key, rec in pairs(book.items) do
             if not scan.out[key] and L.ValidRec(rec) then L.MarkNone(book, key, now, "f") end
         end
     end
     L.PruneBook(book, now)
-    book.full = now
+    -- (a list cut short is no full scan: what was read is kept, no more is claimed)
+    if unread == 0 then book.full = now end
     S.sawOwner = S.sawOwner or scan.sawOwner
     S.scan, S.state, S.lastRead = nil, "idle", GetTime()
-    S.message = ("Scan finished: %s items."):format(M.Count(n))
+    if unread == 0 then
+        S.message = ("Scan finished: %s items."):format(M.Count(n))
+    else
+        S.message = ("Scan cut short: %s item%s read - the auction house's list changed while it was read."):format(
+                        M.Count(n), n == 1 and "" or "s")
+    end
     L.Bump()
     L.StartAnalysis()
 end
@@ -1702,6 +1760,15 @@ function L.Poll(delay)
     end)
 end
 
+-- every item still on the list is waiting for its data: true when this
+-- deferral completes a round of them (the next look can wait a moment)
+function L.Deferred(c)
+    c.idle = (c.idle or 0) + 1
+    if c.idle < #c.list - c.i then return false end
+    c.idle = 0
+    return true
+end
+
 -- no answer: once more at the end of the list, then it counts as unanswered
 function L.NoAnswer(c, id)
     if c.retried[id] then
@@ -1728,15 +1795,18 @@ function L.Send(c, id)
         if info and info.stack then commodity = info.stack > 1 end
     end
     if commodity == nil then
-        -- can't tell which kind of search it takes until its data has loaded
-        if c.moved[id] then
-            c.failed[id] = true
-        else
-            c.moved[id] = true
+        -- can't tell which kind of search it takes until its data has loaded:
+        -- to the end of the list, for as long as a load may take
+        local now = GetTime()
+        c.moved[id] = c.moved[id] or now
+        if now - c.moved[id] < LOAD_WAIT then
             c.list[#c.list + 1] = id
+            return L.Deferred(c) and "wait" or nil
         end
+        c.failed[id] = true
         return
     end
+    c.idle = 0
     local order = Enum and Enum.AuctionHouseSortOrder or {}
     local sent
     if commodity then
@@ -1780,8 +1850,10 @@ function L.CheckNext(c)
     end
     if why then return L.Poll(delay) end
     c.i = c.i + 1
-    L.Send(c, c.list[c.i])
-    if not c.pending then L.Poll(0) end
+    local wait = L.Send(c, c.list[c.i])
+    -- (nothing sent: the next item at once - or, when all that is left is
+    -- waiting for its data, a moment later: never a look per frame)
+    if not c.pending then L.Poll(wait and 0.3 or 0) end
     L.Changed()
 end
 
@@ -1862,6 +1934,9 @@ function L.SearchAnswer(id, Read, arg, none)
     S.foreign = GetTime()
     if S.state ~= "idle" then return end
     local maps, partial = Read(id, arg)
+    -- (the player's item list may be sorted by bid, or highest first: a part
+    -- of it needn't hold the lowest buyout. A commodity's is always by price)
+    if partial and Read == L.ReadItems then return end
     L.WriteAnswer(id, maps, partial, none)
 end
 
@@ -1991,7 +2066,9 @@ end
 function L.ResellDeal(job, key, rec, info, points)
     local deep = M.UsualDeep(key)
     if not deep then return end
-    local units, paid, top = L.Walk(points, function(unit) return unit * 10 <= deep * 7 end,
+    -- (never what a vendor sells for less: nobody needs ours then)
+    local vendor = M.VendorBuy(L.KeyItem(key))
+    local units, paid, top = L.Walk(points, function(unit) return unit * 10 <= deep * 7 and (not vendor or unit < vendor) end,
                                     math.max(1, math.floor(rec.q / 4)))
     local profit = M.AfterCut(deep) * units - paid
     if units == 0 or profit < 20 * SILVER then return end
@@ -2007,12 +2084,20 @@ end
 function L.MaterialDeal(job, key, rec, info, points, uses)
     local usual = M.Usual(key)
     if not usual then return end
-    local units, paid, top = L.Walk(points, function(unit) return unit * 10 <= usual * 8 end)
-    local saving = usual * units - paid
+    -- a vendor's price is the most it need ever cost: only below that is it
+    -- a bargain, and the saving is measured against it
+    local vendor = M.VendorBuy(L.KeyItem(key))
+    local worth = math.min(usual, vendor or usual)
+    local units, paid, top = L.Walk(points, function(unit) return unit * 10 <= usual * 8 and (not vendor or unit < vendor) end)
+    local saving = worth * units - paid
     if units == 0 or saving < 10 * SILVER then return end
-    local row = L.Deal(job, "Material", key, rec, info, top, usual, units, saving)
+    local row = L.Deal(job, "Material", key, rec, info, top, worth, units, saving)
     row.note = "used by " .. uses[1] .. (#uses > 1 and (" (+%d more)"):format(#uses - 1) or "")
     row.tip[1] = ("Usually %s each; these are at 80%% of that or less. The profit shown is what you save."):format(M.Money(usual))
+    if vendor and vendor < usual then
+        row.tip[1] = ("Usually %s each, and a vendor sells them for %s; these are below both. The profit shown is what you save on the vendor's price."):format(
+                         M.Money(usual), M.Money(vendor))
+    end
     row.tip[2] = row.note
     row.act[1] = "Cheaper than usual - buy what you'll craft with."
     row.act[2] = L.LAST_LINE
@@ -2060,7 +2145,8 @@ function L.EssenceDeal(job, from, to, take, give)
         units, profit, top, p, used = units + 1, profit + gain - cost, high, q, u
     end
     if units == 0 then return end
-    local row = L.Deal(job, "Essence", from, rec, info, top, sell, units, profit)
+    -- (Worth is of one of the row's own item: a third of a Greater, or three Lesser)
+    local row = L.Deal(job, "Essence", from, rec, info, top, take == 3 and math.floor(sell / 3) or sell * 3, units, profit)
     row.estimate, row.target = true, to
     local other = L.Name(to)
     if take == 3 then
@@ -2070,7 +2156,8 @@ function L.EssenceDeal(job, from, to, take, give)
         row.tip[1] = ("One splits into 3 %s, which sell for %s each (less the %s%% cut)."):format(other, M.Money(sell), M.Cut())
         row.act[1] = "Buy a Greater, right-click to split, sell the 3 Lesser."
     end
-    row.tip[2] = ("%s conversion%s keep 10s or more each."):format(M.Count(units), units == 1 and "" or "s")
+    row.tip[2] = ("Units counts conversions (%s): %s keep%s 10s or more each."):format(
+                     take == 3 and "3 Lesser each" or "one Greater each", M.Count(units), units == 1 and "s" or "")
     row.act[2] = "Estimate: Forever may have changed this."
     row.act[3] = L.LAST_LINE
 end
@@ -2131,11 +2218,13 @@ end
 function L.Stats()
     local st = L.Memo("stats")
     if st.n then return st end
-    st.n = 0
+    -- (n: items listed when last looked at; all: every record, the sold-out too)
+    st.n, st.all = 0, 0
     local book = L.Book()
     for _, rec in pairs(book and book.items or {}) do
         if L.ValidRec(rec) then
-            st.n = st.n + 1
+            st.all = st.all + 1
+            if rec.q > 0 then st.n = st.n + 1 end
             if not st.newest or rec.t > st.newest then st.newest = rec.t end
             if rec.q > 0 and (rec.s == "f" or rec.s == "c") and (not st.deep or rec.t > st.deep) then st.deep = rec.t end
         end
@@ -2233,7 +2322,7 @@ function L.SellOptions(row, r, info, x, bop)
     if how == "Auction" and flag then
         row.mark = flag
         if flag == "unproven" then
-            row.tip[#row.tip + 1] = ("Only %s listed - this is one seller's asking price, not proof it sells."):format(row.listedText)
+            row.tip[#row.tip + 1] = L.UnprovenLine(r.o)
         else
             row.tip[#row.tip + 1] = "None listed now - this is its usual price."
         end
@@ -2259,7 +2348,8 @@ function L.CraftRow(x, r)
     if usual then row.tip[#row.tip + 1] = "Usual price: " .. M.Money(usual) end
     local ours = L.OwnUnits(r.o)
     if row.listed and ours > 0 then
-        row.tip[#row.tip + 1] = ("Listed: %s (includes %d of yours)"):format(row.listedText, ours)
+        -- (our own are taken out of every count as it is read)
+        row.tip[#row.tip + 1] = ("Listed: %s, not counting %d of yours"):format(row.listedText, ours)
     end
     if row.cost and row.sells then row.profit = row.sells - row.cost end
     row.rank = (not row.profit and 3) or (row.mark == "unproven" and 2) or 1
@@ -2347,7 +2437,7 @@ function L.VendorRow(id, price, v)
     end
     row.tip[2] = ("Sells for %s on the auction house; %s after the %s%% cut."):format(M.Money(sp), M.Money(M.AfterCut(sp)), M.Cut())
     if flag == "unproven" then
-        row.tip[3] = ("Only %s listed - this is one seller's asking price, not proof it sells."):format(text)
+        row.tip[3] = L.UnprovenLine(id)
     elseif flag == "none listed" then
         row.tip[3] = "None listed now - this is its usual price."
     end
@@ -2410,22 +2500,43 @@ function L.BagRow(s, x)
     end
     local sell = info and info.sell
     if not s.noValue and sell and sell > 0 then row.vendor = sell * s.count end
-    -- (greys and bound things can't be auctioned)
-    local canAuction = not s.bound and quality ~= 0
+    -- (greys, bound things and quest items can't be auctioned)
+    local canAuction = not s.bound and quality ~= 0 and not (info and info.class == 12)
+    local noneListed = false
     if canAuction then
-        local unit = (x.enchanter and L.essence[s.id]) and L.MatValue(s.id) or M.SellPrice(s.key)
-        if unit then row.auction = math.floor(M.AfterCut(unit) * s.count) end
+        local unit, flag = M.SellPrice(s.key)
+        if x.enchanter and L.essence[s.id] then
+            local either = L.MatValue(s.id)
+            -- (worth more as its other size: that price's mark isn't this one's)
+            if either ~= unit then unit, flag = either, nil end
+        end
+        if unit then
+            row.auction, row.mark = math.floor(M.AfterCut(unit) * s.count), flag
+            if flag == "unproven" then
+                row.tip[#row.tip + 1] = L.UnprovenLine(s.key)
+            elseif flag == "none listed" then
+                row.tip[#row.tip + 1] = "None listed now - this is its usual price."
+            end
+        elseif flag == "none listed" then
+            -- (looked for and not there: an answer, and pricing again won't change it)
+            noneListed = true
+            row.tip[#row.tip + 1] = "None listed - no auction price to go by."
+        end
         local rec = L.Rec(s.key)
         row.t = rec and rec.t or nil
     end
-    if x.enchanter and quality and quality >= 2 and quality <= 4 then
+    -- (a bound piece can't be mailed to the account's enchanter: this
+    -- character's own Enchanting or nothing)
+    local canDisenchant = x.enchanter
+    if s.bound then canDisenchant = x.me and x.enchanters[x.me] or false end
+    if canDisenchant and quality and quality >= 2 and quality <= 4 then
         local dis = M.DisenchantValue(s.key)
         if dis then row.disenchant = dis * s.count end
     end
     Offer("Auction", row.auction)
     Offer("Vendor", row.vendor)
     Offer("Disenchant", row.disenchant)
-    row.confident = (row.auction ~= nil) or not canAuction
+    row.confident = (row.auction ~= nil) or not canAuction or noneListed
     if row.confident then
         row.best, row.bestHow = best, how
         row.bestText = best and (how .. " " .. M.Money(best)) or "-"
@@ -2435,7 +2546,7 @@ function L.BagRow(s, x)
         row.bestText = (row.vendor and ("Vendor " .. M.Money(row.vendor) .. " - ") or "") .. "auction price unknown"
     end
     row.keep = L.KeepFor()[s.id]
-    if row.keep then row.tip[1] = ("or keep it: %s uses it"):format(row.keep) end
+    if row.keep then table.insert(row.tip, 1, ("or keep it: %s uses it"):format(row.keep)) end
     return row
 end
 
@@ -2458,20 +2569,23 @@ end
 
 function M.BagTotals(rows, money)
     money = type(money) == "function" and money or M.Money
-    local t = {vendor = 0, auction = 0, best = 0, unpriced = 0}
+    local t = {vendor = 0, auction = 0, best = 0, unpriced = 0, unproven = 0}
     for _, row in ipairs(rows or {}) do
         t.vendor = t.vendor + (row.vendor or 0)
-        if row.confident then
+        if not row.confident then
+            t.unpriced = t.unpriced + 1
+        elseif row.mark == "unproven" then
+            -- (one seller's asking price is no sum to count on)
+            t.unproven = t.unproven + 1
+        else
             t.auction = t.auction + (row.auction or 0)
             t.best = t.best + (row.best or 0)
-        else
-            t.unpriced = t.unpriced + 1
         end
     end
-    t.text = ("to vendors %s / on the auction house %s / best of each %s"):format(money(t.vendor), money(t.auction), money(t.best))
-    if t.unpriced > 0 then
-        t.text = t.text .. (" - %d stack%s without a price - press Price my items"):format(t.unpriced, t.unpriced == 1 and "" or "s")
-    end
+    -- (kept short: the window shows it on one line, and what to press must fit)
+    t.text = ("Vendors %s / Auction %s / Best of each %s"):format(money(t.vendor), money(t.auction), money(t.best))
+    if t.unpriced > 0 then t.text = t.text .. (" - %d unpriced (Price my items)"):format(t.unpriced) end
+    if t.unproven > 0 then t.text = t.text .. (" - %d unproven, not counted"):format(t.unproven) end
     return t
 end
 
@@ -2527,7 +2641,7 @@ function M.PriceState(tab)
     if not L.BookKey() then return "Can't tell which realm this is yet", false end
     local st, book, now = L.Stats(), L.Book(), time()
     local text, at
-    if st.n == 0 then
+    if st.all == 0 then
         if not S.usedAuctionator then return L.NoPrices(), false end
         text, at = "Prices: none of our own yet", now
     else
@@ -2552,10 +2666,10 @@ function M.Empty(tab)
             return "Open each profession window once on each character - that's how I learn your recipes."
         end
     elseif tab == "vendors" then
-        if st.n == 0 and not S.usedAuctionator then return L.NoPrices() end
+        if st.all == 0 and not S.usedAuctionator then return L.NoPrices() end
         return "Visit vendors - I remember what they sell - then price the items."
     elseif tab == "bargains" then
-        if st.n == 0 then return L.NoPrices() end
+        if st.all == 0 then return L.NoPrices() end
         local age = time() - (st.deep or st.newest)
         if age > FRESH then
             local hours = math.max(1, math.floor(age / HOUR))
@@ -2643,7 +2757,7 @@ end
 
 -- the Search button (the player's own click): Auctionator's exact search
 -- when it is there, else the name into Blizzard's search box - the player
--- presses Enter
+-- clicks Search there (the box hasn't the keyboard: Enter alone opens chat)
 function M.Search(name)
     name = PlainStr(name)
     if not name then return "Still loading this item's name" end
@@ -2661,7 +2775,7 @@ function M.Search(name)
         shown = ok and yes and true or false
     end
     if shown and type(box) == "table" and pcall(box.SetText, box, L.Cut63(name)) then
-        return "Press Enter in the auction house search box"
+        return ("%s is in the auction house's search box - click Search there."):format(name)
     end
     return "Open the Buy tab first"
 end
@@ -2676,22 +2790,29 @@ function M.Forget()
     -- (the wait between scans is the game's: it isn't forgotten)
     ns.db.goldBook[key] = (asked and time() - asked < SCAN_WAIT) and {items = {}, fullAsked = asked} or nil
     S.bargains, S.message = nil, nil
+    -- (a Bargains pass under way still holds the old book: it mustn't finish)
+    S.aGen, S.aJob, S.leftOut = S.aGen + 1, nil, 0
     L.Bump()
     return n
 end
 
-function M.Toggle()
+function L.Window(open)
     if not S.on then
         ns.Print("gold: switched off - |cFFFFCC00/pqol gold on|r switches it on")
         return
     end
     local ui = M.ui
-    if type(ui) == "table" and type(ui.Toggle) == "function" then
-        ns.SafeCall("gold", ui.Toggle)
+    local fn = type(ui) == "table" and ((open and ui.Open) or ui.Toggle)
+    if type(fn) == "function" then
+        ns.SafeCall("gold", fn)
     else
         ns.Print("gold: the window isn't available")
     end
 end
+function M.Toggle() L.Window(false) end
+-- (the options page's button: the window may come up behind that page, and
+-- a second click must not close what the player never saw)
+function M.Open() L.Window(true) end
 
 --------------------------------------------------------------------------
 -- the feature: events, slash command, status
@@ -2750,7 +2871,7 @@ end
 function M:Status()
     local st, book, now = L.Stats(), L.Book(), time()
     local prices = "no prices yet"
-    if st.n > 0 then
+    if st.all > 0 then
         prices = ("prices of %s items"):format(M.Count(st.n))
         local full, check = tonumber(book.full) or 0, tonumber(book.check) or 0
         if full > 0 and full >= check then

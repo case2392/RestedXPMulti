@@ -202,14 +202,148 @@ again (no reload after reload) until you choose the layout again.
 sync that folder between computers, they can't be told apart. Not tried
 in game yet.
 
+## Auction house: Gold finder
+
+A window that says what makes you gold right now, from your own recipes
+and the auction house's prices. Open it with `/pqol gold`, the **Gold
+finder** button just above the auction house's top right corner, or
+**Open** in the options. It has four tabs. Click a column to sort by it;
+hover a row to see how its numbers were worked out and how old its price
+is.
+
+It only reads and adds up. It never buys, bids, posts or cancels: you do
+that yourself, in the auction house.
+
+**Crafts** - one row per recipe that makes an item, for every character
+of yours on the realm whose profession window you've opened (that's how
+recipes are learned: open each profession once on each character;
+Forever changed some recipes, so none are built in). *Cost* is the
+cheapest way to get the materials: the cheapest auctions, a vendor, or
+your own craft of them, whichever is less. *Sells for* is the best of
+three: the auction house (after the cut), a vendor, or disenchanting
+(when one of your characters is an enchanter). *Profit* is one less the
+other. *Listed* is how many are on the auction house; *Can make* is how
+many your bags and bank hold the materials for. Tick **Enchants: what
+they cost** to see each enchant's materials cost instead - the least to
+charge.
+
+**Bargains** - auctions worth buying, from a scan or a price check less
+than an hour old:
+
+- *Vendor*: listed for less than a vendor pays.
+- *Disenchant*: gear listed well under what its materials sell for (for
+  enchanters).
+- *Resell*: stackable items at 70% or less of their usual price. Only a
+  quarter of what's listed is counted, and resale is a guess.
+- *Material*: a material of your recipes at 80% or less of its usual
+  price (and under the vendor's, if a vendor sells it).
+- *Essence*: buy three Lesser and combine them, or a Greater and split
+  it, when the other size sells for more (for enchanters).
+
+*Buy up to* is the highest price still worth paying, *Units* how many
+the profit counts (for essences: how many conversions).
+
+**Vendors** - things a vendor sells that go for more on the auction
+house: at least 20% more after the cut. Vendors' prices are remembered
+as you visit them; a short built-in list of trade supplies (thread, dye,
+vials, flux...) is shown as "price not confirmed" until you've visited
+one. Limited-supply items are marked.
+
+**Your bags** - for each item: what a vendor pays, what it sells for at
+auction after the cut, what it disenchants into, and the best of the
+three. The line under the list adds them up. An item that could be
+auctioned but has no price shows "?" and isn't guessed at; an item a
+profitable recipe of yours uses says so.
+
+How a selling price is worked out: the lowest price listed now, or the
+item's usual price if that is lower - one hopeful listing far above the
+going rate doesn't count. The usual price is the middle of the last 14
+days' prices, and needs three days of them. A yellow * marks an unproven
+price (only one or two listed, or all at one price: one seller's asking
+price); a grey * means none are listed now and the usual price is shown.
+A price over 48 hours old is "last seen": it shows its age in grey and
+isn't used as today's.
+
+### Getting prices
+
+With the auction house open, three ways:
+
+- **Scan** reads every auction once. The game allows it about once every
+  15 minutes; the button counts down the wait. Keep the auction house
+  open while it reads - closing it cuts the scan short and changes
+  nothing. What the last scan knew and this one doesn't see counts as
+  sold out. The options have "Scan the whole auction house each time I
+  open it" (off unless you tick it).
+- **Price my items** looks up just what your recipes and bags use - the
+  materials, what they make, an enchanter's materials, what's in your
+  bags, the vendor items - one a second, up to 300 a press, skipping
+  anything priced in the last 10 minutes. It works while Scan is on its
+  wait. Press it again to stop. It pauses while you are buying or
+  selling, and goes on when you're back on the list.
+- **What you browse yourself** is read as it goes by: the results of
+  your own searches. A price seen only in a browse list never raises a
+  bargain.
+
+Your own auctions aren't counted. If a scan can't tell which are yours,
+the window asks you to open your Auctions tab once.
+
+**Search** puts the selected row's name into the auction house's search
+box; you click Search there.
+
+### Auctionator
+
+Optional. When Auctionator is installed, its price is used where Pace's
+QoL has none of its own from the last 48 hours - if Auctionator's is at
+most two days old, and not for weapons and armor (it can't tell "of the
+Bear" from "of the Whale"). The window's header then says "(some prices
+from Auctionator)". The Search button uses Auctionator's exact search
+instead of the search box. Nothing is written to Auctionator, and its
+prices raise no bargains. TradeSkillMaster is not used.
+
+### The cut, and estimates
+
+The auction house's cut is counted as 5% of every sale.
+`/pqol gold cut` says what is counted, `/pqol gold cut 10` changes it
+(0 to 30). A neutral auction house is counted at 15% at least and keeps
+prices of its own; it is told by the auctioneer's faction not being
+yours, which may not hold on Forever. The listing deposit isn't
+counted: it comes back when the item sells and is lost when it doesn't.
+
+Some numbers are estimates, shown with a "~": what disenchanting gives
+(vanilla's tables - an average over many items, a single one can give
+less), the essence conversions, and the built-in vendor prices. None of
+them was checked on Forever.
+
+### What is remembered
+
+In Pace's QoL's saved settings (WoW's `WTF` folder, shared by your
+account's characters), nothing is sent anywhere:
+
+- prices, per realm and faction: each item's lowest price, how many
+  were listed, the few cheapest prices and 14 days of its typical
+  price, never the auctions themselves. A price not seen for 30 days
+  is dropped;
+- each character's recipes (dropped when the character hasn't opened a
+  profession for 180 days);
+- vendors' prices, and where the window was left.
+
+`/pqol gold forget` forgets this realm's prices; recipes and vendor
+prices stay. Not tried in game yet.
+
 ## Commands
 
 - `/pqol` - the options page
 - `/pqol status` - what's on, and any errors this session
-- `/pqol <feature> on|off` - `questlog`, `lfgroles`, `zonetracker`, `voice`, `voicevolume`, `partypets`, `layout`
+- `/pqol <feature> on|off` - `questlog`, `lfgroles`, `zonetracker`, `voice`, `voicevolume`, `partypets`, `layout`, `gold`
 - `/pqol voice` - what voice sharing sent, heard and was refused (`/pqol voice log`: the last messages)
 - `/pqol voicevolume` - how many volumes are kept (`/pqol voicevolume forget`: forget them all)
 - `/pqol layout` - this computer's Edit Mode layout and the one on now (`/pqol layout use`: make the one on now this computer's; `/pqol layout forget`: stop switching)
+- `/pqol gold` - open or close the gold finder
+- `/pqol gold scan` - read the whole auction house (it must be open; about once every 15 minutes)
+- `/pqol gold price` - look up the items your recipes and bags use (again: stop)
+- `/pqol gold cut` - the auction house's cut that is counted (`/pqol gold cut <0-30>`: change it)
+- `/pqol gold forget` - forget this realm's prices
+- `/pqol gold help` - this list, in game
 
 ## Offline tests
 

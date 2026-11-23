@@ -27,7 +27,7 @@ rather match "Classic UI (Forever)" and "CrossTalk (Forever)", use
 
 ## Summary
 
-> Track or untrack a whole zone's quests in one click, filter Looking For Group players by role, keep the quest tracker on your zone, see who's in voice, keep each person's voice volume, see your party's pets, and give each computer its own Edit Mode layout.
+> Track or untrack a whole zone's quests in one click, filter Looking For Group players by role, keep the quest tracker on your zone, see who's in voice, keep each person's voice volume, see your party's pets, give each computer its own Edit Mode layout, and find what makes gold: your recipes' profit, auction house bargains, the best way to sell your bags.
 
 ## Description
 
@@ -40,11 +40,27 @@ file's text can go there directly.
 
 | Field | Value |
 |---|---|
-| File | `dist/PacesQualityOfLife-1.3.0.zip` (contains the `PacesQualityOfLife` folder) |
-| Display name | Pace's Quality of Life 1.3.0 |
-| Release type | Beta (1.3.0's Edit Mode layouts and 1.2's party pets, voice volumes and voice fix not tried in game yet; switch to Release once they have been) |
+| File | `dist/PacesQualityOfLife-1.4.0.zip` (contains the `PacesQualityOfLife` folder) |
+| Display name | Pace's Quality of Life 1.4.0 |
+| Release type | Beta (1.4.0's gold finder, 1.3.0's Edit Mode layouts and 1.2's party pets, voice volumes and voice fix not tried in game yet; switch to Release once they have been) |
 | Game version | WoW Forever |
-| Changelog | below: 1.3.0's (1.2.1 is already uploaded) |
+| Changelog | below: 1.4.0's |
+
+## Changelog (1.4.0)
+
+```
+1.4.0
+- New: the Gold finder, a window that says what makes you gold right now. Open it with /pqol gold or the Gold finder button above the auction house's top right corner. It never buys, bids, posts or cancels - it reads prices and adds up; you do the buying and selling.
+- New: Crafts tab. Every recipe of yours that makes an item: what the materials cost (the cheapest of auctions, a vendor or your own craft), what it sells for (the best of auction, vendor or disenchanting), the profit, how many are listed and how many you can make. Open each profession window once on each character so your recipes are known. A checkbox shows what each enchant's materials cost.
+- New: Bargains tab. Auctions worth buying, with the price to buy up to: listed for less than a vendor pays, gear under what it disenchants into, stackable items at 70% or less of their usual price, your recipes' materials cheaper than usual, and essences worth combining or splitting. Only from prices less than an hour old.
+- New: Vendors tab. Things a vendor sells that go for at least 20% more on the auction house after the cut. Vendors' prices are remembered as you visit them.
+- New: Your bags tab. For each item, what a vendor pays, what it sells for at auction, what it disenchants into and the best of the three, added up under the list.
+- New: prices three ways, with the auction house open. Scan reads every auction once (the game allows it about once every 15 minutes; the button counts down). Price my items looks up just what your recipes and bags use, one item a second, and works during Scan's wait; it pauses while you buy or sell. What you browse yourself is read as it goes by. Your own auctions aren't counted. An option scans each time you open the auction house.
+- New: a selling price is the lowest listed now, or the item's usual price if that is lower, so one hopeful listing doesn't count. A * marks a price that isn't proven, or an item with none listed now. Prices over 48 hours old show their age and aren't used as today's.
+- New: Auctionator is optional. When it's installed, its recent prices fill in where there are none, and the Search button uses its search; without it, Search puts the item's name in the auction house's search box and you click Search. TradeSkillMaster is not used.
+- New: /pqol gold cut <0-30> sets the auction house's cut that is counted (5% unless changed). /pqol gold forget forgets this realm's prices. /pqol gold help lists the commands.
+- Disenchanting values, essence conversions and the built-in vendor prices are vanilla's numbers: shown as estimates (~), not checked on WoW Forever.
+```
 
 ## Changelog (1.3.0)
 
@@ -104,3 +120,4 @@ test:
 3. The tracker in Duskwood showing only Duskwood's quests.
 4. Chat Channels with microphones on members in voice, before joining.
 5. The options page.
+6. The Gold finder window on its Crafts tab, next to the auction house.
