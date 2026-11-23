@@ -10,11 +10,15 @@
 --     one item a second, of just what your recipes and bags use), and what
 --     you browse yourself. Auctionator's prices are read when it is there
 --     and ours are missing. A whole scan also answers "none listed" for
---     what the recipes, bags and vendors use and it didn't see.
+--     what the recipes, bags and vendors use and it didn't see (not for
+--     the suffixes of gear it read without a link, nor for what binds as
+--     it is made).
 --   * Our own auctions never count: left out by owner name, by what the
---     Auctions tab listed, or by a look-up (which always tells). A scan
---     that could do neither is remembered as such (book.noOwners), and the
---     window says what to press.
+--     Auctions tab listed on this visit to the auction house (and nothing
+--     posted or cancelled since), or by a look-up (which always tells). A
+--     scan that could do neither is remembered as such (book.noOwners),
+--     and the window says what to press. The one exception: a commodity's
+--     price that an alt shares with other sellers stays, alt and all.
 --   * Nothing is ever bought, bid on, posted or cancelled, and no query of
 --     ours goes out while you are buying or selling: Blizzard's own panels
 --     listen to every search answer.
@@ -73,6 +77,7 @@
 --   estimate  true when how is Disenchant
 --   profit    sells - cost, or nil
 --   listed, listedText   units on the auction house now; "12", "12+", "?"
+--             (an output that binds when made: nil and "-", and t is nil)
 --   canMake, canMakeText  crafts the bags allow; "-" for other characters
 --   rank      1 proven, 2 unproven, 3 unknown profit (the default order:
 --             rank, then profit, highest first)
@@ -135,6 +140,9 @@
 -- Gold.Usual(key) -> price | nil (UsualDeep: from days with 5+ listed only)
 -- Gold.SellPrice(key) -> price, flag ("unproven" | "none listed" | nil),
 --   cheaper units passed over as a dumped lot (0: none) | nil, reason
+--   ("none listed": none now, the usual price given; "unproven" is also
+--   the last price seen, in the last 14 days, of what has none listed now
+--   and no usual price yet)
 -- Gold.AfterCut(price)  Gold.Cut()  Gold.VendorBuy(itemID) -> price, "vendor" | "seed"
 -- Gold.Cost(itemID, qty) -> copper, from ("auction", "vendor", "vendor,
 --   price not confirmed", "your own craft" ...), flag | nil, reason
@@ -191,6 +199,9 @@ S.front, S.queue, S.qHead, S.queued, S.asked = {}, {}, 1, {}, {} -- the load que
 S.qTail = 0              -- (the queue is S.queue[S.qHead .. S.qTail])
 S.qGen = 0
 S.own = {}               -- our own auctions, as the Auctions tab listed them
+                         -- (S.ownSeen: it has, this visit to the auction house;
+                         -- S.ownStale: and we have posted or cancelled since;
+                         -- S.ownPartial: the game said that list wasn't whole)
 S.debounce = {}
 S.rGen, S.aGen = 0, 0    -- the recipe read's and the analysis pass's own job numbers
 S.foreign = -100         -- GetTime() of the last search answer that wasn't ours
@@ -482,8 +493,11 @@ end
 -- known to have none listed: the last price seen stays (m = 0: never seen).
 -- t is when that was last checked; z when it was last seen listed (or first
 -- found gone) - what the 30-day prune goes by, so that a sold-out record
--- isn't kept alive by every scan that doesn't see it. A record made anew
--- (MakeRecord, a browse row) has no z.
+-- isn't kept alive by every scan that doesn't see it. w is when the answer
+-- was last wanted (a look-up, or a whole scan for what the recipes, bags and
+-- vendors use): the prune leaves those 30 days more, or the scan that has
+-- just confirmed "none listed" would throw that answer away. A record made
+-- anew (MakeRecord, a browse row) has neither.
 function L.MarkNone(book, key, now, source)
     local rec = book.items[key]
     if not L.ValidRec(rec) then
@@ -492,13 +506,20 @@ function L.MarkNone(book, key, now, source)
     end
     local z = rec.z or ((rec.q or 0) > 0 and rec.t) or now
     rec.q, rec.l, rec.p, rec.t, rec.s, rec.z = 0, nil, nil, now, source, z
+    if source == "c" then rec.w = now end
+end
+
+-- when a record was last worth keeping
+function L.KeptAt(rec)
+    if rec.q ~= 0 or not rec.z then return rec.t end
+    return math.max(rec.z, type(rec.w) == "number" and rec.w or 0)
 end
 
 -- drop what is too old to mean anything; returns how many records are left
 function L.PruneBook(book, now)
     local today, left = math.floor(now / DAY), 0
     for key, rec in pairs(book.items) do
-        if not L.ValidRec(rec) or now - (rec.q == 0 and rec.z or rec.t) > 30 * DAY then
+        if not L.ValidRec(rec) or now - L.KeptAt(rec) > 30 * DAY then
             book.items[key] = nil
         else
             left = left + 1
@@ -910,8 +931,12 @@ end
 -- long as they are a quarter of what is listed at most. Those are what
 -- Bargains tells the player to buy out; they are nobody's selling price.
 -- -> the price, the units passed over, units and price points from it up
+-- (a record keeps the six cheapest price points: when units lie beyond
+-- them, they are at one more price at least)
 function L.GoingRate(key, rec)
     local points = L.Points(rec)
+    local kept = 0
+    for _, p in ipairs(points) do kept = kept + p[2] end
     local info = L.Info(L.KeyItem(key))
     local floor, deep = info and info.sell or 0, M.UsualDeep(key)
     local cap, skipped, first = math.max(1, math.floor(rec.q / 4)), 0, 1
@@ -921,7 +946,7 @@ function L.GoingRate(key, rec)
         if not cheap or skipped + p[2] > cap or i == #points then break end
         skipped, first = skipped + p[2], i + 1
     end
-    return points[first][1], skipped, rec.q - skipped, #points - first + 1
+    return points[first][1], skipped, rec.q - skipped, #points - first + 1 + (kept < rec.q and 1 or 0)
 end
 
 function L.SellOf(key)
@@ -941,12 +966,34 @@ function L.SellOf(key)
         return now, nil, skipped
     end
     if why == "none listed" and usual then return usual, "none listed", 0 end
+    if why == "none listed" then
+        -- (no usual price yet - the first days - but it was listed a while
+        -- ago: what it went for then is a better guide than nothing, and
+        -- said to be no more than that)
+        local last = L.LastSeen(key)
+        if last then return last, "unproven", 0 end
+    end
     return nil, why, 0
+end
+
+-- of a record with none listed now: the typical price when it last was (in
+-- the last 14 days), and how long ago
+function L.LastSeen(key)
+    local rec = L.Rec(key)
+    if not rec or rec.q ~= 0 or rec.m <= 0 or not rec.z then return nil end
+    local age = time() - rec.z
+    if age < 0 or age > HISTORY_DAYS * DAY then return nil end
+    local v = type(rec.v) == "number" and rec.v > 0 and rec.v or rec.m
+    return v, age
 end
 
 -- what to say of an unproven price: only what was really seen
 function L.UnprovenLine(key)
     local rec = L.Rec(key)
+    local last, age = L.LastSeen(key)
+    if last then
+        return ("None listed now - last seen at %s, %s. Not proof it still sells for that."):format(M.Money(last), M.Ago(age))
+    end
     if not rec or rec.s == "b" or time() - rec.t > RECENT then
         -- (a browse row or Auctionator's price: a lowest price and no more)
         return "Lowest price only - how many sell at it isn't known."
@@ -1386,7 +1433,8 @@ L.on.AUCTION_HOUSE_SHOW = function()
     local npc, mine = L.CallStr(UnitFactionGroup, "npc"), L.Faction()
     local neutral = (npc and mine and npc ~= mine) and true or false
     if neutral ~= S.neutral then
-        S.neutral = neutral
+        -- (another house: how the last one's job ended isn't this one's news)
+        S.neutral, S.message = neutral, nil
         L.Bump()
         L.StartAnalysis()
     end
@@ -1398,11 +1446,19 @@ end
 L.on.AUCTION_HOUSE_CLOSED = function()
     if not S.ahOpen and S.state == "idle" then return end
     S.ahOpen, S.ahTok = false, S.ahTok + 1
-    if S.state ~= "idle" then M.Abort("closed") end
+    local idle = S.state == "idle"
+    if not idle then M.Abort("closed") end
+    -- (what the Auctions tab listed is this visit's: auctions sell, and are
+    -- posted elsewhere, without a word to us)
+    local forgot = L.ForgetOwn()
     if S.neutral then
         S.neutral = false
+        -- (how an earlier job at the neutral house ended isn't news at home)
+        if idle then S.message = nil end
         L.Bump()
         L.StartAnalysis()
+    elseif forgot then
+        L.Bump()
     end
     L.Tell("ah", false)
     L.Changed()
@@ -1429,12 +1485,32 @@ function L.IsOurs(names, owner)
     return (names[owner] or names[(owner:gsub("%-.*$", ""))]) and true or false
 end
 
--- A full scan that named no owner, read before the Auctions tab had listed
--- what we have up, counted our own auctions as anybody's. The book keeps
--- when that scan was (book.noOwners); a record it wrote, of an item we have
--- up, is "own-counted" until the item is looked up again (a look-up always
--- tells ours apart) or the next scan. -> {keys = {[key] = true}, ids =
--- {itemID, ...} in order, n = how many keys}
+-- What the Auctions tab listed is known for one visit to one auction house
+-- (S.ownSeen), and only until we post or cancel (S.ownStale): the game says
+-- nothing when an auction sells, and lists ours again only when that tab is
+-- shown.
+function L.ForgetOwn()
+    local had = S.ownSeen or next(S.own) ~= nil
+    S.own, S.ownSeen, S.ownStale, S.ownPartial = {}, false, false, false
+    return had
+end
+function L.OwnChanged()
+    if S.ownSeen and not S.ownStale then
+        S.ownStale = true
+        L.Bump()
+    end
+end
+L.on.AUCTION_HOUSE_AUCTION_CREATED = L.OwnChanged
+L.on.AUCTION_CANCELED = L.OwnChanged
+
+-- A full scan that named no owner, read without an up-to-date list from the
+-- Auctions tab of what we have up, counted our own auctions as anybody's.
+-- The book keeps when that scan was (book.noOwners); a record it wrote, of
+-- an item we have up, is "own-counted" until the item is looked up again (a
+-- look-up always tells ours apart) or the next scan - unless the list that
+-- scan did have (S.taken: out of date, but taken out) already held as many
+-- of it. -> {keys = {[key] = true}, ids = {itemID, ...} in order, n = how
+-- many keys}
 function L.OwnCounted()
     local memo = L.Memo("ownCounted")
     if memo.keys then return memo end
@@ -1442,10 +1518,12 @@ function L.OwnCounted()
     local book = L.Book()
     local at = book and tonumber(book.noOwners)
     if not at or not next(S.own) then return memo end
+    local taken = S.taken and S.taken.at == at and S.taken.units or {}
     local seen = {}
     for key, rec in pairs(book.items) do
         local id = L.KeyItem(key)
-        if id and S.own[id] and L.ValidRec(rec) and rec.s == "f" and rec.t == at and rec.q > 0 then
+        if id and S.own[id] and L.OwnUnits(id) > (taken[id] or 0) and L.ValidRec(rec) and rec.s == "f" and rec.t == at and
+            rec.q > 0 then
             memo.keys[key], memo.n = true, memo.n + 1
             if not seen[id] then
                 seen[id] = true
@@ -1458,10 +1536,11 @@ function L.OwnCounted()
 end
 
 -- nothing of ours is left in what the ownerless scan wrote: it needn't be
--- said again (at the next login, or to a character with nothing up)
+-- said again (at the next login, or to a character with nothing up) - as
+-- far as a whole, up-to-date list can tell
 function L.OwnSettle()
     local book = L.Book()
-    if book and book.noOwners and S.ownSeen and L.OwnCounted().n == 0 then
+    if book and book.noOwners and S.ownSeen and not S.ownStale and not S.ownPartial and L.OwnCounted().n == 0 then
         book.noOwners = nil
         L.Changed()
     end
@@ -1471,7 +1550,11 @@ end
 L.on.OWNED_AUCTIONS_UPDATED = function()
     local rows = L.Call(C_AuctionHouse and C_AuctionHouse.GetOwnedAuctions)
     if type(rows) ~= "table" then return end
-    S.own, S.ownSeen = {}, true
+    S.own, S.ownSeen, S.ownStale = {}, true, false
+    -- (the game can say the list is still arriving: used, but no reason yet
+    -- to call anything settled)
+    local okFull, notFull = pcall(L.IsFalse, L.Call(C_AuctionHouse.HasFullOwnedAuctionResults))
+    S.ownPartial = okFull and notFull or false
     for _, row in ipairs(rows) do
         pcall(function()
             local id = Plain(row.itemKey.itemID)
@@ -1525,9 +1608,15 @@ function L.Add(agg, key, unit, n)
 end
 
 -- seconds until a full scan may be asked for again
+-- (the game's wait is taken to be one for all of a realm's auction houses,
+-- the neutral one too: the latest scan asked for at any of them counts)
 function L.ScanWait()
-    local book = L.Book()
-    local asked = book and tonumber(book.fullAsked) or 0
+    local realm, asked = L.Realm(), 0
+    local books = ns.db and realm and type(ns.db.goldBook) == "table" and ns.db.goldBook or {}
+    for _, side in ipairs({"Alliance", "Horde", "Neutral"}) do
+        local book = books[realm .. "-" .. side]
+        if type(book) == "table" then asked = math.max(asked, tonumber(book.fullAsked) or 0) end
+    end
     return math.max(0, SCAN_WAIT - (time() - asked))
 end
 
@@ -1577,6 +1666,8 @@ function L.ReadScanRow(scan, i)
             key = L.KeyFor(itemID, link)
         else
             -- no link yet: counted as the plain item for now, looked at again at the end
+            -- (scan.unlinked: how many rows of the item are still without one)
+            scan.unlinked[itemID] = (scan.unlinked[itemID] or 0) + 1
             if #scan.later < QUEUE_CAP then scan.later[#scan.later + 1] = {i, itemID, unit, count} end
             L.Queue(itemID)
         end
@@ -1618,7 +1709,10 @@ function L.RereadGear(scan)
         pcall(function()
             local i, itemID, unit, count = row[1], row[2], row[3], row[4]
             if Plain((select(17, AH.GetReplicateItemInfo(i)))) ~= itemID then return end
-            local key = L.KeyFor(itemID, L.Call(AH.GetReplicateItemLink, i))
+            local link = PlainStr(L.Call(AH.GetReplicateItemLink, i))
+            if not link then return end
+            scan.unlinked[itemID] = (scan.unlinked[itemID] or 1) - 1
+            local key = L.KeyFor(itemID, link)
             local map = scan.agg[itemID]
             if key ~= itemID and map and (map[unit] or 0) >= count then
                 map[unit] = map[unit] - count
@@ -1634,8 +1728,14 @@ function L.Commit(g)
     local ok, err = pcall(function()
         scan.now, scan.book = time(), L.Book(true)
         -- (ours come out by name where the rows name their owner, else by
-        -- what the Auctions tab listed - when it has been seen)
-        scan.ownKnown = scan.sawOwner or S.ownSeen or false
+        -- what the Auctions tab listed - when it has been seen this visit,
+        -- and nothing was posted or cancelled since. An older list is still
+        -- taken out, and remembered as what was)
+        scan.ownKnown = scan.sawOwner or (S.ownSeen and not S.ownStale) or false
+        if not scan.ownKnown then
+            S.taken = {at = scan.now, units = {}}
+            for id in pairs(S.own) do S.taken.units[id] = L.OwnUnits(id) end
+        end
         L.TakeOwn(scan.agg)
         scan.keys, scan.out, scan.k = {}, {}, 0
         for key in pairs(scan.agg) do scan.keys[#scan.keys + 1] = key end
@@ -1675,9 +1775,16 @@ function L.CommitEnd(scan)
     -- it was read (it shrank, or another add-on's scan replaced it) weren't
     -- read either
     local unread = math.max(0, scan.rows - scan.i)
+    -- (a piece of gear read without its link was counted as the plain item:
+    -- which suffix it was isn't known, so nothing is said of that item's
+    -- "of the Bear" and "of the Whale")
+    local function Unsure(key)
+        local id = L.KeyItem(key)
+        return key ~= id and (scan.unlinked[id] or 0) > 0
+    end
     if (scan.bad + unread) * 20 <= scan.rows then
         for key, rec in pairs(book.items) do
-            if not scan.out[key] and L.ValidRec(rec) then L.MarkNone(book, key, now, "f") end
+            if not scan.out[key] and L.ValidRec(rec) and not Unsure(key) then L.MarkNone(book, key, now, "f") end
         end
         -- ... and so is what the recipes, the bags and the vendors use and
         -- the book had never seen: a whole scan that didn't list it has
@@ -1685,7 +1792,14 @@ function L.CommitEnd(scan)
         if unread == 0 then
             L.EachCared(book, function(id, key)
                 for _, k in ipairs({id, key}) do
-                    if not L.ValidRec(book.items[k]) then L.MarkNone(book, k, now, "f") end
+                    local rec = book.items[k]
+                    if Unsure(k) then
+                        -- (not known: left for a look-up)
+                    elseif not L.ValidRec(rec) then
+                        L.MarkNone(book, k, now, "f")
+                    elseif rec.q == 0 then
+                        rec.w = now -- (still wanted: the prune below leaves it)
+                    end
                 end
             end)
         end
@@ -1720,7 +1834,7 @@ L.on.REPLICATE_ITEM_LIST_UPDATE = function()
         book.fullAsked, book.fullPending = time(), true
         S.gen = S.gen + 1
     end
-    S.scan = {n = n, rows = n, i = 0, agg = {}, bad = 0, later = {}, names = L.OwnNames(), sawOwner = false}
+    S.scan = {n = n, rows = n, i = 0, agg = {}, bad = 0, later = {}, unlinked = {}, names = L.OwnNames(), sawOwner = false}
     S.state, S.message = "reading", nil
     L.ScanBatch(S.gen)
 end
@@ -1729,6 +1843,21 @@ end
 -- reading a search answer (ours, or the player's own search)
 --------------------------------------------------------------------------
 
+-- A commodity row is one price, shared by everybody selling at it. One
+-- that holds an auction of the account's other characters is left out only
+-- when it is ours alone (one seller - or two, when this character is in it
+-- as well: Blizzard's own test). Shared with others it stays, the alt's
+-- units and all: how many those are isn't told, and losing the price most
+-- people sell at is the bigger error. So it does when the sellers can't be
+-- counted.
+function L.OursAlone(r)
+    if not L.True(r.containsAccountItem) then return false end
+    local n = Plain(r.totalNumberOfOwners)
+    if not n and type(r.owners) == "table" then n = #r.owners end
+    if not n then return false end
+    return n <= (L.True(r.containsOwnerItem) and 2 or 1)
+end
+
 -- -> {[key] = {[unit] = units}}, whether there is more than was read
 function L.ReadCommodity(id)
     local AH, maps = C_AuctionHouse, {}
@@ -1736,7 +1865,7 @@ function L.ReadCommodity(id)
     for i = 1, math.min(n, ROWS_PER_ANSWER) do
         pcall(function()
             local r = AH.GetCommoditySearchResultInfo(id, i)
-            if type(r) ~= "table" or L.True(r.containsAccountItem) then return end
+            if type(r) ~= "table" or L.OursAlone(r) then return end
             local qty, unit = Plain(r.quantity), Plain(r.unitPrice)
             if not (qty and unit) or unit <= 0 then return end
             qty = qty - (Plain(r.numOwnerItems) or 0)
@@ -1839,7 +1968,9 @@ function L.EachCared(book, Want)
         for _, r in ipairs(x.list) do
             if r.mine == mine then
                 if outputs then
-                    Want(r.o)
+                    -- (what binds as it is made is never on the auction house)
+                    local info = L.Info(r.o)
+                    if not (info and info.bind == 1) then Want(r.o) end
                 else
                     for _, reagent in ipairs(r.reagents) do Want(reagent[1]) end
                 end
@@ -1876,11 +2007,15 @@ function L.CheckList(book)
     local list, seen, total = {}, {}, 0
     local stale = {}
     for _, id in ipairs(counted.ids) do stale[id] = true end
-    local function Want(id)
+    local function New(key)
+        local rec = book.items[key]
+        return L.ValidRec(rec) and now - rec.t < SKIP_CHECK and now >= rec.t
+    end
+    local function Want(id, key)
         if type(id) ~= "number" or seen[id] then return end
+        -- (a piece in the bags is priced under its own key, suffix and all)
+        if New(id) and (key == nil or key == id or New(key)) and not stale[id] then return end
         seen[id] = true
-        local rec = book.items[id]
-        if L.ValidRec(rec) and now - rec.t < SKIP_CHECK and now >= rec.t and not stale[id] then return end
         total = total + 1
         if #list < CHECK_CAP then list[#list + 1] = id end
     end
@@ -2126,7 +2261,10 @@ function L.BrowseRow(book, row, now)
     local price, qty = Plain(row.minPrice), Plain(row.totalQuantity)
     if not (price and qty) or price <= 0 or qty <= 0 then return end
     local old = L.ValidRec(book.items[id]) and book.items[id] or nil
-    if old and (old.s == "f" or old.s == "c") and now - old.t < HOUR then return end
+    -- (a scan's or a look-up's record under an hour old knows more than a
+    -- browse row - unless what it knows is "none listed": a row with units
+    -- is newer news than that)
+    if old and old.q > 0 and (old.s == "f" or old.s == "c") and now - old.t < HOUR then return end
     book.items[id] = {m = price, q = qty, t = now, s = "b", v = old and old.v or price,
                       h = L.AddHistory(old and old.h, price, false, true)}
     return true
@@ -2292,6 +2430,8 @@ function L.EssenceDeal(job, from, to, take, give)
     if not L.Fresh(rec, job.now) or not L.ValidRec(target) or job.now - target.t > FRESH then return end
     local info = L.Info(from)
     local sell = M.SellPrice(to)
+    -- (never on a last-seen price alone)
+    if target.q == 0 and not M.Usual(to) then return end
     if not (info and sell) then return end
     local gain = M.AfterCut(sell * give)
     local points, p, used = L.Points(rec), 1, 0
@@ -2396,6 +2536,9 @@ function L.Stats()
 end
 
 function L.NoPrices()
+    if S.ahOpen and S.neutral then
+        return "Neutral auction house - no prices here yet. Press Scan (everything, once per 15 minutes) or Price my items (quick)."
+    end
     if S.ahOpen then return "Press Scan (everything, once per 15 minutes) or Price my items (quick)." end
     return "Go to an auctioneer, open the auction house, then press Scan (everything, once per 15 minutes) or Price my items (quick)."
 end
@@ -2504,11 +2647,17 @@ function L.CraftRow(x, r)
                  link = info and info.link, recipe = r.n, cooldown = r.c and true or nil, mine = r.mine, by = L.MadeBy(x, r),
                  r = r, tip = {}, act = {}}
     row.cost, row.costWhy = L.Materials(r, row.tip)
-    row.listed, row.listedText = L.Listed(r.o)
-    local rec = L.Rec(r.o)
-    row.t = rec and rec.t or nil
+    if bop then
+        -- (never listed, by anyone: no count, no price, no age of one)
+        row.listedText = "-"
+        row.tip[#row.tip + 1] = "Binds when made: vendor or disenchant only."
+    else
+        row.listed, row.listedText = L.Listed(r.o)
+        local rec = L.Rec(r.o)
+        row.t = rec and rec.t or nil
+    end
     L.SellOptions(row, r, info, x, bop)
-    local usual = M.Usual(r.o)
+    local usual = not bop and M.Usual(r.o)
     if usual then row.tip[#row.tip + 1] = "Usual price: " .. M.Money(usual) end
     local ours = L.OwnUnits(r.o)
     if row.listed and ours > 0 then
@@ -2894,7 +3043,7 @@ end
 function L.OwnHint()
     local book = L.Book()
     if not (S.ahOpen and book and book.noOwners) then return nil end
-    if not S.ownSeen then return "Your own auctions may be counted - open your Auctions tab once." end
+    if not S.ownSeen or S.ownStale then return "Your own auctions may be counted - open your Auctions tab once." end
     local n = L.OwnCounted().n
     if n > 0 then
         return ("Your own auctions are still counted in %d price%s - press Price my items."):format(n, n == 1 and "" or "s")
@@ -3033,6 +3182,7 @@ L.EVENTS = {
     "AUCTION_HOUSE_SHOW", "AUCTION_HOUSE_CLOSED", "REPLICATE_ITEM_LIST_UPDATE", "COMMODITY_SEARCH_RESULTS_UPDATED",
     "ITEM_SEARCH_RESULTS_UPDATED", "AUCTION_HOUSE_BROWSE_RESULTS_UPDATED", "AUCTION_HOUSE_BROWSE_RESULTS_ADDED",
     "AUCTION_HOUSE_THROTTLED_SYSTEM_READY", "AUCTION_HOUSE_THROTTLED_MESSAGE_DROPPED", "OWNED_AUCTIONS_UPDATED",
+    "AUCTION_HOUSE_AUCTION_CREATED", "AUCTION_CANCELED",
     "TRADE_SKILL_SHOW", "TRADE_SKILL_CLOSE", "TRADE_SKILL_LIST_UPDATE", "TRADE_SKILL_DATA_SOURCE_CHANGED",
     "NEW_RECIPE_LEARNED", "MERCHANT_SHOW", "MERCHANT_UPDATE", "ITEM_DATA_LOAD_RESULT", "GET_ITEM_INFO_RECEIVED",
     "BAG_UPDATE_DELAYED"
@@ -3067,6 +3217,7 @@ function M:Apply(on)
     if not on then
         M.Abort("off")
         S.ahOpen, S.ahTok, S.neutral = false, S.ahTok + 1, false
+        L.ForgetOwn()
         S.rGen, S.aGen, S.aJob = S.rGen + 1, S.aGen + 1, nil
         L.StopQueue()
     end

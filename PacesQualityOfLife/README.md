@@ -226,7 +226,10 @@ vendor's price is a built-in one no vendor has confirmed). *Sells for*
 is the best of three: the auction house (after the cut), a vendor, or
 disenchanting (when one of your characters is an enchanter). *Profit* is
 one less the other. *Listed* is how many are on the auction house; *Can
-make* is how many your bags and bank hold the materials for. Tick
+make* is how many your bags and bank hold the materials for. A recipe
+whose output binds when it is made is shown for an enchanter's own
+recipes only, with "-" for Listed: it can be vendored or disenchanted,
+never auctioned, and no price is looked up for it. Tick
 **Enchants: what they cost** to see each enchant's materials cost
 instead - the least to charge.
 
@@ -262,7 +265,10 @@ stacks that leaves out. An item that could be auctioned but has no price
 shows "?" and isn't guessed at - Price my items looks it up. One that
 was looked up, or that a whole scan didn't see, and isn't listed (a
 piece "of the Bear" when only other kinds, or none at all, are for
-sale, too) has its answer: its best is the vendor or disenchanting. An
+sale, too) has its answer: its best is the vendor or disenchanting -
+unless it was listed within the last 14 days and has no usual price
+yet: then it is valued at the price it last went for, marked as
+unproven, and the tooltip says when that was. An
 item a profitable recipe of yours uses says so. For an enchanter, an
 essence is valued as its other size when that pays more (three Lesser
 make a Greater, and back); the tooltip then says to combine or split
@@ -277,7 +283,9 @@ price, are passed over when they are a quarter of what's listed at most
 price was used. The usual price is the middle of the last 14
 days' prices, and needs three days of them. A yellow * marks an unproven
 price (only one or two listed, or all at one price: one seller's asking
-price); a grey * means none are listed now and the usual price is shown.
+price - or none listed now and no usual price yet, so the price it was
+last seen at in the last 14 days is shown); a grey * means none are
+listed now and the usual price is shown.
 A price over 48 hours old is "last seen": it shows its age in grey and
 isn't used as today's.
 
@@ -291,7 +299,11 @@ With the auction house open, three ways:
   and changes nothing, and the wait still runs. What the last scan knew
   and this one doesn't see counts as sold out, and what your recipes,
   bags and vendors use and it didn't see as "none listed" - so straight
-  after a scan there is nothing left for Price my items to do. The
+  after a scan there is nothing left for Price my items to do. (One
+  exception: a piece of gear whose details the game hadn't loaded yet is
+  read without its "of the Bear". The scan then says nothing about that
+  item's kinds, and Price my items looks up the one in your bags.) The
+  wait is counted as one for all of a realm's auction houses. The
   options have "Scan the whole auction house each time I open it" (off
   unless you tick it).
 - **Price my items** looks up just what your recipes and bags use - the
@@ -302,13 +314,22 @@ With the auction house open, three ways:
   buying or selling, and goes on when you're back on the list.
 - **What you browse yourself** is read as it goes by: the results of
   your own searches. A price seen only in a browse list never raises a
-  bargain.
+  bargain, and for an hour it doesn't replace what a scan or a look-up
+  read - unless that was "none listed" and the list now shows some.
 
-Your own auctions aren't counted. If a scan can't tell which are yours,
-the window (at the auction house) asks you to open your Auctions tab
-once. If prices the scan read then still count yours, it says how many
-and to press Price my items, which looks those items up again and
-leaves yours out; the next scan does too.
+Your own auctions aren't counted. A look-up always tells them apart. A
+scan goes by the sellers' names, or else by what your Auctions tab
+listed on this visit to the auction house - the list isn't kept from
+one visit to the next, since auctions sell without a word. If a scan
+can do neither (the tab wasn't opened this visit, or you posted or
+cancelled an auction since), the window asks you to open your Auctions
+tab once. If prices the scan read then still count yours, it says how
+many and to press Price my items, which looks those items up again and
+leaves yours out; the next scan does too. One thing is counted: a
+stackable item another character of yours has up at a price other
+sellers share. The game doesn't say how many of those are the alt's, so
+that price stays, the alt's units included; only a price that is yours
+alone is left out.
 
 The header says what the price book holds: how many items have a
 price, when the last full scan was, and when your items were last
@@ -332,8 +353,9 @@ prices raise no bargains. TradeSkillMaster is not used.
 The auction house's cut is counted as 5% of every sale.
 `/pqol gold cut` says what is counted, `/pqol gold cut 10` changes it
 (0 to 30). A neutral auction house is counted at 15% at least and keeps
-prices of its own; it is told by the auctioneer's faction not being
-yours, which may not hold on Forever. The listing deposit isn't
+prices of its own (the header says so, before its first scan too); it
+is told by the auctioneer's faction not being yours, which may not hold
+on Forever. The listing deposit isn't
 counted: it comes back when the item sells and is lost when it doesn't.
 
 Some numbers are estimates: what disenchanting gives (vanilla's tables
@@ -351,7 +373,8 @@ account's characters), nothing is sent anywhere:
 - prices, per realm and faction: each item's lowest price, how many
   were listed, the few cheapest prices and 14 days of its typical
   price, never the auctions themselves. A price not seen for 30 days
-  is dropped;
+  is dropped (a "none listed" answer: 30 days after it was last asked
+  for);
 - each character's recipes (dropped when the character hasn't opened a
   profession for 180 days);
 - vendors' prices, and where the window was left.
