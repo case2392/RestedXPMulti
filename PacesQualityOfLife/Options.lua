@@ -131,9 +131,18 @@ function ns.BuildOptions()
 
     local status = panel:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
     status:SetPoint("TOPLEFT", 20, y - 12)
-    status:SetWidth(LABEL_WIDTH)
+    status:SetWidth(LABEL_WIDTH - 130)
     status:SetJustifyH("LEFT")
-    status:SetText("|cFFFFCC00/pqol status|r lists what's on and any errors this session.")
+    status:SetText("|cFFFFCC00/pqol status|r or this button: what's on and any errors, ready to copy.")
+    -- (the status window, to copy and send on)
+    local show = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+    show:SetSize(110, 22)
+    show:SetPoint("TOPLEFT", LABEL_WIDTH - 96, y - 6)
+    show:SetText("Status")
+    show:SetScript("OnClick", function()
+        if ns.ShowStatus then ns.SafeCall("status", ns.ShowStatus) end
+    end)
+    panel.status, panel.statusShow = status, show
 
     panel:SetScript("OnShow", function() ns.RefreshOptions() end)
 

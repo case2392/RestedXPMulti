@@ -206,8 +206,8 @@ in game yet.
 
 A window that says what makes you gold right now, from your own recipes
 and the auction house's prices. Open it with `/pqol gold`, the **Gold
-finder** button just above the auction house's top right corner, or
-**Open** in the options. It has four tabs. Click a column to sort by it;
+finder** tab along the bottom of the auction house (after its other
+tabs, Auctionator's included), or **Open** in the options. It has four tabs. Click a column to sort by it;
 hover a row to see how its numbers were worked out and how old its price
 is. To keep the columns readable, a price of a gold or more is shown in
 the lists without its copper.
@@ -374,7 +374,8 @@ of them was checked on Forever.
 In Pace's QoL's saved settings (WoW's `WTF` folder, shared by your
 account's characters), nothing is sent anywhere:
 
-- prices, per realm and faction: each item's lowest price, how many
+- prices, per realm and faction (WoW Forever gives no realm name: there,
+  one set per faction for the whole game): each item's lowest price, how many
   were listed, the few cheapest prices and 14 days of its typical
   price, never the auctions themselves. A price not seen for 30 days
   is dropped (a "none listed" answer: 30 days after it was last asked
@@ -390,7 +391,9 @@ game yet.
 ## Commands
 
 - `/pqol` - the options page
-- `/pqol status` - what's on, and any errors this session
+- `/pqol status` - what's on, and any errors this session (with where each
+  came from), in a window with the text selected: Ctrl+C copies it to send
+  with a bug report. The options page's **Status** button opens it too.
 - `/pqol <feature> on|off` - `questlog`, `lfgroles`, `zonetracker`, `voice`, `voicevolume`, `partypets`, `layout`, `gold`
 - `/pqol voice` - what voice sharing sent, heard and was refused (`/pqol voice log`: the last messages)
 - `/pqol voicevolume` - how many volumes are kept (`/pqol voicevolume forget`: forget them all)

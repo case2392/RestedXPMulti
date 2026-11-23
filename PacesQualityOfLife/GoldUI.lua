@@ -17,9 +17,10 @@
 --   * Search only puts the item's name into the auction house's search box
 --     (or hands it to Auctionator): the player clicks Search there. Nothing
 --     is bought, bid on or posted from here.
---   * The auction house button is ours, parented to AuctionHouseFrame and
---     sitting just above its top right corner; nothing is written into
---     Blizzard's frames.
+--   * The auction house tab is ours, after the auction house's last bottom
+--     tab, on a holder frame of ours parented to AuctionHouseFrame (the
+--     tab template would otherwise put it in the auction house's own tab
+--     list); nothing is written into Blizzard's frames.
 --   * Fields we keep on our own widgets are lower-case, and every value a
 --     widget hands back is checked before use.
 
@@ -849,30 +850,100 @@ function U.Toggle()
 end
 
 --------------------------------------------------------------------------
--- the auction house button
+-- the auction house tab
 --------------------------------------------------------------------------
+
+-- A tab along the auction house's bottom edge, after the last of its tabs
+-- (Blizzard's Buy / Sell / Auctions and any another add-on adds, such as
+-- Auctionator's), drawn as they are. It sits on a holder frame of ours: the
+-- tab template files a tab into its parent's Tabs list, and the auction
+-- house's own list must stay Blizzard's - nothing of ours is in it, and the
+-- auction house's tab switching never sees this tab. A click opens or
+-- closes the Gold finder window; what the auction house shows is untouched.
+local TAB_OVERLAP = -15   -- (Blizzard's tabs overlap their neighbour by 15 px)
+-- (the auction house's own tabs: width = text + the template's 20 + their 20, 70 at least)
+local TAB_SIDE_PAD, TAB_PADDING, TAB_MIN = 20, 20, 70
+
+-- the auction house's tab furthest right, of those shown (read only)
+local function LastTab(ah)
+    local tabs = ah.Tabs
+    if type(tabs) ~= "table" then return nil end
+    local last, best, bestRight
+    for i = 1, #tabs do
+        local t = tabs[i]
+        if type(t) == "table" and t ~= U.ahTab then
+            local ok, shown = pcall(t.IsShown, t)
+            if ok and shown then
+                last = t
+                local okR, right = pcall(t.GetRight, t)
+                right = okR and Gold.Plain(right) or nil
+                if right and (not bestRight or right > bestRight) then best, bestRight = t, right end
+            end
+        end
+    end
+    return best or last
+end
+
+local function SizeTab(tab)
+    local fs = tab.Text
+    if type(fs) ~= "table" then fs = tab:GetFontString() end
+    local w = type(fs) == "table" and Gold.Plain(fs:GetStringWidth()) or 0
+    tab:SetWidth(math.max(TAB_MIN, w + TAB_SIDE_PAD + TAB_PADDING))
+end
+
+-- after the last tab; with none to follow, at the bottom edge's right end
+function U.PlaceTab()
+    local ah, tab = AuctionHouseFrame, U.ahTab
+    if not tab or type(ah) ~= "table" then return end
+    local last = LastTab(ah)
+    tab:ClearAllPoints()
+    if last then
+        tab:SetPoint("LEFT", last, "RIGHT", TAB_OVERLAP, 0)
+    else
+        tab:SetPoint("BOTTOMRIGHT", ah, "BOTTOMRIGHT", -20, -28)
+    end
+    SizeTab(tab)
+end
 
 -- made once, when Blizzard's auction house has loaded and the feature is
 -- on; after that only shown and hidden
-local function AHButton()
-    if U.ahButton then
-        U.ahButton:SetShown(U.on)
+local function AHTab()
+    if U.ahHolder then
+        U.ahHolder:SetShown(U.on)
         return
     end
     local ah = AuctionHouseFrame
     if not U.on or type(ah) ~= "table" then return end
-    local b = CreateFrame("Button", nil, ah, "UIPanelButtonTemplate")
-    U.ahButton = b
-    b:SetSize(96, 22)
-    -- (above the frame's top edge and left of its close button, which
-    -- reaches 3 px over that edge: none of Blizzard's controls are there)
-    b:SetPoint("BOTTOMRIGHT", ah, "TOPRIGHT", -30, 1)
-    b:SetText("Gold finder")
-    b:SetScript("OnClick", ns.Guard("gold", function() Gold.Toggle() end))
-    WithTip(b, nil, "Gold finder (Pace's QoL)")
+    local holder = CreateFrame("Frame", nil, ah)
+    U.ahHolder = holder
+    holder:SetSize(1, 1)
+    holder:SetPoint("BOTTOMLEFT", ah, "BOTTOMLEFT", 0, 0)
+    -- (what the tab template sizes a tab by, read from its parent: ours)
+    holder.tabPadding, holder.minTabWidth = TAB_PADDING, TAB_MIN
+    local tab = CreateFrame("Button", nil, holder, "PanelTabButtonTemplate")
+    U.ahTab = tab
+    tab:SetText("Gold finder")
+    -- (never the raised look of the tab the auction house is showing)
+    for _, k in ipairs({"LeftActive", "MiddleActive", "RightActive"}) do
+        if type(tab[k]) == "table" then tab[k]:Hide() end
+    end
+    tab:SetScript("OnClick", ns.Guard("gold", function()
+        if PlaySound and SOUNDKIT and SOUNDKIT.IG_CHARACTER_INFO_TAB then pcall(PlaySound, SOUNDKIT.IG_CHARACTER_INFO_TAB) end
+        Gold.Toggle()
+    end))
+    WithTip(tab, "Gold finder", "What your recipes, the auction house, vendors and your bags are worth (Pace's QoL).")
+    -- (each time the auction house opens: another add-on may add its tabs
+    -- as it opens, a moment after this)
+    holder:SetScript("OnShow", ns.Guard("gold", function()
+        U.PlaceTab()
+        Later(0, U.PlaceTab)
+        Later(0.5, U.PlaceTab)
+    end))
+    U.PlaceTab()
 end
+U.AHTab = AHTab
 
-ns.OnAddOnLoaded("Blizzard_AuctionHouseUI", ns.Guard("gold", AHButton))
+ns.OnAddOnLoaded("Blizzard_AuctionHouseUI", ns.Guard("gold", AHTab))
 
 --------------------------------------------------------------------------
 -- what Gold.lua tells us
@@ -882,7 +953,7 @@ Gold.Listen(function(what, arg)
     if what == "apply" then
         U.on = arg and true or false
         if not U.on then U.Close() end
-        AHButton()
+        AHTab()
     elseif not (U.frame and U.frame:IsShown()) then
         return
     elseif what == "ah" then

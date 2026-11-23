@@ -214,7 +214,7 @@ local function makePlayer(name, opts)
     local env = {}
     P.env = env
     for _, k in ipairs({"string", "table", "math", "pairs", "ipairs", "type", "tostring", "tonumber",
-                        "select", "unpack", "error", "pcall", "setmetatable", "next", "rawget"}) do
+                        "select", "unpack", "error", "pcall", "xpcall", "setmetatable", "next", "rawget"}) do
         env[k] = _G[k]
     end
     env._G = env
@@ -224,6 +224,9 @@ local function makePlayer(name, opts)
         table.insert(P.printed, table.concat(t, " "))
     end
     env.Enum = ENUM
+    -- (the game's debugstack: where an error was raised, a line a call)
+    env.debugstack = function(start) return debug.traceback("", (start or 1) + 1) end
+    env.GetBuildInfo = function() return "12.0.5", "64000", "Nov 1 2026", 16001 end
     env.GetTime = function() return clock end
     -- (P.timeShift: the calendar moved on without the timers running - a
     -- day roll, the 15-minute wait, a month-old record)
@@ -246,7 +249,11 @@ local function makePlayer(name, opts)
         if u == "player" then return P.faction end
         if u == "npc" then return P.npcFaction end
     end
-    env.GetRealmName = function() if not P.noRealm then return P.realm end end
+    -- (P.noRealm: no name - true for none at all, "" for WoW Forever's empty one)
+    env.GetRealmName = function()
+        if P.noRealm == "" then return "" end
+        if not P.noRealm then return P.realm end
+    end
     env.GetNormalizedRealmName = env.GetRealmName
     env.RegionalUniqueNamesEnabled = function() return true end
     env.C_AccountInfo = {
@@ -285,6 +292,20 @@ local function makePlayer(name, opts)
     env.CreateFrame = function(kind, fname, parent, template)
         local f = Widget(kind, fname, parent)
         f.template = template
+        if template == "PanelTabButtonTemplate" then
+            -- (the parts the game's template has, and its parentArray: it
+            -- files the tab into its parent's Tabs list)
+            for _, k in ipairs({"LeftActive", "MiddleActive", "RightActive", "Left", "Middle", "Right"}) do
+                f[k] = Widget("Texture", nil, f)
+            end
+            f.Text = Widget("FontString", nil, f)
+            function f.Text:GetStringWidth() return #(f.text or "") * 6 end
+            if type(parent) == "table" then
+                local list = rawget(parent, "Tabs")
+                if type(list) ~= "table" then list = {}; rawset(parent, "Tabs", list) end
+                table.insert(list, f)
+            end
+        end
         if kind == "Slider" then
             -- (as the game's: a value outside a new range is moved into it,
             -- and every change of value runs OnValueChanged)
@@ -1209,6 +1230,23 @@ local function makePlayer(name, opts)
         end
         f.SearchBar.shown = true
         f.SearchBar.SearchBox = Widget("EditBox", nil, f.SearchBar)
+        -- the bottom tabs (the tab template's parentArray "Tabs"), each 15 px
+        -- over its neighbour; t.right is where it ends
+        f.Tabs = {}
+        for i, k in ipairs({"BuyTab", "SellTab", "AuctionsTab"}) do
+            local t = Widget("Button", nil, f)
+            t.right = 20 + i * 75
+            function t:GetRight() return self.right end
+            f[k], f.Tabs[i] = t, t
+        end
+        -- another add-on's tab (as Auctionator's are made: into the same list)
+        P.AddAHTab = function(right)
+            local t = Widget("Button", nil, f)
+            t.right = right
+            function t:GetRight() return self.right end
+            table.insert(f.Tabs, t)
+            return t
+        end
         env.AuctionHouseFrame = f
         P.loadedAddOns.Blizzard_AuctionHouseUI = true
         FireEvent(P, "ADDON_LOADED", "Blizzard_AuctionHouseUI")
@@ -1265,6 +1303,14 @@ local function makePlayer(name, opts)
     if opts.db then env.PacesQoLDB = opts.db end
     FireEvent(P, "PLAYER_LOGIN")
     return P
+end
+
+-- every error recorded this session, each time it happened (an error that
+-- repeats is one entry of ns.errors, with a count)
+local function Errs(P)
+    local n = 0
+    for _, info in pairs(P.ns.errorInfo or {}) do n = n + info.count end
+    return n
 end
 
 local function Printed(P, needle)
@@ -1330,8 +1376,60 @@ do
     check(P.ns.db.voice == true, "core: /pqol voice on")
     P.Slash("questlog")
     check(P.ns.db.questlog == true and Printed(P, "questlog: |cFF66FF66on|r"), "core: a bare /pqol questlog says how it is, without switching it")
+    P.printed = {}
     P.Slash("status")
-    check(Printed(P, "no errors this session"), "core: /pqol status")
+    local sw = P.ns.statusFrame
+    local text = sw and sw.edit.text or ""
+    check(sw and sw.shown and text == P.ns.StatusText() and text:find("^Pace's Quality of Life %S+ %- status\n") and
+          text:find("\nGame: 12.0.5 (build 64000, interface 16001, project 18)\n", 1, true) and
+          text:find("\nquestlog: on", 1, true) and text:find("\nvoice: on ", 1, true) and
+          text:find("\nNo errors this session.", 1, true) and #P.printed == 0,
+          "core: /pqol status opens a window with the status in a text box, nothing in chat")
+    check(not text:find("|", 1, true) and not text:find("Coretest", 1, true),
+          "core: the status text is plain (no colour codes or icons to copy) and names nobody")
+    -- (it is read only: typing puts it back; Escape closes it)
+    sw.edit.text = "something typed"
+    RunScript(sw.edit, "OnTextChanged", true)
+    check(sw.edit.text == text, "core: the status window's text can't be typed over")
+    sw.edit.text = "a change of ours"
+    RunScript(sw.edit, "OnTextChanged", false)
+    check(sw.edit.text == "a change of ours", "core: ... only what is typed is put back")
+    RunScript(sw.edit, "OnEscapePressed")
+    check(not sw.shown, "core: Escape closes the status window")
+    -- an error that happens again and again: on record once, how many times, where from
+    for _ = 1, 5 do P.ns.SafeCall("questlog", function() local t = nil; return t.x end) end
+    P.printed = {}
+    P.Slash("status")
+    text = sw.edit.text
+    local entry = P.ns.errors[#P.ns.errors]
+    local info = P.ns.errorInfo[entry]
+    check(sw.shown and #P.ns.errors == 1 and info and info.count == 5 and entry:find("^questlog: ") and
+          text:find("\n1 error this session:\n1) questlog: ", 1, false) and text:find("(5 times)", 1, true) and
+          type(info.stack) == "string" and text:find("\n     ", 1, true),
+          "core: an error that repeats is listed once, with how many times and the calls that led to it")
+    check(#P.printed == 0, "core: ... in the window only")
+    -- the options page's Status button opens the same window
+    sw:Hide()
+    RunScript(P.optionsPanel.statusShow, "OnClick")
+    check(sw.shown and P.ns.statusFrame == sw, "core: the options page's Status button opens it")
+    sw:Hide()
+    -- the window can't be made: the status in chat instead, the reason on record
+    do
+        local F = makePlayer("Corefallback", {beforeLoad = function(F, env)
+            local create = env.CreateFrame
+            env.CreateFrame = function(kind, ...)
+                if kind == "EditBox" then error("no edit boxes here") end
+                return create(kind, ...)
+            end
+        end})
+        F.printed = {}
+        F.Slash("status")
+        check(Printed(F, "Pace's Quality of Life") and Printed(F, "questlog: on") and Printed(F, "1 error this session:") and
+              Printed(F, "status: ") and Printed(F, "no edit boxes here"),
+              "core: the status window can't be made: the status is printed in chat, with why")
+        F.online = false
+        players["Corefallback"] = nil
+    end
     P.online = false
     players["Coretest"] = nil
 end
@@ -3953,6 +4051,13 @@ end
 do
     local gone = {}
     local function GP(name, opts)
+        -- (as in the game: WoW Forever gives an empty realm name)
+        opts = opts or {}
+        local before = opts.beforeLoad
+        opts.beforeLoad = function(P, env)
+            if P.noRealm == nil then P.noRealm = "" end
+            if before then before(P, env) end
+        end
         local P = makePlayer(name, opts)
         table.insert(gone, P)
         return P
@@ -4178,19 +4283,36 @@ do
     check(list and list[150] == nil and list[2] ~= nil and list[1].c == true,
           "gold recipes: read again: the list is replaced (what's gone is gone), the cooldown mark kept")
     check(ch.profs.Tailoring.skill == nil and ch.profs.Tailoring.max == 300, "gold recipes: a skill that can't be read isn't saved")
-    do
-        local N = GP("GoldNoRealm", {beforeLoad = function(N) N.noRealm = true end})
+    -- WoW Forever gives no realm name, in the world as at login (an empty
+    -- one; none at all is taken the same way). 1.4.0 read that as "not yet":
+    -- nothing was recorded, and the window's every refresh threw (Gold.lua:
+    -- "attempt to concatenate local 'realm'"), so Scan did nothing
+    for _, how in ipairs({"", true}) do
+        local what = how == "" and "an empty realm name" or "no realm name at all"
+        local N = GP(how == "" and "GoldEmptyRealm" or "GoldNoRealm", {beforeLoad = function(N) N.noRealm = how end})
         Recipe(N, 1, "Runecloth Bag", 14046, {{14048, 5}})
         OpenTrade(N, "Tailoring")
         N.merchant = {{id = 14341, price = 5000}}
         N.Fire("MERCHANT_SHOW")
         advance(1)
         N.OpenAH()
+        local okState, st = pcall(N.ns.Gold.State)
+        N.ns.Gold.Open()
+        advance(1)
         local ok, why = N.ns.Gold.StartScan()
-        check(N.ns.db.goldRecipes == nil and N.ns.db.goldVendors == nil and N.ns.db.goldBook == nil and not ok and
-              why == "can't tell which realm this is yet" and
-              N.ns.Gold.PriceState("crafts") == "Can't tell which realm this is yet" and #N.ns.errors == 0,
-              "gold: while the game can't say which realm this is, nothing is recorded, and the window says so")
+        local key = "Forever-" .. N.faction
+        local ch = N.ns.db.goldRecipes and N.ns.db.goldRecipes[N.guid]
+        check(okState and type(st) == "table" and st.scan and st.scan.enabled == true and #N.ns.errors == 0,
+              "gold (" .. what .. "): the window's state is worked out without an error, and Scan is enabled")
+        check(ok == true and why == nil and N.ns.Gold.State().state == "asked",
+              "gold (" .. what .. "): Scan asks the game for the whole list")
+        check(type(ch) == "table" and ch.realm == "Forever" and ch.profs.Tailoring ~= nil,
+              "gold (" .. what .. "): the character's recipes are recorded, as of a game without realms")
+        check(type(N.ns.db.goldVendors) == "table" and next(N.ns.db.goldVendors) ~= nil,
+              "gold (" .. what .. "): a merchant's prices are recorded")
+        check(type(N.ns.db.goldBook) == "table" and type(N.ns.db.goldBook[key]) == "table" and
+              N.ns.db.goldBook[key].fullAsked ~= nil and N.ns.Gold.PriceState("crafts") ~= "Can't tell which realm this is yet",
+              "gold (" .. what .. "): prices go into one book for the whole game, per faction")
     end
 
     ----------------------------------------------------------------------
@@ -4423,11 +4545,11 @@ do
         C.OpenAH()
         Shift(C, 900)
         advance(61)
-        local errors = #C.ns.errors
+        local errors = Errs(C)
         C.ah.numThrowAt = C.ah.numReads + 3
         GC.StartScan()
         advance(5)
-        check(GC.State().state == "idle" and #C.ns.errors == errors + 1 and Rec(C, 14047).q == 3 and
+        check(GC.State().state == "idle" and Errs(C) == errors + 1 and Rec(C, 14047).q == 3 and
               GC.State().message == "Something went wrong reading the auction house - nothing was changed. /pqol status has the error.",
               "gold scan: a batch that throws ends the scan, once on record, the book as it was")
         C.ah.numThrowAt = nil
@@ -5005,7 +5127,9 @@ do
         K.Slash("status")
         do
             local line
-            for _, l in ipairs(K.printed) do if l:find("gold:", 1, true) then line = l end end
+            for l in (K.ns.statusFrame and K.ns.statusFrame.edit.text or ""):gmatch("[^\n]+") do
+                if l:find("^gold:") then line = l end
+            end
             check(line and line:find("prices of 14 items", 1, true) and line:find("recipes of 2 characters", 1, true) and
                   line:find("2 vendor prices", 1, true) and line:find("cut 5%", 1, true) and not line:find("Altchar", 1, true) and
                   not line:find("GoldK", 1, true) and not line:find("Trader", 1, true), "gold: /pqol status: " .. tostring(line))
@@ -5326,21 +5450,23 @@ do
         S.Slash("gold scan")
         check(Printed(S, "gold: a scan can be asked again in 15 min"), "gold: (and says how long until the next scan)")
         -- errors stay inside
-        local errors = #S.ns.errors
+        local errors = Errs(S)
         GS.Listen(function(what) if what == "bags" then error("boom") end end)
         S.Fire("BAG_UPDATE_DELAYED")
-        check(#S.ns.errors == errors + 1, "gold: a listener's error is recorded, not thrown")
+        check(Errs(S) == errors + 1, "gold: a listener's error is recorded, not thrown")
         local AH = S.env.C_AuctionHouse
         S.env.C_AuctionHouse = nil
         S.Fire("COMMODITY_SEARCH_RESULTS_UPDATED", 14047)
         S.Fire("AUCTION_HOUSE_BROWSE_RESULTS_UPDATED")
         S.Fire("OWNED_AUCTIONS_UPDATED")
         S.Fire("REPLICATE_ITEM_LIST_UPDATE")
-        check(#S.ns.errors == errors + 2 and GS.State().state == "idle", "gold: an error inside an event handler is recorded, not thrown")
+        check(Errs(S) == errors + 2 and GS.State().state == "idle", "gold: an error inside an event handler is recorded, not thrown")
         S.env.C_AuctionHouse = AH
         S.printed = {}
         S.Slash("status")
-        check(Printed(S, "error(s) this session"), "gold: /pqol status lists them")
+        local said = S.ns.statusFrame and S.ns.statusFrame.edit.text or ""
+        check(said:find("\n%d+ errors? this session:\n") and said:find("\n%d+%) gold: ") and #S.printed == 0,
+              "gold: /pqol status lists them, in its window")
         -- switched off and on
         heard = {}
         S.Slash("gold off")
@@ -5480,15 +5606,15 @@ do
         Shift(Q, 900)
         advance(61)
         Q.ah.replicate = "never"
-        local errors = #Q.ns.errors
+        local errors = Errs(Q)
         local bad = setmetatable({}, {__index = function() error("unreadable key") end})
         check(GQ.StartScan() == true and GQ.State().state == "asked", "gold: (a scan asked for)")
         Q.Fire("ITEM_SEARCH_RESULTS_UPDATED", bad)
-        check(GQ.State().state == "idle" and #Q.ns.errors == errors + 1 and GQ.State().message ==
+        check(GQ.State().state == "idle" and Errs(Q) == errors + 1 and GQ.State().message ==
               "Something went wrong reading the auction house - nothing was changed. /pqol status has the error.",
               "gold: an event handler that throws while a job runs ends the job, once on record")
         Q.Fire("ITEM_SEARCH_RESULTS_UPDATED", bad)
-        check(GQ.State().state == "idle" and #Q.ns.errors == errors + 2, "gold: ... and with no job running it is just recorded")
+        check(GQ.State().state == "idle" and Errs(Q) == errors + 2, "gold: ... and with no job running it is just recorded")
         Q.ah.replicate = nil
 
         -- the usual price: the middle of the days' typical prices
@@ -5569,7 +5695,7 @@ do
                   "gold crafts: an output we have auctions of says so in the tooltip")
         end
         Q.Slash("gold cut 5")
-        check(#Q.ns.errors == errors + 2, "gold: (no other errors)")
+        check(Errs(Q) == errors + 2, "gold: (no other errors)")
     end
 
     ----------------------------------------------------------------------
@@ -6558,26 +6684,26 @@ do
         check(#rows >= 4 and atNeutral == 0 and #GPP.BargainRows() == #rows,
               "gold bargains: at a neutral auction house this faction's bargains aren't shown - not even until the pass has run again")
         -- errors stay inside: a timer's body, a listener, the window's own Toggle
-        local errors = #PP.ns.errors
+        local errors = Errs(PP)
         local refresh = PP.ns.RefreshOptions
         PP.ns.RefreshOptions = function() error("the options page broke") end
         Listed(PP, 2589, {{10, 5}, {11, 5}})
         local ok = pcall(advance, 0.1)
         PP.ns.RefreshOptions = refresh
-        check(ok and #PP.ns.errors == errors + 1, "gold: an error inside a timer of ours is recorded, never thrown into the game's timer")
+        check(ok and Errs(PP) == errors + 1, "gold: an error inside a timer of ours is recorded, never thrown into the game's timer")
         local breaking, heard = true, false
         GPP.Listen(function(what) if what == "ah" and breaking then error("a listener broke") end end)
         GPP.Listen(function(what) if what == "ah" then heard = true end end)
-        errors = #PP.ns.errors
+        errors = Errs(PP)
         PP.CloseAH()
         breaking = false
-        check(heard and #PP.ns.errors == errors + 1, "gold: a listener that throws doesn't keep the next one from hearing")
+        check(heard and Errs(PP) == errors + 1, "gold: a listener that throws doesn't keep the next one from hearing")
         local ui = GPP.ui
         GPP.ui = {Toggle = function() error("the window broke") end}
-        errors = #PP.ns.errors
+        errors = Errs(PP)
         ok = pcall(GPP.Toggle)
         GPP.ui = ui
-        check(ok and #PP.ns.errors == errors + 1, "gold: a window that throws on opening is recorded, not thrown at the caller")
+        check(ok and Errs(PP) == errors + 1, "gold: a window that throws on opening is recorded, not thrown at the caller")
         -- what "old" means: 48 hours
         PP.OpenAH()
         Listed(PP, 14046, {{60000, 3}, {65000, 2}})
@@ -8222,6 +8348,13 @@ end
 do
     local gone = {}
     local function GP(name, opts)
+        -- (as in the game: WoW Forever gives an empty realm name)
+        opts = opts or {}
+        local before = opts.beforeLoad
+        opts.beforeLoad = function(P, env)
+            if P.noRealm == nil then P.noRealm = "" end
+            if before then before(P, env) end
+        end
         local P = makePlayer(name, opts)
         table.insert(gone, P)
         return P
@@ -8347,32 +8480,64 @@ do
     check(W.tick == idle, "gold window: closed, nothing of it runs")
 
     ----------------------------------------------------------------------
-    -- the auction house button
+    -- the auction house tab
     ----------------------------------------------------------------------
     -- (a second player with the feature off: what Blizzard's frame holds untouched)
     local N = Stock(GP("GoldOff", {db = {gold = false}}))
     local bare = N.LoadAH()
-    check(N.ns.Gold.ui.ahButton == nil and ChildrenOf(N, bare) == 0, "gold button: the feature off: no button on the auction house")
-    check(ui.ahButton == nil, "gold button: none before the auction house has loaded")
+    check(N.ns.Gold.ui.ahTab == nil and ChildrenOf(N, bare) == 0, "gold tab: the feature off: nothing on the auction house")
+    check(ui.ahTab == nil, "gold tab: none before the auction house has loaded")
     local ahf = W.LoadAH()
-    local ahb = ui.ahButton
-    check(ahb and ahb.parent == ahf and ahb.text == "Gold finder" and ahb.shown and ahb.point[1] == "BOTTOMRIGHT" and
-          ahb.point[2] == ahf and ahb.point[3] == "TOPRIGHT" and ahb.point[5] > 0 and ChildrenOf(W, ahf) == 1,
-          "gold button: made when the auction house loads, parented to it, just above its top right corner")
-    -- (this client's close button is 28 wide at the corner and reaches 3 px above the frame's top edge)
-    check(ahb and ahb.point[4] <= -28 and ahb.width == 96, "gold button: it ends left of the auction house's close button")
-    check(Has(Hover(W, ahb), "Gold finder (Pace's QoL)"), "gold button: its tooltip")
+    local ahb, holder = ui.ahTab, ui.ahHolder
+    check(ahb and holder and holder.parent == ahf and ahb.parent == holder and ahb.template == "PanelTabButtonTemplate" and
+          ahb.text == "Gold finder" and ahb.shown and holder.shown and ChildrenOf(W, ahf) == 1,
+          "gold tab: made when the auction house loads - a bottom tab drawn as the auction house's own, on a frame of ours inside it")
+    check(#ahf.Tabs == 3 and ahf.Tabs[1] == ahf.BuyTab and ahf.Tabs[3] == ahf.AuctionsTab and
+          holder.tabPadding == 20 and holder.minTabWidth == 70,
+          "gold tab: the auction house's own list of tabs is left as it was (the template files a tab into its parent's: the holder's)")
+    check(ahb.point and ahb.point[1] == "LEFT" and ahb.point[2] == ahf.AuctionsTab and ahb.point[3] == "RIGHT" and
+          ahb.point[4] == -15 and ahb.point[5] == 0 and ahb.width == 11 * 6 + 40,
+          "gold tab: after the last tab, over its edge as the auction house's tabs are over each other's, as wide as theirs")
+    -- (Auctionator adds its tabs as the auction house opens, after this
+    -- add-on's tab was placed: the tab moves after them as it opens)
+    local far = W.AddAHTab(400)
+    local near = W.AddAHTab(330)
+    W.OpenAH()
+    RunScript(holder, "OnShow")
+    check(ahb.point[2] == far, "gold tab: after another add-on's tabs, beside the one furthest right")
+    far.shown = false
+    advance(1)
+    check(ahb.point[2] == near, "gold tab: ... looked at again a moment after the auction house opens; a hidden tab is passed over")
+    for _, t in ipairs(ahf.Tabs) do t.right = nil end
+    ui.PlaceTab()
+    check(ahb.point[2] == near, "gold tab: where the tabs end can't be read yet: after the last one shown in their list")
+    local keep = ahf.Tabs
+    ahf.Tabs = nil
+    ui.PlaceTab()
+    check(ahb.point[1] == "BOTTOMRIGHT" and ahb.point[2] == ahf and ahb.point[3] == "BOTTOMRIGHT",
+          "gold tab: no tabs to follow: at the right end of the auction house's bottom edge")
+    ahf.Tabs = keep
+    for i, t in ipairs(keep) do t.right = 20 + i * 75 end
+    far.shown = true
+    ui.PlaceTab()
+    W.CloseAH()
+    check(ahb.LeftActive.shown == false and ahb.MiddleActive.shown == false and ahb.RightActive.shown == false and
+          ahb.Left.shown and ahb.Middle.shown and ahb.Right.shown and #holder.Tabs == 1 and holder.Tabs[1] == ahb,
+          "gold tab: never drawn as the tab the auction house is showing")
+    check(Has(Hover(W, ahb), "Gold finder"), "gold tab: its tooltip")
     Click(ahb)
-    check(f.shown == true, "gold button: a click opens the window")
+    check(f.shown == true, "gold tab: a click opens the window")
     Click(ahb)
-    check(f.shown == false, "gold button: another closes it")
+    check(f.shown == false, "gold tab: another closes it")
     N.Slash("gold on")
-    local nb = N.ns.Gold.ui.ahButton
-    check(nb and nb.parent == bare and nb.shown, "gold button: switched on with the auction house already loaded: made then")
+    local nb = N.ns.Gold.ui.ahTab
+    check(nb and N.ns.Gold.ui.ahHolder.parent == bare and nb.parent == N.ns.Gold.ui.ahHolder and N.ns.Gold.ui.ahHolder.shown,
+          "gold tab: switched on with the auction house already loaded: made then")
     N.Slash("gold off")
-    check(nb.shown == false, "gold button: hidden while the feature is off")
+    check(N.ns.Gold.ui.ahHolder.shown == false, "gold tab: hidden while the feature is off")
     N.Slash("gold on")
-    check(N.ns.Gold.ui.ahButton == nb and nb.shown and ChildrenOf(N, bare) == 1, "gold button: made once across off and on")
+    check(N.ns.Gold.ui.ahTab == nb and N.ns.Gold.ui.ahHolder.shown and ChildrenOf(N, bare) == 1 and #bare.Tabs == 3,
+          "gold tab: made once across off and on")
 
     ----------------------------------------------------------------------
     -- at the auction house: the buttons
@@ -8675,13 +8840,13 @@ do
     check(pos and pos[1] == "TOPLEFT" and pos[2] == "TOPLEFT" and pos[3] == 120 and pos[4] == -81,
           "gold window: dragged by its title, the place is kept")
     W.Slash("gold off")
-    check(f.shown == false and ahb.shown == false, "gold window: switched off: the window and the auction house button hide")
+    check(f.shown == false and ui.ahHolder.shown == false, "gold window: switched off: the window and the auction house tab hide")
     W.printed = {}
     W.Slash("gold")
     Click(W.optionsPanel.goldOpen)
     check(f.shown == false and Printed(W, "gold: switched off"), "gold window: ... and it doesn't open while off")
     W.Slash("gold on")
-    check(ui.ahButton == ahb and ahb.shown and ChildrenOf(W, ahf) == 1, "gold window: switched on: the same button again")
+    check(ui.ahTab == ahb and ui.ahHolder.shown and ChildrenOf(W, ahf) == 1, "gold window: switched on: the same tab again")
     W.Slash("gold")
     check(f.shown and ui.frame == f and #W.ns.errors == 0, "gold window: ... and the window opens again, with no errors all along")
 
@@ -8994,19 +9159,19 @@ do
               not uy.rows[1].sel.shown, "gold window: the selection stays on the bound stack when the bags are read again")
 
         -- errors stay inside: a tooltip that throws, a click, a header, the refresh timer, the close button
-        local errors = #Y.ns.errors
+        local errors = Errs(Y)
         Y.tipThrow = "SetHyperlink"
         local text, tt = Hover(Y, free)
         check(free.row.link and tt.tried[1] == "SetHyperlink" and tt.tried[2] == "SetItemByID" and tt.item == 14047 and
-              tt.owner == free and #Y.ns.errors == errors,
+              tt.owner == free and Errs(Y) == errors,
               "gold window: the game's tooltip throwing on the item's link: its ID is tried instead, and no error is on record")
         Y.tipThrow = nil
         local function Broken(tbl, key, what, ...)
-            local real, before = tbl[key], #Y.ns.errors
+            local real, before = tbl[key], Errs(Y)
             tbl[key] = function() error("broken on purpose") end
             local ok = pcall(what, ...)
             tbl[key] = real
-            return ok and #Y.ns.errors > before
+            return ok and Errs(Y) > before
         end
         check(Broken(GY, "Tip", RunScript, free, "OnEnter"), "gold window: an error while a row's tooltip is filled is recorded, not thrown")
         check(Broken(Y.env.GameTooltip, "SetOwner", RunScript, uy.scan, "OnEnter"),

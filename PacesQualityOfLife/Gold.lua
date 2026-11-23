@@ -328,8 +328,15 @@ function L.Clamp(v, lo, hi) return math.max(lo, math.min(hi, v)) end
 -- saved data: which book, the records in it
 --------------------------------------------------------------------------
 
+-- the realm's name. WoW Forever gives none (an empty name, in the world as
+-- at login): once the character is in the world that is taken as a game
+-- without realms - one book for it all, per faction - not as "not yet"
+L.NO_REALM = "Forever"
 function L.Realm()
-    if not S.realm then S.realm = L.CallStr(GetNormalizedRealmName) or L.CallStr(GetRealmName) end
+    if not S.realm then
+        S.realm = L.CallStr(GetNormalizedRealmName) or L.CallStr(GetRealmName)
+        if not S.realm and (S.loggedIn or L.True(L.Call(IsLoggedIn))) then S.realm = L.NO_REALM end
+    end
     return S.realm
 end
 function L.Faction()
@@ -1638,8 +1645,9 @@ end
 -- the neutral one too: the latest scan asked for at any of them counts)
 function L.ScanWait()
     local realm, asked = L.Realm(), 0
+    -- (no realm known yet: no book either, so nothing was asked for)
     local books = ns.db and realm and type(ns.db.goldBook) == "table" and ns.db.goldBook or {}
-    for _, side in ipairs({"Alliance", "Horde", "Neutral"}) do
+    for _, side in ipairs(realm and {"Alliance", "Horde", "Neutral"} or {}) do
         local book = books[realm .. "-" .. side]
         if type(book) == "table" then asked = math.max(asked, tonumber(book.fullAsked) or 0) end
     end
@@ -3244,6 +3252,8 @@ end
 function M:Apply(on)
     on = on and true or false
     S.on = on
+    -- (called at login and after: the character is in the world)
+    S.loggedIn = true
     for _, event in ipairs(L.EVENTS) do
         -- (an event this client doesn't know throws: it just isn't heard)
         if on then pcall(frame.RegisterEvent, frame, event) else pcall(frame.UnregisterEvent, frame, event) end

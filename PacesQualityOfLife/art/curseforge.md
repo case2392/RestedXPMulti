@@ -40,11 +40,20 @@ file's text can go there directly.
 
 | Field | Value |
 |---|---|
-| File | `dist/PacesQualityOfLife-1.4.0.zip` (contains the `PacesQualityOfLife` folder) |
-| Display name | Pace's Quality of Life 1.4.0 |
-| Release type | Beta (1.4.0's gold finder, 1.3.0's Edit Mode layouts and 1.2's party pets, voice volumes and voice fix not tried in game yet; switch to Release once they have been) |
+| File | `dist/PacesQualityOfLife-1.4.1.zip` (contains the `PacesQualityOfLife` folder) |
+| Display name | Pace's Quality of Life 1.4.1 |
+| Release type | Beta (1.4's gold finder, 1.3.0's Edit Mode layouts and 1.2's party pets, voice volumes and voice fix not tried in game yet; switch to Release once they have been) |
 | Game version | WoW Forever |
-| Changelog | below: 1.4.0's |
+| Changelog | below: 1.4.1's |
+
+## Changelog (1.4.1)
+
+```
+1.4.1
+- Fixed: the Gold finder did nothing on WoW Forever and said "gold hit an error ... Gold.lua:1643: attempt to concatenate local 'realm'" - Scan didn't start, and no prices, recipes or vendor prices were kept. WoW Forever gives no realm name, which 1.4.0 took as "not known yet". Its prices are now kept as one set per faction for the whole game.
+- Changed: the Gold finder opens from a tab along the bottom of the auction house, after its other tabs (Auctionator's too), instead of a button above its top right corner.
+- New: /pqol status opens a window with the text selected - Ctrl+C copies it, ready to paste into a bug report. It lists each error once, with how many times it happened and where it came from. The options page has a Status button for it too.
+```
 
 ## Changelog (1.4.0)
 

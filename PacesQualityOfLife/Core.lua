@@ -60,16 +60,53 @@ function ns.Print(fmt, ...)
 end
 
 -- run fn(...) and record (instead of throwing) if it blows up
+-- Each different error is kept once (ns.errors, in order), with how many
+-- times it happened and the calls that led to it (ns.errorInfo), for the
+-- /pqol status window; the first three are said in chat.
+ns.errorInfo = {}
+
+-- what the error handler hands back: the error and where it was raised
+local function Caught(err)
+    local stack
+    if type(debugstack) == "function" then
+        local ok, s = pcall(debugstack, 2, 10, 0)
+        if ok and type(s) == "string" then stack = s end
+    end
+    return {err = err, stack = stack}
+end
+
+-- (whether this client's xpcall passes arguments on, as WoW's does)
+local XPCALL_ARGS = false
+if type(xpcall) == "function" then
+    local ok, okInner, v = pcall(xpcall, function(a) return a end, function() end, 42)
+    XPCALL_ARGS = ok and okInner and v == 42 or false
+end
+
 function ns.SafeCall(label, fn, ...)
-    local ok, err = pcall(fn, ...)
-    if not ok then
-        local text = tostring(err)
-        ns.errors[#ns.errors + 1] = label .. ": " .. text
+    local ok, result
+    if XPCALL_ARGS then
+        ok, result = xpcall(fn, Caught, ...)
+    elseif type(xpcall) == "function" then
+        local n, args = select("#", ...), {...}
+        ok, result = xpcall(function() return fn(unpack(args, 1, n)) end, Caught)
+    else
+        ok, result = pcall(fn, ...)
+    end
+    if ok then return true, result end
+    local caught = type(result) == "table" and result or {err = result}
+    local text = tostring(caught.err)
+    local key = label .. ": " .. text
+    local info = ns.errorInfo[key]
+    if info then
+        info.count = info.count + 1
+    else
+        ns.errorInfo[key] = {count = 1, stack = caught.stack}
+        ns.errors[#ns.errors + 1] = key
         if #ns.errors <= 3 then
-            ns.Print("%s hit an error (/pqol status lists it): %s", label, text)
+            ns.Print("%s hit an error (|cFFFFCC00/pqol status|r shows it, ready to copy): %s", label, text)
         end
     end
-    return ok, err
+    return false, text
 end
 
 -- a hook or event handler that can never break Blizzard's own code
@@ -158,23 +195,68 @@ end
 -- slash command
 --------------------------------------------------------------------------
 
-local function PrintStatus()
-    ns.Print("v%s", ns.VERSION)
-    for _, key in ipairs(ns.featureOrder) do
-        local mod = ns.features[key].mod
-        local detail = mod.Status and mod:Status() or ""
-        ns.Print("  %s: %s %s", key,
-                 ns.IsOn(key) and "|cFF66FF66on|r" or "|cFFFF6666off|r", detail)
-    end
-    if #ns.errors == 0 then
-        ns.Print("no errors this session.")
-    else
-        ns.Print("%d error(s) this session:", #ns.errors)
-        for i, e in ipairs(ns.errors) do
-            if i > 10 then break end
-            print("  " .. e)
+-- a feature's own status line, as plain text (no colours or icons: it is
+-- copied out of the status window)
+local function Bare(s)
+    s = tostring(s or "")
+    s = s:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", ""):gsub("|T.-|t", ""):gsub("|A.-|a", "")
+    return s
+end
+
+-- what /pqol status shows: the version and the game's, each feature, and
+-- every error this session with where it came from. Figures only - never a
+-- name, a BattleTag or a Battle.net name.
+local MAX_ERRORS = 50
+function ns.StatusText()
+    local lines = {}
+    local function Add(s) lines[#lines + 1] = s end
+    Add(("Pace's Quality of Life %s - status"):format(tostring(ns.VERSION)))
+    if GetBuildInfo then
+        local ok, version, build, _, toc = pcall(GetBuildInfo)
+        if ok then
+            Add(("Game: %s (build %s, interface %s, project %s)"):format(tostring(version), tostring(build), tostring(toc),
+                                                                       tostring(WOW_PROJECT_ID)))
         end
     end
+    Add("")
+    for _, key in ipairs(ns.featureOrder) do
+        local mod = ns.features[key].mod
+        local detail = ""
+        if mod.Status then
+            local ok, said = pcall(mod.Status, mod)
+            detail = ok and Bare(said) or ("(its status failed: " .. tostring(said) .. ")")
+        end
+        Add(("%s: %s%s"):format(key, ns.IsOn(key) and "on" or "off", detail ~= "" and (" " .. detail) or ""))
+    end
+    Add("")
+    if #ns.errors == 0 then
+        Add("No errors this session.")
+    else
+        Add(("%d error%s this session:"):format(#ns.errors, #ns.errors == 1 and "" or "s"))
+        for i, e in ipairs(ns.errors) do
+            if i > MAX_ERRORS then
+                Add(("... and %d more"):format(#ns.errors - MAX_ERRORS))
+                break
+            end
+            local info = ns.errorInfo[e]
+            local times = info and info.count > 1 and (" (" .. info.count .. " times)") or ""
+            Add(("%d) %s%s"):format(i, e, times))
+            if info and info.stack then
+                for l in info.stack:gmatch("[^\n]+") do Add("     " .. l) end
+            end
+        end
+    end
+    return table.concat(lines, "\n")
+end
+
+-- the old way, in chat: only when the window can't be made
+local function PrintStatus()
+    for line in ns.StatusText():gmatch("[^\n]+") do print(line) end
+end
+
+local function ShowStatus()
+    local ok = ns.ShowStatus and ns.SafeCall("status", ns.ShowStatus)
+    if not ok then PrintStatus() end
 end
 
 function ns.HandleSlash(input)
@@ -184,7 +266,7 @@ function ns.HandleSlash(input)
     if cmd == "" or cmd == "options" or cmd == "config" then
         if ns.OpenOptions then ns.OpenOptions() end
     elseif cmd == "status" then
-        PrintStatus()
+        ShowStatus()
     elseif ns.features[cmd] then
         local mod = ns.features[cmd].mod
         if arg == "on" or arg == "off" then
@@ -213,7 +295,7 @@ function ns.HandleSlash(input)
             end
         end
     else
-        ns.Print("|cFFFFCC00/pqol|r options, |cFFFFCC00/pqol status|r what's on and any errors, |cFFFFCC00/pqol <feature> on|off|r: %s; |cFFFFCC00/pqol voice|r what voice sharing sent and heard; |cFFFFCC00/pqol voicevolume forget|r forgets the volumes kept; |cFFFFCC00/pqol gold|r opens the gold finder (|cFFFFCC00/pqol gold help|r lists the rest)",
+        ns.Print("|cFFFFCC00/pqol|r options, |cFFFFCC00/pqol status|r what's on and any errors (a window to copy from), |cFFFFCC00/pqol <feature> on|off|r: %s; |cFFFFCC00/pqol voice|r what voice sharing sent and heard; |cFFFFCC00/pqol voicevolume forget|r forgets the volumes kept; |cFFFFCC00/pqol gold|r opens the gold finder (|cFFFFCC00/pqol gold help|r lists the rest)",
                  table.concat(ns.featureOrder, ", "))
     end
 end
