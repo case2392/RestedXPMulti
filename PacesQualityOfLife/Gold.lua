@@ -650,8 +650,8 @@ function M.Info(id, front)
         return nil
     end
     c = {name = name, link = PlainStr(r[3]), quality = Plain(r[4]), ilvl = Plain(r[5]), stack = Plain(r[9]),
-         icon = Plain(r[11]) or PlainStr(r[11]), sell = Plain(r[12]), class = Plain(r[13]), sub = Plain(r[14]),
-         bind = Plain(r[15]), reagent = L.True(r[18])}
+         equip = PlainStr(r[10]), icon = Plain(r[11]) or PlainStr(r[11]), sell = Plain(r[12]), class = Plain(r[13]),
+         sub = Plain(r[14]), bind = Plain(r[15]), reagent = L.True(r[18])}
     S.info[id] = c
     S.waiting[id] = nil
     return c
@@ -772,6 +772,24 @@ function L.Index()
     end
     if me and L.KnowsDisenchant() then x.enchanters[me] = true end
     x.enchanter = next(x.enchanters) ~= nil
+    -- what an enchanting recipe makes (the wands): disenchanting won't take
+    -- it. From every character on record, of any realm; an enchanting list
+    -- is told by its name or by holding enchants (another language's name)
+    x.enchantMade = {}
+    for _, ch in pairs(L.Recipes()) do
+        for pname, prof in pairs(type(ch) == "table" and type(ch.profs) == "table" and ch.profs or {}) do
+            local list = type(prof) == "table" and type(prof.list) == "table" and prof.list or {}
+            local enchanting = pname == "Enchanting"
+            if not enchanting then
+                for _, r in pairs(list) do
+                    if type(r) == "table" and r.e then enchanting = true end
+                end
+            end
+            for _, r in pairs(enchanting and list or {}) do
+                if type(r) == "table" and type(r.o) == "number" and not r.e then x.enchantMade[r.o] = true end
+            end
+        end
+    end
     table.sort(x.list, function(p, q)
         if p.guid ~= q.guid then return p.guid < q.guid end
         if p.prof ~= q.prof then return p.prof < q.prof end
@@ -1184,9 +1202,20 @@ end
 -- (the third result: a material's value was no more than the last price
 -- seen of something nobody lists now)
 L.GUESS_LINE = "Disenchant: a material has none listed now - valued at the last price seen. Not proof it still sells for that."
+-- gear that disenchanting won't take: what enchanters make (a recipe of the
+-- account's, or the built-in list), and shirts and tabards
+L.NO_DISENCHANT_SLOT = {INVTYPE_BODY = true, INVTYPE_TABARD = true}
+function L.NoDisenchant(id, info)
+    if D.noDisenchant and D.noDisenchant[id] then return true end
+    if info and info.equip and L.NO_DISENCHANT_SLOT[info.equip] then return true end
+    return L.Index().enchantMade[id] and true or false
+end
+
 function L.DisenchantOf(key)
-    local info = L.Info(L.KeyItem(key))
+    local id = L.KeyItem(key)
+    local info = L.Info(id)
     if not info or not info.quality or not info.ilvl or (info.class ~= 2 and info.class ~= 4) then return nil end
+    if L.NoDisenchant(id, info) then return nil end
     local outcomes = L.Outcomes(info.quality, info.class == 2, info.ilvl)
     if not outcomes then return nil end
     local total, guess = 0, nil
@@ -2691,7 +2720,8 @@ function L.CraftRow(x, r)
     if bop then
         -- (never listed, by anyone: no count, no price, no age of one)
         row.listedText = "-"
-        row.tip[#row.tip + 1] = "Binds when made: vendor or disenchant only."
+        row.tip[#row.tip + 1] = L.NoDisenchant(r.o, info) and "Binds when made, and can't be disenchanted: vendor only." or
+                                    "Binds when made: vendor or disenchant only."
     else
         row.listed, row.listedText = L.Listed(r.o)
         local rec = L.Rec(r.o)

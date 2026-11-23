@@ -40,11 +40,18 @@ file's text can go there directly.
 
 | Field | Value |
 |---|---|
-| File | `dist/PacesQualityOfLife-1.4.1.zip` (contains the `PacesQualityOfLife` folder) |
-| Display name | Pace's Quality of Life 1.4.1 |
+| File | `dist/PacesQualityOfLife-1.4.2.zip` (contains the `PacesQualityOfLife` folder) |
+| Display name | Pace's Quality of Life 1.4.2 |
 | Release type | Beta (1.4's gold finder, 1.3.0's Edit Mode layouts and 1.2's party pets, voice volumes and voice fix not tried in game yet; switch to Release once they have been) |
 | Game version | WoW Forever |
-| Changelog | below: 1.4.1's |
+| Changelog | below: 1.4.2's |
+
+## Changelog (1.4.2)
+
+```
+1.4.2
+- Fixed: the Gold finder suggested disenchanting Greater Magic Wands, and anything else enchanters make, which disenchanting won't take. What an enchanting recipe of any of your characters makes, the vanilla enchanter-made wands and Smoking Heart of the Mountain, and shirts and tabards now get no disenchant value: not on Crafts, not in Your bags, and no Disenchant bargains to buy them.
+```
 
 ## Changelog (1.4.1)
 

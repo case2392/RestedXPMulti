@@ -1065,7 +1065,7 @@ local function makePlayer(name, opts)
             local it = P.items[id]
             if not it or it.loaded == false then return nil end
             return it.name, it.link or ("|cffffffff|Hitem:" .. id .. "::::::::60:::::|h[" .. it.name .. "]|h|r"), it.quality or 1,
-                   it.ilvl or 1, 0, "Type", "Subtype", it.stack or 1, "", it.icon or 134400, it.sell or 0, it.class or 15,
+                   it.ilvl or 1, 0, "Type", "Subtype", it.stack or 1, it.equip or "", it.icon or 134400, it.sell or 0, it.class or 15,
                    it.sub or 0, it.bind or 0, 0, nil, it.reagent or false
         end,
         GetItemInfoInstant = function(id)
@@ -6171,6 +6171,73 @@ do
         check(Deal(rows, "Disenchant", 13856) and Deal(rows, "Essence", 11082) and bagRow.disenchant == 7837 and
               craft.how == "Disenchant" and c == 800 and from == "buy Greater and split" and #N4.ns.errors == 0,
               "gold: a character who knows Disenchant counts as the enchanter: all of them appear")
+    end
+    -- what enchanters make can't be disenchanted (the author, in game: it said
+    -- to disenchant Greater Magic Wands), nor can shirts and tabards
+    do
+        local W = Stock(GP("GoldWands"))
+        local GW = W.ns.Gold
+        -- (all armor of the belt's level here, so that the belt's disenchant
+        -- table would apply: what rules them out is what they are)
+        local function Gear(id, name, o)
+            W.items[id] = {name = name, quality = 2, ilvl = 51, sell = 1000, class = 4, bind = o and o.bind or 2, equip = o and o.equip}
+        end
+        Gear(11288, "Greater Magic Wand")             -- the built-in list, and an enchanting recipe of ours
+        Gear(11290, "Greater Mystic Wand")            -- the built-in list only
+        Gear(20300, "Runed Charm")                    -- an enchanting recipe of ours only (a Forever item, say)
+        Gear(20302, "Glowing Charm")                  -- a recipe of an enchanting list under another language's name
+        Gear(20301, "Green Tabard", {equip = "INVTYPE_TABARD"})
+        Gear(20303, "Green Shirt", {equip = "INVTYPE_BODY"})
+        Gear(20304, "Bound Charm", {bind = 1})        -- an enchanting recipe's, binding when made
+        setmetatable(W.ah.commodity, {__index = function() return true end})
+        W.knowsDisenchant = true
+        Recipe(W, 7, "Greater Magic Wand", 11288, {{10940, 1}, {10939, 1}})
+        Recipe(W, 8, "Runed Charm", 20300, {{10940, 4}})
+        Recipe(W, 9, "Bound Charm", 20304, {{10940, 4}})
+        OpenTrade(W, "Enchanting", 300)
+        W.trade.ids = {}
+        Recipe(W, 10, "Enchant Boots", nil, {{10940, 1}}, {enchant = true})
+        Recipe(W, 11, "Glowing Charm", 20302, {{10940, 1}})
+        OpenTrade(W, "Verzauberkunst", 300)
+        W.OpenAH()
+        Listed(W, 11176, {{2000, 10}, {2100, 5}})
+        Listed(W, 16202, {{10000, 5}, {10500, 5}})
+        Listed(W, 10998, {{2000, 10}, {2100, 5}})
+        Listed(W, 11082, {{2400, 10}, {2500, 5}})
+        Listed(W, 10940, {{300, 20}, {310, 5}})
+        Listed(W, 10939, {{2400, 10}, {2500, 5}})
+        local all = {11288, 11290, 20300, 20302, 20301, 20303, 13856}
+        for _, id in ipairs(all) do ListedGear(W, id, {{100}}) end
+        W.bags[0] = {n = #all}
+        for i, id in ipairs(all) do W.bags[0][i] = {itemID = id, stackCount = 1, quality = 2} end
+        W.Fire("BAG_UPDATE_DELAYED")
+        local rows = Analyse(W)
+        check(GW.DisenchantValue(13856) == 7837, "gold: (the belt, gear that can be disenchanted, has its disenchant value)")
+        for _, case in ipairs({{11288, "a wand an enchanter makes"}, {11290, "a wand an enchanter makes that no recipe of ours makes"},
+                               {20300, "what an enchanting recipe of ours makes"},
+                               {20302, "what a recipe of an enchanting list under another name makes"},
+                               {20301, "a tabard"}, {20303, "a shirt"}}) do
+            local id, what = case[1], case[2]
+            local bag = Find(GW.BagRows(), "id", id)
+            check(GW.DisenchantValue(id) == nil and bag and bag.disenchant == nil and bag.bestHow ~= "Disenchant" and
+                  not Deal(rows, "Disenchant", id),
+                  "gold: " .. what .. " can't be disenchanted: no disenchant value in the bags, and no bargain to buy and disenchant")
+        end
+        local belt = Find(GW.BagRows(), "id", 13856)
+        check(belt and belt.disenchant == 7837 and Deal(rows, "Disenchant", 13856),
+              "gold: ... while gear that can be still has both")
+        local crafts = GW.CraftRows()
+        for _, id in ipairs({11288, 20300, 20302}) do
+            local row = Find(crafts, "id", id)
+            local tip = row and table.concat(GW.Tip(row), "\n") or ""
+            check(row and row.how ~= "Disenchant" and not tip:find("Disenchant:", 1, true),
+                  "gold crafts: what an enchanter makes is never to be disenchanted (" .. tostring(row and row.name) .. ")")
+        end
+        local bound = Find(crafts, "id", 20304)
+        check(bound and bound.how == "Vendor" and
+              table.concat(GW.Tip(bound), "\n"):find("Binds when made, and can't be disenchanted: vendor only.", 1, true),
+              "gold crafts: a bound output that can't be disenchanted: the vendor only, and the tooltip says so")
+        check(#W.ns.errors == 0, "gold: (no errors)")
     end
     -- bargains against what a vendor sells; a price seen on three days
     do

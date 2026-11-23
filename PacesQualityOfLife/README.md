@@ -224,7 +224,9 @@ your own craft of them, whichever is less (the tooltip says when more
 is needed than is listed, and part of the cost is a guess, and when a
 vendor's price is a built-in one no vendor has confirmed). *Sells for*
 is the best of three: the auction house (after the cut), a vendor, or
-disenchanting (when one of your characters is an enchanter). *Profit* is
+disenchanting (when one of your characters is an enchanter, and never for
+what disenchanting won't take: what enchanters make - wands - and shirts
+and tabards). *Profit* is
 one less the other. *Listed* is how many are on the auction house; *Can
 make* is how many your bags and bank hold the materials for. A recipe
 whose output binds when it is made is shown for an enchanter's own
@@ -238,7 +240,9 @@ than an hour old:
 
 - *Vendor*: listed for less than a vendor pays.
 - *Disenchant*: gear listed well under what its materials sell for (for
-  enchanters). Never on a material that has none listed and no usual
+  enchanters). Never what disenchanting won't take: what enchanters make
+  (the wands, anything an enchanting recipe of yours makes) and shirts
+  and tabards. Never on a material that has none listed and no usual
   price yet: the price it was last seen at is no reason to buy. (Your
   bags and Crafts still show such a disenchant value, and the tooltip
   says what it rests on.)

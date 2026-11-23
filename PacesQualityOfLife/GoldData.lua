@@ -78,6 +78,17 @@ D.epic = {
     {61, 999, NEXUS, 1, 2}
 }
 
+-- gear that disenchanting won't take: what enchanters make (Gold.lua also
+-- rules out whatever an enchanting recipe of the account's characters
+-- makes; this covers the ones none of them knows)
+D.noDisenchant = {
+    [11287] = true, -- Lesser Magic Wand
+    [11288] = true, -- Greater Magic Wand
+    [11289] = true, -- Lesser Mystic Wand
+    [11290] = true, -- Greater Mystic Wand
+    [11811] = true  -- Smoking Heart of the Mountain
+}
+
 -- the Enchanting skill an item level asks for: {up to this item level, skill}
 -- (a later expansion's rule, used only for the "may need skill" mark)
 D.skill = {
