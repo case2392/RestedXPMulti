@@ -15,7 +15,9 @@
 --     it is made).
 --   * Our own auctions never count: left out by owner name, by what the
 --     Auctions tab listed on this visit to the auction house (and nothing
---     posted or cancelled since), or by a look-up (which always tells). A
+--     posted or cancelled since; sold rows of that list aren't up, and
+--     what a row's name already left out isn't taken out twice), or by a
+--     look-up (which always tells). A
 --     scan that could do neither is remembered as such (book.noOwners),
 --     and the window says what to press. The one exception: a commodity's
 --     price that an alt shares with other sellers stays, alt and all.
@@ -146,7 +148,9 @@
 -- Gold.AfterCut(price)  Gold.Cut()  Gold.VendorBuy(itemID) -> price, "vendor" | "seed"
 -- Gold.Cost(itemID, qty) -> copper, from ("auction", "vendor", "vendor,
 --   price not confirmed", "your own craft" ...), flag | nil, reason
--- Gold.DisenchantValue(key) -> copper, skill needed | nil
+-- Gold.DisenchantValue(key) -> copper, skill needed, guess | nil (guess:
+--   a material has none listed and no usual price - valued at the last
+--   price seen; Bargains never offers a Disenchant deal on that)
 -- Gold.Info(itemID, front) -> {name, link, quality, ilvl, stack, icon, sell,
 --   class, sub, bind, reagent} or nil while it loads (front = true for rows
 --   on screen: loaded first)
@@ -976,11 +980,12 @@ function L.SellOf(key)
     return nil, why, 0
 end
 
--- of a record with none listed now: the typical price when it last was (in
--- the last 14 days), and how long ago
+-- of a record with none listed now (as M.Now says it: read in the last 48
+-- hours): the typical price when it last was (in the last 14 days), and how
+-- long ago
 function L.LastSeen(key)
     local rec = L.Rec(key)
-    if not rec or rec.q ~= 0 or rec.m <= 0 or not rec.z then return nil end
+    if not rec or rec.q ~= 0 or rec.m <= 0 or not rec.z or time() - rec.t > RECENT then return nil end
     local age = time() - rec.z
     if age < 0 or age > HISTORY_DAYS * DAY then return nil end
     local v = type(rec.v) == "number" and rec.v > 0 and rec.v or rec.m
@@ -1167,16 +1172,21 @@ function M.DisenchantValue(key)
         c = {L.DisenchantOf(key)}
         memo[key] = c
     end
-    return c[1], c[2]
+    return c[1], c[2], c[3]
 end
+-- (the third result: a material's value was no more than the last price
+-- seen of something nobody lists now)
+L.GUESS_LINE = "Disenchant: a material has none listed now - valued at the last price seen. Not proof it still sells for that."
 function L.DisenchantOf(key)
     local info = L.Info(L.KeyItem(key))
     if not info or not info.quality or not info.ilvl or (info.class ~= 2 and info.class ~= 4) then return nil end
     local outcomes = L.Outcomes(info.quality, info.class == 2, info.ilvl)
     if not outcomes then return nil end
-    local total = 0
+    local total, guess = 0, nil
     for _, o in ipairs(outcomes) do
-        local value = L.MatValue(o[1])
+        local value, _, pair = L.MatValue(o[1])
+        local priced = pair and pair.other or o[1]
+        if value and L.LastSeen(priced) and not M.Usual(priced) then guess = true end
         if value then
             total = total + o[2] * o[3] * M.AfterCut(value)
         elseif o[4] then
@@ -1185,7 +1195,7 @@ function L.DisenchantOf(key)
     end
     total = math.floor(total)
     if total <= 0 then return nil end
-    return total, L.SkillFor(info.ilvl)
+    return total, L.SkillFor(info.ilvl), guess
 end
 
 -- units listed now: a number and how to write it
@@ -1508,8 +1518,8 @@ L.on.AUCTION_CANCELED = L.OwnChanged
 -- The book keeps when that scan was (book.noOwners); a record it wrote, of
 -- an item we have up, is "own-counted" until the item is looked up again (a
 -- look-up always tells ours apart) or the next scan - unless the list that
--- scan did have (S.taken: out of date, but taken out) already held as many
--- of it. -> {keys = {[key] = true}, ids = {itemID, ...} in order, n = how
+-- scan did have (out of date, but taken out) really took out as many of it
+-- (S.taken: the units that left the listings, not what the list held). -> {keys = {[key] = true}, ids = {itemID, ...} in order, n = how
 -- many keys}
 function L.OwnCounted()
     local memo = L.Memo("ownCounted")
@@ -1548,6 +1558,8 @@ end
 
 -- the Auctions tab listed what we have up (we never ask for it ourselves)
 L.on.OWNED_AUCTIONS_UPDATED = function()
+    -- (a list that arrives after the auction house closed is nobody's visit)
+    if not S.ahOpen then return end
     local rows = L.Call(C_AuctionHouse and C_AuctionHouse.GetOwnedAuctions)
     if type(rows) ~= "table" then return end
     S.own, S.ownSeen, S.ownStale = {}, true, false
@@ -1555,8 +1567,11 @@ L.on.OWNED_AUCTIONS_UPDATED = function()
     -- to call anything settled)
     local okFull, notFull = pcall(L.IsFalse, L.Call(C_AuctionHouse.HasFullOwnedAuctionResults))
     S.ownPartial = okFull and notFull or false
+    local sold = type(Enum) == "table" and type(Enum.AuctionStatus) == "table" and Plain(Enum.AuctionStatus.Sold) or 1
     for _, row in ipairs(rows) do
         pcall(function()
+            -- (the list can still hold an auction that has sold: no longer up)
+            if Plain(row.status) == sold then return end
             local id = Plain(row.itemKey.itemID)
             local qty, buyout = Plain(row.quantity), Plain(row.buyoutAmount)
             if id and qty and qty > 0 and buyout and buyout > 0 then
@@ -1578,20 +1593,31 @@ function L.OwnUnits(id)
 end
 
 -- take our own units out of a scan's listings
-function L.TakeOwn(agg)
-    if not next(S.own) then return end
+-- (named: {[itemID] = {[price for one] = units}} already left out because
+-- the row named one of us - not to be taken out of the others' a second
+-- time; -> {[itemID] = units really taken out})
+function L.TakeOwn(agg, named)
+    local taken = {}
+    if not next(S.own) then return taken end
     for key, map in pairs(agg) do
-        for _, o in ipairs(S.own[L.KeyItem(key)] or {}) do
+        local id = L.KeyItem(key)
+        local out = {}
+        for price, n in pairs(named and named[id] or {}) do out[price] = n end
+        for _, o in ipairs(S.own[id] or {}) do
             local left = o.n
             for _, price in ipairs({o.b, o.a}) do
+                local gone = math.min(out[price] or 0, left)
+                if gone > 0 then out[price], left = out[price] - gone, left - gone end
                 local have = map[price]
                 if have and left > 0 then
                     local take = math.min(have, left)
                     map[price], left = have - take, left - take
+                    taken[id] = (taken[id] or 0) + take
                 end
             end
         end
     end
+    return taken
 end
 
 --------------------------------------------------------------------------
@@ -1657,7 +1683,10 @@ function L.ReadScanRow(scan, i)
         return
     end
     if count <= 0 or buyout <= 0 then return end -- (bid only)
-    if L.IsOurs(scan.names, owner) or L.IsOurs(scan.names, ownerFull) then return end
+    if L.IsOurs(scan.names, owner) or L.IsOurs(scan.names, ownerFull) then
+        L.Add(scan.named, itemID, math.ceil(buyout / count), count)
+        return
+    end
     if C_Item and C_Item.DoesItemExistByID and L.Call(C_Item.DoesItemExistByID, itemID) == false then return end
     local unit, key = math.ceil(buyout / count), itemID
     if L.IsGear(itemID) then
@@ -1732,11 +1761,8 @@ function L.Commit(g)
         -- and nothing was posted or cancelled since. An older list is still
         -- taken out, and remembered as what was)
         scan.ownKnown = scan.sawOwner or (S.ownSeen and not S.ownStale) or false
-        if not scan.ownKnown then
-            S.taken = {at = scan.now, units = {}}
-            for id in pairs(S.own) do S.taken.units[id] = L.OwnUnits(id) end
-        end
-        L.TakeOwn(scan.agg)
+        local taken = L.TakeOwn(scan.agg, scan.named)
+        if not scan.ownKnown then S.taken = {at = scan.now, units = taken} end
         scan.keys, scan.out, scan.k = {}, {}, 0
         for key in pairs(scan.agg) do scan.keys[#scan.keys + 1] = key end
     end)
@@ -1834,7 +1860,8 @@ L.on.REPLICATE_ITEM_LIST_UPDATE = function()
         book.fullAsked, book.fullPending = time(), true
         S.gen = S.gen + 1
     end
-    S.scan = {n = n, rows = n, i = 0, agg = {}, bad = 0, later = {}, unlinked = {}, names = L.OwnNames(), sawOwner = false}
+    S.scan = {n = n, rows = n, i = 0, agg = {}, bad = 0, later = {}, unlinked = {}, names = L.OwnNames(), sawOwner = false,
+              named = {}}
     S.state, S.message = "reading", nil
     L.ScanBatch(S.gen)
 end
@@ -2265,7 +2292,9 @@ function L.BrowseRow(book, row, now)
     -- browse row - unless what it knows is "none listed": a row with units
     -- is newer news than that)
     if old and old.q > 0 and (old.s == "f" or old.s == "c") and now - old.t < HOUR then return end
-    book.items[id] = {m = price, q = qty, t = now, s = "b", v = old and old.v or price,
+    -- (the typical price is carried over only from a record that had units:
+    -- a sold-out record's is older news than this row)
+    book.items[id] = {m = price, q = qty, t = now, s = "b", v = old and old.q > 0 and old.v or price,
                       h = L.AddHistory(old and old.h, price, false, true)}
     return true
 end
@@ -2343,8 +2372,9 @@ end
 -- listed for less than its disenchanted materials sell for
 function L.DisenchantDeal(job, key, rec, info, points, x)
     if not info.quality or info.quality < 2 or info.quality > 4 then return end
-    local value, skill = M.DisenchantValue(key)
-    if not value then return end
+    local value, skill, guess = M.DisenchantValue(key)
+    -- (never on a last-seen price alone)
+    if not value or guess then return end
     local units, paid, top = L.Walk(points, function(unit) return value - unit >= math.max(unit * 0.2, 10 * SILVER) end)
     if units == 0 then return end
     local row = L.Deal(job, "Disenchant", key, rec, info, top, value, units, value * units - paid)
@@ -2619,10 +2649,12 @@ function L.SellOptions(row, r, info, x, bop)
         Offer("Vendor", math.floor(sell * r.avg))
         row.tip[#row.tip + 1] = "Vendor: " .. M.Money(math.floor(sell * r.avg))
     end
-    local dis = x.enchanter and M.DisenchantValue(r.o)
+    local dis, _, guess
+    if x.enchanter then dis, _, guess = M.DisenchantValue(r.o) end
     if dis then
         Offer("Disenchant", math.floor(dis * r.avg))
         row.tip[#row.tip + 1] = ("Disenchant: about %s (estimate)"):format(M.Money(math.floor(dis * r.avg)))
+        if guess then row.tip[#row.tip + 1] = L.GUESS_LINE end
     end
     row.sells, row.how = best, how
     row.estimate = how == "Disenchant" or nil
@@ -2861,8 +2893,9 @@ function L.BagRow(s, x)
     local canDisenchant = x.enchanter
     if s.bound then canDisenchant = x.me and x.enchanters[x.me] or false end
     if canDisenchant and quality and quality >= 2 and quality <= 4 then
-        local dis = M.DisenchantValue(s.key)
+        local dis, _, guess = M.DisenchantValue(s.key)
         if dis then row.disenchant = dis * s.count end
+        if dis and guess then row.tip[#row.tip + 1] = L.GUESS_LINE end
     end
     Offer("Auction", row.auction)
     Offer("Vendor", row.vendor)
@@ -3054,7 +3087,8 @@ end
 -- the auction house closed) - and the game's 15 minutes still run
 function L.Unfinished()
     local book = S.on and S.state == "idle" and L.Book()
-    local wait = book and book.fullPending and L.ScanWait() or 0
+    -- (this house's own scan, not one that finished at another of the realm's)
+    local wait = book and book.fullPending and time() - (tonumber(book.fullAsked) or 0) < SCAN_WAIT and L.ScanWait() or 0
     if wait > 0 then
         return ("The last scan didn't finish - the game allows another in %d min. Price my items works meanwhile."):format(
                    math.ceil(wait / 60))

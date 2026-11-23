@@ -8023,6 +8023,193 @@ do
               "gold scan: another add-on's scan lost with the auction house closed, then a /reload: the window says why Scan is waiting (" ..
               tostring(Q.ns.Gold.State().message) .. ")")
     end
+    ----------------------------------------------------------------------
+    -- fourth review: a last-seen price only where "none listed" still
+    -- holds, never a Disenchant bargain on one, the unfinished scan of
+    -- this house only, and our own auctions taken out once and no more
+    ----------------------------------------------------------------------
+    -- Auctionator's price isn't explained with our own old "none listed" record
+    do
+        local P = Stock(GP("GoldZ1"))
+        local g = P.ns.Gold
+        setmetatable(P.ah.commodity, {__index = function() return true end})
+        for id in pairs(P.ns.GoldData.seed) do P.ns.GoldData.seed[id] = nil end
+        P.bags[0] = {n = 1, [1] = {itemID = 14047, stackCount = 10, quality = 1}}
+        P.Fire("BAG_UPDATE_DELAYED")
+        P.OpenAH()
+        Listed(P, 14047, {{6000, 5}, {6100, 5}})
+        Days(P, 1)
+        Listed(P, 14047, {})
+        local tip = TipOf(g, BagOf(g, 14047))
+        check(Has(tip, "None listed now - last seen at 60s"), "gold bags: (none listed today: the last price seen is said)")
+        P.CloseAH()
+        Days(P, 3)
+        advance(1)
+        P.SetAuctionator({prices = {[14047] = 20000}, ages = {[14047] = 0}})
+        P.Slash("gold cut " .. P.ns.db.goldCut)
+        advance(1)
+        local sp, flag = g.SellPrice(14047)
+        tip = TipOf(g, BagOf(g, 14047))
+        check(sp == 20000 and flag == "unproven" and not Has(tip, "None listed now") and Has(tip, "Lowest price only"),
+              "gold bags: Auctionator's price over our own days-old \"none listed\" isn't called the last price seen (" .. tip:gsub("\n", " | ") .. ")")
+    end
+    -- an old unfinished scan at home, then a finished one at the neutral house
+    do
+        local P = Stock(GP("GoldZ2"))
+        local g = P.ns.Gold
+        setmetatable(P.ah.commodity, {__index = function() return true end})
+        P.OpenAH()
+        P.ah.rows = {Row(14047, 5, 500)}
+        P.ah.replicateDelay = 30
+        g.StartScan()
+        advance(1)
+        P.CloseAH()
+        P.ah.replicateDelay = nil
+        Days(P, 3)
+        advance(61)
+        P.npcFaction = "Neutral"
+        P.OpenAH()
+        local ok = Scan(P)
+        P.CloseAH()
+        P.npcFaction = nil
+        Shift(P, 300)
+        advance(1)
+        P.OpenAH()
+        local st = g.State()
+        check(ok == true and st.scan.label == "Scan (in 10 min)" and not Has(st.message, "didn't finish"),
+              "gold scan: a scan that finished at another house doesn't make this one say \"The last scan didn't finish\" (" ..
+              tostring(st.message) .. ")")
+    end
+    -- no Disenchant bargain on materials nobody lists, valued at a last sighting
+    do
+        local P = Stock(GP("GoldZ3"))
+        local g = P.ns.Gold
+        P.knowsDisenchant = true
+        P.items[16500] = {name = "Bandit Cloak", quality = 2, ilvl = 10, sell = 300, class = 4, bind = 2}
+        setmetatable(P.ah.commodity, {__index = function() return true end})
+        P.ah.commodity[16500] = false
+        for id in pairs(P.ns.GoldData.seed) do P.ns.GoldData.seed[id] = nil end
+        P.bags[0] = {n = 1, [1] = {itemID = 16500, stackCount = 1, quality = 2}}
+        P.Fire("BAG_UPDATE_DELAYED")
+        P.OpenAH()
+        Listed(P, 10940, {{5000, 3}, {5100, 2}})
+        Listed(P, 10938, {{8000, 3}, {8100, 2}})
+        ListedGear(P, 16500, {{2000, 0}})
+        local value, _, guess = g.DisenchantValue(16500)
+        check(value and not guess and Deal(Analyse(P), "Disenchant", 16500) ~= nil, "gold bargains: (materials listed: the Disenchant deal is there)")
+        Days(P, 9)
+        Listed(P, 10940, {})
+        Listed(P, 10938, {})
+        ListedGear(P, 16500, {{2000, 0}})
+        local rows = Analyse(P)
+        value, _, guess = g.DisenchantValue(16500)
+        check(value and guess == true and Deal(rows, "Disenchant", 16500) == nil,
+              "gold bargains: no Disenchant deal on materials nobody lists, valued at the last price seen")
+        check(Has(TipOf(g, BagOf(g, 16500)), "Disenchant: a material has none listed now - valued at the last price seen."),
+              "gold bags: ... and a Disenchant value that rests on one says so")
+    end
+    -- a list of our auctions that arrives after the auction house closed
+    do
+        local P = Stock(GP("GoldZ4"))
+        local g = P.ns.Gold
+        setmetatable(P.ah.commodity, {__index = function() return true end})
+        P.OpenAH()
+        P.ah.owned = {{itemKey = {itemID = 14048}, quantity = 20, buyoutAmount = 900}}
+        P.CloseAH()
+        P.Fire("OWNED_AUCTIONS_UPDATED")
+        advance(1)
+        Shift(P, 6 * 3600)
+        advance(61)
+        P.OpenAH()
+        P.ah.rows = {Row(14048, 20, 18000, {owner = false}), Row(14048, 20, 20000, {owner = false}), Row(14047, 20, 4000, {owner = false})}
+        Scan(P)
+        check(Book(P).noOwners ~= nil and Has(g.State().hint, "open your Auctions tab once") and Rec(P, 14048).q == 40,
+              "gold: a list of our auctions that arrived with the auction house closed isn't the next visit's list")
+    end
+    -- rows that name their owner, and the Auctions tab seen as well: ours come out once
+    do
+        local P = Stock(GP("GoldZ5"))
+        setmetatable(P.ah.commodity, {__index = function() return true end})
+        P.ah.commodity[14046] = false
+        P.OpenAH()
+        P.ah.owned = {{itemKey = {itemID = 14046}, quantity = 1, buyoutAmount = 12500},
+                      {itemKey = {itemID = 14046}, quantity = 1, buyoutAmount = 12500},
+                      {itemKey = {itemID = 14047}, quantity = 20, buyoutAmount = 380},
+                      {itemKey = {itemID = 14048}, quantity = 5, buyoutAmount = 900},
+                      {itemKey = {itemID = 14048}, quantity = 5, buyoutAmount = 900}}
+        P.Fire("OWNED_AUCTIONS_UPDATED")
+        P.ah.rows = {Row(14046, 1, 12500, {owner = "GoldZ5"}), Row(14046, 1, 12500, {owner = "GoldZ5"}),
+                     Row(14046, 1, 12500), Row(14046, 1, 12500), Row(14046, 1, 13000), Row(14046, 1, 13000),
+                     Row(14047, 20, 7600, {owner = "GoldZ5"}), Row(14047, 20, 7600), Row(14047, 20, 8000),
+                     -- (one of ours named, the other not: only that one is still to come out)
+                     Row(14048, 5, 4500, {owner = "GoldZ5"}), Row(14048, 5, 4500, {owner = false}), Row(14048, 5, 4500)}
+        Scan(P)
+        local bag, cloth, bolt = Rec(P, 14046), Rec(P, 14047), Rec(P, 14048)
+        check(bag and bag.m == 12500 and bag.q == 4 and cloth and cloth.m == 380 and cloth.q == 40,
+              "gold scan: our auctions left out by name aren't taken out of the others' a second time (" .. tostring(bag and bag.q) .. " " ..
+              tostring(cloth and cloth.q) .. ")")
+        check(bolt and bolt.q == 5 and Book(P).noOwners == nil, "gold scan: ... and one of ours a row didn't name still is (" .. tostring(bolt and bolt.q) .. ")")
+    end
+    -- an auction that has sold and is still in the Auctions tab's list isn't up
+    do
+        local P = Stock(GP("GoldZ6"))
+        setmetatable(P.ah.commodity, {__index = function() return true end})
+        P.ah.commodity[14046] = false
+        P.OpenAH()
+        P.ah.owned = {{itemKey = {itemID = 14046}, quantity = 1, buyoutAmount = 12500, status = 1},
+                      {itemKey = {itemID = 14046}, quantity = 1, buyoutAmount = 12500, status = 1},
+                      {itemKey = {itemID = 14046}, quantity = 1, buyoutAmount = 13000, status = 0}}
+        P.Fire("OWNED_AUCTIONS_UPDATED")
+        P.ah.rows = {Row(14046, 1, 12500, {owner = false}), Row(14046, 1, 12500, {owner = false}),
+                     Row(14046, 1, 13000, {owner = false}), Row(14046, 1, 13000, {owner = false}), Row(14046, 1, 13000, {owner = false})}
+        Scan(P)
+        local bag = Rec(P, 14046)
+        check(bag and bag.m == 12500 and bag.q == 4,
+              "gold scan: a sold auction still in the Auctions tab's list isn't taken out of the listings (the one still up is): " ..
+              tostring(bag and bag.m) .. " x" .. tostring(bag and bag.q))
+    end
+    -- the out-of-date list took nothing out (that auction sold; another was posted): still counted
+    do
+        local P = Stock(GP("GoldZ7"))
+        local g = P.ns.Gold
+        setmetatable(P.ah.commodity, {__index = function() return true end})
+        P.ah.commodity[14046] = false
+        P.OpenAH()
+        P.ah.owned = {{itemKey = {itemID = 14046}, quantity = 1, buyoutAmount = 12000}}
+        P.Fire("OWNED_AUCTIONS_UPDATED")
+        P.Fire("AUCTION_HOUSE_AUCTION_CREATED", 556)
+        P.ah.rows = {Row(14046, 1, 12800, {owner = false}), Row(14046, 1, 13000, {owner = false}), Row(14046, 1, 13100, {owner = false})}
+        Scan(P)
+        check(Rec(P, 14046).m == 12800 and Has(g.State().hint, "open your Auctions tab once"), "gold: (a scan with an out-of-date list of ours: the hint)")
+        P.ah.owned = {{itemKey = {itemID = 14046}, quantity = 1, buyoutAmount = 12800}}
+        P.Fire("OWNED_AUCTIONS_UPDATED")
+        check(g.State().hint == "Your own auctions are still counted in 1 price - press Price my items." and Book(P).noOwners ~= nil,
+              "gold: an auction the out-of-date list didn't take out is still counted once the Auctions tab is seen (" ..
+              tostring(g.State().hint) .. ")")
+    end
+    -- a browse row over a sold-out record: its own price is what was last seen
+    do
+        local P = Stock(GP("GoldZ8"))
+        local g = P.ns.Gold
+        setmetatable(P.ah.commodity, {__index = function() return true end})
+        for id in pairs(P.ns.GoldData.seed) do P.ns.GoldData.seed[id] = nil end
+        P.bags[0] = {n = 1, [1] = {itemID = 14047, stackCount = 5, quality = 1}}
+        P.Fire("BAG_UPDATE_DELAYED")
+        P.OpenAH()
+        Listed(P, 14047, {{900, 5}, {910, 5}})
+        Days(P, 1)
+        Listed(P, 14047, {})
+        Days(P, 1)
+        P.ah.browse = {{itemKey = {itemID = 14047}, totalQuantity = 4, minPrice = 3000}}
+        P.Fire("AUCTION_HOUSE_BROWSE_RESULTS_UPDATED")
+        advance(1)
+        check(Rec(P, 14047).s == "b" and Rec(P, 14047).v == 3000, "gold: a browse row over a sold-out record keeps its own price as the typical one")
+        Days(P, 1)
+        Listed(P, 14047, {})
+        local tip = TipOf(g, BagOf(g, 14047))
+        check(Has(tip, "None listed now - last seen at 30s, 24 h ago"),
+              "gold bags: ... so the last price seen is that day's, not an older one (" .. tip:gsub("\n", " | ") .. ")")
+    end
     for _, R in ipairs(gone) do
         R.online = false
         players[R.name] = nil

@@ -238,7 +238,10 @@ than an hour old:
 
 - *Vendor*: listed for less than a vendor pays.
 - *Disenchant*: gear listed well under what its materials sell for (for
-  enchanters).
+  enchanters). Never on a material that has none listed and no usual
+  price yet: the price it was last seen at is no reason to buy. (Your
+  bags and Crafts still show such a disenchant value, and the tooltip
+  says what it rests on.)
 - *Resell*: stackable items at 70% or less of their usual price. Only a
   quarter of what's listed is counted, and resale is a guess.
 - *Material*: a material of your recipes at 80% or less of its usual
@@ -320,7 +323,8 @@ With the auction house open, three ways:
 Your own auctions aren't counted. A look-up always tells them apart. A
 scan goes by the sellers' names, or else by what your Auctions tab
 listed on this visit to the auction house - the list isn't kept from
-one visit to the next, since auctions sell without a word. If a scan
+one visit to the next, since auctions sell without a word, and an
+auction the list shows as sold isn't taken for one still up. If a scan
 can do neither (the tab wasn't opened this visit, or you posted or
 cancelled an auction since), the window asks you to open your Auctions
 tab once. If prices the scan read then still count yours, it says how
