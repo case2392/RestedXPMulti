@@ -62,6 +62,9 @@ Widget = function(kind, name, parent)
     setmetatable(w, {__index = function(_, k)
         if type(k) == "string" and k:match("^%u") then return function() end end
     end})
+    if type(parent) == "table" and type(rawget(parent, "children")) == "table" then table.insert(parent.children, w) end
+    function w:GetChildren() return unpack(self.children) end
+    function w:GetObjectType() return self.kind end
     function w:Show() self.shown = true end
     function w:Hide() self.shown = false end
     function w:IsShown() return self.shown end
@@ -1230,23 +1233,30 @@ local function makePlayer(name, opts)
         end
         f.SearchBar.shown = true
         f.SearchBar.SearchBox = Widget("EditBox", nil, f.SearchBar)
-        -- the bottom tabs (the tab template's parentArray "Tabs"), each 15 px
-        -- over its neighbour; t.right is where it ends
+        -- the bottom tabs (the tab template's parentArray "Tabs"), 3 px
+        -- apart; t.right is where it ends, t.top its top edge
         f.Tabs = {}
-        for i, k in ipairs({"BuyTab", "SellTab", "AuctionsTab"}) do
-            local t = Widget("Button", nil, f)
-            t.right = 20 + i * 75
+        local function Tab(parent, right, top)
+            local t = Widget("Button", nil, parent)
+            t.right, t.top = right, top
             function t:GetRight() return self.right end
-            f[k], f.Tabs[i] = t, t
-        end
-        -- another add-on's tab (as Auctionator's are made: into the same list)
-        P.AddAHTab = function(right)
-            local t = Widget("Button", nil, f)
-            t.right = right
-            function t:GetRight() return self.right end
-            table.insert(f.Tabs, t)
+            function t:GetTop() return self.top end
             return t
         end
+        for i, k in ipairs({"BuyTab", "SellTab", "AuctionsTab"}) do
+            local t = Tab(f, 20 + i * 75, 100)
+            f[k], f.Tabs[i] = t, t
+        end
+        -- another add-on's tab, as Auctionator's are made (LibAHTab): on a
+        -- frame of the add-on's own inside the auction house - never in the
+        -- auction house's list
+        P.AddAHTab = function(right, top)
+            P.ahTabRoot = P.ahTabRoot or Widget("Frame", nil, f)
+            return Tab(P.ahTabRoot, right, top or 100)
+        end
+        -- (and a button of Blizzard's that is no bottom tab, far to the right)
+        f.AuctionsFrame.BidsTab = Tab(f.AuctionsFrame, 900, 400)
+        f.AuctionsFrame.Tabs = {f.AuctionsFrame.BidsTab}
         env.AuctionHouseFrame = f
         P.loadedAddOns.Blizzard_AuctionHouseUI = true
         FireEvent(P, "ADDON_LOADED", "Blizzard_AuctionHouseUI")
@@ -4552,6 +4562,11 @@ do
         check(GC.State().state == "idle" and Errs(C) == errors + 1 and Rec(C, 14047).q == 3 and
               GC.State().message == "Something went wrong reading the auction house - nothing was changed. /pqol status has the error.",
               "gold scan: a batch that throws ends the scan, once on record, the book as it was")
+        do
+            local info = C.ns.errorInfo[C.ns.errors[#C.ns.errors]]
+            check(info and type(info.stack) == "string" and (info.stack:match("^(.-)in function 'Try'") or ""):find("Gold.lua", 1, true) ~= nil,
+                  "gold scan: ... kept with the calls that led to where the batch threw")
+        end
         C.ah.numThrowAt = nil
         -- switched off mid-scan
         Shift(C, 900)
@@ -5461,6 +5476,14 @@ do
         S.Fire("OWNED_AUCTIONS_UPDATED")
         S.Fire("REPLICATE_ITEM_LIST_UPDATE")
         check(Errs(S) == errors + 2 and GS.State().state == "idle", "gold: an error inside an event handler is recorded, not thrown")
+        do
+            local key = S.ns.errors[#S.ns.errors]
+            local info = S.ns.errorInfo[key]
+            local line = key and key:match("Gold%.lua:(%d+):")
+            check(line and info and type(info.stack) == "string" and info.stack:find("Gold.lua:" .. line, 1, true) ~= nil and
+                  not info.stack:find("in function 'error'", 1, true),
+                  "gold: ... kept with the calls that led to where it was raised (not to where it was put on record)")
+        end
         S.env.C_AuctionHouse = AH
         S.printed = {}
         S.Slash("status")
@@ -5613,6 +5636,11 @@ do
         check(GQ.State().state == "idle" and Errs(Q) == errors + 1 and GQ.State().message ==
               "Something went wrong reading the auction house - nothing was changed. /pqol status has the error.",
               "gold: an event handler that throws while a job runs ends the job, once on record")
+        do
+            local info = Q.ns.errorInfo[Q.ns.errors[#Q.ns.errors]]
+            check(info and type(info.stack) == "string" and (info.stack:match("^(.-)in function 'Try'") or ""):find("Gold.lua", 1, true) ~= nil,
+                  "gold: ... kept with the calls that led to where the handler threw")
+        end
         Q.Fire("ITEM_SEARCH_RESULTS_UPDATED", bad)
         check(GQ.State().state == "idle" and Errs(Q) == errors + 2, "gold: ... and with no job running it is just recorded")
         Q.ah.replicate = nil
@@ -8495,29 +8523,44 @@ do
     check(#ahf.Tabs == 3 and ahf.Tabs[1] == ahf.BuyTab and ahf.Tabs[3] == ahf.AuctionsTab and
           holder.tabPadding == 20 and holder.minTabWidth == 70,
           "gold tab: the auction house's own list of tabs is left as it was (the template files a tab into its parent's: the holder's)")
-    check(ahb.point and ahb.point[1] == "LEFT" and ahb.point[2] == ahf.AuctionsTab and ahb.point[3] == "RIGHT" and
-          ahb.point[4] == -15 and ahb.point[5] == 0 and ahb.width == 11 * 6 + 40,
-          "gold tab: after the last tab, over its edge as the auction house's tabs are over each other's, as wide as theirs")
+    check(ahb.point and ahb.point[1] == "TOPLEFT" and ahb.point[2] == ahf.AuctionsTab and ahb.point[3] == "TOPRIGHT" and
+          ahb.point[4] == 3 and ahb.point[5] == 0 and ahb.width == 11 * 6 + 40,
+          "gold tab: after the last tab, 3 px from it as the game spaces the auction house's tabs, as wide as theirs")
     -- (Auctionator adds its tabs as the auction house opens, after this
     -- add-on's tab was placed: the tab moves after them as it opens)
     local far = W.AddAHTab(400)
     local near = W.AddAHTab(330)
     W.OpenAH()
     RunScript(holder, "OnShow")
-    check(ahb.point[2] == far, "gold tab: after another add-on's tabs, beside the one furthest right")
+    check(ahb.point[2] == far and far.parent ~= ahf and #ahf.Tabs == 3,
+          "gold tab: after another add-on's tabs (kept on a frame of its own, not in the auction house's list), beside the one furthest right")
+    ahf.AuctionsFrame.shown = true
+    local stray = W.AddAHTab(600, 300)
+    local label = W.env.CreateFrame("Frame", nil, far.parent)
+    label.right, label.top = 700, 100
+    function label:GetRight() return self.right end
+    function label:GetTop() return self.top end
+    ui.PlaceTab()
+    check(ahb.point[2] == far, "gold tab: ... only buttons level with the tabs count: not Blizzard's tabs inside a panel, another add-on's button elsewhere or a frame that is no button")
+    ahf.AuctionsFrame.shown, stray.shown, label.shown = false, false, false
+    far.parent.shown = false
+    ui.PlaceTab()
+    check(ahb.point[2] == ahf.AuctionsTab, "gold tab: ... nor the tabs of a frame that is hidden")
+    far.parent.shown = true
+    ui.PlaceTab()
     far.shown = false
     advance(1)
     check(ahb.point[2] == near, "gold tab: ... looked at again a moment after the auction house opens; a hidden tab is passed over")
-    for _, t in ipairs(ahf.Tabs) do t.right = nil end
+    for _, t in ipairs(ahf.Tabs) do t.right, t.top = nil, nil end
     ui.PlaceTab()
-    check(ahb.point[2] == near, "gold tab: where the tabs end can't be read yet: after the last one shown in their list")
+    check(ahb.point[2] == ahf.AuctionsTab, "gold tab: where the tabs are can't be read yet: after the last one shown in the auction house's list")
     local keep = ahf.Tabs
     ahf.Tabs = nil
     ui.PlaceTab()
     check(ahb.point[1] == "BOTTOMRIGHT" and ahb.point[2] == ahf and ahb.point[3] == "BOTTOMRIGHT",
           "gold tab: no tabs to follow: at the right end of the auction house's bottom edge")
     ahf.Tabs = keep
-    for i, t in ipairs(keep) do t.right = 20 + i * 75 end
+    for i, t in ipairs(keep) do t.right, t.top = 20 + i * 75, 100 end
     far.shown = true
     ui.PlaceTab()
     W.CloseAH()

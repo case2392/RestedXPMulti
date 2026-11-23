@@ -82,18 +82,20 @@ if type(xpcall) == "function" then
     XPCALL_ARGS = ok and okInner and v == 42 or false
 end
 
-function ns.SafeCall(label, fn, ...)
-    local ok, result
-    if XPCALL_ARGS then
-        ok, result = xpcall(fn, Caught, ...)
-    elseif type(xpcall) == "function" then
+-- fn(...) under the error handler: true and what it returned, or false and
+-- what was caught ({err, stack}: the stack is of where it was raised)
+function ns.Try(fn, ...)
+    if XPCALL_ARGS then return xpcall(fn, Caught, ...) end
+    if type(xpcall) == "function" then
         local n, args = select("#", ...), {...}
-        ok, result = xpcall(function() return fn(unpack(args, 1, n)) end, Caught)
-    else
-        ok, result = pcall(fn, ...)
+        return xpcall(function() return fn(unpack(args, 1, n)) end, Caught)
     end
-    if ok then return true, result end
-    local caught = type(result) == "table" and result or {err = result}
+    return pcall(fn, ...)
+end
+
+-- put an error on record: what ns.Try caught (or a plain message)
+function ns.Record(label, caught)
+    if type(caught) ~= "table" then caught = {err = caught} end
     local text = tostring(caught.err)
     local key = label .. ": " .. text
     local info = ns.errorInfo[key]
@@ -106,7 +108,13 @@ function ns.SafeCall(label, fn, ...)
             ns.Print("%s hit an error (|cFFFFCC00/pqol status|r shows it, ready to copy): %s", label, text)
         end
     end
-    return false, text
+    return text
+end
+
+function ns.SafeCall(label, fn, ...)
+    local ok, result = ns.Try(fn, ...)
+    if ok then return true, result end
+    return false, ns.Record(label, result)
 end
 
 -- a hook or event handler that can never break Blizzard's own code

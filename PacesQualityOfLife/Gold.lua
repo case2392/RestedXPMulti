@@ -1430,9 +1430,10 @@ function M.Abort(reason)
     L.Changed()
 end
 
--- a batch or handler threw: on record once, and the job ends
+-- a batch or handler threw (err: what ns.Try caught, with the calls that
+-- led to it): on record once, and the job ends
 function L.Fail(err)
-    ns.SafeCall("gold", error, tostring(err), 0)
+    ns.Record("gold", err)
     M.Abort("error")
 end
 
@@ -1727,7 +1728,7 @@ end
 function L.ScanBatch(g)
     if g ~= S.gen or S.state ~= "reading" then return end
     local scan = S.scan
-    local ok, err = pcall(L.ReadScanRows, scan)
+    local ok, err = ns.Try(L.ReadScanRows, scan)
     if not ok then return L.Fail(err) end
     L.Changed()
     if scan.i < scan.n then return L.Later(0.01, function() L.ScanBatch(g) end) end
@@ -1762,7 +1763,7 @@ end
 -- the book is written in one step, after the last row
 function L.Commit(g)
     local scan = S.scan
-    local ok, err = pcall(function()
+    local ok, err = ns.Try(function()
         scan.now, scan.book = time(), L.Book(true)
         -- (ours come out by name where the rows name their owner, else by
         -- what the Auctions tab listed - when it has been seen this visit,
@@ -1791,10 +1792,10 @@ end
 function L.CommitBatch(g)
     if g ~= S.gen or S.state ~= "reading" then return end
     local scan = S.scan
-    local ok, err = pcall(L.CommitSome, scan, #scan.keys > 2000 and 500 or #scan.keys)
+    local ok, err = ns.Try(L.CommitSome, scan, #scan.keys > 2000 and 500 or #scan.keys)
     if not ok then return L.Fail(err) end
     if scan.k < #scan.keys then return L.Later(0, function() L.CommitBatch(g) end) end
-    ok, err = pcall(L.CommitEnd, scan)
+    ok, err = ns.Try(L.CommitEnd, scan)
     if not ok then L.Fail(err) end
 end
 
@@ -2183,7 +2184,7 @@ end
 function L.CheckStep()
     local c = S.chk
     if S.state ~= "checking" or not c or c.pending then return end
-    local ok, err = pcall(L.CheckNext, c)
+    local ok, err = ns.Try(L.CheckNext, c)
     if not ok then L.Fail(err) end
 end
 
@@ -2251,7 +2252,7 @@ function L.SearchAnswer(id, Read, arg, none)
     if not id or not S.ahOpen then return end
     local c = S.chk
     if S.state == "checking" and c and c.pending and c.pending.id == id then
-        local ok, err = pcall(function() L.TakeAnswer(c, id, Read(id, arg)) end)
+        local ok, err = ns.Try(function() L.TakeAnswer(c, id, Read(id, arg)) end)
         if not ok then L.Fail(err) end
         return
     end
@@ -2521,7 +2522,7 @@ end
 
 function L.AnalysisBatch(job, g)
     if g ~= S.aGen or not S.on then return end
-    local ok, err = pcall(function()
+    local ok, err = ns.Try(function()
         local x = L.Index()
         for _ = 1, ANALYSIS_BATCH do
             job.i = job.i + 1
@@ -2533,7 +2534,7 @@ function L.AnalysisBatch(job, g)
     end)
     if not ok then
         S.aJob = nil
-        ns.SafeCall("gold", error, tostring(err), 0)
+        ns.Record("gold", err)
     end
 end
 
@@ -3235,12 +3236,12 @@ M.eventFrame = frame
 frame:SetScript("OnEvent", ns.Guard("gold", function(_, event, ...)
     local handler = L.on[event]
     if not (handler and S.on) then return end
-    local ok, err = pcall(handler, ...)
+    local ok, err = ns.Try(handler, ...)
     if ok then return end
     -- on record once - and a job under way ends here (L.Fail) rather than
     -- wait for ever on a step this handler didn't finish
     if S.state ~= "idle" then return L.Fail(err) end
-    ns.SafeCall("gold", error, tostring(err), 0)
+    ns.Record("gold", err)
 end))
 
 function M:Init()

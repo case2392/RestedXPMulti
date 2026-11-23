@@ -855,29 +855,61 @@ end
 
 -- A tab along the auction house's bottom edge, after the last of its tabs
 -- (Blizzard's Buy / Sell / Auctions and any another add-on adds, such as
--- Auctionator's), drawn as they are. It sits on a holder frame of ours: the
+-- Auctionator's, wherever that add-on keeps them), drawn as they are. It sits on a holder frame of ours: the
 -- tab template files a tab into its parent's Tabs list, and the auction
 -- house's own list must stay Blizzard's - nothing of ours is in it, and the
 -- auction house's tab switching never sees this tab. A click opens or
 -- closes the Gold finder window; what the auction house shows is untouched.
-local TAB_OVERLAP = -15   -- (Blizzard's tabs overlap their neighbour by 15 px)
+-- (the gap the game sets between bottom tabs when it lays them out, and
+-- the tab library Auctionator uses sets between its own)
+local TAB_GAP = 3
 -- (the auction house's own tabs: width = text + the template's 20 + their 20, 70 at least)
 local TAB_SIDE_PAD, TAB_PADDING, TAB_MIN = 20, 20, 70
 
--- the auction house's tab furthest right, of those shown (read only)
+-- a widget method's plain result, or nil (never an error, never a secret)
+local function Ask(w, method)
+    if type(w) ~= "table" then return nil end
+    local ok, v = pcall(function() return w[method](w) end)
+    if ok and not ns.IsSecret(v) then return v end
+    return nil
+end
+
+-- The bottom tab furthest right, of those shown (read only). Blizzard's
+-- are in the auction house's Tabs list. Another add-on's are not: the tab
+-- library Auctionator uses keeps them, as this add-on keeps its own, on a
+-- frame of its own inside the auction house. So the buttons of the frames
+-- inside the auction house count too, when they are level with its tabs.
 local function LastTab(ah)
+    local last, best, bestRight, rowTop
+    local function Consider(t, other)
+        if type(t) ~= "table" or t == U.ahTab or t == U.ahHolder or not Ask(t, "IsShown") then return end
+        local top = Ask(t, "GetTop")
+        if other then
+            if Ask(t, "GetObjectType") ~= "Button" then return end
+            if type(top) ~= "number" or not rowTop or math.abs(top - rowTop) > 4 then return end
+        else
+            if type(top) == "number" and not rowTop then rowTop = top end
+            last = t
+        end
+        local right = Ask(t, "GetRight")
+        if type(right) == "number" and (not bestRight or right > bestRight) then best, bestRight = t, right end
+    end
     local tabs = ah.Tabs
-    if type(tabs) ~= "table" then return nil end
-    local last, best, bestRight
-    for i = 1, #tabs do
-        local t = tabs[i]
-        if type(t) == "table" and t ~= U.ahTab then
-            local ok, shown = pcall(t.IsShown, t)
-            if ok and shown then
-                last = t
-                local okR, right = pcall(t.GetRight, t)
-                right = okR and Gold.Plain(right) or nil
-                if right and (not bestRight or right > bestRight) then best, bestRight = t, right end
+    if type(tabs) == "table" then
+        for i = 1, #tabs do Consider(tabs[i]) end
+    end
+    -- (where the tabs are isn't known before the auction house first shows:
+    -- then only its own list, and U.PlaceTab runs again as it opens)
+    local ok, kids = pcall(function() return {ah:GetChildren()} end)
+    if ok and rowTop then
+        for i = 1, #kids do
+            local kid = kids[i]
+            if type(kid) == "table" and kid ~= U.ahHolder and Ask(kid, "IsShown") then
+                Consider(kid, true)
+                local okG, grand = pcall(function() return {kid:GetChildren()} end)
+                if okG then
+                    for j = 1, #grand do Consider(grand[j], true) end
+                end
             end
         end
     end
@@ -898,7 +930,8 @@ function U.PlaceTab()
     local last = LastTab(ah)
     tab:ClearAllPoints()
     if last then
-        tab:SetPoint("LEFT", last, "RIGHT", TAB_OVERLAP, 0)
+        -- (as the game anchors each tab to the one before it)
+        tab:SetPoint("TOPLEFT", last, "TOPRIGHT", TAB_GAP, 0)
     else
         tab:SetPoint("BOTTOMRIGHT", ah, "BOTTOMRIGHT", -20, -28)
     end
