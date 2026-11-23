@@ -5,8 +5,9 @@
 -- the reagents every profession buys. None of it was checked on Forever, so
 -- everything worked out from this file is shown as an estimate, and a price
 -- a merchant actually showed always wins over a seed price here.
--- (Recipes are not in here: Forever changed some, so they are read from the
--- profession window itself.)
+-- (The recipes you know are not in here: Forever changed some, so they are
+-- read from the profession window itself. Only the recipe items for sale
+-- that nobody on the account knows go by the table at the end.)
 
 local addonName, ns = ...
 

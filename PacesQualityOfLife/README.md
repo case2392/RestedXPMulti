@@ -207,7 +207,7 @@ in game yet.
 A window that says what makes you gold right now, from your own recipes
 and the auction house's prices. Open it with `/pqol gold`, the **Gold
 finder** tab along the bottom of the auction house (after its other
-tabs, Auctionator's included), or **Open** in the options. It has four tabs. Click a column to sort by it;
+tabs, Auctionator's included), or **Open** in the options. It has five tabs. Click a column to sort by it;
 hover a row to see how its numbers were worked out and how old its price
 is. To keep the columns readable, a price of a gold or more is shown in
 the lists without its copper.
@@ -281,6 +281,46 @@ essence is valued as its other size when that pays more (three Lesser
 make a Greater, and back); the tooltip then says to combine or split
 first.
 
+**Recipes** - recipes for sale that are worth a look: what each one
+teaches, what a craft of it earns, and how many crafts earn the recipe's
+price back. A recipe is listed when all four of these hold:
+
+1. it is one of vanilla's recipe items that teach how to make an item
+   (702 are built in; enchanting formulas make no item and aren't);
+2. it is on the auction house now, at a price less than an hour old (a
+   scan, or your own search for the recipe with its listing opened;
+   browsing the auction house's Recipes list alone records nothing, as
+   the lowest price shown there may be a bid);
+3. no recipe of that profession's, on any of your characters on the
+   realm, already makes what it teaches (a miner's Smelt Gold doesn't
+   hide the alchemist's Transmute Iron to Gold; where two recipes make
+   the same item from different materials - two of the transmutes -
+   they are told apart by their materials);
+4. it is for a profession one of them has (open each profession window
+   once on each character, as for Crafts).
+
+*Price* is the recipe's cheapest buyout. *Cost*, *Sells* and *Profit*
+are one craft's, worked out as on Crafts. *Pays back* is the number of
+crafts it takes to earn the recipe's price back ("-" when there is no
+profit). *Listed* is how many of the made item are on the auction house
+now: the competition. *For* is your most skilled character at that
+profession, or "needs 260 (250)" when even they are short of the skill
+the recipe asks for. The list starts with what pays on proven prices and
+can be learned today, then what pays on an unproven or guessed price or
+needs more skill, then what has no price yet, then what doesn't pay;
+within each, the fewest crafts to pay back first. A product nobody is
+selling has no auction price: when a vendor would pay less than the
+materials cost, its profit is shown as not known ("nobody is selling -
+you would set the price, but check that anyone buys"), not as a loss.
+"Doesn't pay" means an auction price below the cost. Scan prices what
+these recipes make and need; Price my items does too, after your own
+items, up to 60 of them a press.
+
+The game tells an add-on nothing about a recipe nobody has learned, so
+what each recipe makes and needs is vanilla's data, not checked on WoW
+Forever, which changed some recipes. Every profit on this tab has a "~":
+look at the recipe's own tooltip before you buy.
+
 How a selling price is worked out: the lowest price listed now, or the
 item's usual price if that is lower - one hopeful listing far above the
 going rate doesn't count. Neither does one cheap lot far below it: units
@@ -313,9 +353,11 @@ With the auction house open, three ways:
   wait is counted as one for all of a realm's auction houses. The
   options have "Scan the whole auction house each time I open it" (off
   unless you tick it).
-- **Price my items** looks up just what your recipes and bags use - the
+- **Price my items** looks up what your recipes and bags use - the
   materials, what they make, an enchanter's materials, what's in your
-  bags, the vendor items - one a second, up to 300 a press, skipping
+  bags, the vendor items - and then what the recipes for sale make and
+  need (up to 60 of those a press, the recipes a character can learn
+  today first; press again for more). One a second, up to 300 a press, skipping
   anything priced (or scanned) in the last 10 minutes. It works while
   Scan is on its wait. Press it again to stop. It pauses while you are
   buying or selling, and goes on when you're back on the list.
@@ -404,7 +446,7 @@ game yet.
 - `/pqol layout` - this computer's Edit Mode layout and the one on now (`/pqol layout use`: make the one on now this computer's; `/pqol layout forget`: stop switching)
 - `/pqol gold` - open or close the gold finder
 - `/pqol gold scan` - read the whole auction house (it must be open; about once every 15 minutes)
-- `/pqol gold price` - look up the items your recipes and bags use (again: stop)
+- `/pqol gold price` - look up the items your recipes and bags use, then what the recipes for sale make and need (again: stop)
 - `/pqol gold cut` - the auction house's cut that is counted (`/pqol gold cut <0-30>`: change it)
 - `/pqol gold forget` - forget this realm's prices
 - `/pqol gold help` - this list, in game

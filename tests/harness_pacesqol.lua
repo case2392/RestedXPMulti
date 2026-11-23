@@ -4055,7 +4055,7 @@ end
 --------------------------------------------------------------------------
 -- gold finder: recipes and merchants remembered, the auction house read
 -- (a full scan, "Price my items", what the player browses), and what is
--- worked out from it for the window's four tabs. The window itself
+-- worked out from it for the window's five tabs. The window itself
 -- (GoldUI.lua) has its own section.
 --------------------------------------------------------------------------
 do
@@ -8431,6 +8431,590 @@ do
         check(Has(tip, "None listed now - last seen at 30s, 24 h ago"),
               "gold bags: ... so the last price seen is that day's, not an older one (" .. tip:gsub("\n", " | ") .. ")")
     end
+    ----------------------------------------------------------------------
+    -- Recipes: recipes for sale that nobody on the account knows
+    ----------------------------------------------------------------------
+    do
+        local RECIPE_ITEMS = {
+            [14468] = {name = "Pattern: Runecloth Bag", quality = 2, sell = 5000, class = 9, sub = 2},
+            [2406] = {name = "Pattern: Fine Leather Boots", quality = 2, sell = 25, class = 9, sub = 1},
+            [2407] = {name = "Pattern: White Leather Jerkin", quality = 2, sell = 25, class = 9, sub = 1},
+            [2408] = {name = "Pattern: Fine Leather Gloves", quality = 2, sell = 25, class = 9, sub = 1},
+            [2409] = {name = "Pattern: Dark Leather Tunic", quality = 2, sell = 25, class = 9, sub = 1},
+            [728] = {name = "Recipe: Westfall Stew", quality = 1, sell = 10, class = 9, sub = 5},
+            [2307] = {name = "Fine Leather Boots", sell = 0, class = 4},
+            [2311] = {name = "White Leather Jerkin", sell = 100, class = 4},
+            [2312] = {name = "Fine Leather Gloves", sell = 150, class = 4},
+            [2317] = {name = "Dark Leather Tunic", sell = 300, class = 4},
+            [733] = {name = "Westfall Stew", stack = 20, sell = 25, class = 0},
+            [2318] = {name = "Light Leather", stack = 20, sell = 15, class = 7, reagent = true},
+            [4231] = {name = "Cured Light Hide", stack = 20, sell = 20, class = 7, reagent = true},
+            [2324] = {name = "Bleach", stack = 20, sell = 6, class = 7, reagent = true},
+        }
+        local function RStock(P)
+            Stock(P)
+            for id, it in pairs(RECIPE_ITEMS) do
+                local c = {}
+                for k, v in pairs(it) do c[k] = v end
+                P.items[id] = c
+            end
+            return P
+        end
+        local function Alts(lists)
+            lists = lists or {}
+            return {goldRecipes = {
+                ["Player-9-STITCH"] = {name = "Stitch", realm = "Forever", faction = "Alliance", at = 1000, profs = {
+                    Tailoring = {skill = 250, max = 300, at = 1000, list = lists.tailoring or {}},
+                    Leatherworking = {skill = 150, max = 300, at = 1000, list = lists.leather or {}}}},
+                ["Player-9-NEEDLE"] = {name = "Needle", realm = "Forever", faction = "Alliance", at = 1000, profs = {
+                    Tailoring = {skill = 100, max = 300, at = 1000, list = {}}}},
+                -- (a cook, but on another realm)
+                ["Player-9-FAR"] = {name = "Faraway", realm = "Elsewhere", faction = "Alliance", at = 1000, profs = {
+                    Cooking = {skill = 300, max = 300, at = 1000, list = {}}}},
+            }}
+        end
+        local function Bump(P) P.Slash("gold cut " .. P.ns.db.goldCut) end
+        local function Ids(rows)
+            local out = {}
+            for i, row in ipairs(rows) do out[i] = row.id end
+            return table.concat(out, " ")
+        end
+
+        -- nobody's professions on record
+        local Q = RStock(GP("GoldRecNone"))
+        local GQ = Q.ns.Gold
+        Q.OpenAH()
+        Listed(Q, 14468, {{50000, 2}})
+        check(#GQ.RecipeRows() == 0 and
+              GQ.Empty("recipes") == "Open each character's profession windows once - then the Gold finder knows your professions and recipes.",
+              "gold recipes tab: no professions on record: no rows, and it says to open the profession windows")
+
+        local R = RStock(GP("GoldRec", {db = Alts({
+            tailoring = {[4] = {n = "Runecloth Belt", o = 13856, a = 1, b = 1, r = "14048:3"}},
+            leather = {[9] = {n = "Dark Leather Tunic", o = 2317, a = 1, b = 1, r = "2318:6"}}})}))
+        local GR = R.ns.Gold
+        local DR = R.ns.GoldData
+        check(type(DR.recipeItems) == "table" and DR.recipeItems[14468] == "Tailoring|260|14046|1|1|14048:5,8170:2,14341:1",
+              "gold recipes tab: (the built-in table has Pattern: Runecloth Bag)")
+        -- lines that don't read, set before anything looks at them
+        DR.recipeItems[99001] = "Tailoring|x|14046"
+        DR.recipeItems[99002] = 5
+        DR.recipeItems[99003] = "Tailoring|1|14046|1|1|"
+        DR.recipeItems[99004] = {}
+        DR.recipeItems[99005] = "Tailoring|1|14046|2|1|14048:1"
+        DR.recipeItems[99006] = "Tailoring|1|14046|1|1|,:"
+        R.OpenAH()
+        check(#GR.RecipeRows() == 0 and
+              GR.Empty("recipes") == "Scan the auction house (or search for a recipe and open its listing) - recipes for sale come from a price less than an hour old.",
+              "gold recipes tab: professions known, no recipe listed: it says to scan")
+        Listed(R, 728, {{300, 4}})
+        check(#GR.RecipeRows() == 0 and GR.Empty("recipes") == "No recipe for your professions is for sale that nobody on the account knows.",
+              "gold recipes tab: a recipe for a profession nobody on this realm has: no row (another realm's cook doesn't count)")
+        Listed(R, 2409, {{900, 1}})
+        check(#GR.RecipeRows() == 0, "gold recipes tab: a recipe an alt already knows (it makes the same item): no row")
+        for id = 99001, 99006 do Listed(R, id, {{100, 1}}) end
+        check(#GR.RecipeRows() == 0 and #R.ns.errors == 0 and
+              GR.Empty("recipes") == "No recipe for your professions is for sale that nobody on the account knows.",
+              "gold recipes tab: a line of the table that doesn't read is skipped, with no error")
+
+        -- the bag pattern: 5 bolts at 9s, 2 leather at 5s, a thread at 40s; the bag sells for 3g
+        Listed(R, 14048, {{900, 20}, {950, 5}})
+        Listed(R, 8170, {{500, 10}, {700, 2}})
+        Listed(R, 14341, {{4000, 2}, {6000, 10}})
+        ListedGear(R, 14046, {{30000}, {32000}, {35000}})
+        Listed(R, 14468, {{50000, 2}, {60000, 1}})
+        local rows = GR.RecipeRows()
+        local bag = Find(rows, "id", 14468)
+        check(#rows == 1 and bag and bag.key == 14468 and bag.name == "Pattern: Runecloth Bag" and bag.quality == 2 and
+              bag.made == 14046 and bag.madeName == "Runecloth Bag" and bag.prof == "Tailoring" and bag.skill == 260 and
+              bag.price == 50000 and bag.listedRecipe == 3 and bag.t == R.env.time(),
+              "gold recipes tab: a recipe listed that nobody knows: the recipe item, what it makes, its cheapest buyout")
+        check(bag and bag.cost == 9500 and bag.sells == 28500 and bag.how == "Auction" and bag.mark == nil and bag.profit == 19000 and
+              bag.payback == 3 and bag.paybackText == "3 crafts" and bag.estimate == true and bag.listed == 3 and bag.listedText == "3",
+              "gold recipes tab: by hand: 45s + 10s + 40s of materials, 3g less 5% = 2g 85s, 1g 90s a craft, 5g back in 3 crafts (" ..
+              tostring(bag and bag.cost) .. ", " .. tostring(bag and bag.sells) .. ", " .. tostring(bag and bag.payback) .. ")")
+        check(bag and bag.who == "Stitch" and bag.whoGuid == "Player-9-STITCH" and bag.whoSkill == 250 and bag.canLearn == false and
+              bag.forText == "needs 260 (250)" and bag.rank == 2,
+              "gold recipes tab: the most skilled tailor of the realm is 10 short: rank 2, and For says so")
+        do
+            local tip = table.concat(GR.Tip(bag), "\n")
+            local want = {"Teaches Tailoring (260): Runecloth Bag.", "The recipe: 5g, 3 listed.", "5 x Bolt of Runecloth: 45s (auction)",
+                          "1 x Rune Thread: 40s (auction)", "Auction: 2g 85s (3g each, less the 5% cut)", "Vendor: 2g",
+                          "Profit per craft 1g 90s - pays the recipe back in 3 crafts.",
+                          "Needs Tailoring 260 - the best on the account is 250 (Stitch).", "Runecloth Bag: 3 listed now.",
+                          "Recipe data is vanilla's - WoW Forever may have changed this recipe.", "Price from just now",
+                          "Buy it for 5g, keep it until Stitch has Tailoring 260, then craft and sell Runecloth Bag.",
+                          "Press Search to see it in the auction house. Pace's QoL never buys for you."}
+            local missing
+            for _, line in ipairs(want) do
+                if not tip:find(line, 1, true) then missing = missing or line end
+            end
+            check(not missing, "gold recipes tab: the tooltip: what it teaches, its price, materials, ways to sell, the payback, who, the competition, what to do (" ..
+                  tostring(missing) .. ")")
+        end
+        R.ns.db.goldRecipes["Player-9-STITCH"].profs.Tailoring.skill = 265
+        Bump(R)
+        bag = Find(GR.RecipeRows(), "id", 14468)
+        do
+            local tip = bag and table.concat(GR.Tip(bag), "\n") or ""
+            check(bag and bag.canLearn == true and bag.whoSkill == 265 and bag.forText == "Tailoring 265" and bag.rank == 1 and
+                  tip:find("Stitch can learn it (Tailoring 265).", 1, true) and
+                  tip:find("Buy it for 5g, learn it on Stitch, then craft and sell Runecloth Bag.", 1, true),
+                  "gold recipes tab: at the skill: rank 1, For names the profession and skill, the tooltip who learns it")
+        end
+
+        -- gloves: a small profit; boots: nothing to sell them by; a jerkin: a loss
+        Listed(R, 2318, {{100, 50}, {110, 50}})
+        Listed(R, 4231, {{300, 10}, {320, 10}})
+        ListedGear(R, 2312, {{2000}, {2100}, {2200}})
+        Listed(R, 2408, {{20000, 1}})
+        Listed(R, 2406, {{1000, 1}})
+        Listed(R, 2407, {{1000, 1}})
+        rows = GR.RecipeRows()
+        local gloves, boots, jerkin = Find(rows, "id", 2408), Find(rows, "id", 2406), Find(rows, "id", 2407)
+        check(gloves and gloves.cost == 720 and gloves.sells == 1900 and gloves.profit == 1180 and gloves.payback == 17 and
+              gloves.rank == 1 and gloves.forText == "Leatherworking 150" and gloves.who == "Stitch",
+              "gold recipes tab: by hand: 7s 20c of materials, 20s less 5%, 11s 80c a craft, 2g back in 17 crafts (" ..
+              tostring(gloves and gloves.cost) .. ", " .. tostring(gloves and gloves.payback) .. ")")
+        check(boots and boots.cost == 720 and boots.sells == nil and boots.profit == nil and boots.payback == nil and
+              boots.paybackText == "-" and boots.rank == 3 and
+              table.concat(GR.Tip(boots), "\n"):find("Profit per craft: ? (no price for Fine Leather Boots yet)", 1, true),
+              "gold recipes tab: what it makes has no price: rank 3, no payback")
+        -- the jerkin was never priced: a vendor's 1s is no verdict on it
+        do
+            local tip = jerkin and table.concat(GR.Tip(jerkin), "\n") or ""
+            check(jerkin and jerkin.cost == 845 and jerkin.sells == 100 and jerkin.how == "Vendor" and jerkin.profit == nil and
+                  jerkin.listed == nil and jerkin.payback == nil and jerkin.paybackText == "-" and jerkin.rank == 3 and
+                  Has(tip, "Profit per craft: ? (no auction price for White Leather Jerkin yet, and a vendor pays less than the materials cost)") and
+                  Has(tip, "Price White Leather Jerkin and its materials first (Price my items)") and
+                  not Has(tip, "No profit") and not Has(tip, "Not worth buying"),
+                  "gold recipes tab: what it makes has only a vendor price below the materials: profit not known, rank 3, never \"no profit\"")
+            -- looked up: nobody is selling one
+            ListedGear(R, 2311, {})
+            jerkin = Find(GR.RecipeRows(), "id", 2407)
+            tip = jerkin and table.concat(GR.Tip(jerkin), "\n") or ""
+            check(Rec(R, 2311) and Rec(R, 2311).q == 0 and jerkin and jerkin.listed == 0 and jerkin.listedText == "0" and
+                  jerkin.profit == nil and jerkin.rank == 3 and jerkin.sells == 100 and
+                  Has(tip, "Profit per craft: ? (nobody is selling White Leather Jerkin, and a vendor pays less than the materials cost)") and
+                  Has(tip, "0 listed: nobody is selling White Leather Jerkin - you would set the price, but check that anyone buys.") and
+                  not Has(tip, "Price White Leather Jerkin and its materials first") and not Has(tip, "No profit") and
+                  not Has(tip, "Not worth buying"),
+                  "gold recipes tab: nobody sells what it makes (0 listed): rank 3, \"you would set the price\" - not a loss, and not \"price it first\" (" ..
+                  tostring(jerkin and jerkin.rank) .. ")")
+            -- three sellers, all below the materials: that is a loss
+            ListedGear(R, 2311, {{500}, {520}, {540}})
+            rows = GR.RecipeRows()
+            jerkin = Find(rows, "id", 2407)
+            tip = jerkin and table.concat(GR.Tip(jerkin), "\n") or ""
+            check(jerkin and jerkin.cost == 845 and jerkin.sells == 475 and jerkin.how == "Auction" and jerkin.profit == -370 and
+                  jerkin.payback == nil and jerkin.rank == 4 and Has(tip, "No profit at today's prices.") and
+                  Has(tip, "Not worth buying to sell White Leather Jerkin at today's prices."),
+                  "gold recipes tab: a loss at its auction price: rank 4, no payback (" .. tostring(jerkin and jerkin.sells) .. ")")
+            -- listed even below what a vendor pays, and the vendor's price under
+            -- the materials: a loss too - and there is an auction price
+            ListedGear(R, 2311, {{60}, {70}, {80}})
+            local cheap = Find(GR.RecipeRows(), "id", 2407)
+            local cheapTip = cheap and table.concat(GR.Tip(cheap), "\n") or ""
+            check(cheap and cheap.how == "Vendor" and cheap.sells == 100 and cheap.profit == -745 and cheap.rank == 4 and
+                  Has(cheapTip, "No profit at today's prices.") and not Has(cheapTip, "no auction price for White Leather Jerkin"),
+                  "gold recipes tab: sold at auction for less than a vendor pays, and that under the materials: a loss, not \"no auction price\" (" ..
+                  tostring(cheap and cheap.rank) .. ")")
+            ListedGear(R, 2311, {{500}, {520}, {540}})
+            rows = GR.RecipeRows()
+        end
+        check(Ids(rows) == "14468 2408 2406 2407",
+              "gold recipes tab: the order: rank, then the fewest crafts to pay back (" .. Ids(rows) .. ")")
+        check(GR.RecipeRows()[1] == rows[1], "gold recipes tab: the rows are kept until the data changes")
+        -- one seller's asking price for the bag: unproven
+        ListedGear(R, 14046, {{30000}})
+        rows = GR.RecipeRows()
+        bag = Find(rows, "id", 14468)
+        check(bag and bag.mark == "unproven" and bag.rank == 2 and Ids(rows) == "2408 14468 2406 2407",
+              "gold recipes tab: a profit on an unproven price is rank 2, after what is proven (" .. Ids(rows) .. ")")
+        ListedGear(R, 14046, {{30000}, {32000}, {35000}})
+        -- the jerkin pattern sold: looked up again, none listed
+        Listed(R, 2407, {})
+        rows = GR.RecipeRows()
+        check(Rec(R, 2407).q == 0 and Ids(rows) == "14468 2408 2406", "gold recipes tab: a recipe that is no longer listed: no row (" .. Ids(rows) .. ")")
+        -- status: a count, nobody's name
+        do
+            local line = GR:Status()
+            check(line:find("2 recipes for sale worth a look", 1, true) and not line:find("Stitch", 1, true) and
+                  not line:find("Needle", 1, true) and not line:find("GoldRec", 1, true) and not line:find("Pattern", 1, true),
+                  "gold recipes tab: /pqol status counts the recipes worth a look and names nobody: " .. line)
+            R.Slash("status")
+            local text = R.ns.statusFrame and R.ns.statusFrame.edit.text or ""
+            check(text:find("2 recipes for sale worth a look", 1, true) and not text:find("Stitch", 1, true),
+                  "gold recipes tab: ... in the status window too")
+        end
+        check(select(2, GR.PriceState("recipes")) == false, "gold recipes tab: (prices from just now: the header isn't old)")
+        -- an hour on: no advice to buy any more (the rows are worked out
+        -- afresh once a minute, and looked through again each time they are asked for)
+        Shift(R, 3570)
+        rows = GR.RecipeRows()
+        check(#rows == 3 and rows[1].t == R.env.time() - 3570 and select(2, GR.PriceState("recipes")) == false and
+              table.concat(GR.Tip(rows[1]), "\n"):find("Price from 59 min ago", 1, true),
+              "gold recipes tab: 59 minutes on the rows are still there, with the price's age")
+        Shift(R, 31)
+        check(#GR.RecipeRows() == 0 and
+              GR.Empty("recipes") == "Scan the auction house (or search for a recipe and open its listing) - recipes for sale come from a price less than an hour old." and
+              select(2, GR.PriceState("recipes")) == true and select(2, GR.PriceState("crafts")) == false,
+              "gold recipes tab: a listing over an hour old: no row, the empty text says to scan, the header is old")
+        check(GR:Status():find("0 recipes for sale worth a look", 1, true) ~= nil, "gold recipes tab: ... and the status count is 0")
+        check(#R.ns.errors == 0, "gold recipes tab: no errors")
+
+        -- a client in another language: the profession under the name the recipe item's kind has there
+        local Lp = RStock(GP("GoldRecDe", {db = {goldRecipes = {["Player-9-DE"] = {
+            name = "Schneider", realm = "Forever", faction = "Alliance", at = 1000,
+            profs = {Schneiderei = {skill = 300, max = 300, at = 1000, list = {}}}}}}}))
+        Lp.env.C_Item.GetItemSubClassInfo = function(class, sub)
+            if class == 9 and sub == 2 then return "Schneiderei" end
+            if class == 9 and sub == 1 then error("no such kind") end
+        end
+        Lp.OpenAH()
+        Listed(Lp, 14468, {{50000, 2}})
+        Listed(Lp, 2408, {{20000, 1}})
+        do
+            local rowsL = Lp.ns.Gold.RecipeRows()
+            check(#rowsL == 1 and rowsL[1].id == 14468 and rowsL[1].forText == "Schneiderei 300" and rowsL[1].prof == "Tailoring" and
+                  #Lp.ns.errors == 0,
+                  "gold recipes tab: a profession recorded under its name in another language is matched by the recipe item's kind (one the game throws on: no row, no error)")
+        end
+
+        -- "Price my items" looks up what the recipes for sale make and need, last
+        local E = RStock(GP("GoldRecCheck", {db = Alts()}))
+        local GE = E.ns.Gold
+        setmetatable(E.ah.commodity, {__index = function() return true end})
+        E.OpenAH()
+        Listed(E, 728, {{300, 4}})
+        Listed(E, 14468, {{50000, 2}})
+        E.ah.sends = {}
+        check(GE.StartCheck() == true, "gold recipes tab: (a price check starts)")
+        advance(400)
+        do
+            local at, n = {}, 0
+            for i, s in ipairs(E.ah.sends) do
+                if not at[s.id] then at[s.id] = i end
+                n = i
+            end
+            check(GE.State().state == "idle" and at[14046] and at[14048] and at[8170] and at[14341] and at[2320] and
+                  at[14046] > at[2320] and at[8170] > at[2320] and at[14048] > at[2320] and not at[733] and not at[729] and
+                  not at[14468],
+                  "gold recipes tab: Price my items asks for what a recipe for sale makes and needs, after the player's own items (" ..
+                  n .. " queries; the bag " .. tostring(at[14046]) .. ", thread " .. tostring(at[2320]) .. ")")
+        end
+
+        -- "Price my items" takes at most 60 of what the recipes for sale make
+        -- and need a press, however many recipes are listed
+        do
+            local profs = {}
+            for _, n in ipairs({"Alchemy", "Blacksmithing", "Cooking", "Enchanting", "Engineering", "First Aid", "Leatherworking", "Tailoring"}) do
+                profs[n] = {skill = 300, max = 300, at = 1000, list = {}}
+            end
+            local C = RStock(GP("GoldRecCap", {db = {goldRecipes = {["Player-9-ALL"] = {
+                name = "All", realm = "Forever", faction = "Alliance", at = 1000, profs = profs}}}}))
+            local GC = C.ns.Gold
+            setmetatable(C.ah.commodity, {__index = function() return true end})
+            C.OpenAH()
+            C.ah.sends = {}
+            check(GC.StartCheck() == true, "gold recipes tab: (a price check with no recipe for sale)")
+            advance(1000)
+            local own = #C.ah.sends
+            local rows, n = {}, 0
+            for id in pairs(C.ns.GoldData.recipeItems) do
+                rows[#rows + 1] = Row(id, 1, 10000)
+                n = n + 1
+            end
+            C.ah.rows = rows
+            Shift(C, 1000)
+            Scan(C)
+            Shift(C, 601)
+            local secs = tonumber(GC.State().check.tip:match("About (%d+) seconds"))
+            C.ah.sends = {}
+            check(GC.StartCheck() == true, "gold recipes tab: (a price check with every recipe for sale)")
+            advance(250)
+            check(n == 702 and #GC.RecipeRows() > 600 and own > 0 and #C.ah.sends == own + 60 and secs == math.ceil((own + 60) * 1.2) and
+                  GC.State().state == "idle" and
+                  Has(GC.State().message, ("Priced %d items. Press again for more of what the recipes for sale make and need."):format(own + 60)),
+                  "gold recipes tab: all 702 recipes listed: Price my items asks for the player's own items and 60 more, and says to press again (" ..
+                  own .. " own, " .. #C.ah.sends .. " asked, " .. tostring(secs) .. " s: " .. tostring(GC.State().message) .. ")")
+            local first = {}
+            for _, s in ipairs(C.ah.sends) do first[s.id] = true end
+            C.ah.sends = {}
+            check(GC.StartCheck() == true, "gold recipes tab: (pressed again)")
+            advance(250)
+            local again = 0
+            for _, s in ipairs(C.ah.sends) do if first[s.id] then again = again + 1 end end
+            check(#C.ah.sends == 60 and again == 0 and #C.ns.errors == 0,
+                  "gold recipes tab: ... pressed again: the next 60, none of them asked twice (" .. #C.ah.sends .. ", " .. again .. ")")
+        end
+        -- ... and what a character can learn today comes first
+        do
+            local L2 = RStock(GP("GoldRecFirst", {db = Alts()}))
+            L2.ns.GoldData.recipeItems[99012] = "Leatherworking|75|2312|1|1|4231:1"
+            L2.items[99012] = {name = "Pattern: Plain Gloves", quality = 2, sell = 25, class = 9, sub = 1}
+            setmetatable(L2.ah.commodity, {__index = function() return true end})
+            L2.OpenAH()
+            Listed(L2, 14468, {{50000, 2}})
+            Listed(L2, 99012, {{2000, 1}})
+            L2.ah.sends = {}
+            check(L2.ns.Gold.StartCheck() == true, "gold recipes tab: (a price check starts)")
+            advance(400)
+            local at = {}
+            for i, s in ipairs(L2.ah.sends) do at[s.id] = at[s.id] or i end
+            check(at[2312] and at[4231] and at[14046] and at[2312] < at[14046] and at[4231] < at[14046] and at[4231] < at[14048],
+                  "gold recipes tab: Price my items takes the recipes a character can learn today first (gloves " .. tostring(at[2312]) ..
+                  ", the bag " .. tostring(at[14046]) .. ")")
+        end
+
+        -- a whole scan answers "none listed" for them
+        local F = RStock(GP("GoldRecScan", {db = Alts()}))
+        local GF = F.ns.Gold
+        F.OpenAH()
+        F.ah.rows = {Row(14468, 1, 50000), Row(728, 1, 300), Row(14047, 20, 2000), Row(14341, 3, 12000)}
+        Scan(F)
+        do
+            local function None(id) return Rec(F, id) and Rec(F, id).q == 0 and Rec(F, id).s == "f" and Rec(F, id).t == Book(F).full end
+            check(Book(F).full and Rec(F, 14468) and Rec(F, 14468).q == 1 and None(14046) and None(14048) and None(8170) and
+                  Rec(F, 14341).q == 3 and Rec(F, 733) == nil and Rec(F, 729) == nil,
+                  "gold recipes tab: a whole scan marks what a recipe for sale makes and needs, and it didn't see, \"none listed\"")
+            local row = GF.RecipeRows()[1]
+            check(row and row.id == 14468 and #GF.RecipeRows() == 1 and row.price == 50000 and row.listed == 0 and row.listedText == "0" and
+                  row.cost == nil and row.rank == 3 and row.how == "Vendor" and row.sells == 20000 and
+                  row.costWhy == "Bolt of Runecloth: none listed" and #F.ns.errors == 0,
+                  "gold recipes tab: ... and the scan's own listing of the recipe makes its row (" .. tostring(row and row.costWhy) .. ")")
+        end
+
+        -- nobody sells the bag, and a vendor pays more than the materials: a real profit, kept
+        local F2 = RStock(GP("GoldRecScan2", {db = Alts()}))
+        F2.OpenAH()
+        F2.ah.rows = {Row(14468, 1, 50000), Row(14048, 20, 18000), Row(8170, 20, 10000), Row(14341, 3, 12000)}
+        Scan(F2)
+        do
+            local row = F2.ns.Gold.RecipeRows()[1]
+            local tip = row and table.concat(F2.ns.Gold.Tip(row), "\n") or ""
+            check(row and row.id == 14468 and row.listed == 0 and row.how == "Vendor" and row.sells == 20000 and row.cost == 9500 and
+                  row.profit == 10500 and row.payback == 5 and row.rank == 2 and
+                  Has(tip, "Buy it for 5g, keep it until Stitch has Tailoring 260, then craft Runecloth Bag and sell it to a vendor."),
+                  "gold recipes tab: 0 listed, but a vendor pays more than the materials: the profit stands (" ..
+                  tostring(row and row.cost) .. ", " .. tostring(row and row.profit) .. ", rank " .. tostring(row and row.rank) .. ")")
+        end
+
+        -- browsing the auction house's Recipes records nothing (a recipe item
+        -- is no commodity; a browse row's lowest price may be a bid); the
+        -- recipe's own listing does
+        local Bw = RStock(GP("GoldRecBrowse", {db = Alts()}))
+        Bw.ah.commodity[14468] = false
+        Bw.OpenAH()
+        Bw.ah.browse = {{itemKey = {itemID = 14468}, totalQuantity = 2, minPrice = 50000}}
+        Bw.Fire("AUCTION_HOUSE_BROWSE_RESULTS_UPDATED")
+        advance(0.2)
+        check(Rec(Bw, 14468) == nil and #Bw.ns.Gold.RecipeRows() == 0 and
+              Has(Bw.ns.Gold.Empty("recipes"), "(or search for a recipe and open its listing)") and
+              not Has(Bw.ns.Gold.Empty("recipes"), "browse"),
+              "gold recipes tab: a browse row of a recipe item is not recorded, and the empty text doesn't say to browse")
+        ListedGear(Bw, 14468, {{60000}, {50000}})
+        do
+            local rowsB = Bw.ns.Gold.RecipeRows()
+            check(Rec(Bw, 14468) and Rec(Bw, 14468).m == 50000 and Rec(Bw, 14468).q == 2 and #rowsB == 1 and rowsB[1].id == 14468 and
+                  rowsB[1].price == 50000 and #Bw.ns.errors == 0,
+                  "gold recipes tab: ... the recipe's own listing, opened, makes its row - as the empty text says")
+        end
+
+        -- what binds when made: vendored, or disenchanted by the one who learns it
+        local function Bop(name, db)
+            local P = RStock(GP(name, {db = db}))
+            P.ns.GoldData.recipeItems[99010] = "Tailoring|200|20001|1|1|14048:2"
+            P.items[99010] = {name = "Pattern: Soulbound Robe", quality = 2, sell = 100, class = 9, sub = 2}
+            setmetatable(P.ah.commodity, {__index = function() return true end})
+            P.OpenAH()
+            Listed(P, 14048, {{900, 20}, {950, 5}})
+            Listed(P, 10940, {{300, 20}, {310, 5}})
+            Listed(P, 11176, {{2000, 10}, {2100, 5}})
+            Listed(P, 16202, {{10000, 5}, {10500, 5}})
+            Listed(P, 10938, {{1000, 10}, {1100, 5}})
+            Listed(P, 10939, {{2400, 10}, {2500, 5}})
+            Listed(P, 10998, {{500, 10}, {550, 5}})
+            Listed(P, 11082, {{2000, 4}, {2100, 2}})
+            Listed(P, 99010, {{4000, 1}})
+            return P
+        end
+        do
+            -- (Needle, not the tailor who would learn it, is the account's enchanter)
+            local db = Alts()
+            db.goldRecipes["Player-9-NEEDLE"].profs.Enchanting = {skill = 200, max = 300, at = 1000, list = {}}
+            local B1 = Bop("GoldRecBop", db)
+            local robe = Find(B1.ns.Gold.RecipeRows(), "id", 99010)
+            local tip = robe and table.concat(B1.ns.Gold.Tip(robe), "\n") or ""
+            check(robe and robe.who == "Stitch" and robe.how == "Vendor" and robe.sells == 3000 and robe.cost == 1800 and
+                  robe.profit == 1200 and robe.payback == 4 and robe.listed == nil and robe.listedText == "-" and robe.rank == 1 and
+                  Has(tip, "Soulbound Robe binds when made: it is never on the auction house.") and
+                  not Has(tip, "listed now") and not Has(tip, "Disenchant") and
+                  Has(tip, "Buy it for 40s, learn it on Stitch, then craft Soulbound Robe and sell it to a vendor."),
+                  "gold recipes tab: what it makes binds when made, the learner no enchanter: a vendor's price, \"-\" listed, no disenchanting by another character (" ..
+                  tostring(robe and robe.how) .. ", " .. tostring(robe and robe.listedText) .. ")")
+            -- Price my items never asks for what is never on the auction house
+            Shift(B1, 601)
+            Listed(B1, 99010, {{4000, 1}})
+            B1.ah.sends = {}
+            check(B1.ns.Gold.StartCheck() == true, "gold recipes tab: (a price check starts)")
+            advance(400)
+            local asked, bolt = false, false
+            for _, s in ipairs(B1.ah.sends) do
+                if s.id == 20001 then asked = true end
+                if s.id == 14048 then bolt = true end
+            end
+            check(B1.ns.Gold.State().state == "idle" and bolt and not asked and Rec(B1, 20001) == nil,
+                  "gold recipes tab: Price my items asks for a bound output's materials, never for the output")
+            -- nor does a whole scan write "none listed" for it
+            B1.ah.rows = {Row(99010, 1, 4000), Row(14048, 20, 18000)}
+            Shift(B1, 1000)
+            Scan(B1)
+            check(Book(B1).full and Rec(B1, 99010) and Rec(B1, 99010).s == "f" and Rec(B1, 99010).t == Book(B1).full and
+                  Rec(B1, 14048).t == Book(B1).full and Rec(B1, 20001) == nil,
+                  "gold recipes tab: ... and a whole scan writes no \"none listed\" for it")
+            check(#B1.ns.errors == 0, "gold recipes tab: (a bound output: no errors)")
+        end
+        do
+            local db = Alts()
+            db.goldRecipes["Player-9-STITCH"].profs.Enchanting = {skill = 200, max = 300, at = 1000, list = {}}
+            local B2 = Bop("GoldRecBop2", db)
+            local robe = Find(B2.ns.Gold.RecipeRows(), "id", 99010)
+            local tip = robe and table.concat(B2.ns.Gold.Tip(robe), "\n") or ""
+            check(robe and robe.who == "Stitch" and robe.how == "Disenchant" and robe.sells == 7837 and robe.profit == 6037 and
+                  robe.listedText == "-" and Has(tip, "Vendor: 30s") and
+                  Has(tip, "Buy it for 40s, learn it on Stitch, then craft Soulbound Robe and disenchant it."),
+                  "gold recipes tab: ... the learner an enchanter: disenchanted (" .. tostring(robe and robe.how) .. ", " ..
+                  tostring(robe and robe.sells) .. ")")
+        end
+
+        -- a profit worked out past what is listed, the order within a rank, and who is named
+        do
+            local db = Alts()
+            for _, ch in pairs(db.goldRecipes) do
+                if ch.profs.Tailoring then ch.profs.Tailoring.skill = 300 end
+                if ch.profs.Leatherworking then ch.profs.Leatherworking.skill = 300 end
+            end
+            for _, n in ipairs({"ZED", "ABE", "MOE", "KAY", "BOB", "YAN"}) do
+                db.goldRecipes["Player-9-" .. n] = {name = n, realm = "Forever", faction = "Alliance", at = 1000, profs = {
+                    Tailoring = {skill = 300, max = 300, at = 1000, list = {}}}}
+            end
+            local O = RStock(GP("GoldRecOrder", {db = db}))
+            local GO = O.ns.Gold
+            O.ns.GoldData.recipeItems[99011] = O.ns.GoldData.recipeItems[2408]
+            O.items[99011] = {name = "Pattern: A Second Pair of Gloves", quality = 2, sell = 25, class = 9, sub = 1}
+            O.OpenAH()
+            -- 3 bolts listed, 5 needed: the other two are a guess
+            Listed(O, 14048, {{900, 3}})
+            Listed(O, 8170, {{500, 10}, {700, 2}})
+            Listed(O, 14341, {{4000, 2}, {6000, 10}})
+            ListedGear(O, 14046, {{30000}, {32000}, {35000}})
+            Listed(O, 14468, {{50000, 2}})
+            local bag = Find(GO.RecipeRows(), "id", 14468)
+            local tip = bag and table.concat(GO.Tip(bag), "\n") or ""
+            check(bag and bag.canLearn == true and bag.mark == nil and bag.profit and bag.profit > 0 and bag.rank == 2 and
+                  Has(tip, "only 3 listed") and Has(tip, "Buy it for 5g, learn it on ") and
+                  Has(tip, "Check the prices first: one of them is unproven or a guess."),
+                  "gold recipes tab: a material priced past what is listed: the profit is a guess - rank 2, \"check the prices first\" (rank " ..
+                  tostring(bag and bag.rank) .. ")")
+            check(bag and bag.who == "ABE" and bag.whoGuid == "Player-9-ABE",
+                  "gold recipes tab: characters with the same skill: the one named is always the same (the lowest id), not whichever comes first (" ..
+                  tostring(bag and bag.who) .. ")")
+            -- the bag at 1g 90s a craft and the gloves at 11s 80c, both paying back in 17 crafts
+            Listed(O, 14048, {{900, 20}, {950, 5}})
+            Listed(O, 2318, {{100, 50}, {110, 50}})
+            Listed(O, 4231, {{300, 10}, {320, 10}})
+            ListedGear(O, 2312, {{2000}, {2100}, {2200}})
+            Listed(O, 14468, {{323000, 2}})
+            Listed(O, 2408, {{20000, 1}})
+            Listed(O, 99011, {{20000, 1}})
+            local rows = GO.RecipeRows()
+            local a, b, c = Find(rows, "id", 14468), Find(rows, "id", 2408), Find(rows, "id", 99011)
+            check(a and b and c and a.rank == 1 and b.rank == 1 and c.rank == 1 and a.payback == 17 and b.payback == 17 and
+                  c.payback == 17 and a.profit == 19000 and b.profit == 1180 and c.profit == 1180 and Ids(rows) == "14468 99011 2408",
+                  "gold recipes tab: the same payback: the higher profit first, then by name (" .. Ids(rows) .. ")")
+            check(#O.ns.errors == 0, "gold recipes tab: (the order: no errors)")
+        end
+
+        -- a profession read without a skill level: not known, which isn't 0
+        do
+            local db = Alts()
+            db.goldRecipes["Player-9-STITCH"].profs.Tailoring.skill = nil
+            db.goldRecipes["Player-9-NEEDLE"] = nil
+            local U = RStock(GP("GoldRecSkill", {db = db}))
+            local GU = U.ns.Gold
+            U.OpenAH()
+            Listed(U, 14048, {{900, 20}, {950, 5}})
+            Listed(U, 8170, {{500, 10}, {700, 2}})
+            Listed(U, 14341, {{4000, 2}, {6000, 10}})
+            ListedGear(U, 14046, {{30000}, {32000}, {35000}})
+            Listed(U, 14468, {{50000, 2}})
+            local bag = GU.RecipeRows()[1]
+            local tip = bag and table.concat(GU.Tip(bag), "\n") or ""
+            check(bag and bag.who == "Stitch" and bag.whoSkill == nil and bag.canLearn == false and bag.forText == "needs 260 (?)" and
+                  bag.rank == 2 and Has(tip, "Needs Tailoring 260 - open Stitch's Tailoring window so the skill is known.") and
+                  Has(tip, "Buy it for 5g if Stitch has Tailoring 260 (the skill isn't on record), then craft and sell Runecloth Bag.") and
+                  not Has(tip, "(0)") and not Has(tip, "is 0") and #U.ns.errors == 0,
+                  "gold recipes tab: a profession on record without a skill: \"needs 260 (?)\" and \"open the window\", never a skill of 0 (" ..
+                  tostring(bag and bag.forText) .. ")")
+            -- any skill on record outranks one that isn't
+            U.ns.db.goldRecipes["Player-9-AAA"] = {name = "Aaa", realm = "Forever", faction = "Alliance", at = 1000, profs = {
+                Tailoring = {skill = 1, max = 75, at = 1000, list = {}}}}
+            Bump(U)
+            bag = GU.RecipeRows()[1]
+            check(bag and bag.who == "Aaa" and bag.whoSkill == 1 and bag.forText == "needs 260 (1)",
+                  "gold recipes tab: ... a character whose skill is known is named before one whose isn't")
+            U.ns.db.goldRecipes["Player-9-AAA"] = nil
+            U.ns.db.goldRecipes["Player-9-ZZZ"] = {name = "Zzz", realm = "Forever", faction = "Alliance", at = 1000, profs = {
+                Tailoring = {skill = 1, max = 75, at = 1000, list = {}}}}
+            Bump(U)
+            bag = GU.RecipeRows()[1]
+            check(bag and bag.who == "Zzz" and bag.whoSkill == 1 and #U.ns.errors == 0,
+                  "gold recipes tab: ... whichever of them is read first")
+        end
+
+        -- "already known" is by the learner's profession, not by the item alone
+        do
+            local function Tx(alch, mining)
+                return {goldRecipes = {["Player-9-ALCH"] = {name = "Alch", realm = "Forever", faction = "Alliance", at = 1000, profs = {
+                    Alchemy = {skill = 300, max = 300, at = 1000, list = alch},
+                    Mining = {skill = 300, max = 300, at = 1000, list = mining or {}}}}}}
+            end
+            local function Sale(P)
+                P.OpenAH()
+                for _, id in ipairs({9304, 13483, 13488, 13484, 13486}) do Listed(P, id, {{100000, 1}}) end
+                return Ids(P.ns.Gold.RecipeRows())
+            end
+            local X0 = RStock(GP("GoldRecKnown0"))
+            local DX = X0.ns.GoldData.recipeItems
+            check(DX[9304] == "Alchemy|225|3577|1|1|3575:1" and DX[13483] == "Alchemy|275|7076|1|1|7078:1" and
+                  DX[13488] == "Alchemy|275|7076|1|1|12803:1" and DX[13484] == "Alchemy|275|7080|1|1|7076:1" and
+                  DX[13486] == "Alchemy|275|7080|1|1|12808:1",
+                  "gold recipes tab: (the built-in table: Iron to Gold, and the two pairs of transmutes that make one item)")
+            -- a miner who smelts gold, an alchemist who knows Life to Earth
+            local X1 = RStock(GP("GoldRecKnown1", {db = Tx(
+                {[1] = {n = "Transmute: Life to Earth", o = 7076, a = 1, b = 1, r = "12803:1"}},
+                {[2] = {n = "Smelt Gold", o = 3577, a = 1, b = 1, r = "2776:1"}})}))
+            local ids = Sale(X1)
+            check(ids == "9304 13483 13484 13486" and #X1.ns.errors == 0,
+                  "gold recipes tab: another profession's recipe for the same item (Smelt Gold) doesn't hide Transmute Iron to Gold; Life to Earth, known, doesn't hide Fire to Earth - and is itself not listed (" ..
+                  ids .. ")")
+            -- the alchemist knows Iron to Gold, and both of a pair
+            local X2 = RStock(GP("GoldRecKnown2", {db = Tx({
+                [1] = {n = "Transmute: Iron to Gold", o = 3577, a = 1, b = 1, r = "3575:1"},
+                [2] = {n = "Transmute: Life to Earth", o = 7076, a = 1, b = 1, r = "12803:1"},
+                [3] = {n = "Transmute: Fire to Earth", o = 7076, a = 1, b = 1, r = "7078:1"}})}))
+            ids = Sale(X2)
+            check(ids == "13484 13486", "gold recipes tab: the profession's own recipe for the item: known, no row (" .. ids .. ")")
+            -- a recipe Forever changed: its materials are neither line's - known, whichever it was
+            local X3 = RStock(GP("GoldRecKnown3", {db = Tx({
+                [1] = {n = "Transmute: Something to Water", o = 7080, a = 1, b = 1, r = "7082:2,3575:1"}})}))
+            ids = Sale(X3)
+            check(ids == "9304 13483 13488",
+                  "gold recipes tab: a learned recipe with materials the table doesn't have for that item counts as known for both (never \"buy\" what may be known) (" ..
+                  ids .. ")")
+        end
+    end
     for _, R in ipairs(gone) do
         R.online = false
         players[R.name] = nil
@@ -8548,9 +9132,10 @@ do
           f.parent == W.env.UIParent and f.point[1] == "CENTER" and Has(ui.title.text, "Gold finder"),
           "gold window: /pqol gold opens our own frame, 720 x 460, in the middle, with a title of our own")
     check(#ui.rows == 14 and #ui.heads == 8 and ui.tabs.crafts.text == "Crafts" and ui.tabs.bargains.text == "Bargains" and
-          ui.tabs.vendors.text == "Vendors" and ui.tabs.bags.text == "Your bags" and ui.tabs.crafts.template == "UIPanelButtonTemplate" and
+          ui.tabs.vendors.text == "Vendors" and ui.tabs.bags.text == "Your bags" and ui.tabs.recipes.text == "Recipes" and
+          ui.tabs.crafts.template == "UIPanelButtonTemplate" and
           ui.slider.kind == "Slider" and ui.slider.template == nil,
-          "gold window: four tabs, 14 rows, a slider of our own")
+          "gold window: five tabs, 14 rows, a slider of our own")
     check(ui.tabs.crafts:IsEnabled() == false and ui.tabs.bags:IsEnabled() and ui.tab == "crafts",
           "gold window: it opens on Crafts, the selected tab's button disabled")
     check(ui.empty.shown and ui.empty.text == "Open each profession window once on each character - that's how I learn your recipes." and
@@ -8656,7 +9241,7 @@ do
     Click(ahb)
     check(ui.header.text == "Press Scan (everything, once per 15 minutes) or Price my items (quick)." and ui.scan:IsEnabled() and
           ui.scan.text == "Scan" and ui.check:IsEnabled() and ui.check.text == "Price my items" and
-          Has(ui.check.tip, "Looks up only the items your recipes and bags use.") and
+          Has(ui.check.tip, "Looks up the items your recipes and bags use, then some of what the recipes for sale make and need.") and
           Has(ui.check.tip, "Works even when Scan is on its 15-minute wait."),
           "gold window: at the auction house Scan and Price my items are ready")
     W.CloseAH()
@@ -9374,7 +9959,7 @@ do
             widest = math.max(widest, Pixels(ui2.Coins(copper, true)))
         end
         -- every column that shows money; marked: it may carry " *" too, or "~" and "-"
-        local MONEY = {cost = 0, cheapest = 0, upTo = 0, worth = 0, vendor = 0, disenchant = 0, sells = 8, auction = 8, profit = 8}
+        local MONEY = {cost = 0, price = 0, cheapest = 0, upTo = 0, worth = 0, vendor = 0, disenchant = 0, sells = 8, auction = 8, profit = 8}
         local tight, spare = nil, 1000
         for view, cols in pairs(ui2.COLUMNS) do
             for _, col in ipairs(cols) do
@@ -9531,6 +10116,91 @@ do
                                 " Your own auctions are still counted in 123 prices - press Price my items."
             check(#longest <= 2 * 120, "gold window: the longest status line still fits its two lines (" .. #longest .. " characters)")
         end
+    end
+
+    ----------------------------------------------------------------------
+    -- the Recipes tab
+    ----------------------------------------------------------------------
+    do
+        local T = Stock(GP("GoldRecWin", {db = {goldRecipes = {["Player-9-STITCH"] = {
+            name = "Stitch", realm = "Forever", faction = "Alliance", at = 1000,
+            profs = {Tailoring = {skill = 250, max = 300, at = 1000, list = {}}}}}}}))
+        T.items[14468] = {name = "Pattern: Runecloth Bag", quality = 2, sell = 5000, class = 9, sub = 2}
+        T.items[8170] = {name = "Rugged Leather", stack = 20, sell = 500, class = 7, reagent = true}
+        local GT, ut = T.ns.Gold, T.ns.Gold.ui
+        local ahT = T.LoadAH()
+        T.OpenAH()
+        T.Slash("gold")
+        local order = {"crafts", "bargains", "vendors", "bags", "recipes"}
+        local fits, right = ut.tabs.recipes ~= nil and ut.tabs.recipes.text == "Recipes", nil
+        for i, key in ipairs(order) do
+            local b = ut.tabs[key]
+            if not (b and b.width == 80 and b.point and b.point[1] == "TOPLEFT" and b.point[4] == 12 + (i - 1) * 84 and b.point[5] == -30 and
+                (not right or b.point[4] > right)) then
+                fits = false
+            end
+            right = b and b.point and (b.point[4] + b.width)
+        end
+        local box = ut.enchantCheck
+        check(fits and right == 428 and box.point[1] == "TOPLEFT" and box.point[4] == 452 and box.point[4] > right + 20 and
+              box.point[4] + 24 + 2 + 24 * 6 <= 720,
+              "gold window: five tab buttons, 80 wide and 84 apart, none touching the next or the Enchants box (moved to 452)")
+        check(#ut.COLUMNS.recipes == 8 and ut.tabs.recipes:IsEnabled() and box.shown, "gold window: (Crafts first; the Recipes tab can be clicked)")
+        Click(ut.tabs.recipes)
+        check(ut.tab == "recipes" and ut.view == "recipes" and ut.tabs.recipes:IsEnabled() == false and ut.tabs.crafts:IsEnabled() and
+              box.shown == false and ut.empty.shown and
+              ut.empty.text == "Scan the auction house (or search for a recipe and open its listing) - recipes for sale come from a price less than an hour old." and
+              ut.foot.text == GT.RECIPE_FOOTER and #GT.RECIPE_FOOTER <= 100,
+              "gold window: the Recipes tab, empty: it says to scan; the Enchants box is Crafts' only; the foot line fits")
+        do
+            local titles, width = {}, 0
+            for i, col in ipairs(ut.COLUMNS.recipes) do
+                titles[i] = ut.heads[i].label.text
+                width = width + col[2]
+                if not ut.heads[i].shown or ut.heads[i].width ~= col[2] then width = -1000 end
+            end
+            check(table.concat(titles, "|") == "Recipe|Price|Cost|Sells|Profit|Pays back|Listed|For" and width == 664 and
+                  ut.COLUMNS.recipes[1].icon == true,
+                  "gold window: Recipes' eight columns, 664 px in all (" .. table.concat(titles, "|") .. ", " .. width .. ")")
+        end
+        check(Has(Hover(T, ut.tabs.recipes),
+                  "Recipes for sale that none of your characters knows, for professions they have. Profit is per craft; Pays back: the crafts it takes to earn the recipe's price back. Recipe data is vanilla's (~)."),
+              "gold window: the Recipes tab button's tooltip says what the tab lists")
+        Listed(T, 14048, {{900, 20}, {950, 5}})
+        Listed(T, 8170, {{500, 10}, {700, 2}})
+        Listed(T, 14341, {{4000, 2}, {6000, 10}})
+        Listed(T, 14046, {{30000, 3}, {32000, 2}})
+        Listed(T, 14468, {{50000, 2}})
+        advance(1)
+        local rows = GT.RecipeRows()
+        local row, r1 = rows[1], ut.rows[1]
+        check(#rows == 1 and r1.shown and r1.row == row and not ut.rows[2].shown and ut.empty.shown == false and ut.count.text == "1-1 of 1",
+              "gold window: the Recipes list fills in as a recipe for sale is seen")
+        check(row and row.profit == 19000 and Has(r1.cells[1].text, "|cff1eff00Pattern: Runecloth Bag|r") and r1.icon.shown and
+              r1.cells[2].text == ut.Coins(50000, true) and r1.cells[3].text == ut.Coins(9500, true) and
+              r1.cells[4].text == ut.Coins(28500, true) and r1.cells[5].text == "~" .. ut.Coins(19000, true) and
+              r1.cells[6].text == "3 crafts" and r1.cells[7].text == "5" and Has(r1.cells[8].text, "needs 260 (250)") and
+              Has(r1.cells[8].text, "|cffff9933"),
+              "gold window: a Recipes row: the recipe, its price, one craft's cost, sells, ~profit, pays back, listed, who it is for")
+        local text, tt = Hover(T, r1)
+        check(tt.owner == r1 and tt.item ~= nil and Has(text, "Teaches Tailoring (260): Runecloth Bag.") and
+              Has(text, "pays the recipe back in 3 crafts") and Has(text, "Pace's QoL never buys for you."),
+              "gold window: hovering a Recipes row: the recipe's own tooltip, then how the row was worked out")
+        Click(r1)
+        Click(ut.search)
+        check(ut.selected == row and ahT.SearchBar.SearchBox.text == "Pattern: Runecloth Bag" and
+              ut.status.text == "Pattern: Runecloth Bag is in the auction house's search box - click Search there.",
+              "gold search button: on Recipes it searches for the recipe item")
+        T.items[14468 + 1] = {name = "Pattern: Other", class = 9}
+        Click(Head(ut, "Pays back"))
+        check(ut.sort.recipes and ut.sort.recipes.field == "payback" and ut.sort.recipes.desc == true and ut.rows[1].row == row and
+              Head(ut, "Pays back").arrow.shown,
+              "gold window: Recipes' columns sort like the others'")
+        Click(Head(ut, "Pays back"), "RightButton")
+        Click(ut.tabs.crafts)
+        check(ut.tab == "crafts" and box.shown and ut.foot.text == "" and ut.heads[1].label.text == "Item",
+              "gold window: back on Crafts the Enchants box shows again")
+        check(#T.ns.errors == 0, "gold window: the Recipes tab: no errors")
     end
 
     for _, R in ipairs(gone) do

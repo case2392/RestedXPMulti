@@ -1,16 +1,21 @@
 -- Pace's Quality of Life - Gold finder: "what makes me gold right now"
 --
 -- This file is everything but the window (GoldUI.lua): what is remembered,
--- how prices are read, and the sums behind the window's four tabs.
+-- how prices are read, and the sums behind the window's five tabs.
 --   * Recipes are read from your own profession windows as you open them
---     (Forever changed some recipes, so none are built in); merchants' prices
---     as you visit them.
+--     (Forever changed some recipes, so the ones you know are never taken
+--     from a table); merchants' prices as you visit them. Only the Recipes
+--     tab - recipes for sale that nobody on the account knows, which the
+--     game tells an add-on nothing about - goes by a built-in table of
+--     vanilla's recipe items (GoldData.lua), and marks its sums "~".
 --   * Prices are the add-on's own: a full scan of the auction house (the
 --     game allows one about every 15 minutes), "Price my items" (a look-up,
---     one item a second, of just what your recipes and bags use), and what
---     you browse yourself. Auctionator's prices are read when it is there
+--     one item a second, of what your recipes and bags use, then up to 60
+--     of what the recipes for sale make and need), and what you browse
+--     yourself. Auctionator's prices are read when it is there
 --     and ours are missing. A whole scan also answers "none listed" for
---     what the recipes, bags and vendors use and it didn't see (not for
+--     what the recipes, bags and vendors use (and what the recipes for
+--     sale would make and need) and it didn't see (not for
 --     the suffixes of gear it read without a link, nor for what binds as
 --     it is made).
 --   * Our own auctions never count: left out by owner name, by what the
@@ -95,6 +100,30 @@
 --   meta = {loading = items left out because their data is still loading,
 --           working = the pass is running, empty = the text to show when
 --           there are no rows}
+-- Gold.RecipeRows() -> rows, one per recipe item that is in the built-in
+--   table, listed now (a price under an hour old), for a profession a
+--   character of this realm has on record, and making what no recipe of
+--   that profession's makes yet. id, key, name ... are the recipe item's.
+--   price     the recipe's cheapest buyout   listedRecipe  how many are listed
+--   made, madeName   the item it teaches to make
+--   prof, skill      the profession, and the skill the recipe needs
+--   cost, costWhy, sells, how, mark   one craft, as on Crafts
+--   profit    sells - cost, or nil (also when the made item has no
+--             auction price and a vendor pays less than the materials: no
+--             verdict); estimate is always true (vanilla's recipe data,
+--             not checked on Forever: show "~")
+--   payback, paybackText   the crafts that earn the recipe's price back,
+--             when there is a profit; "3 crafts", "1 craft", "-"
+--   listed, listedText   units of the made item listed now (as on Crafts)
+--   who, whoGuid, whoSkill   the realm's most skilled character at it
+--             (whoSkill nil: the profession was read without a skill)
+--   canLearn  whoSkill >= skill
+--   forText   "Tailoring 265" | "needs 260 (250)" | "needs 260 (?)"
+--   rank      1 profit, every price proven, learnable today; 2 profit, but
+--             a price is unproven or guessed or the skill is short; 3 profit
+--             unknown; 4 no profit (the default order: rank, then payback,
+--             fewest first, then profit)
+--   Footer: Gold.RECIPE_FOOTER; the whole of it: Gold.RECIPE_ABOUT.
 -- Gold.VendorRows() -> rows: vendor (unit price), auction (what it sells
 --   for), mark, profit (each), listed, listedText, where, limited, seed
 --   (true: a built-in price no merchant has confirmed yet).
@@ -116,7 +145,8 @@
 -- knows whether any shown price was Auctionator's):
 -- Gold.PriceState(tab) -> text, old   the header line ("Prices: 3,210 items
 --   - full scan 25 min ago, your items looked up 3 min ago") and whether to
---   show it orange; tab is "crafts", "bargains", "vendors" or "bags"
+--   show it orange; tab is "crafts", "bargains", "vendors", "bags" or
+--   "recipes"
 -- Gold.Empty(tab) -> text or nil   what to show in place of an empty list
 -- Gold.State() -> {state = "idle" | "asked" | "reading" | "checking",
 --   ahOpen, neutral, paused, message (progress, or how the last job ended,
@@ -173,6 +203,7 @@ local RECENT = 48 * HOUR      -- a price older than this is "last seen", not "no
 local SCAN_WAIT = 900         -- between full scans
 local SKIP_CHECK = 600        -- an item priced this recently isn't asked again
 local CHECK_CAP = 300         -- items per "Price my items"
+local RECIPE_CAP = 60         -- ... of them, for the recipes for sale (the Recipes tab)
 local SEND_GAP = 1.0          -- seconds between our queries
 local ANSWER_WAIT = 5         -- how long one query may go unanswered
 local ROWS_PER_ANSWER = 200
@@ -190,6 +221,10 @@ local SILVER = 100
 
 M.version = 1
 M.ENCHANT_FOOTER = "This is what the materials cost you. Charge at least this, plus your fee."
+-- (the line under the Recipes list has room for about a hundred characters;
+-- the whole explanation is the Recipes tab button's tooltip)
+M.RECIPE_FOOTER = "Profit is per craft. Pays back: the crafts that earn the recipe's price back. ~ vanilla's data."
+M.RECIPE_ABOUT = "Recipes for sale that none of your characters knows, for professions they have. Profit is per craft; Pays back: the crafts it takes to earn the recipe's price back. Recipe data is vanilla's (~)."
 
 S.on = false             -- the feature switched on
 S.state = "idle"         -- idle | asked | reading | checking
@@ -2026,8 +2061,10 @@ end
 
 -- everything the window's tabs go by, most useful first: Want(itemID) for
 -- each - and Want(itemID, key) for a stack in the bags, whose book key may
--- carry a random suffix. The same item may come more than once
-function L.EachCared(book, Want)
+-- carry a random suffix. The same item may come more than once. WantLast
+-- (Want when nil) is given the last of them: what the recipes for sale
+-- make and need, those a character can learn today first
+function L.EachCared(book, Want, WantLast)
     local x = L.Index()
     local function Recipes(mine, outputs)
         for _, r in ipairs(x.list) do
@@ -2062,11 +2099,28 @@ function L.EachCared(book, Want)
     end
     table.sort(ids)
     for _, id in ipairs(ids) do Want(id) end
+    -- last, the Recipes tab: what each recipe for sale that nobody knows
+    -- makes, and what that is made from
+    WantLast = WantLast or Want
+    local list = L.RecipeCandidates(book)
+    local function Learnable(c) return c.who.skill ~= nil and c.who.skill >= c.p.skill end
+    table.sort(list, function(a, b)
+        local la, lb = Learnable(a), Learnable(b)
+        if la ~= lb then return la end
+        return a.id < b.id
+    end)
+    for _, c in ipairs(list) do
+        local info = L.Info(c.p.o)
+        if not (info and info.bind == 1) then WantLast(c.p.o) end
+        for _, reagent in ipairs(c.p.reagents) do WantLast(reagent[1]) end
+    end
 end
 
--- what to price: -> the first 300, how many there were. An item priced in
--- the last 10 minutes is skipped - unless its price still counts our own
--- auctions; those come first
+-- what to price: -> the first 300, how many there were, and how many of
+-- what the recipes for sale make and need were left for another press (a
+-- look-up takes at most RECIPE_CAP of those: every recipe item listed can
+-- be a thousand). An item priced in the last 10 minutes is skipped -
+-- unless its price still counts our own auctions; those come first
 function L.CheckList(book)
     local now, counted = time(), L.OwnCounted()
     local list, seen, total = {}, {}, 0
@@ -2085,8 +2139,18 @@ function L.CheckList(book)
         if #list < CHECK_CAP then list[#list + 1] = id end
     end
     for _, id in ipairs(counted.ids) do Want(id) end
-    L.EachCared(book, Want)
-    return list, total
+    local extra, left, later = 0, 0, {}
+    L.EachCared(book, Want, function(id)
+        if extra < RECIPE_CAP then
+            local before = total
+            Want(id)
+            if total > before then extra = extra + 1 end
+        elseif type(id) == "number" and not seen[id] and not later[id] and not New(id) then
+            later[id] = true
+            left = left + 1
+        end
+    end)
+    return list, total, left
 end
 
 -- nil when a query may go out now; else why not, and when to look again
@@ -2227,6 +2291,8 @@ function L.FinishCheck(c)
     if failed > 0 then text = text .. (" %s didn't answer."):format(M.Count(failed)) end
     if c.total > CHECK_CAP then
         text = text .. (" %d of %s - press again for the rest."):format(CHECK_CAP, M.Count(c.total))
+    elseif (c.left or 0) > 0 then
+        text = text .. " Press again for more of what the recipes for sale make and need."
     end
     S.message = text
     L.Bump()
@@ -2253,7 +2319,7 @@ function M.StartCheck()
     end
     local book = L.Book(true)
     if not book then return false, "can't tell which realm this is yet" end
-    local list, total = L.CheckList(book)
+    local list, total, left = L.CheckList(book)
     if #list == 0 then
         S.message = "Nothing to price: everything your recipes and bags use was priced in the last 10 minutes."
         L.Changed()
@@ -2261,7 +2327,7 @@ function M.StartCheck()
     end
     S.gen = S.gen + 1
     S.state, S.message, S.paused = "checking", nil, false
-    S.chk = {list = list, i = 0, count = #list, total = total, answered = {}, failed = {}, retried = {}, moved = {}, tok = 0}
+    S.chk = {list = list, i = 0, count = #list, total = total, left = left, answered = {}, failed = {}, retried = {}, moved = {}, tok = 0}
     L.CheckStep()
     L.Changed()
     return true
@@ -2801,6 +2867,297 @@ function M.EnchantRows()
 end
 
 --------------------------------------------------------------------------
+-- Recipes: recipes for sale that nobody on the account knows
+--------------------------------------------------------------------------
+
+-- one line of the built-in table (GoldData.lua's D.recipeItems), read once:
+-- {prof, skill, o = the item made, a, b, avg, reagents} - shaped as one of
+-- L.Index's recipes, so the Crafts sums take it. nil for a line that
+-- doesn't read
+L.recipeItem = {}
+function L.RecipeItem(id)
+    local c = L.recipeItem[id]
+    if c == nil then
+        c = false
+        local line = type(D.recipeItems) == "table" and D.recipeItems[id]
+        if type(id) == "number" and type(line) == "string" then
+            local prof, skill, o, a, b, r = line:match("^([^|]+)|(%d+)|(%d+)|(%d+)|(%d+)|([%d:,]+)$")
+            local reagents = L.ParseReagents(r)
+            a, b = tonumber(a), tonumber(b)
+            if prof and a >= 1 and b >= a and #reagents > 0 then
+                c = {prof = prof, skill = tonumber(skill), o = tonumber(o), a = a, b = b, avg = (a + b) / 2, reagents = reagents}
+            end
+        end
+        L.recipeItem[id] = c
+    end
+    return c or nil
+end
+
+-- the professions this realm's characters have on record:
+-- best[name] = {prof, skill, name, guid} of the most skilled at it (skill
+-- nil: read without one - not known, and the lowest); n = how many
+function L.Professions()
+    local m = L.Memo("profs")
+    if m.best then return m end
+    m.best, m.n = {}, 0
+    local realm = L.Realm()
+    for guid, ch in pairs(L.Recipes()) do
+        local here = type(ch) == "table" and not (type(ch.realm) == "string" and realm and ch.realm ~= realm)
+        for pname, prof in pairs(here and type(ch.profs) == "table" and ch.profs or {}) do
+            if type(pname) == "string" and type(prof) == "table" then
+                local skill, b = tonumber(prof.skill), m.best[pname]
+                local s, bs = skill or -1, b and b.skill or -1
+                if not b then m.n = m.n + 1 end
+                if not b or s > bs or (s == bs and tostring(guid) < tostring(b.guid)) then
+                    m.best[pname] = {prof = pname, skill = skill, name = type(ch.name) == "string" and ch.name or "a character",
+                                     guid = guid}
+                end
+            end
+        end
+    end
+    return m
+end
+
+-- a recipe item's profession as this client names it (the item's own
+-- subclass: "Tailoring" in English), or nil
+L.subName = {}
+function L.RecipeSubName(id)
+    local C = C_Item
+    if type(C) ~= "table" or type(C.GetItemInfoInstant) ~= "function" or type(C.GetItemSubClassInfo) ~= "function" then return nil end
+    local sub = Plain((select(8, pcall(C.GetItemInfoInstant, id))))
+    if not sub then return nil end
+    local name = L.subName[sub]
+    if name == nil then
+        name = L.CallStr(C.GetItemSubClassInfo, 9, sub) or false
+        L.subName[sub] = name
+    end
+    return name or nil
+end
+
+-- who would learn it: the most skilled character at the recipe's
+-- profession - recorded under its English name, or under the name this
+-- client gives the recipe item's kind
+function L.RecipeLearner(id, p, best)
+    local who = best[p.prof]
+    if who or next(best) == nil then return who end
+    local name = L.RecipeSubName(id)
+    return name and best[name] or nil
+end
+
+-- a recipe's materials as one string: their item ids, in order
+function L.ReagentSig(reagents)
+    local ids = {}
+    for i, reagent in ipairs(reagents) do ids[i] = tonumber(reagent[1]) or 0 end
+    table.sort(ids)
+    return table.concat(ids, ",")
+end
+
+-- the items that lines of the table make from different materials (the
+-- transmutes: Fire to Earth and Life to Earth both make Essence of Earth):
+-- twins[item] = {[materials] = true, ...}. Read once
+function L.RecipeTwins()
+    if L.recipeTwins then return L.recipeTwins end
+    local sigs, twins = {}, {}
+    for id in pairs(type(D.recipeItems) == "table" and D.recipeItems or {}) do
+        local p = L.RecipeItem(id)
+        if p then
+            local set = sigs[p.o] or {n = 0}
+            sigs[p.o] = set
+            local sig = L.ReagentSig(p.reagents)
+            if not set[sig] then set[sig], set.n = true, set.n + 1 end
+        end
+    end
+    for o, set in pairs(sigs) do
+        if set.n > 1 then
+            set.n = nil
+            twins[o] = set
+        end
+    end
+    L.recipeTwins = twins
+    return twins
+end
+
+-- does the learner's profession already have a recipe making this? By the
+-- item made, among that profession's recipes on the realm (a miner's Smelt
+-- Gold is not the alchemist's Transmute Iron to Gold). Where the table has
+-- two recipes making the item from different materials, a learned recipe
+-- with the other one's materials is the other one; any other materials
+-- (Forever may have changed them) count as this one, known
+function L.RecipeKnown(x, p, who)
+    local twins = L.RecipeTwins()[p.o]
+    local sig = twins and L.ReagentSig(p.reagents)
+    for _, e in ipairs(x.makes[p.o] or {}) do
+        if e.prof == who.prof then
+            if not twins then return true end
+            local have = L.ReagentSig(e.reagents)
+            if have == sig or not twins[have] then return true end
+        end
+    end
+    return false
+end
+
+-- the recipe items worth a row: in the table, listed now (a price under an
+-- hour old, as Bargains asks: this is advice to buy now), for a profession
+-- a character of this realm has, and making what no recipe of that
+-- profession's on the realm makes (L.RecipeKnown).
+-- -> {{id, rec, p, who}, ...} by item, and how many recipes are listed at all.
+-- Not kept: a scan asks while it is still writing the book
+function L.RecipeCandidates(book)
+    local out, listed = {}, 0
+    local items = type(book) == "table" and book.items
+    if type(items) ~= "table" or type(D.recipeItems) ~= "table" then return out, listed end
+    local best, x, now = L.Professions().best, L.Index(), time()
+    for id in pairs(D.recipeItems) do
+        local rec = items[id]
+        if L.ValidRec(rec) and rec.q > 0 and now - rec.t <= FRESH and now >= rec.t then
+            local p = L.RecipeItem(id)
+            if p then
+                listed = listed + 1
+                local who = L.RecipeLearner(id, p, best)
+                if who and not L.RecipeKnown(x, p, who) then out[#out + 1] = {id = id, rec = rec, p = p, who = who} end
+            end
+        end
+    end
+    table.sort(out, function(a, b) return a.id < b.id end)
+    return out, listed
+end
+
+L.RECIPE_SELL = {Vendor = "then craft %s and sell it to a vendor.", Disenchant = "then craft %s and disenchant it."}
+L.VANILLA_LINE = "Recipe data is vanilla's - WoW Forever may have changed this recipe."
+
+function L.RecipeRow(x, c)
+    local id, p, rec, who = c.id, c.p, c.rec, c.who
+    local info, made = L.Info(id, true), L.Info(p.o, true)
+    local madeName = made and made.name or ("item #" .. tostring(p.o))
+    -- (what binds when made is never sold: vendored, or disenchanted by its maker)
+    local bop = made and made.bind == 1 or false
+    local row = {id = id, key = id, name = info and info.name, icon = info and info.icon, quality = info and info.quality,
+                 link = info and info.link, t = rec.t, price = rec.m, listedRecipe = rec.q, made = p.o, madeName = madeName,
+                 prof = p.prof, skill = p.skill, who = who.name, whoGuid = who.guid, whoSkill = who.skill,
+                 canLearn = who.skill ~= nil and who.skill >= p.skill, tip = {}, act = {}}
+    local tip = row.tip
+    tip[#tip + 1] = ("Teaches %s (%d): %s."):format(p.prof, p.skill, madeName)
+    tip[#tip + 1] = ("The recipe: %s, %s listed."):format(M.Money(rec.m), M.Count(rec.q))
+    row.cost, row.costWhy = L.Materials(p, tip)
+    local guessed = false
+    for _, reagent in ipairs(p.reagents) do
+        if select(3, M.Cost(reagent[1], reagent[2])) then guessed = true end
+    end
+    if bop then
+        row.listedText = "-"
+    else
+        row.listed, row.listedText = L.Listed(p.o)
+    end
+    local enchanter = x.enchanter
+    if bop then enchanter = x.enchanters[who.guid] and true or false end
+    L.SellOptions(row, p, made, {enchanter = enchanter}, bop)
+    -- (vanilla's recipe, not checked on Forever: every figure is an estimate)
+    row.estimate = true
+    if row.cost and row.sells then row.profit = row.sells - row.cost end
+    -- with no auction price for what it makes, a vendor's (or a
+    -- disenchanter's) price below the materials is no verdict: nobody has
+    -- said what it sells for. Profit not known - a real loss is an auction
+    -- price below the cost (an auction price under even the vendor's, too)
+    local noMarket = not bop and row.how ~= "Auction" and row.profit ~= nil and row.profit <= 0 and not M.SellPrice(p.o)
+    if noMarket then row.profit = nil end
+    local profit = row.profit
+    if profit and profit > 0 then
+        row.payback = math.ceil(rec.m / profit)
+        row.paybackText = row.payback == 1 and "1 craft" or (M.Count(row.payback) .. " crafts")
+        tip[#tip + 1] = ("Profit per craft %s - pays the recipe back in %s."):format(M.Money(profit), row.paybackText)
+    elseif profit then
+        row.paybackText = "-"
+        tip[#tip + 1] = "No profit at today's prices."
+    else
+        row.paybackText = "-"
+        local why = not row.cost and row.costWhy or ("no price for " .. madeName .. " yet")
+        if noMarket then
+            why = (row.listed == 0 and "nobody is selling %s, and a vendor pays less than the materials cost" or
+                      "no auction price for %s yet, and a vendor pays less than the materials cost"):format(madeName)
+        end
+        tip[#tip + 1] = ("Profit per craft: ? (%s)"):format(why)
+    end
+    if row.canLearn then
+        row.forText = ("%s %d"):format(who.prof, who.skill)
+        tip[#tip + 1] = ("%s can learn it (%s %d)."):format(who.name, who.prof, who.skill)
+    elseif who.skill then
+        row.forText = ("needs %d (%d)"):format(p.skill, who.skill)
+        tip[#tip + 1] = ("Needs %s %d - the best on the account is %d (%s)."):format(who.prof, p.skill, who.skill, who.name)
+    else
+        -- (a profession read without a skill level: not known, which isn't 0)
+        row.forText = ("needs %d (?)"):format(p.skill)
+        tip[#tip + 1] = ("Needs %s %d - open %s's %s window so the skill is known."):format(who.prof, p.skill, who.name, who.prof)
+    end
+    if bop then
+        tip[#tip + 1] = ("%s binds when made: it is never on the auction house."):format(madeName)
+    else
+        tip[#tip + 1] = ("%s: %s listed now."):format(madeName, row.listedText)
+    end
+    tip[#tip + 1] = L.VANILLA_LINE
+    if not profit then
+        row.rank = 3
+    elseif profit <= 0 then
+        row.rank = 4
+    else
+        row.rank = (not row.mark and not guessed and row.canLearn) and 1 or 2
+    end
+    local act = row.act
+    if row.rank <= 2 then
+        local sell = (L.RECIPE_SELL[row.how] or "then craft and sell %s."):format(madeName)
+        if row.canLearn then
+            act[#act + 1] = ("Buy it for %s, learn it on %s, %s"):format(M.Money(rec.m), who.name, sell)
+        elseif who.skill then
+            act[#act + 1] = ("Buy it for %s, keep it until %s has %s %d, %s"):format(M.Money(rec.m), who.name, who.prof, p.skill, sell)
+        else
+            act[#act + 1] = ("Buy it for %s if %s has %s %d (the skill isn't on record), %s"):format(M.Money(rec.m), who.name,
+                                                                                                 who.prof, p.skill, sell)
+        end
+        if row.rank == 2 and row.canLearn then
+            act[#act + 1] = "Check the prices first: one of them is unproven or a guess."
+        end
+    elseif row.rank == 3 and row.cost and row.listed == 0 then
+        -- (priced, and none listed: looking it up again would say the same)
+        act[#act + 1] = ("0 listed: nobody is selling %s - you would set the price, but check that anyone buys."):format(madeName)
+    elseif row.rank == 3 then
+        act[#act + 1] = ("Price %s and its materials first (Price my items): then this says whether the recipe pays."):format(madeName)
+    else
+        act[#act + 1] = ("Not worth buying to sell %s at today's prices."):format(madeName)
+    end
+    act[#act + 1] = L.LAST_LINE
+    return row
+end
+
+function M.RecipeRows()
+    local memo = L.Memo("recipes")
+    if not memo.rows then
+        local x, rows = L.Index(), {}
+        local list, listed = L.RecipeCandidates(L.Book())
+        for _, c in ipairs(list) do
+            local ok, row = pcall(L.RecipeRow, x, c)
+            if ok and row then rows[#rows + 1] = row end
+        end
+        table.sort(rows, function(a, b)
+            if a.rank ~= b.rank then return a.rank < b.rank end
+            if a.payback ~= b.payback then
+                if not a.payback then return false end
+                if not b.payback then return true end
+                return a.payback < b.payback
+            end
+            if a.profit ~= b.profit then return (a.profit or 0) > (b.profit or 0) end
+            if L.Text(a.name) ~= L.Text(b.name) then return L.Text(a.name) < L.Text(b.name) end
+            return a.id < b.id
+        end)
+        memo.rows, memo.listed = rows, listed
+    end
+    -- (a listing an hour old is no advice to buy any more)
+    local rows, now = {}, time()
+    for _, row in ipairs(memo.rows) do
+        if now - row.t <= FRESH then rows[#rows + 1] = row end
+    end
+    return rows
+end
+
+--------------------------------------------------------------------------
 -- Vendors: bought from a vendor, sold on the auction house
 --------------------------------------------------------------------------
 
@@ -3070,7 +3427,8 @@ function M.PriceState(tab)
     end
     if S.neutral then text = text .. " - Neutral auction house" end
     if S.usedAuctionator then text = text .. " (some prices from Auctionator)" end
-    return text, now - at > (tab == "bargains" and HOUR or RECENT)
+    -- (Bargains and Recipes are advice to buy now: an hour is old there)
+    return text, now - at > ((tab == "bargains" or tab == "recipes") and HOUR or RECENT)
 end
 
 function M.Empty(tab)
@@ -3091,8 +3449,18 @@ function M.Empty(tab)
                        hours, hours == 1 and "" or "s")
         end
         return "Nothing worth buying in the last scan."
+    elseif tab == "recipes" then
+        if L.Professions().n == 0 then return L.RECIPES_NO_PROFS end
+        local _, listed = L.RecipeCandidates(L.Book())
+        if listed == 0 then return L.RECIPES_NO_SCAN end
+        return L.RECIPES_NONE
     end
 end
+L.RECIPES_NO_PROFS = "Open each character's profession windows once - then the Gold finder knows your professions and recipes."
+-- (browsing the auction house's Recipes records nothing: a recipe item is
+-- no commodity, and a browse row's lowest price may be a bid)
+L.RECIPES_NO_SCAN = "Scan the auction house (or search for a recipe and open its listing) - recipes for sale come from a price less than an hour old."
+L.RECIPES_NONE = "No recipe for your professions is for sale that nobody on the account knows."
 
 -- what a running job is doing
 function L.Progress()
@@ -3166,7 +3534,7 @@ function M.State()
     elseif not (idle or checking) then
         check.tip = "Wait for the scan to finish"
     else
-        check.tip = ("Looks up only the items your recipes and bags use. About %d seconds. Works even when Scan is on its 15-minute wait."):format(
+        check.tip = ("Looks up the items your recipes and bags use, then some of what the recipes for sale make and need. About %d seconds. Works even when Scan is on its 15-minute wait."):format(
                         L.CheckSeconds())
     end
     return {state = S.state, ahOpen = S.ahOpen, neutral = S.neutral, paused = S.paused,
@@ -3317,8 +3685,15 @@ function M:Status()
             prices = prices .. ", priced " .. M.Ago(now - check)
         end
     end
-    return ("(%s; recipes of %d character%s; %s vendor prices; cut %s%%)"):format(prices, L.CountKeys(L.Recipes()),
-               L.CountKeys(L.Recipes()) == 1 and "" or "s", M.Count(L.CountKeys(L.Vendors())), tostring(M.Cut()))
+    -- (a count only: which recipes, and for whom, is the window's to say)
+    local worth = 0
+    local ok, rows = pcall(M.RecipeRows)
+    for _, row in ipairs(ok and rows or {}) do
+        if row.rank <= 2 then worth = worth + 1 end
+    end
+    return ("(%s; recipes of %d character%s; %s vendor prices; %s recipe%s for sale worth a look; cut %s%%)"):format(prices,
+               L.CountKeys(L.Recipes()), L.CountKeys(L.Recipes()) == 1 and "" or "s", M.Count(L.CountKeys(L.Vendors())),
+               M.Count(worth), worth == 1 and "" or "s", tostring(M.Cut()))
 end
 
 -- the options page's note
@@ -3328,7 +3703,7 @@ function M.Note()
     return text .. " |cFFFFCC00/pqol gold|r opens the window."
 end
 
-L.HELP = "gold: |cFFFFCC00/pqol gold|r opens the window; |cFFFFCC00scan|r reads the whole auction house; |cFFFFCC00price|r looks up the items your recipes and bags use (again: stops); |cFFFFCC00cut <0-30>|r the auction house's cut in percent; |cFFFFCC00forget|r forgets this realm's prices"
+L.HELP = "gold: |cFFFFCC00/pqol gold|r opens the window; |cFFFFCC00scan|r reads the whole auction house; |cFFFFCC00price|r looks up the items your recipes and bags use, then what the recipes for sale make and need (again: stops); |cFFFFCC00cut <0-30>|r the auction house's cut in percent; |cFFFFCC00forget|r forgets this realm's prices"
 
 function L.CutCommand(value)
     if value == "" then

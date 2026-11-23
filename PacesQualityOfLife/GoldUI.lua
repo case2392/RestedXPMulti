@@ -3,7 +3,7 @@
 -- listed at the top of that file)
 --
 --   * The window is a frame of our own, built the first time it is opened:
---     four tabs, a line saying how old the prices are, column headers that
+--     five tabs, a line saying how old the prices are, column headers that
 --     sort, 14 rows scrolled by the mouse wheel or a slider of our own, and
 --     the Scan / Price my items / Search buttons.
 --   * A refresh reads the tab's row list from Gold.lua (kept there until the
@@ -50,7 +50,10 @@ local ARROW_UP = "Interface\\Buttons\\Arrow-Up-Up"
 local ARROW_DOWN = "Interface\\Buttons\\Arrow-Down-Up"
 local UNKNOWN_ICON = "Interface\\Icons\\INV_Misc_QuestionMark"
 
-local TABS = {{"crafts", "Crafts"}, {"bargains", "Bargains"}, {"vendors", "Vendors"}, {"bags", "Your bags"}}
+local TABS = {{"crafts", "Crafts"}, {"bargains", "Bargains"}, {"vendors", "Vendors"}, {"bags", "Your bags"},
+              {"recipes", "Recipes"}}
+-- (five buttons, then Crafts' checkbox: 80 wide and 84 apart ends at 416)
+local TAB_W, TAB_STEP, CHECK_X = 80, 84, 440
 
 local function Later(delay, fn) C_Timer.After(delay, ns.Guard("gold", fn)) end
 
@@ -177,6 +180,21 @@ local COLUMNS = {
         {"Disenchant", 76, "disenchant", function(r) return Cell(r.disenchant) end, right = true},
         {"Best", 212, "best", BestCell},
     },
+    -- (recipes for sale that nobody on the account knows: 664 in all; the
+    -- money columns as wide as the widest price, with its mark, needs)
+    recipes = {
+        {"Recipe", 160, "name", NameCell, icon = true},
+        {"Price", 70, "price", function(r) return Cell(r.price) end, right = true},
+        {"Cost", 68, "cost", function(r) return Cell(r.cost, true) end, right = true},
+        {"Sells", 76, "sells", function(r) return SellsCell(r.sells, r.mark) end, right = true},
+        {"Profit", 76, "profit", ProfitCell, right = true},
+        {"Pays back", 62, "payback", function(r) return r.payback and r.paybackText or (GREY .. "-|r") end, right = true},
+        {"Listed", 44, "listed", function(r) return r.listedText end, right = true},
+        {"For", 108, "forText", function(r)
+            if r.canLearn then return r.forText end
+            return ORANGE .. tostring(r.forText or "?") .. "|r"
+        end},
+    },
 }
 U.COLUMNS = COLUMNS
 
@@ -194,6 +212,8 @@ local function Source()
         return rows, "bargains", meta
     elseif U.tab == "vendors" then
         return Gold.VendorRows(), "vendors"
+    elseif U.tab == "recipes" then
+        return Gold.RecipeRows(), "recipes"
     end
     return Gold.BagRows(), "bags"
 end
@@ -338,6 +358,8 @@ local function EmptyText(view, meta)
         return Gold.Empty("crafts") or "None of your recorded recipes makes an item."
     elseif view == "vendors" then
         return Gold.Empty("vendors") or "Visit vendors - I remember what they sell - then price the items."
+    elseif view == "recipes" then
+        return Gold.Empty("recipes") or "No recipe for your professions is for sale that nobody on the account knows."
     end
     return Gold.Empty("bags") or "Your bags are empty."
 end
@@ -349,6 +371,8 @@ local function FootText(view, list, meta)
         return #list > 0 and Gold.BagTotals(list, U.ShortCoins).text or ""
     elseif view == "enchants" then
         return #list > 0 and Gold.ENCHANT_FOOTER or ""
+    elseif view == "recipes" then
+        return Gold.RECIPE_FOOTER
     elseif view == "bargains" and meta then
         local parts = {}
         if (tonumber(meta.loading) or 0) > 0 then
@@ -716,15 +740,17 @@ local function Build()
 
     U.tabs = {}
     for i, tab in ipairs(TABS) do
-        local b = Button(f, tab[2], 96, function() SetTab(tab[1]) end)
-        b:SetPoint("TOPLEFT", f, "TOPLEFT", LEFT + (i - 1) * 100, -30)
+        local b = Button(f, tab[2], TAB_W, function() SetTab(tab[1]) end)
+        b:SetPoint("TOPLEFT", f, "TOPLEFT", LEFT + (i - 1) * TAB_STEP, -30)
         U.tabs[tab[1]] = b
     end
+    -- (what the newest tab lists takes more words than its foot line holds)
+    WithTip(U.tabs.recipes, "Recipes", Gold.RECIPE_ABOUT)
 
     -- Crafts: the recipes that make no item - what an enchant costs to cast
     local check = CreateFrame("CheckButton", nil, f, "UICheckButtonTemplate")
     check:SetSize(24, 24)
-    check:SetPoint("TOPLEFT", f, "TOPLEFT", LEFT + 412, -29)
+    check:SetPoint("TOPLEFT", f, "TOPLEFT", LEFT + CHECK_X, -29)
     -- (the label is the box's own: it shows and hides with it)
     check.label = Text(check, "GameFontHighlightSmall")
     check.label:SetPoint("LEFT", check, "RIGHT", 2, 0)

@@ -40,11 +40,20 @@ file's text can go there directly.
 
 | Field | Value |
 |---|---|
-| File | `dist/PacesQualityOfLife-1.4.2.zip` (contains the `PacesQualityOfLife` folder) |
-| Display name | Pace's Quality of Life 1.4.2 |
-| Release type | Beta (1.4's gold finder, 1.3.0's Edit Mode layouts and 1.2's party pets, voice volumes and voice fix not tried in game yet; switch to Release once they have been) |
+| File | `dist/PacesQualityOfLife-1.5.0.zip` (contains the `PacesQualityOfLife` folder) |
+| Display name | Pace's Quality of Life 1.5.0 |
+| Release type | Beta (1.5.0's Recipes tab, 1.4's gold finder, 1.3.0's Edit Mode layouts and 1.2's party pets, voice volumes and voice fix not tried in game yet; switch to Release once they have been) |
 | Game version | WoW Forever |
-| Changelog | below: 1.4.2's |
+| Changelog | below: 1.5.0's |
+
+## Changelog (1.5.0)
+
+```
+1.5.0
+- New: the Gold finder's Recipes tab. Recipes for sale that none of your characters knows, for professions they have: what each one teaches, what the materials cost, what a craft sells for, the profit per craft, and how many crafts earn the recipe's price back. It lists recipes from a scan (or your own search for a recipe, with its listing opened) less than an hour old; open each profession window once on each character so your professions and recipes are known. Scan also prices what those recipes make and need; Price my items does too, after your own items, up to 60 of them a press. A recipe whose product nobody is selling is shown with its profit unknown ("you would set the price"), not as a loss.
+- Note: the game tells an add-on nothing about a recipe nobody has learned, so what each recipe makes and needs is vanilla's data (702 recipes that make an item; enchanting formulas aren't in it), not checked on WoW Forever. Profits on this tab have a "~" - look at the recipe's tooltip before you buy.
+- Changed: /pqol status counts the recipes for sale worth a look.
+```
 
 ## Changelog (1.4.2)
 
