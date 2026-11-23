@@ -43,6 +43,11 @@ function ns.RefreshOptions()
         if panel.petsCheck then Dim(panel.petsCheck, pets.Available()) end
     end
     if panel and panel.layoutNote and ns.Layout then panel.layoutNote:SetText(ns.Layout.Note()) end
+    if panel and panel.goldNote and ns.Gold then
+        local ok, text = pcall(ns.Gold.Note)
+        panel.goldNote:SetText(ok and text or "")
+        if panel.goldScan then Dim(panel.goldScan, ns.IsOn("gold")) end
+    end
 end
 
 -- a note under a feature's checkbox, and a button at its right
@@ -96,6 +101,20 @@ function ns.BuildOptions()
             end)
             panel.layoutNote, panel.layoutUse = note, use
             y = y - 30
+        end
+        if key == "gold" then
+            -- how fresh the prices are, and a button opening the window
+            local note, open = NoteAndButton(y, "Open", function()
+                if ns.Gold then ns.SafeCall("gold", ns.Gold.Toggle) end
+            end)
+            panel.goldNote, panel.goldOpen = note, open
+            y = y - 30
+            local cb, h2 = MakeCheck(panel, 44, y,
+                "Scan the whole auction house each time I open it (at most every 15 minutes)",
+                function() return ns.db.goldScanOnOpen end,
+                function(on) ns.db.goldScanOnOpen = on end)
+            panel.goldScan = cb
+            y = y - h2
         end
         if key == "voice" then
             local cb, h2 = MakeCheck(panel, 44, y,

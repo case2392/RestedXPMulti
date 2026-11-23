@@ -16,6 +16,9 @@
 --                 own setting, switched at the next /reload)
 --   layout      - Edit Mode: each computer its own layout, switched to as
 --                 you log in on it
+--   gold        - Gold finder: a window saying what makes gold right now -
+--                 your recipes' profit, auctions worth buying, vendor items
+--                 that sell for more, the best way to sell your bags
 -- Rules: widget calls plus hooksecurefunc only, nothing of ours written
 -- into Blizzard's tables, secret values read under pcall, Lua 5.1.
 
@@ -38,6 +41,11 @@ local DEFAULTS = {
     voicevolume = true,
     -- (nothing is switched until a layout is chosen for this computer)
     layout = true,
+    gold = true,
+    -- scan the whole auction house each time it opens (at most every 15 minutes)
+    goldScanOnOpen = false,
+    -- the auction house's cut of a sale, in percent
+    goldCut = 5,
     -- the Looking For Group role filter's last choice
     lfgTank = true,
     lfgHealer = true,
@@ -205,7 +213,7 @@ function ns.HandleSlash(input)
             end
         end
     else
-        ns.Print("|cFFFFCC00/pqol|r options, |cFFFFCC00/pqol status|r what's on and any errors, |cFFFFCC00/pqol <feature> on|off|r: %s; |cFFFFCC00/pqol voice|r what voice sharing sent and heard; |cFFFFCC00/pqol voicevolume forget|r forgets the volumes kept",
+        ns.Print("|cFFFFCC00/pqol|r options, |cFFFFCC00/pqol status|r what's on and any errors, |cFFFFCC00/pqol <feature> on|off|r: %s; |cFFFFCC00/pqol voice|r what voice sharing sent and heard; |cFFFFCC00/pqol voicevolume forget|r forgets the volumes kept; |cFFFFCC00/pqol gold|r opens the gold finder (|cFFFFCC00/pqol gold help|r lists the rest)",
                  table.concat(ns.featureOrder, ", "))
     end
 end
