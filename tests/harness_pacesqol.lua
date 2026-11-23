@@ -1049,7 +1049,11 @@ local function makePlayer(name, opts)
             if not it then return nil end
             return id, "Type", "Subtype", "", it.icon or 134400, it.class or 15, it.sub or 0
         end,
-        GetItemCount = function(id) return P.counts[id] or 0 end,
+        -- (P.countedBank: whether the last count was asked to take the bank in)
+        GetItemCount = function(id, includeBank)
+            P.countedBank = includeBank
+            return P.counts[id] or 0
+        end,
         DoesItemExistByID = function(id) return not P.noSuchItem[id] end,
         -- (P.itemSync: the data is there at once, and the event fires inside the call)
         RequestLoadItemDataByID = function(id)
@@ -1173,11 +1177,11 @@ local function makePlayer(name, opts)
         end,
         SendSearchQuery = function(key, sorts, separate)
             if ah.sendThrows then error("can't search") end
-            ah.lastSorts = sorts
+            ah.lastSorts, ah.lastSeparate = sorts, separate
             Answer(key.itemID, "commodity")
         end,
         SendSellSearchQuery = function(key, sorts, separate)
-            ah.lastSellSorts = sorts
+            ah.lastSellSorts, ah.lastSellSeparate = sorts, separate
             Answer(key.itemID, "item")
         end,
         GetNumCommoditySearchResults = function(id) return ah.results[id] and #ah.results[id] or 0 end,
@@ -4398,8 +4402,8 @@ do
         advance(1)
         C.CloseAH()
         advance(5)
-        check(GC.State().state == "idle" and GC.State().message == "The scan was cut short - nothing was changed." and
-              Rec(C, 14047).q == 3, "gold scan: closing the auction house while waiting ends it; nothing changed")
+        check(GC.State().state == "idle" and GC.State().message == "The scan was cut short - nothing was changed. The Scan button shows when the game allows the next one; Price my items works meanwhile." and
+              Rec(C, 14047).q == 3, "gold scan: closing the auction house while waiting ends it; nothing changed, and it says what still works")
         C.OpenAH()
         Shift(C, 900)
         C.ah.replicateDelay = 1
@@ -4413,7 +4417,7 @@ do
         C.CloseAH()
         advance(5)
         check(GC.State().state == "idle" and Total(C.ah.infoReads) == 250 and Rec(C, 14047).q == 3 and Rec(C, 14047).m == 100 and
-              GC.State().message == "The scan was cut short - nothing was changed.",
+              GC.State().message == "The scan was cut short - nothing was changed. The Scan button shows when the game allows the next one; Price my items works meanwhile.",
               "gold scan: closing the auction house mid-read ends it; the book is as it was")
         -- a batch that throws
         C.OpenAH()
@@ -4538,6 +4542,8 @@ do
                   D.ah.lastSorts[1].sortOrder == 0 and D.ah.lastSorts[1].reverseSort == false and #D.ah.lastSellSorts == 2 and
                   D.ah.lastSellSorts[1].sortOrder == 4 and D.ah.lastSellSorts[2].sortOrder == 3,
                   "gold check: a commodity is searched by price, an item by its ID with buyout then bid")
+            check(D.ah.lastSeparate == true and D.ah.lastSellSeparate == true,
+                  "gold check: both searches ask for our own auctions to be told apart from the rest")
         end
         do
             local r = Rec(D, 14048)
@@ -4655,7 +4661,9 @@ do
         end
         check(GH.State().message == "Priced 300 items. 300 of 444 - press again for the rest." and #H.ah.sends == 300 and
               perMinute <= 60 and Book(H).checkN == 300, "gold check: 300 items a run, at most 60 a minute: " .. tostring(GH.State().message))
-        check(GH.PriceState("crafts"):find("^Prices: priced 300 items ") ~= nil, "gold check: the header: " .. GH.PriceState("crafts"))
+        -- (none of the 300 was listed: the header says what the book holds, not how many the last press asked about)
+        check(GH.PriceState("crafts"):find("^Prices: nothing listed %- your items looked up ") ~= nil and
+              not GH.PriceState("crafts"):find("300", 1, true), "gold check: the header: " .. GH.PriceState("crafts"))
         H.printed = {}
         H.Slash("gold check")
         check(Printed(H, "gold: pricing 144 items"), "gold check: the next run takes the rest (what was priced in the last 10 minutes is skipped)")
@@ -4734,12 +4742,20 @@ do
         check(GE.State().hint == "Your own auctions may be counted - open your Auctions tab once.",
               "gold: a scan whose rows name no owner, the Auctions tab not yet seen: the header warns")
         E.Fire("OWNED_AUCTIONS_UPDATED")
-        check(GE.State().hint == nil, "gold: (the Auctions tab opened: no warning)")
+        -- (the scan's records are as they were: the cloth and the bag still count ours)
+        check(Rec(E, 14047).q == 30 and Rec(E, 14047).m == 1000 and Rec(E, 14046).q == 1 and
+              GE.State().hint == "Your own auctions are still counted in 2 prices - press Price my items.",
+              "gold: the Auctions tab opened after such a scan: the prices that still count our own are named, with what to press: " ..
+              tostring(GE.State().hint))
+        E.CloseAH()
+        check(GE.State().hint == nil, "gold: ... and only at the auction house, where it can be acted on")
+        E.OpenAH()
         Shift(E, 900)
         advance(61)
         Scan(E)
         check(Rec(E, 14047).q == 10 and Rec(E, 14047).m == 1200 and Rec(E, 14046).q == 0 and Rec(E, 2589).q == 5,
               "gold: our own auctions are taken out of a scan's count")
+        check(GE.State().hint == nil and Book(E).noOwners == nil, "gold: ... and after that scan there is nothing left to warn about")
         check(#E.ns.errors == 0, "gold passive: no errors")
     end
 
@@ -4892,8 +4908,8 @@ do
                   bag.listed == 3 and bag.listedText == "3" and bag.rank == 1 and bag.mark == nil and rows[1] == bag,
                   "gold crafts: cost of the materials, what it sells for after the cut, the profit; the best first")
             check(bag and bag.by == "Tailoring - GoldK" and bag.mine == true and bag.canMake == 1 and bag.canMakeText == "1" and
-                  bag.name == "Runecloth Bag" and bag.recipe == "Runecloth Bag",
-                  "gold crafts: who makes it (named when several characters have recipes), how many the bags allow")
+                  bag.name == "Runecloth Bag" and bag.recipe == "Runecloth Bag" and K.countedBank == true,
+                  "gold crafts: who makes it (named when several characters have recipes), how many the bags and bank allow")
             local tip = table.concat(GK.Tip(bag), "\n")
             check(tip:find("5 x Bolt of Runecloth: 25s (your own craft)", 1, true) and tip:find("1 x Rune Thread: 40s (auction)", 1, true) and
                   tip:find("Auction: 2g 85s (3g each, less the 5% cut)", 1, true) and tip:find("Vendor: 2g", 1, true) and
@@ -5279,7 +5295,7 @@ do
         S.ns.db.goldScanOnOpen = false
         Listed(S, 14047, {{100, 10}, {110, 5}})
         advance(0.1)
-        check((panel.goldNote.text or ""):find("Prices: 1 items from your own searches", 1, true) and
+        check((panel.goldNote.text or ""):find("Prices: 1 item from your own searches", 1, true) and
               (panel.goldNote.text or ""):find("/pqol gold", 1, true), "gold options: the note says how fresh the prices are: " .. tostring(panel.goldNote.text))
         -- the subcommands
         S.printed = {}
@@ -5299,7 +5315,7 @@ do
               "gold: /pqol gold scan and price say why they can't")
         S.printed = {}
         S.Slash("gold forget")
-        check(Printed(S, "gold: forgot the prices of 1 items on this realm") and GS.State().state == "idle" and
+        check(Printed(S, "gold: forgot the prices of 1 item on this realm") and GS.State().state == "idle" and
               S.ns.db.goldBook["Forever-Alliance"].items[14047] == nil and S.ns.db.goldBook["Forever-Alliance"].fullAsked ~= nil and
               S.ns.db.goldRecipes[S.guid] ~= nil and S.ns.db.goldVendors[14341] ~= nil,
               "gold: /pqol gold forget forgets this realm's prices - not the recipes, the vendors or the scan wait")
@@ -5425,6 +5441,8 @@ do
         local request = Q.env.C_Item.RequestLoadItemDataByID
         Q.env.C_Item.RequestLoadItemDataByID = function(id) if id ~= 19000 then return request(id) end end
         Q.ah.sends = {}
+        -- (the scan answered for everything it didn't list: ten minutes on, those are asked again)
+        Shift(Q, 601)
         GQ.StartCheck()
         local function Sent(id)
             local n, last = 0, nil
@@ -5493,10 +5511,11 @@ do
         Listed(Q, 2320, {{8, 3}, {15, 10}})
         do
             local c, from = GQ.Cost(2320, 5)
-            check(c == 44 and from == "auction + vendor", "gold cost: 3 at 8c listed, the vendor's 10c for the other 2: 44c")
+            check(c == 44 and from == "auction + vendor, price not confirmed",
+                  "gold cost: 3 at 8c listed, the vendor's (built-in, unconfirmed) 10c for the other 2: 44c")
             Listed(Q, 2320, {{15, 10}, {16, 5}})
             c, from = GQ.Cost(2320, 5)
-            check(c == 50 and from == "vendor", "gold cost: listed above the vendor's price: all 5 from the vendor, 50c")
+            check(c == 50 and from == "vendor, price not confirmed", "gold cost: listed above the vendor's price: all 5 from the vendor, 50c")
         end
 
         -- disenchanting: a weapon's chances, a rare, an epic, nothing below the table
@@ -5581,7 +5600,7 @@ do
         local gone = Rec(R, 2589)
         check(gone and gone.q == 0 and gone.z == seen and gone.t == Book(R).full and gone.t > seen,
               "gold saved: a sold-out record keeps when it was last seen listed, apart from when it was last checked")
-        check(GR.PriceState("crafts"):find(", 1 items", 1, true) ~= nil and R.ns.Gold:Status():find("prices of 1 items", 1, true) ~= nil,
+        check(GR.PriceState("crafts") == "Prices: 1 item - full scan just now" and R.ns.Gold:Status():find("prices of 1 item,", 1, true) ~= nil,
               "gold: the header and /pqol status count what is listed, not what is sold out (" .. GR.PriceState("crafts") .. ")")
         Next({Row(14047, 5, 1500), Row(2589, 5, 500)})
         check(Rec(R, 2589).q == 5 and Rec(R, 2589).z == nil, "gold saved: (listed again: an ordinary record)")
@@ -5591,7 +5610,11 @@ do
               "gold saved: 29 days of scans without it: still on record as none listed, checked today")
         Next({Row(14047, 5, 1500)})
         Next({Row(14047, 5, 1500)})
-        check(Rec(R, 2589) == nil and Rec(R, 14047) ~= nil and CountKeys(Book(R).items) == 1,
+        local listed = 0
+        for _, rec in pairs(Book(R).items) do if rec.q > 0 then listed = listed + 1 end end
+        -- (what is left besides the cloth: the built-in vendor goods, none listed)
+        check(Rec(R, 2589) == nil and Rec(R, 14047) ~= nil and listed == 1 and
+              CountKeys(Book(R).items) == 1 + CountKeys(R.ns.GoldData.seed),
               "gold saved: a month of daily scans without it: the sold-out record goes (the book doesn't only grow)")
 
         -- the list goes away while it is read (another add-on asked for a new one)
@@ -5771,9 +5794,10 @@ do
         do
             local c, from = G3.Cost(2320, 3)
             local bag = Find(G3.CraftRows(), "id", 14046)
-            check(Rec(U1, 2320) == nil and c == 30 and from == "vendor" and bag and bag.cost == 2530 and
-                  table.concat(G3.Tip(bag), "\n"):find("3 x Coarse Thread: 30c (vendor)", 1, true) ~= nil,
-                  "gold cost: three of a thread only the vendor sells cost three times its price")
+            -- (the bag's 5 bolts take 25 cloth, and 15 are listed: 10 at 1s, 5 and the last 10 at 1s 10c)
+            check(Rec(U1, 2320) == nil and c == 30 and from == "vendor, price not confirmed" and bag and bag.cost == 2680 and
+                  table.concat(G3.Tip(bag), "\n"):find("3 x Coarse Thread: 30c (vendor, price not confirmed)", 1, true) ~= nil,
+                  "gold cost: three of a thread only the vendor sells cost three times its price - a built-in price, and said to be unconfirmed")
         end
 
         -- Forget while a Bargains pass is under way
@@ -6020,8 +6044,10 @@ do
         rows = Analyse(N2)
         local m, r = Deal(rows, "Material", 14341), Deal(rows, "Resell", 14341)
         check(m and m.units == 10 and m.upTo == 4000 and m.worth == 5000 and m.profit == 10000 and
-              G7.Tip(m)[1]:find("a vendor sells them for 50s", 1, true) ~= nil and r and r.units == 10 and r.upTo == 4000,
-              "gold bargains: listed under the vendor's price it is one, the saving counted against the vendor's price")
+              m.estimate == true and
+              G7.Tip(m)[1] == "Usually 80s each, and a vendor should sell them for about 50s (price not confirmed - visit one); these are below both. The profit shown is what you would save on that price." and
+              r and r.units == 10 and r.upTo == 4000,
+              "gold bargains: listed under the vendor's price it is one, the saving counted against that price - a built-in one, so an estimate and said to be unconfirmed")
         -- one hopeful listing, seen on three days and today
         Listed(N2, 14048, {{900, 20}, {950, 5}})
         ListedGear(N2, 13856, {{5000000}})
@@ -6072,10 +6098,14 @@ do
         check(quest and quest.confident == true and quest.auctionText == nil and recipe and recipe.confident == false and
               recipe.auctionText == "?", "gold bags: a quest item is never auctioned; only what has no answer at all is without a price")
         local t = G8.BagTotals(bags)
-        check(t.unpriced == 1 and t.unproven == 3 and t.auction == 0 and t.best == 9000 and
+-- (the helm's 90s; the cloth's 80s and the leather's 25s from the vendor
+        -- beat their unproven auction prices and count; the gloves' best is an
+        -- unproven auction price and doesn't)
+        check(cloth.bestHow == "Vendor" and cloth.best == 8000 and leather.bestHow == "Vendor" and leather.best == 2500 and
+              gloves.bestHow == "Auction" and t.unpriced == 1 and t.unproven == 1 and t.auction == 0 and t.best == 19500 and
               t.vendor == 22500 and
-              t.text == "Vendors 2g 25s / Auction 0c / Best of each 90s - 1 unpriced (Price my items) - 3 unproven, not counted",
-              "gold bags: unproven prices stay out of the totals, and are counted beside them: " .. t.text)
+              t.text == "Vendors 2g 25s / Auction 0c / Best of each 1g 95s - 1 unpriced (Price my items) - 1 unproven, not counted",
+              "gold bags: unproven auction prices stay out of the totals; a stack whose best is the vendor anyway still counts: " .. t.text)
 
         -- more wanted than the price points kept say anything about
         Listed(N3, 3000, {{10, 1}, {11, 1}, {12, 1}, {13, 1}, {14, 1}, {15, 1}, {100, 34}})
@@ -6172,6 +6202,1063 @@ do
               "gold bargains: the other essence's price over an hour old: no essence bargain on it")
     end
 
+    ----------------------------------------------------------------------
+    -- second review: what is left out and where each line is drawn, one
+    -- reason at a time
+    ----------------------------------------------------------------------
+    -- recipes
+    do
+        local RP = Stock(GP("GoldT1"))
+        Recipe(RP, 1, "Honor Cloak", 13856, {{14048, 3}})
+        -- (an optional slot of the basic kind, and a required one of another kind)
+        table.insert(RP.trade.recipes[1].sch.reagentSlotSchematics,
+                     {reagentType = 1, required = false, quantityRequired = 1, reagents = {{itemID = 3000}}})
+        table.insert(RP.trade.recipes[1].sch.reagentSlotSchematics,
+                     {reagentType = 2, required = true, quantityRequired = 1, reagents = {{itemID = 7000}}})
+        Recipe(RP, 2, "Dummy", 3000, {{14047, 1}})
+        RP.trade.recipes[2].info.isDummyRecipe = true
+        Recipe(RP, 3, "Salvage", 3000, {{14047, 1}})
+        RP.trade.recipes[3].info.isSalvageRecipe = true
+        Recipe(RP, 4, "Gathering", 3000, {{14047, 1}})
+        RP.trade.recipes[4].info.isGatheringRecipe = true
+        Recipe(RP, 5, "No Cooldown", 14048, {{14047, 5}}, {cooldown = 0})
+        Recipe(RP, 6, "Backwards", 7000, {{2589, 6}}, {min = 3, max = 1})
+        Recipe(RP, 7, "Free Reagent", 3000, {{14047, 1}})
+        RP.trade.recipes[7].sch.reagentSlotSchematics[1].quantityRequired = 0
+        Recipe(RP, 8, "On Cooldown", 14046, {{14048, 5}}, {cooldown = 1})
+        OpenTrade(RP, "Tailoring", 0)
+        local list, ch = Recipes(RP, "Tailoring")
+        check(list and list[1] and list[1].r == "14048:3",
+              "gold recipes: an optional slot (even of the basic kind) and a slot of another kind (even required) are no materials")
+        check(list and list[1] and list[2] == nil and list[3] == nil and list[4] == nil,
+              "gold recipes: a dummy, a salvage and a gathering recipe are left out")
+        check(list and list[5] and list[5].c == nil and list[8] and list[8].c == true,
+              "gold recipes: a cooldown of 0 is no cooldown; one of a second is")
+        check(list and list[6] and list[6].a == 3 and list[6].b == 3, "gold recipes: a most-made under the least-made counts as the least")
+        check(list and list[1] and list[7] == nil, "gold recipes: a recipe with a material needed 0 times can't be read: left out")
+        check(ch and ch.profs.Tailoring.skill == nil and ch.profs.Tailoring.max == 300, "gold recipes: a skill of 0 is no skill")
+        -- the window still changing what it shows
+        RP.ns.db.goldRecipes = nil
+        RP.trade.changing = true
+        OpenTrade(RP, "Tailoring")
+        check(RP.ns.db.goldRecipes == nil, "gold recipes: a window whose data source is changing isn't read")
+        RP.trade.changing = false
+        -- closed while the last recipes are read (and still \"ready\" when asked)
+        RP.trade.onRead = function(id) if id == 8 then RP.Fire("TRADE_SKILL_CLOSE") end end
+        OpenTrade(RP, "Tailoring")
+        check(RP.ns.db.goldRecipes == nil, "gold recipes: the window closing during the last batch: nothing is written")
+        RP.trade.onRead = nil
+        -- a client that only has the filtered list
+        local T = RP.env.C_TradeSkillUI
+        T.GetFilteredRecipeIDs, T.GetAllRecipeIDs = T.GetAllRecipeIDs, nil
+        OpenTrade(RP, "Tailoring")
+        list = Recipes(RP, "Tailoring")
+        check(list and list[1] ~= nil and list[8] ~= nil and #RP.ns.errors == 0,
+              "gold recipes: without GetAllRecipeIDs the filtered list is read")
+    end
+    -- merchants, and the Vendors tab's two floors
+    do
+        local MP = Stock(GP("GoldT2"))
+        local GMP = MP.ns.Gold
+        setmetatable(MP.ah.commodity, {__index = function() return true end})
+        MP.npcName = "Trader"
+        MP.merchant = {{id = 14341, price = 5000}, {id = 4000, price = 300, avail = 0}, {id = 8170, price = 450}}
+        local MF = MP.env.C_MerchantFrame
+        local realInfo, throws = MF.GetItemInfo, true
+        MF.GetItemInfo = function(i)
+            if i == 2 and throws then error("row 2 can't be read") end
+            return realInfo(i)
+        end
+        MP.Fire("MERCHANT_SHOW")
+        advance(0.5)
+        local V = MP.ns.db.goldVendors
+        check(V and V[14341] and V[14341].p == 5000 and V[8170] and V[8170].p == 450 and V[4000] == nil and #MP.ns.errors == 0,
+              "gold merchants: a row that throws is skipped; the rows before and after it are recorded, and nothing is on record as an error")
+        throws = false
+        MP.Fire("MERCHANT_SHOW")
+        advance(0.5)
+        check(V and V[4000] and V[4000].lim == true and GMP.VendorBuy(4000) == nil,
+              "gold merchants: a limited item that is sold out (0 available) is still limited, not a price to count on")
+        -- Vendors: at least 20% and at least 1 silver of profit, each alone not enough
+        MP.merchant = {{id = 3000, price = 1000}, {id = 2589, price = 1000}, {id = 7000, price = 100}, {id = 14047, price = 100}}
+        MP.Fire("MERCHANT_SHOW")
+        advance(0.5)
+        MP.OpenAH()
+        Listed(MP, 3000, {{1211, 5}, {1300, 5}})   -- 11s 50c after the cut: 1s 50c over the vendor's 10s (15%)
+        Listed(MP, 2589, {{1264, 5}, {1300, 5}})   -- 12s after the cut: 2s over it (20%)
+        Listed(MP, 7000, {{158, 5}, {170, 5}})     -- 1s 50c after the cut: 50c over the vendor's 1s (50%)
+        Listed(MP, 14047, {{211, 5}, {220, 5}})    -- 2s after the cut: 1s over it
+        local rows = GMP.VendorRows()
+        check(Find(rows, "id", 3000) == nil and Find(rows, "id", 2589) and Find(rows, "id", 2589).profit == 200,
+              "gold vendors: 15% over the vendor's price is not shown (though it is over a silver); 20% is")
+        check(Find(rows, "id", 7000) == nil and Find(rows, "id", 14047) and Find(rows, "id", 14047).profit == 100 and #MP.ns.errors == 0,
+              "gold vendors: 50 copper of profit is not shown (though it is 50%); a silver is")
+    end
+    -- the scan: armor by its suffix, our own auctions by the price of one, whose names are ours
+    do
+        local SP = Stock(GP("GoldT3", {db = {goldRecipes = {
+            ["Player-9-FAR"] = {name = "Faraway", realm = "Other", faction = "Alliance", at = 1000, profs = {}},
+            ["Player-9-NEAR"] = {name = "Nearby", realm = "Forever", faction = "Alliance", at = 1000, profs = {}}}}}))
+        local GSP = SP.ns.Gold
+        Recipe(SP, 2, "Bolt of Runecloth", 14048, {{14047, 5}})
+        OpenTrade(SP, "Tailoring")
+        SP.OpenAH()
+        SP.ah.owned = {{itemKey = {itemID = 14047}, quantity = 20, buyoutAmount = 2000},
+                       {itemKey = {itemID = 14048}, quantity = 5, buyoutAmount = 0}}      -- (bid only)
+        SP.Fire("OWNED_AUCTIONS_UPDATED")
+        SP.ah.rows = {Row(14047, 50, 5000, {owner = false}),
+                      Row(13856, 1, 50000, {link = Link(13856, 5)}), Row(13856, 1, 60000, {link = Link(13856, 7)}),
+                      Row(8170, 4, 2000, {owner = "Faraway"}), Row(2589, 4, 2000, {owner = "Nearby"}),
+                      Row(14048, 5, 4500, {owner = false}), Row(14048, 5, 5000, {owner = false})}
+        Scan(SP)
+        check(Rec(SP, "13856:5") and Rec(SP, "13856:5").m == 50000 and Rec(SP, "13856:7") and Rec(SP, "13856:7").m == 60000 and
+              Rec(SP, 13856) == nil, "gold scan: armor is kept by its random suffix too, not only weapons")
+        check(Rec(SP, 14047) and Rec(SP, 14047).q == 30 and Rec(SP, 14047).m == 100,
+              "gold: our own 20 of a commodity come out of the 50 listed at that price for one (the stack's buyout isn't a price in the list)")
+        check(Rec(SP, 8170) and Rec(SP, 8170).q == 4 and Rec(SP, 2589) == nil,
+              "gold scan: a recorded character of this realm is ours by name; one of another realm with that name is somebody else")
+        local bolt = Find(GSP.CraftRows(), "id", 14048)
+        check(bolt and bolt.listed == 10 and not table.concat(GSP.Tip(bolt), "\n"):find("of yours", 1, true) and #SP.ns.errors == 0,
+              "gold: an auction of ours with no buyout was never counted, so the tooltip doesn't say it was left out")
+    end
+    -- the Bargains pass: exactly 250 items a tick
+    do
+        local KP = Stock(GP("GoldT3b"))
+        for i = 1, 600 do KP.items[80000 + i] = {name = "Ware " .. i, stack = 20, sell = 1, class = 7} end
+        KP.OpenAH()
+        KP.ah.rows = {}
+        for i = 1, 600 do KP.ah.rows[i] = Row(80000 + i, 1, 100 + i) end
+        KP.itemReads = {}
+        Scan(KP)
+        check(Total(KP.itemReads) == 600 and Max(KP.itemReads) == 250 and CountKeys(KP.itemReads) == 3 and #KP.ns.errors == 0,
+              "gold bargains: 600 items are looked through 250 a tick, no more (" .. Max(KP.itemReads) .. " at most, over " ..
+              CountKeys(KP.itemReads) .. " ticks)")
+    end
+    -- the bags: one row per item, by suffix, bound and unbound apart; and
+    -- a piece nobody lists has its answer once it was looked for
+    do
+        local BP = Stock(GP("GoldT4"))
+        local GBP = BP.ns.Gold
+        setmetatable(BP.ah.commodity, {__index = function() return true end})
+        BP.ah.commodity[17000] = false
+        for id in pairs(BP.ns.GoldData.seed) do BP.ns.GoldData.seed[id] = nil end
+        BP.bags[0] = {n = 5, [1] = {itemID = 17000, stackCount = 1, quality = 2, hyperlink = Link(17000, 5)},
+                      [2] = {itemID = 17000, stackCount = 1, quality = 2, hyperlink = Link(17000, 0)},
+                      [3] = {itemID = 14047, stackCount = 5, quality = 1, isBound = true},
+                      [4] = {itemID = 14047, stackCount = 7, quality = 1},
+                      [5] = {itemID = 14047, stackCount = 3, quality = 1, isBound = true}}
+        BP.Fire("BAG_UPDATE_DELAYED")
+        local function BagRow(key, bound)
+            for _, row in ipairs(GBP.BagRows()) do
+                if row.key == key and (row.bound or false) == bound then return row end
+            end
+        end
+        check(#GBP.BagRows() == 4 and BagRow("17000:5", false) and BagRow(17000, false) and BagRow("17000:5", false).id == 17000,
+              "gold bags: a piece with a random suffix is a row of its own, under the price book's key for it")
+        check(BagRow(14047, true) and BagRow(14047, true).count == 8 and BagRow(14047, false) and BagRow(14047, false).count == 7 and
+              BagRow(14047, true).auction == nil and BagRow(14047, true).vendor == 3200,
+              "gold bags: bound and unbound stacks of one item are two rows")
+        BP.OpenAH()
+        local other = {quantity = 1, buyoutAmount = 40000, itemKey = {itemID = 17000, itemSuffix = 7}}
+        -- the player's own look at the item: it says nothing of what it doesn't list
+        BP.ah.results[17000] = {other}
+        BP.Fire("ITEM_SEARCH_RESULTS_UPDATED", {itemID = 17000, itemSuffix = 0})
+        check(Rec(BP, "17000:7") and Rec(BP, "17000:7").m == 40000 and Rec(BP, "17000:5") == nil and Rec(BP, 17000) == nil and
+              BagRow("17000:5", false).confident == false and GBP.BagTotals(GBP.BagRows()).unpriced == 3,
+              "gold bags: (three stacks without a price; the player's own search marks nothing \"none listed\")")
+        -- our own look-up, cut short: no answer for the other suffixes either
+        BP.ah.results[17000] = {other, full = false}
+        BP.ah.results[14047] = {{quantity = 5, unitPrice = 70, numOwnerItems = 0}, {quantity = 5, unitPrice = 80, numOwnerItems = 0}}
+        check(GBP.StartCheck() == true, "gold bags: (Price my items)")
+        advance(10)
+        check(GBP.State().state == "idle" and Rec(BP, "17000:5") == nil and Rec(BP, 17000) == nil and
+              GBP.BagTotals(GBP.BagRows()).unpriced == 2, "gold bags: a partial answer says nothing of the pieces it didn't list")
+        -- ... and whole: the two pieces in the bags aren't listed, and that is their answer
+        BP.ah.results[17000] = {other}
+        check(GBP.StartCheck() == true, "gold bags: (Price my items again)")
+        advance(10)
+        local bear, plain = BagRow("17000:5", false), BagRow(17000, false)
+        local t = GBP.BagTotals(GBP.BagRows())
+        check(Rec(BP, "17000:5") and Rec(BP, "17000:5").q == 0 and Rec(BP, "17000:5").s == "c" and Rec(BP, 17000) and
+              Rec(BP, 17000).q == 0 and Rec(BP, "17000:7").q == 1,
+              "gold check: our look-up lists every suffix of a piece: the ones in the bags it didn't list are none listed")
+        check(bear and bear.confident == true and bear.auction == nil and bear.auctionText == nil and bear.bestHow == "Vendor" and
+              bear.best == 2500 and table.concat(GBP.Tip(bear), "\n"):find("None listed - no auction price to go by.", 1, true) and
+              plain and plain.confident == true and t.unpriced == 0 and not t.text:find("Price my items", 1, true) and
+              #BP.ns.errors == 0,
+              "gold bags: ... so their best is the vendor, and the totals no longer ask for a price check that can't bring a price: " ..
+              t.text)
+    end
+    -- item data: asked for once, looked at again only after a while
+    do
+        local IP = Stock(GP("GoldT5"))
+        local GI = IP.ns.Gold
+        local asks = {}
+        local request = IP.env.C_Item.RequestLoadItemDataByID
+        -- (the game never answers)
+        IP.env.C_Item.RequestLoadItemDataByID = function(id) asks[#asks + 1] = id end
+        for i = 1, 3 do IP.items[56000 + i] = {name = "Slow " .. i, stack = 20, class = 7, loaded = false} end
+        local reads = Total(IP.itemReads)
+        for _ = 1, 3 do GI.Info(56001) end
+        advance(1)
+        GI.Info(56001)
+        check(Total(IP.itemReads) == reads + 1 and #asks == 1, "gold items: an item still loading isn't looked at again within 5 seconds")
+        advance(5)
+        GI.Info(56001)
+        advance(1)
+        check(Total(IP.itemReads) == reads + 2 and #asks == 1,
+              "gold items: ... after that it is, but the game is asked to load it only once a session (" .. #asks .. " asked)")
+        -- an item event for something we never asked about
+        local ver = GI.version
+        IP.Fire("ITEM_DATA_LOAD_RESULT", 77777, true)
+        IP.Fire("GET_ITEM_INFO_RECEIVED", 77778, true)
+        advance(1)
+        check(GI.version == ver, "gold items: another add-on's item arriving works nothing out again")
+        -- the game says it couldn't load one: nothing changed, and no asking again
+        local changes = 0
+        GI.Listen(function(what)
+            if what == "change" then
+                changes = changes + 1
+                GI.Info(56002)
+            end
+        end)
+        GI.Info(56002)
+        advance(1)
+        reads, ver = Total(IP.itemReads), GI.version
+        IP.Fire("ITEM_DATA_LOAD_RESULT", 56002, false)
+        IP.Fire("GET_ITEM_INFO_RECEIVED", 56002, false)
+        advance(60)
+        GI.Info(56002)
+        check(GI.version == ver and changes == 0 and Total(IP.itemReads) == reads,
+              "gold items: an item the game couldn't load: nothing is worked out again and it isn't read again (" ..
+              (Total(IP.itemReads) - reads) .. " reads in a minute)")
+        advance(600)
+        GI.Info(56002)
+        GI.Info(56002)
+        check(Total(IP.itemReads) == reads + 1, "gold items: ... until ten minutes on, once")
+        IP.items[56002].loaded = true
+        IP.Fire("ITEM_DATA_LOAD_RESULT", 56002, true)
+        advance(1)
+        check(GI.Info(56002) and GI.Info(56002).name == "Slow 2" and GI.version == ver + 1 and changes == 1,
+              "gold items: ... and when it does arrive it is taken at once")
+        -- the queue holds 2,000; switching off empties it
+        asks = {}
+        for i = 1, 2500 do GI.Info(57000 + i) end
+        advance(0.15)
+        check(#asks == 20, "gold items: (20 asked for in the first tick)")
+        advance(30)
+        check(#asks == 2000, "gold items: at most 2,000 items wait to be asked for (" .. #asks .. " asked)")
+        asks = {}
+        for i = 1, 100 do GI.Info(60000 + i) end
+        advance(0.15)
+        IP.Slash("gold off")
+        advance(5)
+        check(#asks == 20 and #IP.ns.errors == 0, "gold items: switched off, nothing more is asked for (" .. #asks .. " of 100)")
+        IP.Slash("gold on")
+        IP.env.C_Item.RequestLoadItemDataByID = request
+    end
+    -- prices, costs and bargains
+    do
+        local PP = Stock(GP("GoldT6"))
+        local GPP = PP.ns.Gold
+        PP.knowsDisenchant = true
+        setmetatable(PP.ah.commodity, {__index = function() return true end})
+        Recipe(PP, 1, "Runecloth Bag", 14046, {{14048, 5}})
+        Recipe(PP, 2, "Bolt of Runecloth", 14048, {{14047, 5}})
+        OpenTrade(PP, "Tailoring")
+        PP.OpenAH()
+        -- two listed is one seller's hope; three at two prices is a market
+        Listed(PP, 3000, {{500, 1}, {510, 1}})
+        local _, two = GPP.SellPrice(3000)
+        Listed(PP, 3000, {{500, 2}, {510, 1}})
+        local _, three = GPP.SellPrice(3000)
+        check(two == "unproven" and three == nil, "gold prices: two units at two prices are unproven; three are not")
+        -- an answer of up to 200 rows is read whole
+        local many = {}
+        for i = 1, 150 do many[i] = {1000 + i, 1} end
+        Listed(PP, 7000, many)
+        local whole = Rec(PP, 7000) and Rec(PP, 7000).q == 150 and Rec(PP, 7000).p == nil
+        for i = 151, 250 do many[i] = {1000 + i, 1} end
+        Listed(PP, 7000, many)
+        check(whole and Rec(PP, 7000).q == 200 and Rec(PP, 7000).p == true,
+              "gold check: 150 rows of an answer are all read; of 250 the first 200, marked as a part")
+        -- the player's search for one suffix says nothing of the plain item
+        ListedGear(PP, 13856, {{90000}})
+        PP.ah.results[13856] = {}
+        PP.Fire("ITEM_SEARCH_RESULTS_UPDATED", {itemID = 13856, itemSuffix = 5})
+        local kept = Rec(PP, 13856) and Rec(PP, 13856).q == 1
+        PP.Fire("ITEM_SEARCH_RESULTS_UPDATED", {itemID = 13856, itemSuffix = 0})
+        check(kept and Rec(PP, 13856).q == 0,
+              "gold passive: an empty answer for one \"of the Bear\" leaves the plain item's price alone; an empty one for the plain item is none listed")
+        -- a craft's materials are bought together: five bolts take 25 cloth,
+        -- and the cheap 20 don't cover them
+        Listed(PP, 14047, {{400, 20}, {500, 80}})
+        do
+            local c, from, flag = GPP.Cost(14048, 5)
+            local c1 = GPP.Cost(14048, 1)
+            local bag = Find(GPP.CraftRows(), "id", 14046)
+            check(c == 10500 and from == "your own craft" and flag == nil and c1 == 2000 and bag and bag.cost == 10500,
+                  "gold cost: five bolts of your own craft cost their 25 cloth - 20 at 4s and 5 at 5s - not five times the first bolt")
+            Listed(PP, 14047, {{400, 20}, {500, 2}})
+            c, from, flag = GPP.Cost(14048, 5)
+            bag = Find(GPP.CraftRows(), "id", 14046)
+            check(c == 10500 and flag == "materials partly at a guessed price" and bag and table.concat(GPP.Tip(bag), "\n"):find(
+                      "5 x Bolt of Runecloth: 1g 5s (your own craft, materials partly at a guessed price)", 1, true) ~= nil,
+                  "gold cost: ... and with only 22 cloth listed for the 25, the cost is said to be partly a guess")
+            -- (a craft that makes 2 to 4: one craft for 2, two crafts for 4 - each pays its share)
+            Recipe(PP, 7, "Scraps", 7000, {{2589, 6}}, {min = 2, max = 4})
+            OpenTrade(PP, "Tailoring")
+            Listed(PP, 7000, {})
+            Listed(PP, 2589, {{10, 6}, {40, 60}})
+            check(GPP.Cost(7000, 2) == 40 and GPP.Cost(7000, 3) == 60 and GPP.Cost(7000, 4) == 200,
+                  "gold cost: the average output still shares a craft's cost; a second craft's materials are priced where the first's left off")
+            -- a lesser essence as a third of a greater: six take two greaters
+            Listed(PP, 10939, {{2400, 1}, {3000, 5}})
+            Listed(PP, 10938, {{1500, 10}, {1600, 5}})
+            c, from = GPP.Cost(10938, 6)
+            check(c == 5400 and from == "buy Greater and split" and GPP.Cost(10938, 1) == 800,
+                  "gold cost: six lesser essences from two greater ones cost both greaters (24s + 30s), not twice the cheaper")
+        end
+        -- an unproven auction price that isn't the best way to sell marks nothing
+        Listed(PP, 14048, {{900, 1}})
+        do
+            local bolt = Find(GPP.CraftRows(), "id", 14048)
+            check(select(2, GPP.SellPrice(14048)) == "unproven" and bolt and bolt.how == "Vendor" and bolt.sells == 1600 and
+                  bolt.mark == nil and bolt.rank == 1, "gold crafts: sold to a vendor, the row carries no mark of the auction price")
+        end
+        -- Bargains: a listing at exactly what the vendor pays earns nothing
+        Listed(PP, 8170, {{300, 2}, {500, 50}})
+        for i = 1, 3 do
+            PP.items[58000 + i] = {name = "Unseen " .. i, stack = 20, sell = 500, class = 7, loaded = false}
+            Listed(PP, 58000 + i, {{100, 5}, {110, 5}})
+        end
+        local rows, meta = Analyse(PP)
+        local v = Deal(rows, "Vendor", 8170)
+        check(v and v.units == 2 and v.upTo == 300 and v.profit == 400,
+              "gold bargains: units listed at exactly the vendor's price aren't counted (2 of the 52)")
+        -- items whose data hadn't loaded are left out, and looked at again when it has
+        check(meta.loading == 3 and Deal(rows, "Vendor", 58001) == nil, "gold bargains: (three items left out: still loading)")
+        advance(3)
+        rows, meta = GPP.BargainRows()
+        check(meta.loading == 0 and Deal(rows, "Vendor", 58001) and Deal(rows, "Vendor", 58003) and Deal(rows, "Vendor", 58003).units == 10,
+              "gold bargains: once their data has arrived the pass runs again and they are on the list")
+        -- one auction house's bargains aren't another's
+        PP.CloseAH()
+        PP.npcFaction = "Neutral"
+        PP.OpenAH()
+        local atNeutral = #GPP.BargainRows()
+        advance(0.5)
+        PP.CloseAH()
+        PP.npcFaction = nil
+        PP.OpenAH()
+        advance(0.5)
+        check(#rows >= 4 and atNeutral == 0 and #GPP.BargainRows() == #rows,
+              "gold bargains: at a neutral auction house this faction's bargains aren't shown - not even until the pass has run again")
+        -- errors stay inside: a timer's body, a listener, the window's own Toggle
+        local errors = #PP.ns.errors
+        local refresh = PP.ns.RefreshOptions
+        PP.ns.RefreshOptions = function() error("the options page broke") end
+        Listed(PP, 2589, {{10, 5}, {11, 5}})
+        local ok = pcall(advance, 0.1)
+        PP.ns.RefreshOptions = refresh
+        check(ok and #PP.ns.errors == errors + 1, "gold: an error inside a timer of ours is recorded, never thrown into the game's timer")
+        local breaking, heard = true, false
+        GPP.Listen(function(what) if what == "ah" and breaking then error("a listener broke") end end)
+        GPP.Listen(function(what) if what == "ah" then heard = true end end)
+        errors = #PP.ns.errors
+        PP.CloseAH()
+        breaking = false
+        check(heard and #PP.ns.errors == errors + 1, "gold: a listener that throws doesn't keep the next one from hearing")
+        local ui = GPP.ui
+        GPP.ui = {Toggle = function() error("the window broke") end}
+        errors = #PP.ns.errors
+        ok = pcall(GPP.Toggle)
+        GPP.ui = ui
+        check(ok and #PP.ns.errors == errors + 1, "gold: a window that throws on opening is recorded, not thrown at the caller")
+        -- what "old" means: 48 hours
+        PP.OpenAH()
+        Listed(PP, 14046, {{60000, 3}, {65000, 2}})
+        Shift(PP, 47 * 3600)
+        local bag = Find(GPP.CraftRows(), "id", 14046)
+        check(bag and bag.listed == 5 and bag.listedText == "5" and GPP.Old(bag) == nil and GPP.Old({t = PP.env.time() - 3 * 3600}) == nil,
+              "gold prices: 47 hours on, a price is still current: its count is shown, and no age beside the name")
+        Shift(PP, 2 * 3600)
+        bag = Find(GPP.CraftRows(), "id", 14046)
+        check(bag and bag.listed == nil and bag.listedText == "?" and GPP.Old(bag) == "2 d old",
+              "gold prices: 49 hours on it is a last-seen one: \"2 d old\", and how many are listed isn't known")
+    end
+    -- "Price my items" for an enchanter takes the enchanting materials in
+    do
+        local NP, EP = Stock(GP("GoldT7")), Stock(GP("GoldT8"))
+        EP.knowsDisenchant = true
+        for _, P in ipairs({NP, EP}) do
+            setmetatable(P.ah.commodity, {__index = function() return true end})
+            for id in pairs(P.ns.GoldData.seed) do P.ns.GoldData.seed[id] = nil end
+            P.OpenAH()
+        end
+        local ok, why = NP.ns.Gold.StartCheck()
+        local ok2 = EP.ns.Gold.StartCheck()
+        check(not ok and why == "everything was priced in the last 10 minutes" and ok2 == true and
+              EP.ns.Gold.State().message == "Pricing 1 of 24 (about 29 s)" and EP.ah.sends[1] and EP.ah.sends[1].id == 10940,
+              "gold check: an enchanter's list has the 24 enchanting materials; without one there is nothing to price (" ..
+              tostring(EP.ns.Gold.State().message) .. ")")
+        EP.ns.Gold.StopCheck()
+    end
+
+    ----------------------------------------------------------------------
+    -- third review: answers that leave nothing to ask again, sums that owe
+    -- an unproven price nothing, one cheap lot that isn't the going rate,
+    -- our own auctions, and what the header and the status line say
+    ----------------------------------------------------------------------
+    local function BagOf(g, key)
+        for _, row in ipairs(g.BagRows()) do if row.key == key then return row end end
+    end
+    local function TipOf(g, row) return row and table.concat(g.Tip(row), "\n") or "" end
+    local function Has(s, needle) return type(s) == "string" and s:find(needle, 1, true) ~= nil end
+    -- a piece with a random suffix that nobody lists at all, and one that is listed
+    do
+        local P = Stock(GP("GoldV1"))
+        local g = P.ns.Gold
+        setmetatable(P.ah.commodity, {__index = function() return true end})
+        P.ah.commodity[17000] = false
+        for id in pairs(P.ns.GoldData.seed) do P.ns.GoldData.seed[id] = nil end
+        P.bags[0] = {n = 4, [1] = {itemID = 17000, stackCount = 1, quality = 2, hyperlink = Link(17000, 5)},
+                     [2] = {itemID = 17000, stackCount = 1, quality = 2, hyperlink = Link(17000, 7)},
+                     [3] = {itemID = 14047, stackCount = 7, quality = 1}, [4] = {itemID = 8170, stackCount = 4, quality = 1}}
+        P.Fire("BAG_UPDATE_DELAYED")
+        P.OpenAH()
+        -- our look-up finds no Green Gloves at all; ten cloth at two prices; one lone leather
+        P.ah.results[17000] = {}
+        P.ah.results[14047] = {{quantity = 5, unitPrice = 70, numOwnerItems = 0}, {quantity = 5, unitPrice = 80, numOwnerItems = 0}}
+        P.ah.results[8170] = {{quantity = 1, unitPrice = 70, numOwnerItems = 0}}
+        check(g.StartCheck() == true, "gold bags: (Price my items, nothing of the piece listed)")
+        advance(10)
+        local bear, whale = BagOf(g, "17000:5"), BagOf(g, "17000:7")
+        local t = g.BagTotals(g.BagRows())
+        check(Rec(P, 17000) and Rec(P, 17000).q == 0 and Rec(P, "17000:5") and Rec(P, "17000:5").q == 0 and
+              Rec(P, "17000:5").s == "c" and Rec(P, "17000:7") and Rec(P, "17000:7").q == 0,
+              "gold check: an answer of ours with no rows at all: the suffixed pieces in the bags are none listed too, not only the plain item")
+        check(bear and bear.confident == true and bear.auctionText == nil and bear.bestHow == "Vendor" and bear.best == 2500 and
+              whale and whale.confident == true and t.unpriced == 0 and not Has(t.text, "Price my items"),
+              "gold bags: ... so a suffixed piece nobody sells has its answer: Best is the vendor and the totals stop asking (" .. t.text .. ")")
+        -- the leather's single listing is unproven, but its Best is the vendor's sure 20s
+        local leather, cloth = BagOf(g, 8170), BagOf(g, 14047)
+        check(leather and leather.mark == "unproven" and leather.auction == 264 and leather.bestHow == "Vendor" and
+              leather.best == 2000 and leather.confident == true and cloth and cloth.auction == 462 and cloth.mark == nil,
+              "gold bags: (a stack with an unproven auction price whose best is the vendor)")
+        check(t.vendor == 9800 and t.auction == 462 and t.best == 9800 and t.unproven == 0 and
+              t.text == "Vendors 98s / Auction 4s 62c / Best of each 98s",
+              "gold bags: an unproven auction price leaves only the auction sum out; a vendor Best beside it still counts: " .. t.text)
+        do
+            local ok, why = g.StartCheck()
+            check(not ok and why == "everything was priced in the last 10 minutes", "gold check: (nothing is asked twice in ten minutes)")
+        end
+        -- ten minutes on: one of the two is listed, the other still not
+        Shift(P, 601)
+        P.ah.results[17000] = {{quantity = 1, buyoutAmount = 40000, itemKey = {itemID = 17000, itemSuffix = 7}}}
+        check(g.StartCheck() == true, "gold bags: (Price my items, one suffix listed)")
+        advance(10)
+        bear, whale, cloth = BagOf(g, "17000:5"), BagOf(g, "17000:7"), BagOf(g, 14047)
+        check(Rec(P, "17000:7").q == 1 and Rec(P, "17000:7").m == 40000 and whale and whale.auction == 38000 and
+              whale.mark == "unproven" and Rec(P, "17000:5").q == 0 and bear.confident == true and bear.auction == nil,
+              "gold check: the suffix the answer lists keeps its price; only the piece it doesn't list is none listed")
+        check(Rec(P, 14047).q == 10 and Rec(P, 14047).m == 70 and cloth and cloth.auction == 462 and Rec(P, 8170).q == 1,
+              "gold check: ... and the answer for one item marks nothing of another in the bags")
+        do
+            -- (every row of the answer was under a suffix: the plain item is answered too)
+            local plain = Rec(P, 17000)
+            local ok, why = g.StartCheck()
+            check(plain and plain.q == 0 and P.env.time() - plain.t < 60 and not ok and
+                  why == "everything was priced in the last 10 minutes" and Has(g.State().check.tip, "About 0 seconds.") and
+                  #P.ns.errors == 0,
+                  "gold check: gear listed only under suffixes isn't asked for again at every press")
+        end
+    end
+    -- the first visit, a first full scan, then Price my items: what the header says
+    do
+        local P = Stock(GP("GoldV2"))
+        local g = P.ns.Gold
+        setmetatable(P.ah.commodity, {__index = function() return true end})
+        P.ah.commodity[17000], P.ah.commodity[14046] = false, false
+        Recipe(P, 1, "Runecloth Bag", 14046, {{14048, 5}, {14341, 1}})
+        OpenTrade(P, "Tailoring")
+        P.bags[0] = {n = 2, [1] = {itemID = 17000, stackCount = 1, quality = 2, hyperlink = Link(17000, 5)},
+                     [2] = {itemID = 4000, stackCount = 1, quality = 1}}
+        P.Fire("BAG_UPDATE_DELAYED")
+        P.OpenAH()
+        -- (the recipe's two materials and its bag, the two things in the bags, the built-in vendor goods - Rune Thread is one)
+        local want = 5 + CountKeys(P.ns.GoldData.seed) - 1
+        local secs = tonumber((g.State().check.tip:match("About (%d+) seconds")))
+        check(P.ns.db.goldBook == nil and secs == math.ceil(want * 1.2) and secs > 50,
+              "gold check: before any price is on record the button already says how long a price check takes (" ..
+              tostring(secs) .. " seconds), and no book is made for asking")
+        P.ah.rows = {Row(14048, 20, 18000), Row(14048, 5, 4750)}
+        Scan(P)
+        local full = Book(P).full
+        local function NoneAt(key) return Rec(P, key) and Rec(P, key).q == 0 and Rec(P, key).s == "f" and Rec(P, key).t == full end
+        check(full and g.State().message == "Scan finished: 1 item." and NoneAt(14046) and NoneAt(14341) and NoneAt("17000:5") and
+              NoneAt(17000) and NoneAt(4000) and NoneAt(2320) and Rec(P, 14047) == nil,
+              "gold scan: a whole scan answers \"none listed\" for what the recipes, the bags and the vendors use and it didn't list: " ..
+              tostring(g.State().message))
+        local bag = Find(g.CraftRows(), "id", 14046)
+        local t = g.BagTotals(g.BagRows())
+        check(bag and bag.listed == 0 and bag.listedText == "0" and
+              Has(TipOf(g, bag), "0 listed: nobody is selling - you set the price, but check that anyone buys.") and
+              t.unpriced == 0 and BagOf(g, "17000:5").confident == true,
+              "gold scan: ... so straight after it Crafts says \"0 listed\", not \"?\", and Your bags asks for no price check")
+        check(g.PriceState("crafts") == "Prices: 1 item - full scan just now" and Has(g.State().check.tip, "About 0 seconds."),
+              "gold: the header after a scan (" .. g.PriceState("crafts") .. ")")
+        -- 14 minutes on, Price my items; one item never answers
+        Shift(P, 840)
+        P.ah.results[14048] = {{quantity = 20, unitPrice = 900, numOwnerItems = 0}, {quantity = 5, unitPrice = 950, numOwnerItems = 0}}
+        P.ah.results[14341] = {{quantity = 10, unitPrice = 4000, numOwnerItems = 0}, {quantity = 5, unitPrice = 4100, numOwnerItems = 0}}
+        P.ah.silent[4000] = 2
+        check(g.StartCheck() == true, "gold: (Price my items after the scan)")
+        advance(90)
+        local header = g.PriceState("crafts")
+        check(g.State().state == "idle" and g.State().message == ("Priced %d items. 1 didn't answer."):format(want - 1) and
+              header == "Prices: 2 items - full scan 15 min ago, your items looked up just now",
+              "gold: the header describes the book - how many items, the scan and the later look-up: " .. header .. " / " ..
+              tostring(g.State().message))
+        -- pressed once more for the straggler
+        P.printed = {}
+        P.Slash("gold price")
+        advance(5)
+        header = g.PriceState("crafts")
+        check(Printed(P, "gold: pricing 1 item, about 2 seconds") and g.State().message == "Priced 1 item." and
+              header == "Prices: 2 items - full scan 15 min ago, your items looked up just now" and Book(P).checkN == 1,
+              "gold: a second press that prices one leftover item doesn't turn the header into \"1 items\": " .. header)
+        -- the scan is the later one again
+        Shift(P, 900)
+        advance(61)
+        Scan(P)
+        check(g.PriceState("crafts") == "Prices: 1 item - full scan just now",
+              "gold: a scan after the look-up: the header names the scan alone (" .. g.PriceState("crafts") .. ")")
+        -- forgetting counts what the header counted
+        P.printed = {}
+        P.Slash("gold forget")
+        check(Printed(P, "gold: forgot the prices of 1 item on this realm") and #P.ns.errors == 0,
+              "gold: forget reports the items that had a price, as the header counted them, not every none-listed record")
+    end
+    -- a scan too broken, or cut short, answers for nothing it never saw
+    do
+        local P = Stock(GP("GoldV3"))
+        local g = P.ns.Gold
+        Recipe(P, 1, "Runecloth Bag", 14046, {{14048, 5}})
+        OpenTrade(P, "Tailoring")
+        P.OpenAH()
+        P.ah.rows = {Row(14047, 1, 100), Row(14047, 1, 100, {throw = true})}
+        Scan(P)
+        check(Book(P).full and Rec(P, 14047) and Rec(P, 14046) == nil and Rec(P, 14048) == nil,
+              "gold scan: over 5% of the rows unreadable: nothing the scan didn't list is called \"none listed\"")
+        -- the list loses two of its hundred rows while it is read
+        Shift(P, 900)
+        advance(61)
+        P.ah.rows = {}
+        for i = 1, 100 do P.ah.rows[i] = Row(14047, 1, 100) end
+        local AH, calls = P.env.C_AuctionHouse, 0
+        local real = AH.GetNumReplicateItems
+        AH.GetNumReplicateItems = function()
+            calls = calls + 1
+            return real() - (calls > 1 and 2 or 0)
+        end
+        local full = Book(P).full
+        Scan(P)
+        AH.GetNumReplicateItems = real
+        check(g.State().message == "Scan cut short: 1 item read - the auction house's list changed while it was read." and
+              Book(P).full == full and Rec(P, 14047).q == 98 and Rec(P, 14046) == nil and Rec(P, 14048) == nil and
+              #P.ns.errors == 0,
+              "gold scan: a list cut short answers for nothing it never saw either: " .. tostring(g.State().message))
+    end
+    -- one cheap lot is not what everything sells for
+    do
+        local P = Stock(GP("GoldV4"))
+        local g = P.ns.Gold
+        P.items[4338] = {name = "Mageweave Cloth", stack = 20, sell = 250, class = 7, reagent = true}
+        P.items[4339] = {name = "Bolt of Mageweave", stack = 20, sell = 1, class = 7, reagent = true}
+        setmetatable(P.ah.commodity, {__index = function() return true end})
+        Recipe(P, 9, "Unravel", 4338, {{4339, 1}})
+        OpenTrade(P, "Tailoring")
+        P.bags[0] = {n = 1, [1] = {itemID = 4338, stackCount = 37, quality = 1}}
+        P.Fire("BAG_UPDATE_DELAYED")
+        P.OpenAH()
+        -- three lone units: one far under the vendor's price, two far over
+        Listed(P, 4338, {{100, 1}, {5000, 1}, {5100, 1}})
+        local sp, flag, passed = g.SellPrice(4338)
+        check(sp == 5000 and flag == "unproven" and passed == 1 and
+              Has(TipOf(g, BagOf(g, 4338)), "Only 2 listed besides the cheap lot - this is one seller's asking price, not proof it sells."),
+              "gold prices: what is left beside a cheap lot is judged on its own: two units are one seller's asking price")
+        -- day 1: 160 at the going rate and one stack of 20 at 1s (a vendor pays 2s 50c)
+        Listed(P, 4338, {{100, 20}, {380, 60}, {390, 50}, {400, 50}})
+        sp, flag, passed = g.SellPrice(4338)
+        local row = BagOf(g, 4338)
+        local rows = Analyse(P)
+        local craft = Find(g.CraftRows(), "id", 4338)
+        check(g.Now(4338) == 100 and sp == 380 and flag == nil and passed == 20 and row and row.auction == 13357 and
+              row.vendor == 9250 and row.bestHow == "Auction" and row.mark == nil,
+              "gold prices: a lot listed under the vendor's price, a quarter of what is listed at most, isn't the selling price: " ..
+              tostring(sp) .. " / " .. tostring(row and row.bestText))
+        check(Has(TipOf(g, row), "Valued at 3s 80c each - 20 cheaper units are listed below the going rate.") and
+              Has(TipOf(g, craft), "Valued at 3s 80c each - 20 cheaper units are listed below the going rate.") and
+              craft and craft.sells == 361,
+              "gold prices: ... and the Bags and Crafts tooltips say which price was used and what was passed over")
+        check(Deal(rows, "Vendor", 4338) and Deal(rows, "Vendor", 4338).units == 20 and g.Cost(4338, 5) == 500,
+              "gold prices: ... while Bargains still says to buy that lot, and buying is still costed at it")
+        -- exactly a quarter, and one unit more
+        Listed(P, 4338, {{100, 45}, {380, 135}})
+        sp, flag, passed = g.SellPrice(4338)
+        local line = TipOf(g, BagOf(g, 4338))
+        Listed(P, 4338, {{100, 46}, {380, 134}})
+        local sp2, _, passed2 = g.SellPrice(4338)
+        check(sp == 380 and passed == 45 and flag == "unproven" and
+              Has(line, "The 135 besides the cheap lot are listed at one price - it may be one seller.") and sp2 == 100 and
+              passed2 == 0 and BagOf(g, 4338).bestHow == "Vendor" and not Has(TipOf(g, BagOf(g, 4338)), "Valued at"),
+              "gold prices: a quarter of what is listed is still a lot to pass over; more than that is the market")
+        -- six cheap price points kept, and what lies beyond them not known: the last of them it is
+        do
+            local rows = {{100, 1}, {101, 1}, {102, 1}, {103, 1}, {104, 1}, {105, 1}, {380, 994}}
+            Listed(P, 4338, rows)
+            local price, _, over = g.SellPrice(4338)
+            check(Rec(P, 4338).l == "100:1,101:1,102:1,103:1,104:1,105:1" and price == 105 and over == 5 and BagOf(g, 4338) ~= nil,
+                  "gold prices: when every price point kept is a cheap one, the last of them is the price - nothing is made up beyond it")
+        end
+        -- at the vendor's price exactly it is no cheap lot
+        Listed(P, 4338, {{250, 20}, {380, 160}})
+        check(g.SellPrice(4338) == 250 and select(3, g.SellPrice(4338)) == 0, "gold prices: a lot at what a vendor pays is not passed over")
+        -- day 4: three days at 3s 80c, then 40 of 200 at 2s 60c (68% of it, and more than a vendor pays)
+        History(P, 4338, {{380, 160}}, 3)
+        Listed(P, 4338, {{260, 40}, {380, 160}})
+        sp, flag, passed = g.SellPrice(4338)
+        rows = Analyse(P)
+        local resell = Deal(rows, "Resell", 4338)
+        row = BagOf(g, 4338)
+        check(g.UsualDeep(4338) == 380 and sp == 380 and flag == nil and passed == 40 and resell and resell.units == 40 and
+              resell.upTo == 260 and row.auction == 13357 and row.bestHow == "Auction",
+              "gold prices: the units Bargains says to buy up and relist aren't what the bags are valued at")
+        Listed(P, 4338, {{270, 40}, {380, 160}})
+        check(g.SellPrice(4338) == 270 and select(3, g.SellPrice(4338)) == 0 and #P.ns.errors == 0,
+              "gold prices: at 71% of the usual price (and over the vendor's) a lot is the price to beat")
+    end
+    -- an essence valued as its other size says so, and carries that price's mark
+    do
+        local EP, NP = Stock(GP("GoldV5")), Stock(GP("GoldV6"))
+        EP.knowsDisenchant = true
+        for _, P in ipairs({EP, NP}) do
+            setmetatable(P.ah.commodity, {__index = function() return true end})
+            P.bags[0] = {n = 3, [1] = {itemID = 10939, stackCount = 4, quality = 2}, [2] = {itemID = 10998, stackCount = 6, quality = 2},
+                         [3] = {itemID = 3000, stackCount = 2, quality = 1}}
+            P.Fire("BAG_UPDATE_DELAYED")
+            P.OpenAH()
+            History(P, 3000, {{1000, 5}}, 3)
+            Listed(P, 3000, {})
+            Listed(P, 10939, {{900, 10}, {950, 5}})     -- Greater Magic: 9s, proven
+            Listed(P, 10938, {{400, 5}})                -- Lesser Magic: 4s, all at one price
+            Listed(P, 10998, {{100, 1}})                -- Lesser Astral: one lone unit
+            Listed(P, 11082, {{900, 10}, {950, 5}})     -- Greater Astral: 9s, proven
+        end
+        local ge, gn = EP.ns.Gold, NP.ns.Gold
+        local magic, astral = BagOf(ge, 10939), BagOf(ge, 10998)
+        check(magic and magic.auction == 4560 and magic.mark == "unproven" and magic.bestHow == "Auction" and
+              Has(TipOf(ge, magic), "Worth more split into 3 Lesser Magic Essence (4s each) - right-click to split, then sell (estimate).") and
+              Has(TipOf(ge, magic), "All 5 are listed at one price - it may be one seller."),
+              "gold bags: an enchanter's Greater essence worth more as three Lesser: the tooltip says to split, and the Lesser's unproven price marks the row")
+        check(astral and astral.auction == 1710 and astral.mark == nil and
+              Has(TipOf(ge, astral), "Worth more combined: 3 make one Greater Astral Essence (9s each) - right-click to combine, then sell (estimate).") and
+              not Has(TipOf(ge, astral), "Only 1 listed"),
+              "gold bags: a Lesser worth more as a third of a Greater: valued so, with the Greater's (proven) price and not its own lone listing's mark")
+        local t = ge.BagTotals(ge.BagRows())
+        check(t.unproven == 1 and t.auction == 1710 + 1900 and t.best == 1710 + 1900,
+              "gold bags: ... and the sum that rests on the unproven Lesser price stays out of the totals (" .. t.text .. ")")
+        magic, astral = BagOf(gn, 10939), BagOf(gn, 10998)
+        check(magic and magic.auction == 3420 and magic.mark == nil and astral and astral.auction == 570 and
+              astral.mark == "unproven" and not Has(TipOf(gn, magic), "Worth more") and not Has(TipOf(gn, astral), "Worth more") and
+              Has(TipOf(gn, astral), "Only 1 listed - this is one seller's asking price, not proof it sells."),
+              "gold bags: with no enchanter on the account an essence is only ever worth its own price")
+        local ore = BagOf(gn, 3000)
+        check(ore and ore.mark == "none listed" and ore.auction == 1900 and Has(TipOf(gn, ore), "None listed now - this is its usual price."),
+              "gold bags: a stack with none listed now is valued at its usual price, and the tooltip says so")
+        -- Vendors: an unproven auction price says what was seen
+        NP.npcName = "Trader"
+        NP.merchant = {{id = 2589, price = 10}}
+        NP.Fire("MERCHANT_SHOW")
+        advance(0.5)
+        Listed(NP, 2589, {{500, 40}})
+        local linen = Find(gn.VendorRows(), "id", 2589)
+        check(linen and linen.mark == "unproven" and linen.tip[3] == "All 40 are listed at one price - it may be one seller." and
+              #EP.ns.errors == 0 and #NP.ns.errors == 0, "gold vendors: an unproven auction price is explained in the row's tooltip")
+    end
+    -- a material bargain against a vendor's own price, and the one-unit vendor bargain
+    do
+        local P = Stock(GP("GoldV7"))
+        local g = P.ns.Gold
+        setmetatable(P.ah.commodity, {__index = function() return true end})
+        Recipe(P, 1, "Oddity", 14046, {{3000, 2}, {7000, 2}})
+        OpenTrade(P, "Tailoring")
+        P.npcName = "Trader"
+        P.merchant = {{id = 3000, price = 1000}, {id = 7000, price = 6000}}
+        P.Fire("MERCHANT_SHOW")
+        advance(0.5)
+        P.OpenAH()
+        History(P, 3000, {{5000, 30}}, 3)
+        History(P, 7000, {{5000, 30}}, 3)
+        -- Odd Ore: usually 50s, a vendor sells it for 10s; listed under, at and over the vendor's price
+        Listed(P, 3000, {{900, 20}, {1000, 10}, {3000, 10}, {5000, 30}})
+        -- Linen Scrap: usually 50s, the vendor is dearer (60s)
+        Listed(P, 7000, {{3000, 10}, {5000, 30}})
+        Listed(P, 8170, {{300, 1}, {600, 5}})
+        local rows = Analyse(P)
+        local ore, scrap, one = Deal(rows, "Material", 3000), Deal(rows, "Material", 7000), Deal(rows, "Vendor", 8170)
+        check(g.Usual(3000) == 5000 and select(2, g.VendorBuy(3000)) == "vendor" and ore and ore.units == 20 and ore.upTo == 900 and
+              ore.worth == 1000 and ore.profit == 2000 and ore.estimate == nil,
+              "gold bargains: of a material a vendor sells, only the units strictly under the vendor's price are a bargain (" ..
+              tostring(ore and ore.units) .. " units)")
+        check(ore and g.Tip(ore)[1] == "Usually 50s each, and a vendor sells them for 10s; these are below both. The profit shown is what you save on the vendor's price.",
+              "gold bargains: ... a visited merchant's price is stated as the vendor's")
+        check(scrap and scrap.units == 10 and scrap.worth == 5000 and scrap.profit == 20000 and
+              g.Tip(scrap)[1] == "Usually 50s each; these are at 80% of that or less. The profit shown is what you save.",
+              "gold bargains: a vendor dearer than the usual price isn't mentioned: the saving is against the usual price")
+        local tip = one and g.Tip(one) or {}
+        check(one and one.units == 1 and tip[1] == "A vendor pays 5s each; 1 listed for less." and
+              tip[#tip - 1] == "Buy it (up to 3s), then sell it to any vendor." and #P.ns.errors == 0,
+              "gold bargains: a vendor bargain of one unit is worded for one: " .. tostring(tip[#tip - 1]))
+    end
+    -- our own auctions, when a scan couldn't tell whose they were
+    do
+        local P = Stock(GP("GoldV8"))
+        local g = P.ns.Gold
+        setmetatable(P.ah.commodity, {__index = function() return true end})
+        P.ah.commodity[14046], P.ah.commodity[17000] = false, false
+        for id in pairs(P.ns.GoldData.seed) do P.ns.GoldData.seed[id] = nil end
+        P.items[14046].sell = 100
+        Recipe(P, 1, "Runecloth Bag", 14046, {{14048, 5}})
+        OpenTrade(P, "Tailoring")
+        P.OpenAH()
+        -- two bags of ours at 1g 25s among six listed; no row names its owner
+        P.ah.rows = {Row(14046, 1, 12500, {owner = false}), Row(14046, 1, 12500, {owner = false}),
+                     Row(14046, 1, 13000, {owner = false}), Row(14046, 1, 13100, {owner = false}),
+                     Row(14046, 1, 13200, {owner = false}), Row(14046, 1, 13300, {owner = false}),
+                     Row(14048, 20, 18000, {owner = false}), Row(14048, 5, 4750, {owner = false}),
+                     -- (and, ours too: all the Odd Ore there is, and a pair of gloves "of the Whale")
+                     Row(3000, 5, 500, {owner = false}), Row(17000, 1, 40000, {owner = false, link = Link(17000, 7)})}
+        Scan(P)
+        check(Book(P).noOwners == Book(P).full and g.State().hint == "Your own auctions may be counted - open your Auctions tab once.",
+              "gold: (a scan that named no owner: the hint)")
+        P.ah.owned = {{itemKey = {itemID = 14046}, quantity = 1, buyoutAmount = 12500},
+                      {itemKey = {itemID = 14046}, quantity = 1, buyoutAmount = 12500},
+                      {itemKey = {itemID = 3000}, quantity = 5, buyoutAmount = 500},
+                      {itemKey = {itemID = 17000}, quantity = 1, buyoutAmount = 40000}}
+        P.Fire("OWNED_AUCTIONS_UPDATED")
+        local bag = Find(g.CraftRows(), "id", 14046)
+        check(Rec(P, 14046).q == 6 and bag and bag.listed == 6 and
+              Has(TipOf(g, bag), "Listed: 6 - your own 2 may be among them, and the price may be yours. Press Price my items to put that right.") and
+              not Has(TipOf(g, bag), "not counting"),
+              "gold crafts: a count read before our own auctions were known doesn't claim to leave them out")
+        check(g.State().hint == "Your own auctions are still counted in 3 prices - press Price my items." and Book(P).noOwners ~= nil,
+              "gold: opening the Auctions tab doesn't end the warning while a price still counts ours: " .. tostring(g.State().hint))
+        -- Price my items seconds after the scan: those three are looked up all the same - the ore and the
+        -- gloves though no recipe and no bag has them - and nothing else is
+        local function Mine(buyout, mine)
+            return {quantity = 1, buyoutAmount = buyout, containsOwnerItem = mine, itemKey = {itemID = 14046, itemSuffix = 0}}
+        end
+        P.ah.results[14046] = {Mine(12500, true), Mine(12500, true), Mine(13000), Mine(13100), Mine(13200), Mine(13300)}
+        P.ah.results[3000] = {{quantity = 5, unitPrice = 100, numOwnerItems = 5}}
+        P.ah.results[17000] = {{quantity = 1, buyoutAmount = 40000, containsOwnerItem = true, itemKey = {itemID = 17000, itemSuffix = 7}}}
+        P.ah.sends = {}
+        check(Has(g.State().check.tip, "About 4 seconds.") and g.StartCheck() == true, "gold: (Price my items is offered for them)")
+        advance(0.5)
+        check(g.State().hint == "Your own auctions are still counted in 2 prices - press Price my items.",
+              "gold: (the warning counts down as they are looked up: " .. tostring(g.State().hint) .. ")")
+        advance(10)
+        bag = Find(g.CraftRows(), "id", 14046)
+        check(#P.ah.sends == 3 and P.ah.sends[1].id == 3000 and P.ah.sends[2].id == 14046 and P.ah.sends[3].id == 17000 and
+              Rec(P, 3000).q == 0 and Rec(P, "17000:7").q == 0 and Rec(P, 17000).q == 0,
+              "gold check: every item whose price still counts our own auctions is looked up, first, and what was only ours is none listed")
+        check(Rec(P, 14046).q == 4 and Rec(P, 14046).m == 13000 and
+              Rec(P, 14046).s == "c" and bag and bag.listed == 4 and bag.sells == 12350,
+              "gold check: an item whose price still counts our own auctions is priced again though it was scanned a moment ago")
+        check(g.State().hint == nil and Book(P).noOwners == nil and Has(TipOf(g, bag), "Listed: 4, not counting 2 of yours") and
+              #P.ns.errors == 0, "gold: ... after which the count leaves ours out, says so, and the warning is gone")
+    end
+    -- which prices still count our own: only what the ownerless scan itself wrote
+    do
+        local P = Stock(GP("GoldV8b"))
+        local g = P.ns.Gold
+        setmetatable(P.ah.commodity, {__index = function() return true end})
+        P.OpenAH()
+        -- a first scan that names its owners; then one that doesn't, too broken to call the leather sold out
+        P.ah.rows = {Row(8170, 5, 2500)}
+        Scan(P)
+        Shift(P, 900)
+        advance(61)
+        P.ah.rows = {Row(3000, 5, 500, {owner = false}), Row(14047, 5, 500, {owner = false}), Row(14047, 1, 1, {throw = true})}
+        Scan(P)
+        local at = Book(P).noOwners
+        P.ah.owned = {{itemKey = {itemID = 3000}, quantity = 5, buyoutAmount = 500},
+                      {itemKey = {itemID = 14047}, quantity = 5, buyoutAmount = 500},
+                      {itemKey = {itemID = 8170}, quantity = 5, buyoutAmount = 2500}}
+        P.Fire("OWNED_AUCTIONS_UPDATED")
+        check(at and Rec(P, 8170).q == 5 and Rec(P, 8170).t < at and
+              g.State().hint == "Your own auctions are still counted in 2 prices - press Price my items.",
+              "gold: a price an earlier scan read, with its owners named, isn't one that counts ours: " .. tostring(g.State().hint))
+        -- the player's own search of one of them, in the very second the scan was written
+        local back = P.env.time() - at
+        Shift(P, -back)
+        Listed(P, 3000, {{100, 5}, {110, 5}})
+        Shift(P, back)
+        check(Rec(P, 3000).t == at and Rec(P, 3000).s == "c" and
+              g.State().hint == "Your own auctions are still counted in 1 price - press Price my items." and #P.ns.errors == 0,
+              "gold: ... nor is one a look-up has read since, whenever that was: " .. tostring(g.State().hint))
+    end
+    -- the warning is the book's, and only shows where it can be acted on
+    do
+        local P = Stock(GP("GoldV9"))
+        P.OpenAH()
+        P.ah.rows = {Row(14047, 5, 500, {owner = false})}
+        Scan(P)
+        check(P.ns.Gold.State().hint ~= nil, "gold: (an ownerless scan: the hint, at the auction house)")
+        P.CloseAH()
+        check(P.ns.Gold.State().hint == nil, "gold: away from the auction house the hint about own auctions isn't shown")
+        P = Reload(P)
+        table.insert(gone, P)
+        check(P.ns.Gold.State().hint == nil and Book(P).noOwners ~= nil, "gold: ... nor after a login in the field")
+        P.OpenAH()
+        check(P.ns.Gold.State().hint == "Your own auctions may be counted - open your Auctions tab once.",
+              "gold: back at the auction house it is: the book remembers that its scan couldn't tell")
+        -- the Auctions tab, with nothing of ours in what the scan read: settled for good
+        P.ah.owned = {}
+        P.Fire("OWNED_AUCTIONS_UPDATED")
+        check(P.ns.Gold.State().hint == nil and Book(P).noOwners == nil, "gold: the Auctions tab seen and nothing of ours counted: no warning")
+        P = Reload(P)
+        table.insert(gone, P)
+        P.OpenAH()
+        check(P.ns.Gold.State().hint == nil, "gold: ... and none at the next login either")
+        -- a scan whose rows do name their owners never warns, in this session or the next
+        Shift(P, 900)
+        P.ah.rows = {Row(14047, 5, 500)}
+        Scan(P)
+        local full = Book(P).full
+        P = Reload(P)
+        table.insert(gone, P)
+        P.OpenAH()
+        check(full and Book(P).full == full and Book(P).noOwners == nil and P.ns.Gold.State().hint == nil and #P.ns.errors == 0,
+              "gold: a scan that did tell our auctions apart leaves no warning for the next login")
+    end
+    -- a scan that never finished
+    do
+        local P = Stock(GP("GoldV10"))
+        P.OpenAH()
+        P.ah.rows = {Row(14047, 5, 500)}
+        P.ah.replicateDelay = 30
+        check(P.ns.Gold.StartScan() == true and Book(P).fullPending == true, "gold scan: (asked, the list still to come)")
+        advance(1)
+        P = Reload(P)
+        table.insert(gone, P)
+        local g = P.ns.Gold
+        local st = g.State()
+        check(st.state == "idle" and st.scan.label == "Scan (in 15 min)" and
+              st.message == "The last scan didn't finish - the game allows another in 15 min. Price my items works meanwhile.",
+              "gold scan: a /reload during a scan: the window says the scan was lost and what still works: " .. tostring(st.message))
+        Shift(P, 600)
+        check(g.State().message == "The last scan didn't finish - the game allows another in 5 min. Price my items works meanwhile.",
+              "gold scan: ... counting down with the button (" .. tostring(g.State().message) .. ")")
+        P.Slash("gold off")
+        check(g.State().message == nil, "gold scan: ... not while the feature is off")
+        P.Slash("gold on")
+        Shift(P, 300)
+        check(g.State().message == nil and g.State().scan.label == "Scan", "gold scan: ... and gone when a scan may be asked again")
+        -- a finished scan leaves nothing to say after a /reload
+        P.OpenAH()
+        P.ah.rows = {Row(14047, 5, 500)}
+        Scan(P)
+        check(Book(P).full and Book(P).fullPending == nil and g.State().message == "Scan finished: 1 item.", "gold scan: (a scan read to the end)")
+        -- (a message that isn't about a job goes when the feature is switched off)
+        P.Slash("gold off")
+        P.Slash("gold on")
+        check(g.State().message == nil, "gold: switching the feature off drops what the last job said")
+        P = Reload(P)
+        table.insert(gone, P)
+        g = P.ns.Gold
+        check(g.State().message == nil and g.State().scan.label == "Scan (in 15 min)",
+              "gold scan: after a finished scan a /reload shows only the wait")
+        -- forgetting the prices during the wait doesn't make the scan \"unfinished\"
+        Shift(P, 900)
+        P.OpenAH()
+        P.ah.replicateDelay = 30
+        g.StartScan()
+        advance(1)
+        P.Slash("gold forget")
+        check(g.State().message == nil and g.State().scan.label == "Scan (in 15 min)" and #P.ns.errors == 0,
+              "gold scan: prices forgotten mid-scan: the wait stays, with nothing said about a lost scan")
+    end
+    -- small texts: what an unproven price says, singulars, a guessed essence cost
+    do
+        local P = Stock(GP("GoldV11"))
+        local g = P.ns.Gold
+        P.knowsDisenchant = true
+        setmetatable(P.ah.commodity, {__index = function() return true end})
+        Recipe(P, 1, "Lesser Magic Wand", 14046, {{10938, 6}})
+        OpenTrade(P, "Enchanting")
+        P.bags[0] = {n = 2, [1] = {itemID = 3000, stackCount = 2, quality = 1}, [2] = {itemID = 7000, stackCount = 2, quality = 1}}
+        P.Fire("BAG_UPDATE_DELAYED")
+        P.OpenAH()
+        -- an answer cut short that showed two units: there may be more
+        Listed(P, 7000, {{500, 1}, {510, 1}}, false)
+        check(Rec(P, 7000).p == true and Has(TipOf(g, BagOf(g, 7000)), "Only 2+ listed - this is one seller's asking price, not proof it sells."),
+              "gold prices: two units of a partial answer are \"2+\" listed")
+        -- six Lesser from two Greater, with only one Greater listed
+        Listed(P, 10938, {{1500, 10}, {1600, 5}})
+        Listed(P, 10939, {{2400, 1}})
+        local c, from, flag = g.Cost(10938, 6)
+        local wand = Find(g.CraftRows(), "id", 14046)
+        check(c == 4800 and from == "buy Greater and split" and flag == "materials partly at a guessed price" and
+              Has(TipOf(g, wand), "6 x Lesser Magic Essence: 48s (buy Greater and split, materials partly at a guessed price)"),
+              "gold cost: an essence costed through its other size past what is listed is said to be partly a guess")
+        -- one conversion that keeps 10 silver
+        Listed(P, 10939, {{2000, 10}, {2100, 5}})
+        Listed(P, 10938, {{300, 3}, {2000, 5}})
+        local rows = Analyse(P)
+        local e = Deal(rows, "Essence", 10938)
+        check(e and e.units == 1 and g.Tip(e)[2] == "Units counts conversions (3 Lesser each): 1 keeps 10s or more each.",
+              "gold bargains: one conversion \"keeps\" 10s: " .. tostring(e and g.Tip(e)[2]))
+        -- a record of two units, two days old, and Auctionator's newer price for the item
+        Listed(P, 3000, {{500, 1}, {510, 1}})
+        check(Has(TipOf(g, BagOf(g, 3000)), "Only 2 listed - this is one seller's asking price"), "gold prices: (two units seen now)")
+        Shift(P, 49 * 3600)
+        P.SetAuctionator({prices = {[3000] = 400}, ages = {[3000] = 0}})
+        local ore = BagOf(g, 3000)
+        check(ore and ore.mark == "unproven" and ore.auction == 760 and
+              Has(TipOf(g, ore), "Lowest price only - how many sell at it isn't known.") and not Has(TipOf(g, ore), "Only 2 listed") and
+              #P.ns.errors == 0,
+              "gold prices: a two-day-old record says nothing about what is listed now: Auctionator's price is only a lowest price")
+        P.SetAuctionator(nil)
+    end
+    -- Price my items: items still loading don't hold up one that is ready
+    do
+        local P = Stock(GP("GoldV12"))
+        local g = P.ns.Gold
+        for id in pairs(P.ns.GoldData.seed) do P.ns.GoldData.seed[id] = nil end
+        P.ah.commodity[14047] = true
+        P.items[59001] = {name = "Slow A", stack = 20, class = 7, loaded = false}
+        P.items[59002] = {name = "Slow B", stack = 20, class = 7, loaded = false}
+        local request = P.env.C_Item.RequestLoadItemDataByID
+        P.env.C_Item.RequestLoadItemDataByID = function() end
+        P.bags[0] = {n = 3, [1] = {itemID = 59001, stackCount = 1, quality = 1}, [2] = {itemID = 59002, stackCount = 1, quality = 1},
+                     [3] = {itemID = 14047, stackCount = 5, quality = 1}}
+        P.Fire("BAG_UPDATE_DELAYED")
+        P.OpenAH()
+        P.ah.results[14047] = {{quantity = 5, unitPrice = 70, numOwnerItems = 0}}
+        advance(1)
+        local t0 = P.env.GetTime()
+        check(g.StartCheck() == true, "gold check: (two items still loading ahead of one that is ready)")
+        advance(0.05)
+        check(#P.ah.sends == 1 and P.ah.sends[1].id == 14047 and P.ah.sends[1].t == t0,
+              "gold check: the ready item's query goes out at once, not 0.3 s behind each item still loading")
+        local ticks = P.tick
+        advance(2)
+        check(g.State().state == "checking" and P.tick - ticks <= 20,
+              "gold check: with only loading items left it looks again a few times a second, no more (" .. (P.tick - ticks) .. " timers in 2 s)")
+        advance(5)
+        check(g.State().state == "idle" and g.State().message == "Priced 1 item. 2 didn't answer." and #P.ns.errors == 0,
+              "gold check: ... and gives them up after a few seconds: " .. tostring(g.State().message))
+        P.env.C_Item.RequestLoadItemDataByID = request
+    end
+    -- Your bags: greys, things with no vendor value, what to keep; bargains by quality
+    do
+        local P = Stock(GP("GoldV13"))
+        local g = P.ns.Gold
+        P.knowsDisenchant = true
+        setmetatable(P.ah.commodity, {__index = function() return true end})
+        P.items[61001] = {name = "Broken Fang", quality = 0, stack = 20, sell = 30, class = 15}
+        P.items[61002] = {name = "Keepsake", quality = 1, stack = 1, sell = 500, class = 15}
+        P.items[61003] = {name = "Blue Blade", quality = 3, ilvl = 58, sell = 100, class = 2, bind = 2}
+        P.items[61004] = {name = "Purple Helm", quality = 4, ilvl = 60, sell = 100, class = 4, bind = 2}
+        P.items[61005] = {name = "White Sword", quality = 1, ilvl = 58, sell = 100, class = 2, bind = 2}
+        P.items[61006] = {name = "Orange Sword", quality = 5, ilvl = 60, sell = 100, class = 2, bind = 2}
+        for _, id in ipairs({61003, 61004, 61005, 61006}) do P.ah.commodity[id] = false end
+        -- one craft that pays (bolts from cloth) and one that loses (a bag from leather)
+        Recipe(P, 1, "Bolt of Runecloth", 14048, {{14047, 5}})
+        Recipe(P, 2, "Leather Sack", 14046, {{8170, 10}})
+        OpenTrade(P, "Tailoring")
+        P.bags[0] = {n = 4, [1] = {itemID = 61001, stackCount = 5, quality = 0},
+                     [2] = {itemID = 61002, stackCount = 1, quality = 1, hasNoValue = true},
+                     [3] = {itemID = 14047, stackCount = 5, quality = 1}, [4] = {itemID = 8170, stackCount = 5, quality = 1}}
+        P.Fire("BAG_UPDATE_DELAYED")
+        P.OpenAH()
+        Listed(P, 14047, {{100, 50}, {110, 50}})
+        Listed(P, 14048, {{900, 20}, {950, 5}})
+        Listed(P, 8170, {{5000, 20}, {5100, 20}})
+        Listed(P, 14046, {{30000, 3}, {31000, 3}})
+        Listed(P, 61001, {{100, 5}, {110, 5}})
+        Listed(P, 61002, {{900, 5}, {950, 5}})
+        local grey, keepsake, cloth, leather = BagOf(g, 61001), BagOf(g, 61002), BagOf(g, 14047), BagOf(g, 8170)
+        check(grey and grey.confident == true and grey.auction == nil and grey.auctionText == nil and grey.bestHow == "Vendor" and
+              grey.best == 150, "gold bags: a grey item is never auctioned, whatever is listed: its best is the vendor")
+        check(keepsake and keepsake.vendor == nil and keepsake.auction == 855 and keepsake.bestHow == "Auction",
+              "gold bags: a thing the game says has no vendor value gets no vendor sum")
+        local bolt, sack = Find(g.CraftRows(), "id", 14048), Find(g.CraftRows(), "id", 14046)
+        check(bolt and bolt.profit and bolt.profit > 0 and sack and sack.profit and sack.profit < 0 and cloth and
+              cloth.keep == "Bolt of Runecloth" and Has(TipOf(g, cloth), "or keep it: Bolt of Runecloth uses it") and leather and
+              leather.keep == nil and not Has(TipOf(g, leather), "keep it"),
+              "gold bags: \"keep it\" is only said for a craft that makes a profit")
+        -- disenchanting bargains: rare and epic gear, never a white or an orange piece
+        Listed(P, 14344, {{50000, 10}, {51000, 5}})
+        Listed(P, 20725, {{80000, 3}, {81000, 3}})
+        for _, id in ipairs({61003, 61004, 61005, 61006}) do ListedGear(P, id, {{1000}}) end
+        local rows = Analyse(P)
+        check(Deal(rows, "Disenchant", 61003) and Deal(rows, "Disenchant", 61004) and Deal(rows, "Disenchant", 61004).worth == 76000 and
+              Deal(rows, "Disenchant", 61005) == nil and Deal(rows, "Disenchant", 61006) == nil and #P.ns.errors == 0,
+              "gold bargains: rare and epic gear under its disenchant value is offered; common and legendary gear never is")
+    end
+    -- the built-in tables, as they were written down (a slip in one changes every estimate in its band)
+    do
+        local P = GP("GoldV14")
+        local D = P.ns.GoldData
+        local function Same(a, b)
+            if type(a) ~= "table" or type(b) ~= "table" then return a == b end
+            for k, v in pairs(a) do if not Same(v, b[k]) then return false end end
+            for k in pairs(b) do if a[k] == nil then return false end end
+            return true
+        end
+        local function Rows(name, want)
+            local got = D[name] or {}
+            for i = 1, math.max(#want, #got) do
+                check(Same(want[i], got[i]), ("gold data: %s, row %d (%s)"):format(name, i,
+                      want[i] and (tostring(want[i][1]) .. (want[i][2] and ("-" .. tostring(want[i][2])) or "")) or "one too many"))
+            end
+        end
+        Rows("essences", {{10938, 10939}, {10998, 11082}, {11134, 11135}, {11174, 11175}, {16202, 16203}})
+        Rows("uncommon", {
+            {5, 15, 10940, 1, 2, 10938, 1, 2, false, 0.80, 0.20, 0, 0.20, 0.80, 0},
+            {16, 20, 10940, 2, 3, 10939, 1, 2, 10978, 0.75, 0.20, 0.05, 0.20, 0.75, 0.05},
+            {21, 25, 10940, 4, 6, 10998, 1, 2, 10978, 0.75, 0.15, 0.10, 0.15, 0.75, 0.10},
+            {26, 30, 11083, 1, 2, 11082, 1, 2, 11084, 0.75, 0.20, 0.05, 0.20, 0.75, 0.05},
+            {31, 35, 11083, 2, 5, 11134, 1, 2, 11138, 0.75, 0.20, 0.05, 0.20, 0.75, 0.05},
+            {36, 40, 11137, 1, 2, 11135, 1, 2, 11139, 0.75, 0.20, 0.05, 0.20, 0.75, 0.05},
+            {41, 45, 11137, 2, 5, 11174, 1, 2, 11177, 0.75, 0.20, 0.05, 0.20, 0.75, 0.05},
+            {46, 50, 11176, 1, 2, 11175, 1, 2, 11178, 0.75, 0.20, 0.05, 0.20, 0.75, 0.05},
+            {51, 55, 11176, 2, 5, 16202, 1, 2, 14343, 0.75, 0.20, 0.05, 0.20, 0.75, 0.05},
+            {56, 60, 16204, 1, 2, 16203, 1, 2, 14344, 0.75, 0.20, 0.05, 0.20, 0.75, 0.05},
+            {61, 65, 16204, 2, 5, 16203, 2, 3, 14344, 0.75, 0.20, 0.05, 0.20, 0.75, 0.05}})
+        Rows("rare", {{1, 25, 10978, 1}, {26, 30, 11084, 1}, {31, 35, 11138, 1}, {36, 40, 11139, 1}, {41, 45, 11177, 1},
+                      {46, 50, 11178, 1}, {51, 55, 14343, 1}, {56, 65, 14344, 0.995, 20725, 0.005}})
+        Rows("epic", {{40, 45, 11177, 2, 4}, {46, 50, 11178, 2, 4}, {51, 55, 14343, 2, 4}, {56, 60, 20725, 1, 1}, {61, 999, 20725, 1, 2}})
+        Rows("skill", {{20, 1}, {25, 25}, {30, 50}, {35, 75}, {40, 100}, {45, 125}, {50, 150}, {55, 175}, {60, 200}, {65, 225}})
+        local SEED = {[2320] = 10, [2321] = 100, [4291] = 500, [8343] = 2000, [14341] = 5000, [2604] = 50, [6260] = 50, [2605] = 100,
+                      [4340] = 350, [4341] = 500, [6261] = 1000, [2325] = 1000, [4342] = 2500, [10290] = 2500, [2324] = 25,
+                      [4289] = 50, [2880] = 100, [3466] = 2000, [18567] = 150000, [4399] = 200, [4400] = 2000, [10647] = 2000,
+                      [3371] = 4, [3372] = 40, [8925] = 500, [18256] = 4000, [6217] = 124, [4470] = 38, [11291] = 4500, [2678] = 2,
+                      [2692] = 40, [3713] = 160, [2665] = 20, [159] = 5, [1179] = 25, [2894] = 50, [6530] = 100, [6529] = 50,
+                      [2928] = 20, [2930] = 50, [5173] = 100, [8924] = 100, [8923] = 200, [3777] = 40}
+        local wrong = {}
+        for id, price in pairs(SEED) do if D.seed[id] ~= price then wrong[#wrong + 1] = id end end
+        for id in pairs(D.seed) do if SEED[id] == nil then wrong[#wrong + 1] = id end end
+        table.sort(wrong)
+        check(#wrong == 0, "gold data: the built-in vendor prices (differing: " .. table.concat(wrong, ", ") .. ")")
+        check(#D.materials == 24 and Same(D.materials, {10940, 11083, 11137, 11176, 16204, 10938, 10939, 10998, 11082, 11134, 11135,
+                                                         11174, 11175, 16202, 16203, 10978, 11084, 11138, 11139, 11177, 11178,
+                                                         14343, 14344, 20725}), "gold data: the 24 enchanting materials")
+    end
+
     for _, R in ipairs(gone) do
         R.online = false
         players[R.name] = nil
@@ -6248,10 +7335,12 @@ do
         tt.IsOwned = function(self, o) return self.owner == o end
         tt.Hide = function(self) self.shown, self.owner = false, nil end
         -- (P.noTipData: the game has nothing to show for the item - the
-        -- accessor hides the tooltip and says false)
+        -- accessor hides the tooltip and says false; P.tipThrow: the name of
+        -- an accessor that throws)
         local function Accessor(name)
             return function(self, what)
                 table.insert(self.tried, name)
+                if P.tipThrow == name then error(name .. " can't show this") end
                 if P.noTipData then
                     self:Hide()
                     return false
@@ -6380,7 +7469,7 @@ do
           ui.Coins(123456, true) == "12|TInterface\\MoneyFrame\\UI-GoldIcon:0|t 34|TInterface\\MoneyFrame\\UI-SilverIcon:0|t" and
           ui.Coins(0) == "0|TInterface\\MoneyFrame\\UI-CopperIcon:0|t" and ui.Coins(-250):sub(1, 2) == "-2" and ui.Coins(nil) == "?" and
           ui.Coins(12345678, true):sub(1, 5) == "1,234",
-          "gold window: money is written with coin icons (no copper from 10 gold up in a row)")
+          "gold window: money is written with coin icons (two coins at most in a row)")
     check(Has(ui.header.text, "Prices: ") and not Has(ui.header.text, "|cffff9933"),
           "gold window: the header says where the prices are from (" .. tostring(ui.header.text) .. ")")
     check(ui.heads[1].label.text == "Item" and ui.heads[6].label.text == "Profit" and ui.heads[8].label.text == "Can make" and
@@ -6593,6 +7682,13 @@ do
     W.Slash("gold scan")
     Click(ui.scan)
     check(G.State().state == "idle", "gold scan button: (disabled, a click starts nothing)")
+    -- the scan has just answered for everything the recipes, bags and vendors use
+    Click(ui.check)
+    check(G.State().state == "idle" and ui.status.text == "Everything was priced in the last 10 minutes" and
+          Has(ui.check.tip, "About 0 seconds."),
+          "gold check button: straight after a full scan there is nothing left to look up, and it says so (" .. tostring(ui.status.text) .. ")")
+    W.timeShift = (W.timeShift or 0) + 601
+    advance(1)
     Click(ui.check)
     check(G.State().state == "checking" and ui.check.text == "Stop" and ui.check:IsEnabled() and ui.scan:IsEnabled() == false and
           Has(ui.status.text, "Pricing"),
@@ -6853,6 +7949,360 @@ do
         check(GX.State().state == "idle" and Has(ux.status.text, "Price check stopped") and #X.ns.errors == 0,
               "gold window: ... and to how it ended")
         X.env.C_Item.RequestLoadItemDataByID = request
+    end
+
+    ----------------------------------------------------------------------
+    -- second review: what each cell says, errors kept inside, the tick
+    ----------------------------------------------------------------------
+    do
+        local Y = Stock(GP("GoldWin3"))
+        local GY = Y.ns.Gold
+        local uy = GY.ui
+        Y.knowsDisenchant = true
+        setmetatable(Y.ah.commodity, {__index = function() return true end})
+        Y.items[14048].sell = 100
+        Y.items[13856] = {name = "Runecloth Belt", quality = 2, ilvl = 51, sell = 5000, class = 4, bind = 2}
+        Y.items[11176] = {name = "Dream Dust", stack = 20, class = 7, reagent = true}
+        Y.items[16202] = {name = "Lesser Eternal Essence", stack = 10, class = 7, reagent = true}
+        Y.items[50001] = {name = "Oddment", stack = 20, sell = 10, class = 7}
+        Recipe(Y, 1, "Runecloth Bag", 14046, {{14048, 5}})
+        Recipe(Y, 2, "Bolt of Runecloth", 14048, {{14047, 5}})
+        Y.trade.recipes[2].cooldown = 60
+        Y.trade.prof = {professionID = 197, professionName = "Tailoring", skillLevel = 300, maxSkillLevel = 300}
+        Y.Fire("TRADE_SKILL_SHOW")
+        advance(1)
+        Y.OpenAH()
+        -- three days of prices, then today's: bolts sold out, cloth cheap, a belt under its disenchant value
+        for _ = 1, 3 do
+            Listed(Y, 14048, {{900, 20}, {950, 5}})
+            Listed(Y, 14047, {{1000, 10}})
+            Y.timeShift = (Y.timeShift or 0) + 86400
+        end
+        Listed(Y, 14048, {})
+        Listed(Y, 14047, {{700, 10}, {1000, 10}})
+        Listed(Y, 11176, {{2000, 10}, {2100, 5}})
+        Listed(Y, 16202, {{10000, 5}, {10500, 5}})
+        Listed(Y, 13856, {{5000, 1}})
+        Y.bags[0] = {n = 3, [1] = {itemID = 14047, stackCount = 10, quality = 1},
+                     [2] = {itemID = 14047, stackCount = 5, quality = 1, isBound = true},
+                     [3] = {itemID = 50001, stackCount = 2, quality = 1}}
+        Y.Slash("gold")
+        advance(1)
+        local fy = uy.frame
+        -- the button showing a row
+        local function Shown(field, value, bound)
+            for _, b in ipairs(uy.rows) do
+                if b.shown and b.row and b.row[field] == value and (bound == nil or (b.row.bound or false) == bound) then return b end
+            end
+        end
+        local GREY_STAR, GREY = "|cff808080*|r", "|cff808080"
+
+        -- Crafts: a cooldown, a sold-out output at its usual price
+        local bolt = Shown("id", 14048)
+        check(bolt and bolt.row.mark == "none listed" and bolt.row.how == "Auction" and Has(bolt.cells[1].text, "cooldown") and
+              bolt.cells[4].text == uy.Coins(bolt.row.sells, true) .. " " .. GREY_STAR and bolt.cells[7].text == "0",
+              "gold window: a recipe on a cooldown says so beside its name; none listed now is a grey * beside what it sells for")
+        check(Shown("id", 14046) and not Has(Shown("id", 14046).cells[1].text, "cooldown") and
+              not Has(Shown("id", 14046).cells[1].text, "old"), "gold window: (a row with neither has neither)")
+
+        -- Bargains: "Looking..." while the first pass runs, then the rows
+        Click(uy.tabs.bargains)
+        check(uy.empty.shown and uy.empty.text == "Looking through the prices for bargains...",
+              "gold window: Bargains opened before the pass has run says it is looking")
+        advance(0.5)
+        local dis, mat = Shown("kind", "Disenchant"), Shown("kind", "Material")
+        check(dis and dis.row.estimate and dis.cells[7].text == "~" .. uy.Coins(dis.row.profit, true) and uy.empty.shown == false,
+              "gold window: an estimated profit is written with a ~")
+        check(mat and mat.row.id == 14047 and Has(mat.cells[2].text, GREY .. "used by Bolt of Runecloth|r") and
+              mat.cells[7].text == uy.Coins(mat.row.profit, true),
+              "gold window: a bargain's note is beside its name, in grey; a profit that is no estimate has no ~")
+        check(uy.foot.text == "", "gold window: (nothing under the Bargains list when the pass is done)")
+        Y.Slash("gold cut 5")
+        uy.Refresh()
+        check(#uy.list > 0 and uy.foot.text == "still looking", "gold window: the pass running again under a list that shows: \"still looking\"")
+        advance(0.5)
+        check(uy.foot.text == "", "gold window: ... gone when it is done")
+
+        -- Your bags: bound and unbound apart, a stack with no price in grey
+        Y.Fire("BAG_UPDATE_DELAYED")
+        Click(uy.tabs.bags)
+        local free, bound, odd = Shown("id", 14047, false), Shown("id", 14047, true), Shown("id", 50001)
+        check(#uy.list == 3 and free and bound and free ~= bound and uy.rows[1] == free and uy.rows[2] == bound and
+              Has(bound.cells[1].text, "bound") and not Has(free.cells[1].text, "bound") and bound.cells[2].text == "5",
+              "gold window: bound and unbound stacks of one item are two rows")
+        check(odd and odd.row.confident == false and odd.cells[4].text == GREY .. "?|r" and
+              odd.cells[6].text == GREY .. "Vendor " .. GY.Money(20) .. " - auction price unknown|r",
+              "gold window: a stack with no auction price: a grey ? and a grey Best that claims nothing")
+        Click(bound)
+        Y.bags[0][2].stackCount = 6
+        Y.Fire("BAG_UPDATE_DELAYED")
+        advance(0.5)
+        check(uy.selected and uy.selected.bound == true and uy.selected.count == 6 and uy.rows[2].sel.shown and
+              not uy.rows[1].sel.shown, "gold window: the selection stays on the bound stack when the bags are read again")
+
+        -- errors stay inside: a tooltip that throws, a click, a header, the refresh timer, the close button
+        local errors = #Y.ns.errors
+        Y.tipThrow = "SetHyperlink"
+        local text, tt = Hover(Y, free)
+        check(free.row.link and tt.tried[1] == "SetHyperlink" and tt.tried[2] == "SetItemByID" and tt.item == 14047 and
+              tt.owner == free and #Y.ns.errors == errors,
+              "gold window: the game's tooltip throwing on the item's link: its ID is tried instead, and no error is on record")
+        Y.tipThrow = nil
+        local function Broken(tbl, key, what, ...)
+            local real, before = tbl[key], #Y.ns.errors
+            tbl[key] = function() error("broken on purpose") end
+            local ok = pcall(what, ...)
+            tbl[key] = real
+            return ok and #Y.ns.errors > before
+        end
+        check(Broken(GY, "Tip", RunScript, free, "OnEnter"), "gold window: an error while a row's tooltip is filled is recorded, not thrown")
+        check(Broken(Y.env.GameTooltip, "SetOwner", RunScript, uy.scan, "OnEnter"),
+              "gold window: ... and so is one in a button's tooltip")
+        check(Broken(GY, "State", Click, free), "gold window: ... in a click on a row")
+        check(Broken(GY, "CraftRows", Click, uy.tabs.crafts) and uy.tab == "crafts", "gold window: ... in a click on a tab")
+        uy.Refresh()
+        check(Broken(GY, "CraftRows", Click, Head(uy, "Cost")), "gold window: ... in a click on a column header")
+        check(Broken(GY, "CraftRows", function()
+            Listed(Y, 11176, {{2000, 10}, {2100, 6}})
+            advance(0.5)
+        end), "gold window: ... and in the refresh that follows a change, on its timer")
+        check(Broken(fy, "Hide", Click, uy.close) and fy.shown, "gold window: ... and in the close button")
+        Click(Head(uy, "Cost"), "RightButton")
+        uy.Refresh()
+        check(Shown("id", 14048) ~= nil, "gold window: (and the window still works afterwards)")
+
+        -- the one-second tick: one of it while a countdown shows, none with the window closed
+        Y.ah.rows = {{id = 14047, count = 20, buyout = 14000, owner = "Someone"}}
+        Click(uy.scan)
+        advance(15)
+        check(uy.scan.text == "Scan (in 15 min)", "gold window: (a countdown on the Scan button)")
+        local t0 = Y.tick
+        for _ = 1, 10 do uy.Refresh() end
+        advance(5)
+        check(Y.tick - t0 >= 4 and Y.tick - t0 <= 7,
+              "gold window: ten refreshes during a countdown still leave one tick a second (" .. (Y.tick - t0) .. " timers in 5 s)")
+        Click(uy.close)
+        advance(1.5)
+        t0 = Y.tick
+        advance(30)
+        check(fy.shown == false and Y.tick - t0 <= 1,
+              "gold window: closed during a countdown, the tick stops (" .. (Y.tick - t0) .. " timers in 30 s)")
+        Y.Slash("gold")
+        advance(240)
+        check(uy.scan.text == "Scan (in 11 min)", "gold window: ... and runs again when it is opened (" .. tostring(uy.scan.text) .. ")")
+
+        -- a price over 48 hours old: its age beside the name
+        Y.timeShift = (Y.timeShift or 0) + 49 * 3600
+        uy.Refresh()
+        local old = Shown("id", 14048)
+        check(old and GY.Old(old.row) == "2 d old" and Has(old.cells[1].text, GREY .. "cooldown, 2 d old|r") and
+              old.cells[7].text == "?" and Shown("id", 14046) ~= nil,
+              "gold window: a last-seen price shows its age in grey beside the name, and \"?\" listed")
+    end
+    -- the saved place can't be used after all: the middle, and the window still opens
+    do
+        local Z = Stock(GP("GoldWin4", {db = {goldPos = {"NOPE", "CENTER", 1, 1}}}))
+        local create = Z.env.CreateFrame
+        Z.env.CreateFrame = function(kind, name, parent, template)
+            local w = create(kind, name, parent, template)
+            if template == "BasicFrameTemplateWithInset" then
+                local set = w.SetPoint
+                w.SetPoint = function(self, point, ...)
+                    if point == "NOPE" then error("SetPoint: unknown point") end
+                    return set(self, point, ...)
+                end
+            end
+            return w
+        end
+        Z.Slash("gold")
+        local fz = Z.ns.Gold.ui.frame
+        check(fz and fz.shown and fz.point[1] == "CENTER" and #Z.ns.errors == 0,
+              "gold window: a saved place the game refuses: the window opens in the middle, with no error")
+        Z.env.CreateFrame = create
+    end
+    -- money in a row's cell: two coins at most, so the narrowest column has room
+    do
+        local ui2 = W.ns.Gold.ui
+        local G_, S_, C_ = "|TInterface\\MoneyFrame\\UI-GoldIcon:0|t", "|TInterface\\MoneyFrame\\UI-SilverIcon:0|t",
+                           "|TInterface\\MoneyFrame\\UI-CopperIcon:0|t"
+        check(ui2.Coins(78540, true) == "7" .. G_ .. " 85" .. S_ and ui2.Coins(9999, true) == "99" .. S_ .. " 99" .. C_ and
+              ui2.Coins(10000, true) == "1" .. G_ and ui2.Coins(10099, true) == "1" .. G_ and
+              ui2.Coins(9999999, true) == "999" .. G_ .. " 99" .. S_ and ui2.Coins(10009999, true) == "1,000" .. G_ and
+              ui2.Coins(78540) == "7" .. G_ .. " 85" .. S_ .. " 40" .. C_ and ui2.Coins(10009999) == "1,000" .. G_ .. " 99" .. S_ .. " 99" .. C_,
+              "gold window: in a row a price drops its copper from 1 gold up and its silver from 1,000 gold up; elsewhere it is whole")
+        -- (digits about 6 px wide in the rows' small font, a space or a mark 4, a coin 12)
+        local function Pixels(text)
+            local icons = 0
+            text = text:gsub("|T.-|t", function()
+                icons = icons + 1
+                return ""
+            end)
+            text = text:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
+            local digits = select(2, text:gsub("%d", ""))
+            return digits * 6 + (#text - digits) * 4 + icons * 12
+        end
+        local widest = 0
+        for _, copper in ipairs({99, 9999, 99999, 999999, 9999999, 99999999, 999999999, 78540, 123456}) do
+            widest = math.max(widest, Pixels(ui2.Coins(copper, true)))
+        end
+        -- every column that shows money; marked: it may carry " *" too, or "~" and "-"
+        local MONEY = {cost = 0, cheapest = 0, upTo = 0, worth = 0, vendor = 0, disenchant = 0, sells = 8, auction = 8, profit = 8}
+        local tight, spare = nil, 1000
+        for view, cols in pairs(ui2.COLUMNS) do
+            for _, col in ipairs(cols) do
+                local extra = MONEY[col[3]]
+                -- (a cell is its column less 6 px)
+                if extra and col.right and col[2] - 6 - widest - extra < spare then
+                    tight, spare = view .. " / " .. col[1], col[2] - 6 - widest - extra
+                end
+            end
+        end
+        check(widest <= 60 and spare >= 4 and Pixels(ui2.Coins(99999, false)) > 66,
+              "gold window: the widest price a row can show fits every money column with room to spare (" .. widest ..
+              " px; least room: " .. tostring(tight) .. ", " .. spare .. " px)")
+    end
+    -- the options page doesn't scroll: it has to fit the Settings panel's 601 px
+    do
+        local function Visible(text) return (text:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")) end
+        -- (as Options.lua lays it out; about 85 characters of the label's font to its 544 px, 12 px a line)
+        local function Height(text, width) return math.max(30, math.ceil(#Visible(text) * (544 / 85) / width) * 12 + 12) end
+        local ns, panel = W.ns, W.optionsPanel
+        local y = -64
+        for _, key in ipairs(ns.featureOrder) do
+            y = y - Height(ns.features[key].label, 544)
+            if key == "partypets" or key == "layout" or key == "gold" then y = y - 30 end
+            if key == "gold" then y = y - Height(panel.goldScan.label.text, 516) end
+            if key == "voice" then y = y - Height(panel.voiceShare.label.text, 516) end
+        end
+        local bottom = y - 12 - 12
+        local label = Visible(ns.features.gold.label)
+        check(#label <= 170 and Has(label, "/pqol gold") and Has(label, "never buys or posts for you"),
+              "gold options: the feature's label is two lines at most (" .. #label .. " characters)")
+        check(bottom >= -581, "gold options: the page ends about 20 px above the bottom of the Settings panel's 601 px (at " .. bottom .. ")")
+    end
+
+    ----------------------------------------------------------------------
+    -- third review: the Best cell, the once-a-minute refresh, how long a
+    -- click's note lasts, an empty bag list, Crafts and the bags
+    ----------------------------------------------------------------------
+    do
+        local V = Stock(GP("GoldWin6"))
+        local GV = V.ns.Gold
+        local uv = GV.ui
+        setmetatable(V.ah.commodity, {__index = function() return true end})
+        Recipe(V, 1, "Runecloth Bag", 14046, {{14048, 5}})
+        Recipe(V, 2, "Bolt of Runecloth", 14048, {{14047, 5}})
+        V.trade.prof = {professionID = 197, professionName = "Tailoring", skillLevel = 300, maxSkillLevel = 300}
+        V.Fire("TRADE_SKILL_SHOW")
+        advance(1)
+        V.OpenAH()
+        Listed(V, 14047, {{100, 50}, {110, 40}})
+        Listed(V, 14048, {{700, 30}, {720, 30}})
+        Listed(V, 14046, {{60000, 3}, {65000, 2}})
+        advance(1)
+        -- how often the window works its lists out again
+        local refreshes, realState = 0, GV.PriceState
+        GV.PriceState = function(...)
+            refreshes = refreshes + 1
+            return realState(...)
+        end
+        V.Slash("gold")
+        local fv = uv.frame
+        check(fv and fv.shown and refreshes == 1 and uv.rows[2].shown, "gold window: (opened on Crafts, two rows)")
+
+        -- the Best cell: the mark of an unproven auction price belongs to an auction Best only
+        local Best = uv.COLUMNS.bags[6][4]
+        check(uv.COLUMNS.bags[6][1] == "Best" and
+              Best({confident = true, best = 2500, bestHow = "Vendor", mark = "unproven"}) == "Vendor " .. uv.Coins(2500, true) and
+              Best({confident = true, best = 2500, bestHow = "Disenchant", mark = "none listed"}) == "Disenchant " .. uv.Coins(2500, true) and
+              Best({confident = true, best = 2500, bestHow = "Auction", mark = "unproven"}) ==
+                  "Auction " .. uv.Coins(2500, true) .. " |cffffd100*|r",
+              "gold window: Best reads \"Vendor\" with no star when the vendor beats an unproven auction price; an auction Best keeps the star")
+
+        -- Your bags with nothing in them
+        Click(uv.tabs.bags)
+        check(#uv.list == 0 and uv.empty.shown and uv.empty.text == "Your bags are empty." and uv.foot.text == "",
+              "gold window: empty bags: the list says so, with no line of zero totals under it (\"" .. tostring(uv.foot.text) .. "\")")
+        Click(uv.tabs.crafts)
+
+        -- a click's note: gone when another row is clicked, when its 8 seconds are up, when the tab changes
+        local NOTE = " is in the auction house's search box - click Search there."
+        Click(uv.rows[1])
+        Click(uv.search)
+        local first = uv.status.text
+        check(Has(first, NOTE), "gold window: (Search leaves its note: " .. tostring(first) .. ")")
+        advance(5)
+        Click(uv.rows[2])
+        check(uv.status.text == "", "gold window: a click on another row clears the note about the last one at once")
+        Click(uv.search)
+        local second = uv.status.text
+        check(Has(second, NOTE) and second ~= first, "gold window: (a second note, five seconds after the first)")
+        advance(4)
+        check(uv.status.text == second, "gold window: the first note's 8 seconds running out doesn't take the second note with it")
+        refreshes = 0
+        advance(4.1)
+        check(uv.status.text == "" and refreshes == 0,
+              "gold window: a note goes after its own 8 seconds, there and then - not at the window's next refresh")
+        Click(uv.search)
+        check(Has(uv.status.text, NOTE), "gold window: (a note again)")
+        Click(uv.tabs.bargains)
+        check(uv.status.text == "", "gold window: another tab clears the note")
+        Click(uv.tabs.crafts)
+
+        -- Crafts' "Can make" follows the bags
+        local sack
+        advance(2) -- (nothing else is on its way to refresh the window)
+        V.counts[14048] = 10
+        advance(2)
+        for _, b in ipairs(uv.rows) do if b.row and b.row.id == 14046 then sack = b end end
+        check(sack and sack.cells[8].text == "0", "gold window: (no bolts were in the bags: can make 0, until the bags say they changed)")
+        V.Fire("BAG_UPDATE_DELAYED")
+        advance(0.5)
+        for _, b in ipairs(uv.rows) do if b.row and b.row.id == 14046 then sack = b end end
+        check(sack and sack.cells[8].text == "2", "gold window: the bags changing refreshes an open Crafts tab (can make " ..
+              tostring(sack and sack.cells[8].text) .. ")")
+
+        -- the once-a-minute refresh goes on for as long as the window is open
+        advance(60)
+        check(GV.State().state == "idle" and uv.scan.text == "Scan", "gold window: (idle, no countdown)")
+        refreshes = 0
+        advance(185)
+        check(refreshes == 3, "gold window: left open and idle, it refreshes once a minute, minute after minute (" .. refreshes ..
+              " refreshes in 185 s)")
+        Click(uv.close)
+        refreshes = 0
+        advance(100)
+        check(refreshes == 0, "gold window: closed, it doesn't")
+        V.Slash("gold")
+        advance(10)
+        V.Slash("gold")
+        V.Slash("gold")
+        refreshes = 0
+        advance(185)
+        check(refreshes == 3 and #V.ns.errors == 0,
+              "gold window: closed and opened again and again, still one refresh a minute (" .. refreshes .. " in 185 s)")
+        GV.PriceState = realState
+
+        -- the status line: the warning about own auctions on its own, after a login
+        V.ah.rows = {{id = 14047, count = 20, buyout = 2000}}
+        Click(uv.scan)
+        advance(5)
+        check(uv.status.text == "Scan finished: 1 item. Your own auctions may be counted - open your Auctions tab once.",
+              "gold window: (a scan that named no owner: " .. tostring(uv.status.text) .. ")")
+        V = Reload(V)
+        table.insert(gone, V)
+        uv = V.ns.Gold.ui
+        V.Slash("gold")
+        check(uv.status.text == "", "gold window: after a login, away from the auction house, the status line is empty")
+        V.OpenAH()
+        advance(0.5)
+        check(uv.status.text == "Your own auctions may be counted - open your Auctions tab once.",
+              "gold window: at the auction house the warning shows on its own, with no job's message beside it")
+        do
+            local longest = "The scan was cut short - nothing was changed. The Scan button shows when the game allows the next one; Price my items works meanwhile." ..
+                                " Your own auctions are still counted in 123 prices - press Price my items."
+            check(#longest <= 2 * 120, "gold window: the longest status line still fits its two lines (" .. #longest .. " characters)")
+        end
     end
 
     for _, R in ipairs(gone) do

@@ -209,7 +209,8 @@ and the auction house's prices. Open it with `/pqol gold`, the **Gold
 finder** button just above the auction house's top right corner, or
 **Open** in the options. It has four tabs. Click a column to sort by it;
 hover a row to see how its numbers were worked out and how old its price
-is.
+is. To keep the columns readable, a price of a gold or more is shown in
+the lists without its copper.
 
 It only reads and adds up. It never buys, bids, posts or cancels: you do
 that yourself, in the auction house.
@@ -219,13 +220,15 @@ of yours on the realm whose profession window you've opened (that's how
 recipes are learned: open each profession once on each character;
 Forever changed some recipes, so none are built in). *Cost* is the
 cheapest way to get the materials: the cheapest auctions, a vendor, or
-your own craft of them, whichever is less. *Sells for* is the best of
-three: the auction house (after the cut), a vendor, or disenchanting
-(when one of your characters is an enchanter). *Profit* is one less the
-other. *Listed* is how many are on the auction house; *Can make* is how
-many your bags and bank hold the materials for. Tick **Enchants: what
-they cost** to see each enchant's materials cost instead - the least to
-charge.
+your own craft of them, whichever is less (the tooltip says when more
+is needed than is listed, and part of the cost is a guess, and when a
+vendor's price is a built-in one no vendor has confirmed). *Sells for*
+is the best of three: the auction house (after the cut), a vendor, or
+disenchanting (when one of your characters is an enchanter). *Profit* is
+one less the other. *Listed* is how many are on the auction house; *Can
+make* is how many your bags and bank hold the materials for. Tick
+**Enchants: what they cost** to see each enchant's materials cost
+instead - the least to charge.
 
 **Bargains** - auctions worth buying, from a scan or a price check less
 than an hour old:
@@ -236,7 +239,8 @@ than an hour old:
 - *Resell*: stackable items at 70% or less of their usual price. Only a
   quarter of what's listed is counted, and resale is a guess.
 - *Material*: a material of your recipes at 80% or less of its usual
-  price (and under the vendor's, if a vendor sells it).
+  price (and under the vendor's, if a vendor sells it; against a
+  built-in vendor price the saving is an estimate, and says so).
 - *Essence*: buy three Lesser and combine them, or a Greater and split
   it, when the other size sells for more (for enchanters).
 
@@ -251,13 +255,26 @@ one. Limited-supply items are marked.
 
 **Your bags** - for each item: what a vendor pays, what it sells for at
 auction after the cut, what it disenchants into, and the best of the
-three. The line under the list adds them up. An item that could be
-auctioned but has no price shows "?" and isn't guessed at; an item a
-profitable recipe of yours uses says so.
+three. The line under the list adds them up; an unproven auction price
+is left out of the sums (a stack whose best is the vendor or
+disenchanting anyway still counts there), and the line says how many
+stacks that leaves out. An item that could be auctioned but has no price
+shows "?" and isn't guessed at - Price my items looks it up. One that
+was looked up, or that a whole scan didn't see, and isn't listed (a
+piece "of the Bear" when only other kinds, or none at all, are for
+sale, too) has its answer: its best is the vendor or disenchanting. An
+item a profitable recipe of yours uses says so. For an enchanter, an
+essence is valued as its other size when that pays more (three Lesser
+make a Greater, and back); the tooltip then says to combine or split
+first.
 
 How a selling price is worked out: the lowest price listed now, or the
 item's usual price if that is lower - one hopeful listing far above the
-going rate doesn't count. The usual price is the middle of the last 14
+going rate doesn't count. Neither does one cheap lot far below it: units
+listed for less than a vendor pays, or at 70% or less of the usual
+price, are passed over when they are a quarter of what's listed at most
+(Bargains is where those show up, to buy); the tooltip then says which
+price was used. The usual price is the middle of the last 14
 days' prices, and needs three days of them. A yellow * marks an unproven
 price (only one or two listed, or all at one price: one seller's asking
 price); a grey * means none are listed now and the usual price is shown.
@@ -270,22 +287,32 @@ With the auction house open, three ways:
 
 - **Scan** reads every auction once. The game allows it about once every
   15 minutes; the button counts down the wait. Keep the auction house
-  open while it reads - closing it cuts the scan short and changes
-  nothing. What the last scan knew and this one doesn't see counts as
-  sold out. The options have "Scan the whole auction house each time I
-  open it" (off unless you tick it).
+  open while it reads - closing it (or a /reload) cuts the scan short
+  and changes nothing, and the wait still runs. What the last scan knew
+  and this one doesn't see counts as sold out, and what your recipes,
+  bags and vendors use and it didn't see as "none listed" - so straight
+  after a scan there is nothing left for Price my items to do. The
+  options have "Scan the whole auction house each time I open it" (off
+  unless you tick it).
 - **Price my items** looks up just what your recipes and bags use - the
   materials, what they make, an enchanter's materials, what's in your
   bags, the vendor items - one a second, up to 300 a press, skipping
-  anything priced in the last 10 minutes. It works while Scan is on its
-  wait. Press it again to stop. It pauses while you are buying or
-  selling, and goes on when you're back on the list.
+  anything priced (or scanned) in the last 10 minutes. It works while
+  Scan is on its wait. Press it again to stop. It pauses while you are
+  buying or selling, and goes on when you're back on the list.
 - **What you browse yourself** is read as it goes by: the results of
   your own searches. A price seen only in a browse list never raises a
   bargain.
 
 Your own auctions aren't counted. If a scan can't tell which are yours,
-the window asks you to open your Auctions tab once.
+the window (at the auction house) asks you to open your Auctions tab
+once. If prices the scan read then still count yours, it says how many
+and to press Price my items, which looks those items up again and
+leaves yours out; the next scan does too.
+
+The header says what the price book holds: how many items have a
+price, when the last full scan was, and when your items were last
+looked up if that was later.
 
 **Search** puts the selected row's name into the auction house's search
 box; you click Search there.
@@ -309,10 +336,12 @@ prices of its own; it is told by the auctioneer's faction not being
 yours, which may not hold on Forever. The listing deposit isn't
 counted: it comes back when the item sells and is lost when it doesn't.
 
-Some numbers are estimates, shown with a "~": what disenchanting gives
-(vanilla's tables - an average over many items, a single one can give
-less), the essence conversions, and the built-in vendor prices. None of
-them was checked on Forever.
+Some numbers are estimates: what disenchanting gives (vanilla's tables
+- an average over many items, a single one can give less), the essence
+conversions, and the built-in vendor prices. A profit that rests on one
+is shown with a "~", and a built-in vendor price is called "not
+confirmed" wherever it is used, until a vendor has shown its own. None
+of them was checked on Forever.
 
 ### What is remembered
 
@@ -328,7 +357,8 @@ account's characters), nothing is sent anywhere:
 - vendors' prices, and where the window was left.
 
 `/pqol gold forget` forgets this realm's prices; recipes and vendor
-prices stay. Not tried in game yet.
+prices stay, and so does the wait until the next scan. Not tried in
+game yet.
 
 ## Commands
 

@@ -57,8 +57,10 @@ local function Later(delay, fn) C_Timer.After(delay, ns.Guard("gold", fn)) end
 -- what a cell says
 --------------------------------------------------------------------------
 
--- copper with coin icons: "1,204[g] 56[s] 7[c]". short: no copper from 10
--- gold up, so a column never has to cut a price off
+-- copper with coin icons: "1,204[g] 56[s] 7[c]". short (a row's cell): two
+-- coins at most - no copper from 1 gold up, no silver from 1,000 gold up -
+-- so the narrowest money column has room to spare and never cuts a price
+-- off (the tooltip's lines give the full sums)
 local function Coins(copper, short)
     copper = tonumber(copper)
     if not copper or copper ~= copper then return "?" end
@@ -67,8 +69,8 @@ local function Coins(copper, short)
     local g, s, c = math.floor(copper / 10000), math.floor(copper / 100) % 100, copper % 100
     local parts = {}
     if g > 0 then parts[#parts + 1] = Gold.Count(g) .. COIN_G end
-    if s > 0 then parts[#parts + 1] = s .. COIN_S end
-    if (c > 0 and not (short and g >= 10)) or #parts == 0 then parts[#parts + 1] = c .. COIN_C end
+    if s > 0 and not (short and g >= 1000) then parts[#parts + 1] = s .. COIN_S end
+    if (c > 0 and not (short and g >= 1)) or #parts == 0 then parts[#parts + 1] = c .. COIN_C end
     return sign .. table.concat(parts, " ")
 end
 U.Coins = Coins
