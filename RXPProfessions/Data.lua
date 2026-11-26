@@ -847,7 +847,9 @@ ns.FISHING_NOTES = {
      req = 275, gate = 300, clients = TBC}
 }
 
--- Skill-line IDs (the same in every language and on every client)
+-- Skill-line IDs (the same in every language and on every client; on
+-- retail Core.lua adds Jewelcrafting 755 and Inscription 773 and drops
+-- First Aid, here and in ns.TRACKED)
 ns.SKILL_LINES = {
     [186] = "Mining", [182] = "Herbalism", [393] = "Skinning", [356] = "Fishing",
     [129] = "First Aid", [171] = "Alchemy", [164] = "Blacksmithing", [202] = "Engineering",
@@ -1070,4 +1072,11 @@ ns.CHOOSABLE = {
     "Herbalism", "Mining", "Skinning", "Alchemy", "Blacksmithing",
     "Enchanting", "Engineering", "Leatherworking", "Tailoring", "Cooking",
     "First Aid", "Fishing"
+}
+-- ...and on retail (WoW Midnight): no First Aid there, and Inscription
+-- and Jewelcrafting, which the Classic games above do not have
+ns.RETAIL_CHOOSABLE = {
+    "Herbalism", "Mining", "Skinning", "Alchemy", "Blacksmithing",
+    "Enchanting", "Engineering", "Inscription", "Jewelcrafting",
+    "Leatherworking", "Tailoring", "Cooking", "Fishing"
 }

@@ -161,6 +161,25 @@ ns.PROF_NAMES_FOR = {
         koKR = {["Herbalism"] = "약초채집", ["Leatherworking"] = "가죽세공"},
         zhTW = {["Alchemy"] = "鍊金術"}
     },
+    -- retail (WoW Midnight): today's spellings, and the two professions
+    -- only it has here, Jewelcrafting and Inscription (also how they are
+    -- found when the game gives no skill-line ID)
+    retail = {
+        deDE = {["Alchemy"] = "Alchemie", ["Jewelcrafting"] = "Juwelierskunst", ["Inscription"] = "Inschriftenkunde"},
+        frFR = {["Jewelcrafting"] = "Joaillerie", ["Inscription"] = "Calligraphie"},
+        esES = {["Herbalism"] = "Herboristería", ["Skinning"] = "Desuello", ["Leatherworking"] = "Peletería", ["Tailoring"] = "Sastrería",
+                ["Jewelcrafting"] = "Joyería", ["Inscription"] = "Inscripción"},
+        esMX = {["Jewelcrafting"] = "Joyería", ["Inscription"] = "Inscripción"},
+        ptBR = {["Jewelcrafting"] = "Joalheria", ["Inscription"] = "Escrivania"},
+        itIT = {["Mining"] = "Estrazione", ["Herbalism"] = "Erbalismo", ["Skinning"] = "Scuoiatura", ["Fishing"] = "Pesca",
+                ["Alchemy"] = "Alchimia", ["Blacksmithing"] = "Forgiatura", ["Engineering"] = "Ingegneria",
+                ["Leatherworking"] = "Conciatura", ["Tailoring"] = "Sartoria", ["Enchanting"] = "Incantamento", ["Cooking"] = "Cucina",
+                ["Jewelcrafting"] = "Oreficeria", ["Inscription"] = "Runografia"},
+        ruRU = {["Jewelcrafting"] = "Ювелирное дело", ["Inscription"] = "Начертание"},
+        koKR = {["Herbalism"] = "약초채집", ["Leatherworking"] = "가죽세공", ["Jewelcrafting"] = "보석세공", ["Inscription"] = "주문각인"},
+        zhCN = {["Jewelcrafting"] = "珠宝加工", ["Inscription"] = "铭文"},
+        zhTW = {["Alchemy"] = "鍊金術", ["Jewelcrafting"] = "珠寶設計", ["Inscription"] = "銘文學"}
+    },
     forever = {
         koKR = {["Herbalism"] = "약초채집", ["Leatherworking"] = "가죽세공"},
         itIT = {
@@ -775,7 +794,24 @@ T.frFR = {
     ["Minimize"] = "Réduire",
     ["Expand"] = "Déplier",
     ["window: |cFFFFCC00/rxpp alpha 0.8|r opacity from 0 to 1, |cFFFFCC00/rxpp min|r minimize or expand"] = "fenêtre : |cFFFFCC00/rxpp alpha 0.8|r opacité de 0 à 1, |cFFFFCC00/rxpp min|r réduire ou déplier",
-    ["at 0 the window is invisible and lets clicks through: |cFFFFCC00/rxpp alpha 1|r brings it back"] = "à 0, la fenêtre est invisible et laisse passer les clics : |cFFFFCC00/rxpp alpha 1|r la fait réapparaître"
+    ["at 0 the window is invisible and lets clicks through: |cFFFFCC00/rxpp alpha 1|r brings it back"] = "à 0, la fenêtre est invisible et laisse passer les clics : |cFFFFCC00/rxpp alpha 1|r la fait réapparaître",
+    -- retail (WoW Midnight), 1.4.0
+    ["%s - %s %d/%d"] = "%s - %s %d/%d",
+    ["Not learned yet - learn it from a %s trainer"] = "Pas encore appris - à apprendre auprès d'un maître (%s)",
+    ["Learn %s from a trainer"] = "Apprenez %s auprès d'un maître",
+    ["%s, +%d skill"] = "%s, +%d en compétence",
+    ["First craft bonus: %s"] = "Bonus de première fabrication : %s",
+    ["Nothing you know skills up - check your trainer for new recipes."] = "Aucune de vos recettes ne fait progresser - voyez votre maître pour de nouvelles recettes.",
+    ["Open your %s window so I can see your recipes."] = "Ouvrez votre fenêtre %s pour que je puisse voir vos recettes.",
+    ["Open your %s window once so I can see this expansion's skill."] = "Ouvrez une fois votre fenêtre %s pour que je puisse voir la compétence de cette extension.",
+    ["Gather in %s zones - nodes there give skill-ups"] = "Récoltez dans les zones de %s - les gisements et les plantes y font progresser",
+    ["Gather in this expansion's zones - nodes there give skill-ups"] = "Récoltez dans les zones de cette extension - les gisements et les plantes y font progresser",
+    ["Skin beasts in %s zones - they give skill-ups"] = "Dépecez des bêtes dans les zones de %s - elles font progresser",
+    ["Skin beasts in this expansion's zones - they give skill-ups"] = "Dépecez des bêtes dans les zones de cette extension - elles font progresser",
+    ["Fish in %s zones - catches there give skill-ups"] = "Pêchez dans les zones de %s - les prises y font progresser",
+    ["Fish in this expansion's zones - catches there give skill-ups"] = "Pêchez dans les zones de cette extension - les prises y font progresser",
+    ["Best now: %s (%s)"] = "Le mieux en ce moment : %s (%s)",
+    ["Item tooltips are not on retail yet."] = "Les infobulles des objets ne sont pas encore disponibles sur retail."
 }
 
 T.deDE = {
@@ -889,7 +925,24 @@ T.deDE = {
     ["Minimize"] = "Einklappen",
     ["Expand"] = "Ausklappen",
     ["window: |cFFFFCC00/rxpp alpha 0.8|r opacity from 0 to 1, |cFFFFCC00/rxpp min|r minimize or expand"] = "Fenster: |cFFFFCC00/rxpp alpha 0.8|r Deckkraft von 0 bis 1, |cFFFFCC00/rxpp min|r ein- oder ausklappen",
-    ["at 0 the window is invisible and lets clicks through: |cFFFFCC00/rxpp alpha 1|r brings it back"] = "Bei 0 ist das Fenster unsichtbar und lässt Klicks durch: |cFFFFCC00/rxpp alpha 1|r holt es zurück"
+    ["at 0 the window is invisible and lets clicks through: |cFFFFCC00/rxpp alpha 1|r brings it back"] = "Bei 0 ist das Fenster unsichtbar und lässt Klicks durch: |cFFFFCC00/rxpp alpha 1|r holt es zurück",
+    -- retail (WoW Midnight), 1.4.0
+    ["%s - %s %d/%d"] = "%s - %s %d/%d",
+    ["Not learned yet - learn it from a %s trainer"] = "Noch nicht erlernt - erlernt es bei einem Lehrer für %s",
+    ["Learn %s from a trainer"] = "Erlernt %s bei einem Lehrer",
+    ["%s, +%d skill"] = "%s, +%d Fertigkeit",
+    ["First craft bonus: %s"] = "Bonus für die erste Herstellung: %s",
+    ["Nothing you know skills up - check your trainer for new recipes."] = "Nichts, was Ihr kennt, bringt Fertigkeitspunkte - schaut beim Lehrer nach neuen Rezepten.",
+    ["Open your %s window so I can see your recipes."] = "Öffnet Euer Fenster für %s, damit ich Eure Rezepte sehen kann.",
+    ["Open your %s window once so I can see this expansion's skill."] = "Öffnet einmal Euer Fenster für %s, damit ich die Fertigkeit dieser Erweiterung sehen kann.",
+    ["Gather in %s zones - nodes there give skill-ups"] = "Sammelt in den Gebieten von %s - die Vorkommen dort bringen Fertigkeitspunkte",
+    ["Gather in this expansion's zones - nodes there give skill-ups"] = "Sammelt in den Gebieten dieser Erweiterung - die Vorkommen dort bringen Fertigkeitspunkte",
+    ["Skin beasts in %s zones - they give skill-ups"] = "Häutet Wildtiere in den Gebieten von %s - sie bringen Fertigkeitspunkte",
+    ["Skin beasts in this expansion's zones - they give skill-ups"] = "Häutet Wildtiere in den Gebieten dieser Erweiterung - sie bringen Fertigkeitspunkte",
+    ["Fish in %s zones - catches there give skill-ups"] = "Angelt in den Gebieten von %s - Fänge dort bringen Fertigkeitspunkte",
+    ["Fish in this expansion's zones - catches there give skill-ups"] = "Angelt in den Gebieten dieser Erweiterung - Fänge dort bringen Fertigkeitspunkte",
+    ["Best now: %s (%s)"] = "Derzeit am besten: %s (%s)",
+    ["Item tooltips are not on retail yet."] = "Gegenstands-Tooltips gibt es auf Retail noch nicht."
 }
 
 T.esES = {
@@ -1003,7 +1056,24 @@ T.esES = {
     ["Minimize"] = "Minimizar",
     ["Expand"] = "Expandir",
     ["window: |cFFFFCC00/rxpp alpha 0.8|r opacity from 0 to 1, |cFFFFCC00/rxpp min|r minimize or expand"] = "ventana: |cFFFFCC00/rxpp alpha 0.8|r opacidad de 0 a 1, |cFFFFCC00/rxpp min|r la minimiza o expande",
-    ["at 0 the window is invisible and lets clicks through: |cFFFFCC00/rxpp alpha 1|r brings it back"] = "a 0 la ventana es invisible y deja pasar los clics: |cFFFFCC00/rxpp alpha 1|r la vuelve a mostrar"
+    ["at 0 the window is invisible and lets clicks through: |cFFFFCC00/rxpp alpha 1|r brings it back"] = "a 0 la ventana es invisible y deja pasar los clics: |cFFFFCC00/rxpp alpha 1|r la vuelve a mostrar",
+    -- retail (WoW Midnight), 1.4.0
+    ["%s - %s %d/%d"] = "%s - %s %d/%d",
+    ["Not learned yet - learn it from a %s trainer"] = "Aún no la has aprendido - apréndela con un instructor de %s",
+    ["Learn %s from a trainer"] = "Aprende %s con un instructor",
+    ["%s, +%d skill"] = "%s, +%d de habilidad",
+    ["First craft bonus: %s"] = "Bonificación de primera fabricación: %s",
+    ["Nothing you know skills up - check your trainer for new recipes."] = "Nada de lo que conoces da puntos de habilidad - pregúntale a tu instructor por recetas nuevas.",
+    ["Open your %s window so I can see your recipes."] = "Abre tu ventana de %s para que pueda ver tus recetas.",
+    ["Open your %s window once so I can see this expansion's skill."] = "Abre una vez tu ventana de %s para que pueda ver la habilidad de esta expansión.",
+    ["Gather in %s zones - nodes there give skill-ups"] = "Recolecta en las zonas de %s - los nodos de allí dan puntos de habilidad",
+    ["Gather in this expansion's zones - nodes there give skill-ups"] = "Recolecta en las zonas de esta expansión - los nodos de allí dan puntos de habilidad",
+    ["Skin beasts in %s zones - they give skill-ups"] = "Despelleja bestias en las zonas de %s - dan puntos de habilidad",
+    ["Skin beasts in this expansion's zones - they give skill-ups"] = "Despelleja bestias en las zonas de esta expansión - dan puntos de habilidad",
+    ["Fish in %s zones - catches there give skill-ups"] = "Pesca en las zonas de %s - las capturas de allí dan puntos de habilidad",
+    ["Fish in this expansion's zones - catches there give skill-ups"] = "Pesca en las zonas de esta expansión - las capturas de allí dan puntos de habilidad",
+    ["Best now: %s (%s)"] = "Lo mejor ahora: %s (%s)",
+    ["Item tooltips are not on retail yet."] = "Las descripciones de objetos aún no están disponibles en retail."
 }
 
 T.esMX = {
@@ -1117,7 +1187,24 @@ T.esMX = {
     ["Minimize"] = "Minimizar",
     ["Expand"] = "Expandir",
     ["window: |cFFFFCC00/rxpp alpha 0.8|r opacity from 0 to 1, |cFFFFCC00/rxpp min|r minimize or expand"] = "ventana: |cFFFFCC00/rxpp alpha 0.8|r opacidad de 0 a 1, |cFFFFCC00/rxpp min|r la minimiza o expande",
-    ["at 0 the window is invisible and lets clicks through: |cFFFFCC00/rxpp alpha 1|r brings it back"] = "en 0 la ventana es invisible y deja pasar los clics: |cFFFFCC00/rxpp alpha 1|r la vuelve a mostrar"
+    ["at 0 the window is invisible and lets clicks through: |cFFFFCC00/rxpp alpha 1|r brings it back"] = "en 0 la ventana es invisible y deja pasar los clics: |cFFFFCC00/rxpp alpha 1|r la vuelve a mostrar",
+    -- retail (WoW Midnight), 1.4.0
+    ["%s - %s %d/%d"] = "%s - %s %d/%d",
+    ["Not learned yet - learn it from a %s trainer"] = "Aún no la has aprendido - apréndela con un instructor de %s",
+    ["Learn %s from a trainer"] = "Aprende %s con un instructor",
+    ["%s, +%d skill"] = "%s, +%d de habilidad",
+    ["First craft bonus: %s"] = "Bonificación de primera fabricación: %s",
+    ["Nothing you know skills up - check your trainer for new recipes."] = "Nada de lo que conoces da puntos de habilidad - pregúntale a tu instructor por recetas nuevas.",
+    ["Open your %s window so I can see your recipes."] = "Abre tu ventana de %s para que pueda ver tus recetas.",
+    ["Open your %s window once so I can see this expansion's skill."] = "Abre una vez tu ventana de %s para que pueda ver la habilidad de esta expansión.",
+    ["Gather in %s zones - nodes there give skill-ups"] = "Recolecta en las zonas de %s - los nodos de allí dan puntos de habilidad",
+    ["Gather in this expansion's zones - nodes there give skill-ups"] = "Recolecta en las zonas de esta expansión - los nodos de allí dan puntos de habilidad",
+    ["Skin beasts in %s zones - they give skill-ups"] = "Desuella bestias en las zonas de %s - dan puntos de habilidad",
+    ["Skin beasts in this expansion's zones - they give skill-ups"] = "Desuella bestias en las zonas de esta expansión - dan puntos de habilidad",
+    ["Fish in %s zones - catches there give skill-ups"] = "Pesca en las zonas de %s - las capturas de allí dan puntos de habilidad",
+    ["Fish in this expansion's zones - catches there give skill-ups"] = "Pesca en las zonas de esta expansión - las capturas de allí dan puntos de habilidad",
+    ["Best now: %s (%s)"] = "Lo mejor ahora: %s (%s)",
+    ["Item tooltips are not on retail yet."] = "Las descripciones de objetos aún no están disponibles en retail."
 }
 
 T.ptBR = {
@@ -1231,7 +1318,24 @@ T.ptBR = {
     ["Minimize"] = "Minimizar",
     ["Expand"] = "Expandir",
     ["window: |cFFFFCC00/rxpp alpha 0.8|r opacity from 0 to 1, |cFFFFCC00/rxpp min|r minimize or expand"] = "janela: |cFFFFCC00/rxpp alpha 0.8|r opacidade de 0 a 1, |cFFFFCC00/rxpp min|r minimiza/expande",
-    ["at 0 the window is invisible and lets clicks through: |cFFFFCC00/rxpp alpha 1|r brings it back"] = "em 0 a janela fica invisível e deixa os cliques passarem: |cFFFFCC00/rxpp alpha 1|r a traz de volta"
+    ["at 0 the window is invisible and lets clicks through: |cFFFFCC00/rxpp alpha 1|r brings it back"] = "em 0 a janela fica invisível e deixa os cliques passarem: |cFFFFCC00/rxpp alpha 1|r a traz de volta",
+    -- retail (WoW Midnight), 1.4.0
+    ["%s - %s %d/%d"] = "%s - %s %d/%d",
+    ["Not learned yet - learn it from a %s trainer"] = "Ainda não aprendida - aprenda com um instrutor de %s",
+    ["Learn %s from a trainer"] = "Aprenda %s com um instrutor",
+    ["%s, +%d skill"] = "%s, +%d de perícia",
+    ["First craft bonus: %s"] = "Bônus de primeira criação: %s",
+    ["Nothing you know skills up - check your trainer for new recipes."] = "Nada do que você conhece sobe a perícia - procure receitas novas com o seu instrutor.",
+    ["Open your %s window so I can see your recipes."] = "Abra a sua janela de %s para eu ver as suas receitas.",
+    ["Open your %s window once so I can see this expansion's skill."] = "Abra uma vez a sua janela de %s para eu ver a perícia desta expansão.",
+    ["Gather in %s zones - nodes there give skill-ups"] = "Colete nas zonas de %s - os pontos de coleta de lá sobem a perícia",
+    ["Gather in this expansion's zones - nodes there give skill-ups"] = "Colete nas zonas desta expansão - os pontos de coleta de lá sobem a perícia",
+    ["Skin beasts in %s zones - they give skill-ups"] = "Esfole feras nas zonas de %s - elas sobem a perícia",
+    ["Skin beasts in this expansion's zones - they give skill-ups"] = "Esfole feras nas zonas desta expansão - elas sobem a perícia",
+    ["Fish in %s zones - catches there give skill-ups"] = "Pesque nas zonas de %s - os peixes de lá sobem a perícia",
+    ["Fish in this expansion's zones - catches there give skill-ups"] = "Pesque nas zonas desta expansão - os peixes de lá sobem a perícia",
+    ["Best now: %s (%s)"] = "Melhor agora: %s (%s)",
+    ["Item tooltips are not on retail yet."] = "As dicas de itens ainda não estão disponíveis no retail."
 }
 
 T.itIT = {
@@ -1345,7 +1449,24 @@ T.itIT = {
     ["Minimize"] = "Riduci",
     ["Expand"] = "Espandi",
     ["window: |cFFFFCC00/rxpp alpha 0.8|r opacity from 0 to 1, |cFFFFCC00/rxpp min|r minimize or expand"] = "finestra: |cFFFFCC00/rxpp alpha 0.8|r opacità da 0 a 1, |cFFFFCC00/rxpp min|r riduci o espandi",
-    ["at 0 the window is invisible and lets clicks through: |cFFFFCC00/rxpp alpha 1|r brings it back"] = "a 0 la finestra è invisibile e lascia passare i clic: |cFFFFCC00/rxpp alpha 1|r la fa ricomparire"
+    ["at 0 the window is invisible and lets clicks through: |cFFFFCC00/rxpp alpha 1|r brings it back"] = "a 0 la finestra è invisibile e lascia passare i clic: |cFFFFCC00/rxpp alpha 1|r la fa ricomparire",
+    -- retail (WoW Midnight), 1.4.0
+    ["%s - %s %d/%d"] = "%s - %s %d/%d",
+    ["Not learned yet - learn it from a %s trainer"] = "Non ancora appresa - imparala da un istruttore di %s",
+    ["Learn %s from a trainer"] = "Apprendi %s da un istruttore",
+    ["%s, +%d skill"] = "%s, +%d competenza",
+    ["First craft bonus: %s"] = "Bonus di prima creazione: %s",
+    ["Nothing you know skills up - check your trainer for new recipes."] = "Niente di ciò che conosci aumenta la competenza - cerca nuove ricette dal tuo istruttore.",
+    ["Open your %s window so I can see your recipes."] = "Apri la tua finestra di %s, così posso vedere le tue ricette.",
+    ["Open your %s window once so I can see this expansion's skill."] = "Apri una volta la tua finestra di %s, così posso vedere la competenza di questa espansione.",
+    ["Gather in %s zones - nodes there give skill-ups"] = "Raccogli nelle zone di %s - i giacimenti e le erbe di lì aumentano la competenza",
+    ["Gather in this expansion's zones - nodes there give skill-ups"] = "Raccogli nelle zone di questa espansione - i giacimenti e le erbe di lì aumentano la competenza",
+    ["Skin beasts in %s zones - they give skill-ups"] = "Scuoia bestie nelle zone di %s - aumentano la competenza",
+    ["Skin beasts in this expansion's zones - they give skill-ups"] = "Scuoia bestie nelle zone di questa espansione - aumentano la competenza",
+    ["Fish in %s zones - catches there give skill-ups"] = "Pesca nelle zone di %s - i pesci di lì aumentano la competenza",
+    ["Fish in this expansion's zones - catches there give skill-ups"] = "Pesca nelle zone di questa espansione - i pesci di lì aumentano la competenza",
+    ["Best now: %s (%s)"] = "Il meglio ora: %s (%s)",
+    ["Item tooltips are not on retail yet."] = "Le descrizioni degli oggetti non sono ancora disponibili su retail."
 }
 
 T.ruRU = {
@@ -1459,7 +1580,24 @@ T.ruRU = {
     ["Minimize"] = "Свернуть",
     ["Expand"] = "Развернуть",
     ["window: |cFFFFCC00/rxpp alpha 0.8|r opacity from 0 to 1, |cFFFFCC00/rxpp min|r minimize or expand"] = "окно: |cFFFFCC00/rxpp alpha 0.8|r - непрозрачность от 0 до 1, |cFFFFCC00/rxpp min|r - свернуть или развернуть",
-    ["at 0 the window is invisible and lets clicks through: |cFFFFCC00/rxpp alpha 1|r brings it back"] = "при 0 окно невидимо и пропускает щелчки мыши: |cFFFFCC00/rxpp alpha 1|r вернёт его"
+    ["at 0 the window is invisible and lets clicks through: |cFFFFCC00/rxpp alpha 1|r brings it back"] = "при 0 окно невидимо и пропускает щелчки мыши: |cFFFFCC00/rxpp alpha 1|r вернёт его",
+    -- retail (WoW Midnight), 1.4.0
+    ["%s - %s %d/%d"] = "%s - %s %d/%d",
+    ["Not learned yet - learn it from a %s trainer"] = "Еще не изучено - изучите у учителя («%s»)",
+    ["Learn %s from a trainer"] = "Изучите «%s» у учителя",
+    ["%s, +%d skill"] = "%s, +%d к навыку",
+    ["First craft bonus: %s"] = "Бонус за первое изготовление: %s",
+    ["Nothing you know skills up - check your trainer for new recipes."] = "Ни один известный вам рецепт не повышает навык - загляните к учителю за новыми рецептами.",
+    ["Open your %s window so I can see your recipes."] = "Откройте окно «%s», чтобы я увидел ваши рецепты.",
+    ["Open your %s window once so I can see this expansion's skill."] = "Откройте один раз окно «%s», чтобы я увидел навык этого дополнения.",
+    ["Gather in %s zones - nodes there give skill-ups"] = "Собирайте в зонах дополнения «%s» - тамошние месторождения и травы повышают навык",
+    ["Gather in this expansion's zones - nodes there give skill-ups"] = "Собирайте в зонах этого дополнения - тамошние месторождения и травы повышают навык",
+    ["Skin beasts in %s zones - they give skill-ups"] = "Снимайте шкуры с животных в зонах дополнения «%s» - это повышает навык",
+    ["Skin beasts in this expansion's zones - they give skill-ups"] = "Снимайте шкуры с животных в зонах этого дополнения - это повышает навык",
+    ["Fish in %s zones - catches there give skill-ups"] = "Ловите рыбу в зонах дополнения «%s» - тамошний улов повышает навык",
+    ["Fish in this expansion's zones - catches there give skill-ups"] = "Ловите рыбу в зонах этого дополнения - тамошний улов повышает навык",
+    ["Best now: %s (%s)"] = "Лучшее сейчас: %s (%s)",
+    ["Item tooltips are not on retail yet."] = "Подсказки предметов пока недоступны в актуальной версии игры."
 }
 
 T.koKR = {
@@ -1573,7 +1711,24 @@ T.koKR = {
     ["Minimize"] = "접기",
     ["Expand"] = "펼치기",
     ["window: |cFFFFCC00/rxpp alpha 0.8|r opacity from 0 to 1, |cFFFFCC00/rxpp min|r minimize or expand"] = "창: |cFFFFCC00/rxpp alpha 0.8|r 불투명도(0~1), |cFFFFCC00/rxpp min|r 접기/펼치기",
-    ["at 0 the window is invisible and lets clicks through: |cFFFFCC00/rxpp alpha 1|r brings it back"] = "0이면 창이 보이지 않고 클릭도 통과해요. |cFFFFCC00/rxpp alpha 1|r 명령어로 다시 보이게 할 수 있어요"
+    ["at 0 the window is invisible and lets clicks through: |cFFFFCC00/rxpp alpha 1|r brings it back"] = "0이면 창이 보이지 않고 클릭도 통과해요. |cFFFFCC00/rxpp alpha 1|r 명령어로 다시 보이게 할 수 있어요",
+    -- retail (WoW Midnight), 1.4.0
+    ["%s - %s %d/%d"] = "%s - %s %d/%d",
+    ["Not learned yet - learn it from a %s trainer"] = "아직 배우지 않음 - %s 전문가에게 배우세요",
+    ["Learn %s from a trainer"] = "전문가에게 배우세요: %s",
+    ["%s, +%d skill"] = "%s, 숙련도 +%d",
+    ["First craft bonus: %s"] = "첫 제작 보너스: %s",
+    ["Nothing you know skills up - check your trainer for new recipes."] = "아는 제조법 중 숙련도가 오르는 것이 없어요 - 전문가에게 새 제조법을 확인하세요.",
+    ["Open your %s window so I can see your recipes."] = "%s 창을 열어 주세요 - 배운 제조법을 확인할게요.",
+    ["Open your %s window once so I can see this expansion's skill."] = "%s 창을 한 번 열어 주세요 - 이 확장팩의 숙련도를 확인할게요.",
+    ["Gather in %s zones - nodes there give skill-ups"] = "%s 지역에서 채집하세요 - 그곳의 채집물로 숙련도가 올라요",
+    ["Gather in this expansion's zones - nodes there give skill-ups"] = "이번 확장팩 지역에서 채집하세요 - 그곳의 채집물로 숙련도가 올라요",
+    ["Skin beasts in %s zones - they give skill-ups"] = "%s 지역에서 야수를 무두질하세요 - 숙련도가 올라요",
+    ["Skin beasts in this expansion's zones - they give skill-ups"] = "이번 확장팩 지역에서 야수를 무두질하세요 - 숙련도가 올라요",
+    ["Fish in %s zones - catches there give skill-ups"] = "%s 지역에서 낚으세요 - 그곳에서 낚으면 숙련도가 올라요",
+    ["Fish in this expansion's zones - catches there give skill-ups"] = "이번 확장팩 지역에서 낚으세요 - 그곳에서 낚으면 숙련도가 올라요",
+    ["Best now: %s (%s)"] = "지금 가장 좋은 것: %s (%s)",
+    ["Item tooltips are not on retail yet."] = "아이템 툴팁은 아직 본 서버(리테일)에서 지원하지 않아요."
 }
 
 T.zhCN = {
@@ -1687,7 +1842,24 @@ T.zhCN = {
     ["Minimize"] = "折叠",
     ["Expand"] = "展开",
     ["window: |cFFFFCC00/rxpp alpha 0.8|r opacity from 0 to 1, |cFFFFCC00/rxpp min|r minimize or expand"] = "窗口：|cFFFFCC00/rxpp alpha 0.8|r 不透明度（0到1），|cFFFFCC00/rxpp min|r 折叠或展开",
-    ["at 0 the window is invisible and lets clicks through: |cFFFFCC00/rxpp alpha 1|r brings it back"] = "为0时窗口不可见，点击会穿透它：输入 |cFFFFCC00/rxpp alpha 1|r 即可恢复"
+    ["at 0 the window is invisible and lets clicks through: |cFFFFCC00/rxpp alpha 1|r brings it back"] = "为0时窗口不可见，点击会穿透它：输入 |cFFFFCC00/rxpp alpha 1|r 即可恢复",
+    -- retail (WoW Midnight), 1.4.0
+    ["%s - %s %d/%d"] = "%s - %s %d/%d",
+    ["Not learned yet - learn it from a %s trainer"] = "尚未学习，可找%s训练师学习",
+    ["Learn %s from a trainer"] = "找训练师学习%s",
+    ["%s, +%d skill"] = "%s，技能+%d",
+    ["First craft bonus: %s"] = "首次制造奖励：%s",
+    ["Nothing you know skills up - check your trainer for new recipes."] = "你会的配方都不再提升技能，去训练师那里看看新配方吧。",
+    ["Open your %s window so I can see your recipes."] = "打开你的%s窗口，我才能看到你的配方。",
+    ["Open your %s window once so I can see this expansion's skill."] = "打开一次你的%s窗口，我才能看到本资料片的技能。",
+    ["Gather in %s zones - nodes there give skill-ups"] = "在%s的地图采集，那里的资源点可以提升技能",
+    ["Gather in this expansion's zones - nodes there give skill-ups"] = "在当前资料片的地图采集，那里的资源点可以提升技能",
+    ["Skin beasts in %s zones - they give skill-ups"] = "在%s的地图给野兽剥皮，可以提升技能",
+    ["Skin beasts in this expansion's zones - they give skill-ups"] = "在当前资料片的地图给野兽剥皮，可以提升技能",
+    ["Fish in %s zones - catches there give skill-ups"] = "在%s的地图钓鱼，在那里钓到的鱼可以提升技能",
+    ["Fish in this expansion's zones - catches there give skill-ups"] = "在当前资料片的地图钓鱼，在那里钓到的鱼可以提升技能",
+    ["Best now: %s (%s)"] = "当前最佳：%s（%s）",
+    ["Item tooltips are not on retail yet."] = "正式服暂不支持物品鼠标提示。"
 }
 
 T.zhTW = {
@@ -1801,7 +1973,24 @@ T.zhTW = {
     ["Minimize"] = "收合",
     ["Expand"] = "展開",
     ["window: |cFFFFCC00/rxpp alpha 0.8|r opacity from 0 to 1, |cFFFFCC00/rxpp min|r minimize or expand"] = "視窗：|cFFFFCC00/rxpp alpha 0.8|r 不透明度（0到1），|cFFFFCC00/rxpp min|r 收合或展開",
-    ["at 0 the window is invisible and lets clicks through: |cFFFFCC00/rxpp alpha 1|r brings it back"] = "為0時視窗不可見，點擊會穿透它：輸入 |cFFFFCC00/rxpp alpha 1|r 即可恢復"
+    ["at 0 the window is invisible and lets clicks through: |cFFFFCC00/rxpp alpha 1|r brings it back"] = "為0時視窗不可見，點擊會穿透它：輸入 |cFFFFCC00/rxpp alpha 1|r 即可恢復",
+    -- retail (WoW Midnight), 1.4.0
+    ["%s - %s %d/%d"] = "%s - %s %d/%d",
+    ["Not learned yet - learn it from a %s trainer"] = "尚未學習，可找%s訓練師學習",
+    ["Learn %s from a trainer"] = "找訓練師學習%s",
+    ["%s, +%d skill"] = "%s，技能+%d",
+    ["First craft bonus: %s"] = "首次製作獎勵：%s",
+    ["Nothing you know skills up - check your trainer for new recipes."] = "你會的配方都不再提升技能，去訓練師那裡看看新配方吧。",
+    ["Open your %s window so I can see your recipes."] = "打開你的%s視窗，我才能看到你的配方。",
+    ["Open your %s window once so I can see this expansion's skill."] = "打開一次你的%s視窗，我才能看到本資料片的技能。",
+    ["Gather in %s zones - nodes there give skill-ups"] = "在%s的地區採集，那裡的資源點可以提升技能",
+    ["Gather in this expansion's zones - nodes there give skill-ups"] = "在目前資料片的地區採集，那裡的資源點可以提升技能",
+    ["Skin beasts in %s zones - they give skill-ups"] = "在%s的地區對野獸剝皮，可以提升技能",
+    ["Skin beasts in this expansion's zones - they give skill-ups"] = "在目前資料片的地區對野獸剝皮，可以提升技能",
+    ["Fish in %s zones - catches there give skill-ups"] = "在%s的地區釣魚，在那裡釣到的魚可以提升技能",
+    ["Fish in this expansion's zones - catches there give skill-ups"] = "在目前資料片的地區釣魚，在那裡釣到的魚可以提升技能",
+    ["Best now: %s (%s)"] = "目前最佳：%s（%s）",
+    ["Item tooltips are not on retail yet."] = "正式版暫不支援物品滑鼠提示。"
 }
 
 ns.L = setmetatable({}, {__index = function(_, key) return key end})

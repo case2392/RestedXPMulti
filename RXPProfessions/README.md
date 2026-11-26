@@ -4,6 +4,11 @@ A companion addon that keeps your professions leveled **while** you follow
 RestedXP leveling guides, instead of switching to a separate profession guide.
 Sister addon to RestedXP Party Sync (both live in this repository).
 
+Runs on Classic Era, TBC, Mists Classic and WoW Forever, and from 1.4.0 on
+retail **WoW Midnight** (12.1.5), where it works differently: see
+[Retail (WoW Midnight)](#retail-wow-midnight) below. What follows describes
+the Classic games.
+
 On first launch a setup window asks **which professions you're leveling**
 (any of Herbalism, Mining, Skinning, Alchemy, Blacksmithing, Enchanting,
 Engineering, Leatherworking, Tailoring, Cooking, First Aid and Fishing) and
@@ -60,15 +65,80 @@ Copy the `RXPProfessions` folder into `Interface/AddOns/` so you have
 Works with or without RestedXP installed (it borrows RestedXP's theme when
 present).
 
-With **EllesmereUI** installed (WoW Forever; EllesmereUI doesn't run on
-Classic Era, TBC or Mists) the window and the setup dialog take
+With **EllesmereUI** installed (WoW Forever and retail Midnight 12.1+;
+EllesmereUI doesn't run on Classic Era, TBC or Mists) the window and the setup dialog take
 EllesmereUI's look instead: its flat dark panel, your EllesmereUI font, its
 close button and checkboxes, and a line in your accent color under the
 title. This goes through EllesmereUI's own skin API, so it follows your
 accent color live, and you can turn it off for this addon in EllesmereUI's
 options (Blizzard Skins+ > Window Skins > Third-Party Addons).
 
+## Retail (WoW Midnight)
+
+From 1.4.0 the addon loads on retail (12.1.5) and tracks each profession's
+**current expansion's skill line** - Midnight's, 1-100 - not the Classic
+1-300 ranks. Retail has no fixed routes in the addon: the advice comes from
+what the game itself reports.
+
+**Open each profession's window once.** The game only tells an addon which
+skill line is the current expansion's, and what you know, while that
+profession's window is open. Until then the window shows the profession
+list's own figures under the name the game gives them ("Khaz Algar Mining
+100/100") and asks you to open it - for a gathering profession too, whose
+window is its journal (not for Fishing, whose button in the profession book
+casts it, so it may have no window to open). Before that it does not call a
+full bar "capped for this expansion": the list may be showing an older
+expansion's line.
+
+What works there:
+
+- **The header** is the current line: "Blacksmithing - Midnight 37/100".
+  Looking at an older expansion in the profession window's dropdown changes
+  nothing: an older line's 100/100 is never taken for Midnight's skill, and
+  the addon never changes what your window shows.
+- **Crafting** (Alchemy, Blacksmithing, Enchanting, Engineering,
+  Inscription, Jewelcrafting, Leatherworking, Tailoring, Cooking): "Craft:
+  <recipe> (orange)" for the best recipe you know that still skills up -
+  orange before yellow before green, by the game's own recipe colours, then
+  the one giving the most skill points ("+3 skill") - with its materials
+  from the game ("Mats: 3 x ..."), and up to two "First craft bonus:"
+  recipes. When the game says every recipe you know is grey, it sends you
+  to your trainer; when it simply has no fresh colours (after a game
+  patch, or when your skill has moved on more than 15 points since the
+  window was read) it asks you to open the window again instead.
+- **Gathering and Fishing** (Herbalism, Mining, Skinning, Fishing): a
+  generic "Gather in Midnight zones - nodes there give skill-ups", plus the
+  best entry of the gathering journal once its window has been read.
+- "Learn Midnight Blacksmithing from a trainer" when you have the
+  profession but not this expansion's line. If you are still levelling an
+  older expansion's line, its own name and figures stay above that
+  ("Khaz Algar Mining 30/100"); there is no craft or gather advice for an
+  older line. "Skill capped for this expansion" at 100/100 of the current
+  line; the Auction House tip if you opted in.
+- The setup window lists retail's thirteen professions, Inscription and
+  Jewelcrafting among them.
+
+What doesn't, on retail:
+
+- **No fixed routes**, so no "At 65: ..." next step, no recipe sources and
+  no node or fish tables: none of the Classic data is used.
+- **No ranks**: nothing about Journeyman/Expert trainers, books or quests,
+  and no pace check against your character level.
+- **No First Aid** (the game has none there).
+- **No item-tooltip plan**: nothing is added to item tooltips, and
+  `/rxpp tooltip` and `/rxpp need` say so.
+
+This first retail version was written from the game's interface source, not
+yet played on a Midnight character. If something reads wrong, `/rxpp status`
+prints what the game gave the addon - each profession's figures and skill
+line, whether the line answers with the window closed, the recipe API in
+use, the skill name a trainer reported and any value that came back hidden
+(figures and game names only, no character names) - and that paste is what
+a fix needs.
+
 ## Item tooltips
+
+(Classic Era, TBC, Mists Classic and WoW Forever; not on retail.)
 
 Hover an item and RXPP says what your profession plan needs of it, span
 by span, so you can tell what to keep for now, what to keep for later and
@@ -218,8 +288,10 @@ lua5.1 tests/harness_rxpprofessions.lua .
 ```
 
 drives the addon on a Classic Era client, a TBC one, a Forever client
-(its API tables, a secret rank, its profession window, its routes) and a
-retail-style one.
+(its API tables, a secret rank, its profession window, its routes), a
+client with only the profession list, and retail WoW Midnight (a skill
+line per expansion, the window's expansion dropdown, recipe colours,
+materials, first crafts, the gathering journal, its setup and status).
 - English-language clients only for now (professions are matched by name).
 - Craft routes are the standard approximate ones; skill-up RNG means brackets
   can shift by a few points.

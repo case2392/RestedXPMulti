@@ -69,6 +69,11 @@ function ns.TooltipOthers() return Setting("tooltipOthers", false) end
 function ns.ToggleTooltipSetting(input)
     local db = ns.db
     if not db then return end
+    -- the plan is built from the Classic routes: nothing to show on retail
+    if ns.IS_RETAIL then
+        ns.Print("%s", L["Item tooltips are not on retail yet."])
+        return
+    end
     if input == "tooltip" then
         db.tooltip = not ns.TooltipOn()
         ns.Print(db.tooltip and L["item tooltips on"] or L["item tooltips off"])
@@ -572,7 +577,7 @@ end
 -- not name it (or none of what names it is shown)
 function ns.TooltipLines(id)
     local out = {}
-    if not ns.db or not ns.TooltipOn() then return out end
+    if ns.IS_RETAIL or not ns.db or not ns.TooltipOn() then return out end
     local entries = ns.NeedIndex()[id]
     if not entries then return out end
     local showLater, showOthers = ns.TooltipLater(), ns.TooltipOthers()
@@ -757,6 +762,10 @@ end
 
 -- /rxpp need <item link or ID>: what the tooltip would say, in chat
 function ns.PrintNeeds(input)
+    if ns.IS_RETAIL then
+        ns.Print("%s", L["Item tooltips are not on retail yet."])
+        return
+    end
     local id = LinkID(input) or tonumber(tostring(input):match("(%d+)"))
     if not id then
         ns.Print("/rxpp need <item link or item ID>")
@@ -781,6 +790,7 @@ end
 
 -- for /rxpp status
 function ns.TooltipStatus()
+    if ns.IS_RETAIL then return "item tooltips: not on retail (the plan is built from the Classic routes)" end
     local stats, n = ns.tipStats, 0
     local ok, index = pcall(ns.NeedIndex)
     for _ in pairs(ok and index or {}) do n = n + 1 end
@@ -803,11 +813,14 @@ end
 -- frames) that OnTooltipCleared clears. Every hook is tried on its own:
 -- a client that refuses one leaves the addon running, without item
 -- tooltips.
+-- Retail has no route to plan from: no hook is made there at all.
 do
     local tdp = TooltipDataProcessor
     local itemType = Enum and Enum.TooltipDataType and Enum.TooltipDataType.Item
     ns.tooltipAPI = "none"
-    if tdp and tdp.AddTooltipPostCall and itemType ~= nil and
+    if ns.IS_RETAIL then
+        ns.tooltipAPI = "off on retail"
+    elseif tdp and tdp.AddTooltipPostCall and itemType ~= nil and
         pcall(tdp.AddTooltipPostCall, itemType, function(tooltip, data)
             local stats = ns.tipStats
             stats.calls = stats.calls + 1
@@ -850,10 +863,12 @@ end
 --------------------------------------------------------------------------
 
 local frame = CreateFrame("Frame")
-for _, event in ipairs({"PLAYER_ENTERING_WORLD", "BAG_UPDATE_DELAYED", "BANKFRAME_OPENED", "BANKFRAME_CLOSED",
-                        "PLAYERBANKSLOTS_CHANGED", "PLAYERREAGENTBANKSLOTS_CHANGED",
-                        "PLAYER_INTERACTION_MANAGER_FRAME_SHOW", "PLAYER_INTERACTION_MANAGER_FRAME_HIDE",
-                        "SPELL_DATA_LOAD_RESULT"}) do
+-- (nothing to count for on retail: no plan, so no events either)
+for _, event in ipairs(ns.IS_RETAIL and {} or
+                           {"PLAYER_ENTERING_WORLD", "BAG_UPDATE_DELAYED", "BANKFRAME_OPENED", "BANKFRAME_CLOSED",
+                            "PLAYERBANKSLOTS_CHANGED", "PLAYERREAGENTBANKSLOTS_CHANGED",
+                            "PLAYER_INTERACTION_MANAGER_FRAME_SHOW", "PLAYER_INTERACTION_MANAGER_FRAME_HIDE",
+                            "SPELL_DATA_LOAD_RESULT"}) do
     pcall(frame.RegisterEvent, frame, event)
 end
 

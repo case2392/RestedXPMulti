@@ -1,9 +1,11 @@
 -- Offline harness for RestedXP Professions (Lua 5.1).
 --   lua5.1 tests/harness_rxpprofessions.lua .
--- Three clients: Classic Era (GetSkillLineInfo), Forever (C_SkillInfo +
--- C_TradeSkillUI, no TRADE_SKILL_UPDATE / CRAFT_* events) and a
--- retail-style one (GetProfessions). A report had the addon never start
--- on Forever: "Attempt to register unknown event TRADE_SKILL_UPDATE".
+-- Four clients: Classic Era (GetSkillLineInfo; TBC and Mists as it),
+-- Forever (C_SkillInfo + C_TradeSkillUI, no TRADE_SKILL_UPDATE / CRAFT_*
+-- events), retail WoW Midnight (toc 120105: GetProfessions, a skill line
+-- per expansion behind C_TradeSkillUI) and a Classic client that has only
+-- the profession list ("proflist"). A report had the addon never start on
+-- Forever: "Attempt to register unknown event TRADE_SKILL_UPDATE".
 local root = arg and arg[1] or "."
 local realPrint = print
 local passed, failed = 0, 0
@@ -59,7 +61,8 @@ local function NewWorld(opts)
                         "GetCraftDisplaySkillLine", "GetNumCrafts", "GetCraftInfo", "LibStub", "RXPProfessionsDB", "GetBuildInfo",
                         "GetTradeSkillSubClassFilter", "GetTradeSkillInvSlotFilter", "GetOnlyShowMakeable", "GetOnlyShowSkillUps",
                         "TradeSkillFrameAvailableFilterCheckButton",
-                        "GetLocale", "GetSpellInfo", "GetItemInfo", "C_Map", "C_Item", "C_Spell", "EllesmereUI", "C_Texture"}) do
+                        "GetLocale", "GetSpellInfo", "GetItemInfo", "C_Map", "C_Item", "C_Spell", "EllesmereUI", "C_Texture",
+                        "WOW_PROJECT_ID", "WOW_PROJECT_MAINLINE", "UnitName"}) do
         _G[k] = nil
     end
     _G.print = function(...) local t = {} for i = 1, select("#", ...) do t[i] = tostring(select(i, ...)) end table.insert(printed, table.concat(t, " ")) end
@@ -158,8 +161,11 @@ local function NewWorld(opts)
     -- the game build: a new one starts recipe colours afresh
     w.build = opts.build or "61582"
     -- Forever reports toc 16001; the routes pick its recipe names and mats from that
-    local toc = opts.client == "forever" and 16001 or opts.client == "tbc" and 20505 or opts.client == "mists" and 50504 or 11508
+    -- (retail: WoW Midnight 12.1.5; opts.toc / opts.project: a client told apart otherwise)
+    local toc = opts.toc or opts.client == "forever" and 16001 or opts.client == "tbc" and 20505 or opts.client == "mists" and 50504 or
+                    opts.client == "retail" and 120105 or 11508
     _G.GetBuildInfo = function() return "1.15.8", w.build, "Oct 1 2026", toc end
+    if opts.project then _G.WOW_PROJECT_MAINLINE, _G.WOW_PROJECT_ID = 1, opts.project end
     local function visible()
         local out = {}
         for _, h in ipairs(tree) do
@@ -194,7 +200,7 @@ local function NewWorld(opts)
     -- Forever: name, serviceType, texture, reqLevel, subText, category
     _G.GetTrainerServiceInfo = function(i)
         local t = w.trainer[i]
-        if opts.client == "forever" then return t[1], t[2], 136243, 0, "", "Recipes" end
+        if opts.client == "forever" or opts.client == "retail" then return t[1], t[2], 136243, 0, "", "Recipes" end
         return t[1], "", t[2], false
     end
     _G.GetTrainerServiceSkillReq = function(i) local t = w.trainer[i]; return t[3], t[4] end
@@ -288,13 +294,106 @@ local function NewWorld(opts)
             -- the skill line's name in the client's language (opts.displayNames: id -> name)
             GetTradeSkillDisplayName = function(id) return (opts.displayNames or {})[id] end
         }
-    elseif opts.client == "retail" then
+    elseif opts.client == "proflist" then
         _G.GetProfessions = function() return 7, 9, nil, nil, 12, nil end
         _G.GetProfessionInfo = function(id)
             if id == 7 then return "Mining", 1, 45, 75 end
             if id == 9 then return "Enchanting", 1, 10, 75 end
             if id == 12 then return "Cooking", 1, 20, 75 end
         end
+    elseif opts.client == "retail" then
+        -- WoW Midnight. The profession list: w.slots = prof1, prof2,
+        -- archaeology, fishing, cooking (book indexes, nil when empty) and
+        -- w.book[index] = {name, rank, maxRank, skillLine, skillLineName}
+        -- (GetProfessionInfo's 11 returns). Every profession has a skill
+        -- line per expansion: w.lines[base ID] = its lines, newest first.
+        -- The window: w.open = the open profession's base ID (nil: shut),
+        -- w.selected = the line its expansion dropdown is on. Recipes:
+        -- w.recipes[id] = {prof = base ID, line = line ID, ...GetRecipeInfo's
+        -- fields}; w.schematics[id] = GetRecipeSchematic's table.
+        local function line(id, name, expansion, skill, max, parent, parentName)
+            return {profession = 0, professionID = id, professionName = name, expansionName = expansion, skillLevel = skill,
+                    maxSkillLevel = max, parentProfessionID = parent, parentProfessionName = parentName, isPrimaryProfession = true}
+        end
+        w.lines = {
+            [164] = {line(2907, "Midnight Blacksmithing", "Midnight", 37, 100, 164, "Blacksmithing"),
+                     line(2872, "Khaz Algar Blacksmithing", "Khaz Algar", 100, 100, 164, "Blacksmithing"),
+                     line(2822, "Dragon Isles Blacksmithing", "Dragon Isles", 20, 100, 164, "Blacksmithing")},
+            [186] = {line(2912, "Midnight Mining", "Midnight", 12, 100, 186, "Mining"),
+                     line(2881, "Khaz Algar Mining", "Khaz Algar", 100, 100, 186, "Mining")},
+            [356] = {line(2911, "Midnight Fishing", "Midnight", 5, 100, 356, "Fishing")},
+            [185] = {line(2908, "Midnight Cooking", "Midnight", 60, 100, 185, "Cooking")},
+            [755] = {line(2913, "Midnight Jewelcrafting", "Midnight", 8, 100, 755, "Jewelcrafting")},
+            [393] = {line(2917, "Midnight Skinning", "Midnight", 9, 100, 393, "Skinning")}
+        }
+        w.slots = opts.slots or {5, 6, nil, 8, 9}
+        w.book = opts.book or {
+            [5] = {"Blacksmithing", 37, 100, 164, "Midnight Blacksmithing"},
+            [6] = {"Mining", 12, 100, 186, "Midnight Mining"},
+            [8] = {"Fishing", 5, 100, 356, "Midnight Fishing"},
+            [9] = {"Cooking", 60, 100, 185, "Midnight Cooking"}
+        }
+        _G.GetProfessions = function() return w.slots[1], w.slots[2], w.slots[3], w.slots[4], w.slots[5] end
+        _G.GetProfessionInfo = function(index)
+            local b = w.book[index]
+            if b then return b[1], 136243, b[2], b[3], 4, 100, b[4], 0, 0, 0, b[5] end
+        end
+        _G.UnitName = function() return "Thrallmar", nil end
+        w.recipes, w.schematics, w.setCalls, w.byLineCalls = {}, {}, 0, 0
+        local function anyLine(id)
+            for _, lines in pairs(w.lines) do
+                for _, l in ipairs(lines) do if l.professionID == id then return l end end
+            end
+        end
+        local function ids(all)
+            local out = {}
+            for id, r in pairs(w.recipes) do
+                if r.prof == w.open and (all or not (w.hidden or {})[id]) then out[#out + 1] = id end
+            end
+            table.sort(out)
+            return out
+        end
+        _G.C_TradeSkillUI = {
+            -- every line of the open profession, newest first
+            GetChildProfessionInfos = function() if w.noChildInfos then return {} end return w.open and w.lines[w.open] or {} end,
+            -- the line the window's expansion dropdown is on
+            GetChildProfessionInfo = function()
+                return w.open and anyLine(w.selected or w.lines[w.open][1].professionID) or {professionID = 0, professionName = "", skillLevel = 0, maxSkillLevel = 0}
+            end,
+            GetBaseProfessionInfo = function() return {professionID = w.open or 0, professionName = "", skillLevel = 0, maxSkillLevel = 0} end,
+            -- a line by its ID, window open or shut (w.byLineShut: only while
+            -- the profession's window is open; then an empty table, as the game gives)
+            GetProfessionInfoBySkillLineID = function(id)
+                w.byLineCalls = w.byLineCalls + 1
+                local l = anyLine(id)
+                if not l or (w.byLineShut and w.open ~= l.parentProfessionID) then
+                    return {professionID = 0, professionName = "", skillLevel = 0, maxSkillLevel = 0}
+                end
+                return l
+            end,
+            IsRecipeInSkillLine = function(id, lineID) return w.recipes[id] ~= nil and w.recipes[id].line == lineID end,
+            GetFilteredRecipeIDs = function() return ids(false) end,
+            GetAllRecipeIDs = function() if not w.noAllIDs then return ids(true) end end,
+            GetRecipeInfo = function(id) return w.recipes[id] end,
+            GetRecipeSchematic = function(id, isRecraft) w.schematicCalls = (w.schematicCalls or 0) + 1; return w.schematics[id] end,
+            GetProfessionInfoByRecipeID = function(id)
+                local r = w.recipes[id]
+                if r then local l = anyLine(r.line); return l end
+                return {professionID = 0, professionName = ""}
+            end,
+            IsTradeSkillReady = function() return w.open ~= nil and not w.notReady end,
+            IsDataSourceChanging = function() return w.changing or false end,
+            IsTradeSkillLinked = function() return w.linked or false end,
+            IsTradeSkillGuild = function() return false end,
+            IsNPCCrafting = function() return false end,
+            GetTradeSkillDisplayName = function(id) return (opts.displayNames or {})[id] end,
+            -- the player's own choice of expansion: the addon must never make it
+            SetProfessionChildSkillLineID = function() w.setCalls = w.setCalls + 1 end
+        }
+        if opts.noByLine then _G.C_TradeSkillUI.GetProfessionInfoBySkillLineID = nil end
+        _G.C_Item = _G.C_Item or {}
+        _G.C_Item.GetItemNameByID = function(id) return (opts.itemNames or {})[id] end
+        _G.C_Item.RequestLoadItemDataByID = function(id) w.itemRequests[id] = true end
     end
 
     local ns = {}
@@ -1100,14 +1199,15 @@ do
 end
 
 --------------------------------------------------------------------------
--- retail-style: GetProfessions
+-- a Classic client with only the profession list: GetProfessions
+-- (the real retail client, WoW Midnight, is at the end of this file)
 --------------------------------------------------------------------------
 do
-    local ok, w = pcall(NewWorld, {client = "retail", events = FOREVER_EVENTS, db = {setupDone = true, chosen = {Mining = true}, show = true}})
-    check(ok, "retail: loads")
+    local ok, w = pcall(NewWorld, {client = "proflist", events = FOREVER_EVENTS, db = {setupDone = true, chosen = {Mining = true}, show = true}})
+    check(ok, "profession list: loads")
     w.Fire("PLAYER_ENTERING_WORLD")
-    check(w.ns.profs.Mining and w.ns.profs.Mining.rank == 45 and w.ns.profs.Enchanting.rank == 10 and w.ns.skillAPI == "GetProfessions", "retail: skills read from GetProfessions ids")
-    check(w.ns.profs.Cooking and w.ns.profs.Cooking.rank == 20, "retail: a profession after an empty slot is read too")
+    check(w.ns.profs.Mining and w.ns.profs.Mining.rank == 45 and w.ns.profs.Enchanting.rank == 10 and w.ns.skillAPI == "GetProfessions", "profession list: skills read from GetProfessions ids")
+    check(w.ns.profs.Cooking and w.ns.profs.Cooking.rank == 20, "profession list: a profession after an empty slot is read too")
 end
 
 -- a client with no skill API at all: nothing tracked, nothing thrown
@@ -2119,6 +2219,777 @@ do
         if v == nil or not pcall(string.format, v, "X") or not v:find("%s", 1, true) then missing[#missing + 1] = locale end
     end
     check(#missing == 0, "known patterns: the window nudge translated in every language (" .. (missing[1] or "all") .. ")")
+end
+
+--------------------------------------------------------------------------
+-- Retail: WoW Midnight (12.1.5, toc 120105). One skill line per expansion
+-- under each profession; the advice is about the current one (Midnight,
+-- 1-100) and is drawn from what the game reports - no Classic ranks,
+-- routes, nodes, notes, trainers or First Aid.
+--------------------------------------------------------------------------
+local RETAIL_EVENTS = {"PLAYER_ENTERING_WORLD", "SKILL_LINES_CHANGED", "CHAT_MSG_SKILL", "ZONE_CHANGED_NEW_AREA",
+                       "TRADE_SKILL_SHOW", "TRADE_SKILL_CLOSE", "TRADE_SKILL_LIST_UPDATE", "TRADE_SKILL_DATA_SOURCE_CHANGED",
+                       "TRADE_SKILL_DATA_SOURCE_CHANGING", "TRADE_SKILL_NAME_UPDATE", "TRADE_SKILL_DETAILS_UPDATE",
+                       "TRAINER_SHOW", "TRAINER_UPDATE", "TRAINER_CLOSED", "GET_ITEM_INFO_RECEIVED", "SPELL_DATA_LOAD_RESULT",
+                       "NEW_RECIPE_LEARNED", "BAG_UPDATE_DELAYED", "BANKFRAME_OPENED", "BANKFRAME_CLOSED", "PLAYERBANKSLOTS_CHANGED",
+                       "PLAYER_INTERACTION_MANAGER_FRAME_SHOW", "PLAYER_INTERACTION_MANAGER_FRAME_HIDE"}
+local RETAIL_ITEMS = {[9001] = "Refulgent Copper Bar", [9010] = "Luminous Flux"}
+local function RetailWorld(opts)
+    opts = opts or {}
+    opts.client, opts.events, opts.level = "retail", RETAIL_EVENTS, opts.level or 84
+    opts.itemNames = opts.itemNames or RETAIL_ITEMS
+    opts.db = opts.db or {setupDone = true, show = true, chosen = opts.chosen or {Blacksmithing = true, Mining = true, Fishing = true, Cooking = true}}
+    _G.Enum = _G.Enum or {}
+    _G.Enum.CraftingReagentType = {Modifying = 0, Basic = 1, Finishing = 2, Automatic = 3}
+    local w = NewWorld(opts)
+    if not opts.noLogin then w.Fire("PLAYER_ENTERING_WORLD") end
+    return w
+end
+-- Midnight Blacksmithing's recipes, with the other expansions' and the
+-- entries that are no recipe to craft for skill
+local function Smithing(w)
+    local function r(name, line, diff, ups, more)
+        local t = {name = name, prof = 164, line = line, learned = true, relativeDifficulty = diff, canSkillUp = diff < 3,
+                   numSkillUps = ups, firstCraft = false}
+        for k, v in pairs(more or {}) do t[k] = v end
+        return t
+    end
+    w.recipes = {
+        [101] = r("Thalassian Dagger", 2907, 2, 1, {firstCraft = true}),
+        [102] = r("Sunforged Hammer", 2907, 1, 1),
+        [103] = r("Dawnsteel Buckler", 2907, 0, 1, {firstCraft = true}),
+        [104] = r("Emberplate Helm", 2907, 0, 3, {firstCraft = true}),
+        [105] = r("Ashen Greaves", 2907, 0, 3),
+        [106] = r("Voidglass Blade", 2907, 0, 5, {learned = false, firstCraft = true}),
+        [107] = r("Recraft Equipment", 2907, 0, 9, {isRecraft = true}),
+        [108] = r("Scrap the Old Gear", 2907, 0, 9, {isSalvageRecipe = true}),
+        [109] = r("Placeholder Entry", 2907, 0, 9, {isDummyRecipe = true}),
+        [110] = r("Smith's Ore Vein", 2907, 0, 9, {isGatheringRecipe = true}),
+        [201] = r("Charged Claymore", 2872, 0, 9, {firstCraft = true}),
+        [301] = r("Primal Molten Axe", 2822, 0, 9)
+    }
+    w.schematics[105] = {recipeID = 105, reagentSlotSchematics = {
+        -- three quality tiers of one bar: one material, named by the first
+        {reagents = {{itemID = 9001}, {itemID = 9002}, {itemID = 9003}}, reagentType = 1, quantityRequired = 3, required = true},
+        {reagents = {{itemID = 9010}}, reagentType = 1, quantityRequired = 2, required = true},
+        {reagents = {{itemID = 9020}}, reagentType = 2, quantityRequired = 1, required = false},
+        {reagents = {{itemID = 9030}}, reagentType = 1, quantityRequired = 1, required = false},
+        {reagents = {{itemID = 9040}}, reagentType = 0, quantityRequired = 1, required = true}
+    }}
+end
+local function Open(w, base, selected)
+    w.open, w.selected = base, selected
+    w.Fire("TRADE_SKILL_SHOW")
+    w.Fire("TRADE_SKILL_LIST_UPDATE")
+end
+local function Shut(w)
+    w.open, w.selected = nil, nil
+    w.Fire("TRADE_SKILL_CLOSE")
+end
+local function Has(text, what) return text:find(what, 1, true) ~= nil end
+
+-- the client: told apart by its interface number (or its project ID), and nothing of Classic's taken
+do
+    local ok, w = pcall(RetailWorld)
+    check(ok, "retail: loads on toc 120105")
+    local ns = w.ns
+    check(ns.IS_RETAIL == true and ns.CLIENT == "retail", "retail: toc 120105 is its own client, not Mists' 'later'")
+    check(not ns.IS_FOREVER and not ns.IS_TBC and not ns.HAS_MASTER and not ns.HAS_LATER_RANKS and not ns.BOOK_RANKS,
+          "retail: no Classic rank, book or Forever flag is set")
+    check(next(ns.RANKS) == nil and next(ns.CRAFT) == nil and next(ns.GATHER) == nil and next(ns.TRAINERS) == nil and
+          next(ns.VILLAGE_TRAINERS) == nil and next(ns.ZONE_WATERS) == nil and next(ns.FISH_COOKING) == nil and
+          next(ns.FISHING_NOTES) == nil and next(ns.REFINE) == nil and next(ns.RANK_RULES) == nil and next(ns.RANK_RULES_FOR) == nil,
+          "retail: no Classic rank, route, gather-tier, trainer, zone-water, note or refine data is loaded")
+    check(ns.TRACKED["First Aid"] == nil and ns.SKILL_LINES[129] == nil and ns.TRACKED.Jewelcrafting == "craft" and
+          ns.TRACKED.Inscription == "craft" and ns.SKILL_LINES[755] == "Jewelcrafting" and ns.SKILL_LINES[773] == "Inscription",
+          "retail: no First Aid; Jewelcrafting (755) and Inscription (773) are known")
+    check(#ns.missingEvents == 3 and ns.missingEvents[1] == "TRADE_SKILL_UPDATE" and ns.missingEvents[2] == "CRAFT_SHOW" and
+          ns.missingEvents[3] == "CRAFT_UPDATE" and w.eventFrame.events.TRADE_SKILL_CLOSE and w.eventFrame.events.TRADE_SKILL_LIST_UPDATE,
+          "retail: the events it lacks are skipped, its own (the window closing too) registered")
+    check(ns.skillAPI == "GetProfessions" and ns.profs.Blacksmithing and ns.profs.Mining and ns.profs.Fishing and ns.profs.Cooking,
+          "retail: professions read from GetProfessions' slots, the empty archaeology slot skipped")
+    -- told apart by the project ID where the interface number says nothing
+    local wm = NewWorld({client = "retail", toc = 0, project = 1, events = RETAIL_EVENTS, db = {setupDone = true, chosen = {}, show = true}})
+    check(wm.ns.IS_RETAIL == true and wm.ns.CLIENT == "retail", "retail: WOW_PROJECT_MAINLINE also says retail")
+    -- Forever's project is its own (WOW_PROJECT_CAMELOT), Mists' its own: neither turns retail
+    local wf = NewWorld({client = "forever", project = 99, events = FOREVER_EVENTS, db = {setupDone = true, chosen = {}, show = true}})
+    local wmi = NewWorld({client = "mists", project = 19, events = CLASSIC_EVENTS, db = {setupDone = true, chosen = {}, show = true}})
+    check(not wf.ns.IS_RETAIL and wf.ns.CLIENT == "forever" and wf.ns.IS_FOREVER and not wmi.ns.IS_RETAIL and wmi.ns.CLIENT == "later" and
+          wmi.ns.HAS_LATER_RANKS, "retail: Forever and Mists, with project IDs of their own, stay what they are")
+end
+
+-- the header: the current expansion's line, from the window
+do
+    local w = RetailWorld()
+    -- before the window was ever opened: the profession list's figures, under the name it gives the line
+    local before = Lines(w, "Blacksmithing")
+    check(Has(before, "Midnight Blacksmithing  37/100") and Has(before, "Open your Blacksmithing window so I can see your recipes."),
+          "retail: before the window was opened, the profession list's line and 'open your window'")
+    Smithing(w)
+    Open(w, 164)
+    local text = Lines(w, "Blacksmithing")
+    check(text:match("^[^\n]+") == "Blacksmithing - Midnight 37/100", "retail: the header is the current line, with the expansion's name from the game")
+    local line = w.ns.db.retailLines and w.ns.db.retailLines.Blacksmithing
+    check(line and line.id == 2907 and line.name == "Midnight Blacksmithing" and line.expansion == "Midnight" and line.skill == 37 and line.max == 100,
+          "retail: the current line (the first of GetChildProfessionInfos) is remembered in the saved variables")
+    check(w.ns.profs.Blacksmithing.lineID == 2907, "retail: the skill is kept with the line it is for")
+
+    -- the crafting advice: orange before yellow before green, then the most skill-ups, then the name
+    check(Has(text, "Craft: Ashen Greaves (orange, +3 skill)"), "retail: craft the orange recipe with the most skill-ups; among equals, by name")
+    check(Has(text, "Mats: 3 x Refulgent Copper Bar, 2 x Luminous Flux"),
+          "retail: its required basic materials from the schematic, a slot's quality tiers named once by the first")
+    check(not Has(text, "9020") and not Has(text, "9030") and not w.itemRequests[9030] and not w.itemRequests[9020] and not w.itemRequests[9040],
+          "retail: finishing, modifying and optional slots are no materials")
+    check(Has(text, "First craft bonus: Dawnsteel Buckler") and Has(text, "First craft bonus: Emberplate Helm") and
+          not Has(text, "First craft bonus: Thalassian Dagger") and not Has(text, "Voidglass") and not Has(text, "Charged Claymore"),
+          "retail: first-craft bonuses, two at most, of learned recipes of this line only")
+    local known = w.ns.GetKnownRecipes("Blacksmithing")
+    check(known and known["Ashen Greaves"] and not known["Voidglass Blade"], "retail: learned recipes are recorded, unlearned ones not")
+    check(not known["Charged Claymore"] and not known["Primal Molten Axe"], "retail: other expansions' recipes are left out (IsRecipeInSkillLine)")
+    check(not known["Recraft Equipment"] and not known["Scrap the Old Gear"] and not known["Placeholder Entry"] and not known["Smith's Ore Vein"],
+          "retail: recraft, salvage, placeholder and gathering entries are no crafting recipes")
+    local x = w.ns.db.retailRecipes["Blacksmithing:2907"]
+    check(x and x["Emberplate Helm"].ups == 3 and x["Emberplate Helm"].first == true and x["Ashen Greaves"].first == nil and
+          x["Ashen Greaves"].id == 105 and w.ns.db.knownRecipes["Blacksmithing:2907"] == known and w.ns.db.knownRecipes.Blacksmithing == nil,
+          "retail: numSkillUps, firstCraft and the recipe's ID are recorded, all under the current line")
+    w.recipes[105].numSkillUps = 1
+    w.Fire("TRADE_SKILL_LIST_UPDATE")
+    check(Has(Lines(w, "Blacksmithing"), "Craft: Emberplate Helm (orange, +3 skill)"), "retail: more skill-ups win among oranges")
+    w.recipes[104].numSkillUps = 1
+    w.Fire("TRADE_SKILL_LIST_UPDATE")
+    local plain = Lines(w, "Blacksmithing")
+    check(Has(plain, "Craft: Ashen Greaves (orange)") and not Has(plain, "+1 skill"), "retail: then the name; no '+N skill' for a single point")
+    for _, id in ipairs({103, 104, 105}) do w.recipes[id].relativeDifficulty, w.recipes[id].canSkillUp = 3, false end
+    w.Fire("TRADE_SKILL_LIST_UPDATE")
+    check(Has(Lines(w, "Blacksmithing"), "Craft: Sunforged Hammer (yellow)"), "retail: yellow when nothing orange is left")
+    w.recipes[102].relativeDifficulty, w.recipes[102].canSkillUp = 3, false
+    w.Fire("TRADE_SKILL_LIST_UPDATE")
+    check(Has(Lines(w, "Blacksmithing"), "Craft: Thalassian Dagger (green)"), "retail: green when nothing yellow is left")
+    w.recipes[101].relativeDifficulty, w.recipes[101].canSkillUp = 3, false
+    w.Fire("TRADE_SKILL_LIST_UPDATE")
+    local none = Lines(w, "Blacksmithing")
+    check(Has(none, "Nothing you know skills up - check your trainer for new recipes.") and not Has(none, "Craft:"),
+          "retail: nothing learned skills up: check the trainer")
+    check(w.setCalls == 0, "retail: the window's expansion is never changed (no SetProfessionChildSkillLineID)")
+    -- the AH tip stays, for those who asked for it
+    w.ns.db.useAH = true
+    check(Has(Lines(w, "Blacksmithing"), "Tip: buy missing mats from the Auction House") and
+          not Has(Lines(w, "Cooking"), "Auction House"), "retail: the Auction House tip stays for primary crafts")
+end
+
+-- switching the window's expansion dropdown: nothing wiped, nothing mixed
+do
+    local w = RetailWorld()
+    Smithing(w)
+    Open(w, 164)
+    local known = w.ns.GetKnownRecipes("Blacksmithing")
+    -- the player looks at Dragon Isles (20/100, below Midnight's 37): on the other clients a lower
+    -- skill in the window means "dropped and relearned" and starts the list over
+    w.selected = 2822
+    w.Fire("TRADE_SKILL_LIST_UPDATE")
+    local after = w.ns.GetKnownRecipes("Blacksmithing")
+    check(after == known and after["Ashen Greaves"] and after["Sunforged Hammer"], "retail: looking at an older expansion wipes nothing")
+    check(not after["Primal Molten Axe"] and w.ns.db.recipeRank["Blacksmithing:2907"] == 37,
+          "retail: and its recipes and skill are not taken for Midnight's")
+    local text = Lines(w, "Blacksmithing")
+    check(text:match("^[^\n]+") == "Blacksmithing - Midnight 37/100" and Has(text, "Craft: Ashen Greaves (orange, +3 skill)"),
+          "retail: the header and the advice stay Midnight's while another expansion is selected")
+    -- nor does the older line at its cap (100/100) pass for Midnight's
+    w.selected = 2872
+    w.Fire("TRADE_SKILL_LIST_UPDATE")
+    check(w.ns.profs.Blacksmithing.rank == 37 and not Has(Lines(w, "Blacksmithing"), "Skill capped"),
+          "retail: an older line's 100/100 in the window is not Midnight's skill")
+    check(w.setCalls == 0, "retail: the dropdown is the player's - never set by the addon")
+    -- a skill-up while crafting reaches the window first
+    -- (the profession list still says 37, and the line is not to be had by its ID)
+    w.lines[164][1].skillLevel = 38
+    w.selected = nil
+    _G.C_TradeSkillUI.GetProfessionInfoBySkillLineID = nil
+    w.Fire("TRADE_SKILL_LIST_UPDATE")
+    check(Has(Lines(w, "Blacksmithing"), "Blacksmithing - Midnight 38/100"), "retail: the window's own skill for the line moves the header on")
+end
+
+-- the window shut: the cached line's ID, and never another line's figures
+do
+    local cached = function() return {Blacksmithing = {id = 2907, name = "Midnight Blacksmithing", expansion = "Midnight", skill = 20, max = 100}} end
+    -- the profession list shows an older expansion at its cap; the line answers by its ID
+    local older = {[5] = {"Blacksmithing", 100, 100, 164, "Khaz Algar Blacksmithing"}}
+    local w = RetailWorld({slots = {5}, book = older, chosen = {Blacksmithing = true}, noLogin = true,
+                           db = {setupDone = true, show = true, chosen = {Blacksmithing = true}, retailLines = cached()}})
+    w.lines[164][1].skillLevel = 41
+    w.Fire("PLAYER_ENTERING_WORLD")
+    check(w.open == nil and w.byLineCalls > 0 and Lines(w, "Blacksmithing"):match("^[^\n]+") == "Blacksmithing - Midnight 41/100",
+          "retail: with the window shut, the cached line is read by its ID (GetProfessionInfoBySkillLineID)")
+    check(w.ns.db.retailLines.Blacksmithing.skill == 41, "retail: and the remembered skill follows")
+    -- the line does not answer with the window shut: the older line's 100/100 must not stand for Midnight's 20/100
+    for _, case in ipairs({{byLineShut = true}, {noByLine = true}}) do
+        local w2 = RetailWorld({slots = {5}, book = older, noLogin = true, noByLine = case.noByLine,
+                                db = {setupDone = true, show = true, chosen = {Blacksmithing = true}, retailLines = cached()}})
+        w2.byLineShut = case.byLineShut
+        w2.Fire("PLAYER_ENTERING_WORLD")
+        local text = Lines(w2, "Blacksmithing")
+        check(text:match("^[^\n]+") == "Blacksmithing - Midnight 20/100" and not Has(text, "100/100") and not Has(text, "Skill capped") and
+              w2.ns.profs.Blacksmithing.rank == 20,
+              "retail: an older expansion's 100/100 never stands for Midnight's 20/100 (" .. (case.noByLine and "no line API" or "line silent while shut") .. ")")
+    end
+    -- the profession list shows the Midnight line itself: its figures are the line's
+    local w3 = RetailWorld({slots = {5}, book = {[5] = {"Blacksmithing", 22, 100, 164, "Midnight Blacksmithing"}}, noLogin = true,
+                            db = {setupDone = true, show = true, chosen = {Blacksmithing = true}, retailLines = cached()}})
+    w3.byLineShut = true
+    w3.Fire("PLAYER_ENTERING_WORLD")
+    check(Lines(w3, "Blacksmithing"):match("^[^\n]+") == "Blacksmithing - Midnight 22/100" and w3.ns.db.retailLines.Blacksmithing.skill == 22,
+          "retail: the profession list's figures are used when it names the cached line")
+    -- nothing cached yet: the list's own line under its own name, never called Midnight's
+    local w4 = RetailWorld({slots = {5}, book = older, chosen = {Blacksmithing = true}})
+    local first = Lines(w4, "Blacksmithing")
+    check(first:match("^[^\n]+") == "Khaz Algar Blacksmithing  100/100" and not Has(first, "Midnight"),
+          "retail: with no line cached, the profession list's line is shown under the name the game gives it")
+    -- a secret skill counts as unknown and is listed for /rxpp status
+    local w5 = RetailWorld({slots = {5}, noLogin = true, chosen = {Blacksmithing = true},
+                            db = {setupDone = true, show = true, chosen = {Blacksmithing = true}, retailLines = cached()}})
+    w5.lines[164][1].skillLevel = setmetatable({}, {__eq = function() error("attempt to compare a secret number value") end})
+    local okS = pcall(w5.Fire, "PLAYER_ENTERING_WORLD")
+    w5.slash("status")
+    check(okS and w5.ns.profs.Blacksmithing.rank == 0 and w5.ns.profs.Blacksmithing.maxRank == 100 and
+          Printed("retail values that came back secret: Blacksmithing line skill"),
+          "retail: a secret skill reads as unknown, throws nothing, and /rxpp status names the value")
+end
+
+-- learned the profession, not yet this expansion's line
+do
+    local w = RetailWorld({slots = {5}, book = {[5] = {"Blacksmithing", 100, 100, 164, "Khaz Algar Blacksmithing"}}, chosen = {Blacksmithing = true, Tailoring = true}})
+    w.lines[164][1].skillLevel, w.lines[164][1].maxSkillLevel = 0, 0
+    w.byLineShut = true
+    Smithing(w)
+    for _, id in ipairs({101, 102, 103, 104, 105}) do w.recipes[id].learned = false end
+    Open(w, 164)
+    local text = Lines(w, "Blacksmithing")
+    check(text == "Khaz Algar Blacksmithing  100/100\nLearn Midnight Blacksmithing from a trainer",
+          "retail: the current line not learned yet: 'Learn <line> from a trainer', the older line's skill only under its own name")
+    Shut(w)
+    w.Fire("SKILL_LINES_CHANGED")
+    check(Has(Lines(w, "Blacksmithing"), "Learn Midnight Blacksmithing from a trainer"), "retail: the same with the window shut again")
+    -- learned since: the profession list now names the Midnight line
+    w.book[5] = {"Blacksmithing", 1, 100, 164, "Midnight Blacksmithing"}
+    w.Fire("SKILL_LINES_CHANGED")
+    local learned = Lines(w, "Blacksmithing")
+    check(learned:match("^[^\n]+") == "Blacksmithing - Midnight 1/100" and not Has(learned, "Learn Midnight"),
+          "retail: once learned, the line's own skill shows")
+    -- a profession not learned at all: a generic line, no Classic trainer
+    local none = Lines(w, "Tailoring")
+    check(none == "Tailoring\nNot learned yet - learn it from a Tailoring trainer", "retail: not learned at all: learn it from a trainer, no Classic NPC named")
+end
+
+-- no Classic lines at all
+do
+    local w = RetailWorld({slots = {5, 6, nil, 8, 9}, rxp = {currentGuide = {displayname = "Midnight", name = "Midnight"}},
+                           chosen = {Blacksmithing = true, Mining = true, Fishing = true, Cooking = true, ["First Aid"] = true, Tailoring = true, Skinning = true}})
+    w.ns.db.useAH = true
+    local function all()
+        local out = {}
+        for name, p in pairs(w.ns.GetTracked()) do
+            for _, l in ipairs(w.ns.BuildProfLines(name, p)) do out[#out + 1] = l.text end
+        end
+        return table.concat(out, "\n")
+    end
+    local function classicFree(text)
+        for _, word in ipairs({"Journeyman", "Expert", "Artisan", "Master", "Train ", "Can train", "Cap soon", "Capped!", "Catch up", "Aim for",
+                               "finishing", "leaving", "Copper Vein", "Tin Vein", "Peacebloom", "Mine:", "Pick:", "At ", "Skin your kills", "level",
+                               "Get it:", "Linen", "First Aid", "Bandage", "Combo", "Catch:", "book", "quest", "city guard", "Stormwind",
+                               "Fish anywhere", "lures", "You don't know this recipe"}) do
+            if text:find(word, 1, true) then return word end
+        end
+    end
+    local before = all()
+    local bad = classicFree(before)
+    check(bad == nil, "retail: no rank, pace, gather-tier, route, note, trainer or First Aid line" .. (bad and (" - found: " .. bad) or ""))
+    check(w.ns.GetTracked()["First Aid"] == nil and not Has(before, "First Aid"), "retail: a First Aid left in the setup choices is not shown")
+    Smithing(w)
+    Open(w, 164)
+    Shut(w)
+    w.recipes = {[401] = {name = "Refulgent Copper", prof = 186, line = 2912, learned = true, relativeDifficulty = 0, canSkillUp = true, numSkillUps = 1, isGatheringRecipe = true}}
+    Open(w, 186)
+    Shut(w)
+    local after = all()
+    bad = classicFree(after)
+    check(bad == nil, "retail: nor once the windows have been read" .. (bad and (" - found: " .. bad) or ""))
+    -- skill-ups on a gathering profession ping no Classic unlock
+    printed = {}
+    w.book[6][2] = 70
+    w.lines[186][1].skillLevel = 70
+    w.Fire("SKILL_LINES_CHANGED")
+    check(w.ns.profs.Mining.rank == 70 and not Printed("unlocked"), "retail: no Classic 'unlocked' ping when a gathering skill rises")
+    check(w.ns.FishCookCombo() == false, "retail: no fishing/cooking combo")
+    -- at the cap: the existing line, and nothing to craft for skill
+    w.lines[164][1].skillLevel = 100
+    w.book[5][2] = 100
+    w.Fire("SKILL_LINES_CHANGED")
+    -- (the window read at the cap: its recipes keep their colours there, and still none is advised)
+    w.recipes = nil
+    Smithing(w)
+    Open(w, 164)
+    Shut(w)
+    check(w.ns.RecipeColor("Blacksmithing", "Ashen Greaves", 100) == "optimal", "retail: at the cap the recipes keep the colours the window shows")
+    local capped = Lines(w, "Blacksmithing")
+    check(Has(capped, "Blacksmithing - Midnight 100/100") and Has(capped, "Skill capped for this expansion") and not Has(capped, "Craft:") and
+          not Has(capped, "Nothing you know") and Has(capped, "First craft bonus: Dawnsteel Buckler"),
+          "retail: at 100/100 'Skill capped for this expansion', no craft advice, first-craft bonuses still")
+end
+
+-- gathering and fishing: generic, with the expansion's name from the game
+do
+    local w = RetailWorld({slots = {7, 6, nil, 8, 9}, chosen = {Mining = true, Fishing = true, Skinning = true},
+                           book = {[6] = {"Mining", 12, 100, 186, "Midnight Mining"}, [7] = {"Skinning", 9, 100, 393, "Midnight Skinning"},
+                                   [8] = {"Fishing", 5, 100, 356, "Midnight Fishing"}}})
+    local m0, f0, s0 = Lines(w, "Mining"), Lines(w, "Fishing"), Lines(w, "Skinning")
+    check(Has(m0, "Gather in this expansion's zones - nodes there give skill-ups") and Has(f0, "Fish in this expansion's zones - catches there give skill-ups") and
+          Has(s0, "Skin beasts in this expansion's zones - they give skill-ups"),
+          "retail: gathering advice is generic; before the game named the expansion, 'this expansion's'")
+    w.recipes = {
+        [401] = {name = "Refulgent Copper", prof = 186, line = 2912, learned = true, relativeDifficulty = 1, canSkillUp = true, numSkillUps = 1, isGatheringRecipe = true},
+        [402] = {name = "Umbral Tin", prof = 186, line = 2912, learned = true, relativeDifficulty = 0, canSkillUp = true, numSkillUps = 1, isGatheringRecipe = true},
+        [403] = {name = "Brilliant Silver", prof = 186, line = 2912, learned = false, relativeDifficulty = 0, canSkillUp = true, numSkillUps = 1, isGatheringRecipe = true},
+        [404] = {name = "Bismuth", prof = 186, line = 2881, learned = true, relativeDifficulty = 0, canSkillUp = true, numSkillUps = 1, isGatheringRecipe = true},
+        [405] = {name = "Smelt Something", prof = 186, line = 2912, learned = true, relativeDifficulty = 0, canSkillUp = true, numSkillUps = 5}
+    }
+    Open(w, 186)
+    local m = Lines(w, "Mining")
+    check(m:match("^[^\n]+") == "Mining - Midnight 12/100" and Has(m, "Gather in Midnight zones - nodes there give skill-ups"),
+          "retail: 'Gather in Midnight zones', the expansion's name from the game")
+    check(Has(m, "Best now: Umbral Tin (orange)") and not Has(m, "Bismuth") and not Has(m, "Smelt") and not Has(m, "Craft:"),
+          "retail: the journal's best entry by colour, of the current line's gathering entries")
+    local known = w.ns.GetKnownRecipes("Mining")
+    check(known["Refulgent Copper"] and known["Umbral Tin"] and not known["Brilliant Silver"] and not known["Bismuth"] and not known["Smelt Something"],
+          "retail: a gathering profession's journal entries are recorded (isGatheringRecipe), learned and current-line only")
+    Shut(w)
+    w.recipes = {}
+    Open(w, 356)
+    check(Has(Lines(w, "Fishing"), "Fish in Midnight zones - catches there give skill-ups") and
+          w.ns.db.retailLines.Fishing.id == 2911, "retail: Fishing in the same generic form, its line learned even with no entry listed")
+    Shut(w)
+    Open(w, 393)
+    check(Has(Lines(w, "Skinning"), "Skin beasts in Midnight zones - they give skill-ups") and not Has(Lines(w, "Skinning"), "level"),
+          "retail: Skinning likewise, without Classic's level formula")
+end
+
+-- other professions and languages: Jewelcrafting by its line ID or its name; a recipe learned with the window shut
+do
+    local w = RetailWorld({slots = {5, 7}, chosen = {Blacksmithing = true, Jewelcrafting = true},
+                           book = {[5] = {"Blacksmithing", 37, 100, 164, "Midnight Blacksmithing"}, [7] = {"Jewelcrafting", 8, 100, 755, "Midnight Jewelcrafting"}}})
+    check(w.ns.profs.Jewelcrafting and w.ns.profs.Jewelcrafting.rank == 8 and Has(Lines(w, "Jewelcrafting"), "Midnight Jewelcrafting  8/100"),
+          "retail: Jewelcrafting is tracked, by its skill-line ID")
+    -- NEW_RECIPE_LEARNED: a Midnight recipe joins the list, another expansion's does not
+    Smithing(w)
+    Open(w, 164)
+    Shut(w)
+    w.recipes[120] = {name = "Gleaming Spaulders", prof = 164, line = 2907, learned = true, relativeDifficulty = 0, canSkillUp = true, numSkillUps = 4, firstCraft = true}
+    w.recipes[220] = {name = "Everforged Mace", prof = 164, line = 2872, learned = true, relativeDifficulty = 0, canSkillUp = true, numSkillUps = 9}
+    w.Fire("NEW_RECIPE_LEARNED", 120)
+    w.Fire("NEW_RECIPE_LEARNED", 220)
+    local known = w.ns.GetKnownRecipes("Blacksmithing")
+    check(known["Gleaming Spaulders"] and not known["Everforged Mace"] and Has(Lines(w, "Blacksmithing"), "Craft: Gleaming Spaulders (orange, +4 skill)"),
+          "retail: a recipe learned with the window shut joins the current line's list; another expansion's does not")
+    -- only the filtered list (no GetAllRecipeIDs): still read, and said so when nothing skills up
+    local wn = RetailWorld({slots = {5}, chosen = {Blacksmithing = true}})
+    wn.noAllIDs = true
+    Smithing(wn)
+    for id, r in pairs(wn.recipes) do r.relativeDifficulty, r.canSkillUp = 3, false end
+    Open(wn, 164)
+    local text = Lines(wn, "Blacksmithing")
+    check(wn.ns.recipeAPI == "GetFilteredRecipeIDs" and Has(text, "Nothing you know skills up") and Has(text, "with every recipe showing"),
+          "retail: without GetAllRecipeIDs the filtered list is read, and the advice says it may not be all")
+    -- a window still loading, or someone else's, is not read
+    local wl = RetailWorld({slots = {5}, chosen = {Blacksmithing = true}})
+    Smithing(wl)
+    wl.linked = true
+    Open(wl, 164)
+    check(wl.ns.db.retailLines == nil and wl.ns.GetKnownRecipes("Blacksmithing") == nil, "retail: a linked profession window is not read as the player's")
+    local wd = RetailWorld({locale = "deDE", slots = {7, 8}, chosen = {Jewelcrafting = true, Inscription = true},
+                            book = {[7] = {"Juwelierskunst", 8, 100, nil, nil}, [8] = {"Inschriftenkunde", 3, 100, nil, nil}}})
+    check(wd.ns.profs.Jewelcrafting and wd.ns.profs.Inscription and wd.ns.profs.Inscription.rank == 3,
+          "retail: Jewelcrafting and Inscription are found by their names in the client's language")
+    check(wd.ns.ProfLabel("Jewelcrafting") == "Juwelierskunst", "retail: and labelled as the game names them")
+end
+
+-- the setup dialog: 13 choices on retail, no First Aid; the other clients keep their 12
+do
+    local function Setup(w)
+        w.slash("setup")
+        for _, f in ipairs(w.frames) do
+            if f.name == "RXPProfessionsSetup" then
+                local texts = {}
+                for _, t in ipairs(f.texts) do texts[#texts + 1] = tostring(t.text) end
+                return f, table.concat(texts, "\n")
+            end
+        end
+    end
+    local w = RetailWorld()
+    local f, texts = Setup(w)
+    check(f and #f.checks == 14 and #w.ns.CHOOSABLE == 13, "retail: the setup dialog has 13 professions (and the Auction House box)")
+    local all = true
+    for _, name in ipairs({"Herbalism", "Mining", "Skinning", "Alchemy", "Blacksmithing", "Enchanting", "Engineering", "Inscription",
+                           "Jewelcrafting", "Leatherworking", "Tailoring", "Cooking", "Fishing"}) do
+        if not Has(texts, name) then all = false end
+    end
+    check(all and not Has(texts, "First Aid"), "retail: Inscription and Jewelcrafting among them, no First Aid")
+    check(Has(texts, "Blacksmithing |cFF66FF66*|r") and not Has(texts, "Tailoring |cFF66FF66*|r"), "retail: the learned ones are starred")
+    -- 13 boxes in two columns of 7 and 6: the dialog is as tall as the longer one needs (the
+    -- title and question, seven rows, the hint, the Auction House box, the slider, the Save button)
+    check(f.height and f.height >= 52 + 7 * 26 + 22 + 46 + 14 + 70, "retail: the dialog is tall enough for seven rows")
+    for _, client in ipairs({"classic", "tbc", "mists", "forever"}) do
+        local wc = NewWorld({client = client, events = client == "forever" and FOREVER_EVENTS or CLASSIC_EVENTS, db = {setupDone = true, chosen = {Mining = true}, show = true}})
+        wc.Fire("PLAYER_ENTERING_WORLD")
+        local fc, tc = Setup(wc)
+        check(fc and #fc.checks == 13 and #wc.ns.CHOOSABLE == 12 and Has(tc, "First Aid") and not Has(tc, "Jewelcrafting") and not Has(tc, "Inscription") and
+              not wc.ns.IS_RETAIL and wc.ns.TRACKED["First Aid"] == "craft" and wc.ns.TRACKED.Jewelcrafting == nil and wc.ns.SKILL_LINES[755] == nil and
+              next(wc.ns.CRAFT) ~= nil and next(wc.ns.GATHER) ~= nil and #wc.ns.RANKS == 8,
+              client .. ": unchanged - 12 setup choices with First Aid, no retail profession, its Classic data in place")
+    end
+end
+
+-- item tooltips: nothing on retail
+do
+    local hooks = #postCalls
+    local w = TooltipWorld({client = "retail", events = RETAIL_EVENTS, level = 84, db = {setupDone = true, show = true, chosen = {Tailoring = true, Blacksmithing = true}}},
+                           {[2589] = {bags = 20, bank = 0}})
+    check(#postCalls == hooks and w.ns.tooltipAPI == "off on retail", "retail: no item tooltip hook is made")
+    check(#w.ns.TooltipLines(2589) == 0 and #w.ns.TooltipLines(2592) == 0, "retail: nothing is added to an item's tooltip")
+    local listening = false
+    for _, f in ipairs(w.frames) do if f.events.BANKFRAME_OPENED or f.events.BAG_UPDATE_DELAYED then listening = true end end
+    check(not listening, "retail: no bag or bank events are listened for")
+    for _, cmd in ipairs({"tooltip", "tooltip later", "tooltip others", "need 2589"}) do
+        printed = {}
+        w.slash(cmd)
+        check(Printed("Item tooltips are not on retail yet.") and #printed == 1 and w.ns.db.tooltip == nil and w.ns.db.tooltipLater == nil,
+              "retail: /rxpp " .. cmd .. " says 'not on retail yet' and changes nothing")
+    end
+    printed = {}
+    w.slash("status")
+    check(Printed("item tooltips: not on retail"), "retail: /rxpp status says so too")
+end
+
+-- the trainer: retail's return order is Forever's (name, serviceType, texture, reqLevel)
+do
+    local w = RetailWorld({slots = {5}, chosen = {Blacksmithing = true}})
+    Smithing(w)
+    Open(w, 164)
+    Shut(w)
+    -- {name, serviceType, skill, level}: the skill under the expansion line's name, or the profession's
+    w.trainer = {{"Voidglass Blade", "available", "Midnight Blacksmithing", 45}, {"Sunblessed Plate", "unavailable", "Blacksmithing", 60},
+                 {"A Header", "header", "Blacksmithing", 1}}
+    w.Fire("TRAINER_SHOW")
+    local reqs = w.ns.db.recipeReq and w.ns.db.recipeReq.Blacksmithing
+    check(reqs and reqs["Voidglass Blade"] == 45 and reqs["Sunblessed Plate"] == 60 and reqs["A Header"] == nil,
+          "retail: the trainer is read in Forever's order (the service type is the second return), a line's name finds its profession")
+    check(w.ns.lastTrainerSkill == "Blacksmithing" or w.ns.lastTrainerSkill == "Midnight Blacksmithing", "retail: the skill name a trainer gave is kept for /rxpp status")
+end
+
+-- /rxpp status on retail: what settles the open questions, in figures and game names only
+do
+    local w = RetailWorld()
+    printed = {}
+    w.slash("status")
+    check(Printed('retail Blacksmithing: GetProfessionInfo 37/100, skillLine 164, skillLineName "Midnight Blacksmithing"; current line not seen yet') and
+          Printed("retail trainer: last skill name seen: none yet") and Printed("with the window closed: not asked yet"),
+          "retail status: the raw GetProfessionInfo figures, and what is not known yet")
+    Smithing(w)
+    Open(w, 164)
+    Shut(w)
+    w.byLineShut = true
+    w.Fire("SKILL_LINES_CHANGED")
+    w.trainer = {{"Voidglass Blade", "available", "Midnight Blacksmithing", 45}}
+    w.Fire("TRAINER_SHOW")
+    printed = {}
+    w.slash("status")
+    check(Printed('current line 2907 "Midnight Blacksmithing" (Midnight) 37/100'), "retail status: the cached current line - ID, expansion, skill/max")
+    check(Printed("retail Blacksmithing:") and Printed("with the window closed: answered without a skill"),
+          "retail status: whether GetProfessionInfoBySkillLineID answered with the window closed (here: not)")
+    w.byLineShut = false
+    w.Fire("SKILL_LINES_CHANGED")
+    printed = {}
+    w.slash("status")
+    check(Printed("by line ID now: answered; with the window closed: answered"), "retail status: ... and when it does")
+    check(Printed("retail API: GetAllRecipeIDs yes") and Printed('retail trainer: last skill name seen: "Midnight Blacksmithing"') and
+          Printed("retail values that came back secret: none"),
+          "retail status: whether GetAllRecipeIDs exists, the trainer's skill name, secret values")
+    check(Printed("events this client lacks (skipped): TRADE_SKILL_UPDATE, CRAFT_SHOW, CRAFT_UPDATE") and Printed("Blacksmithing:2907 5 recipes at skill 37"),
+          "retail status: the rest of the status as on the other clients, recipes counted per line")
+    check(not Printed("Thrallmar") and not Printed("UnitName"), "retail status: no player or character name")
+    w.noAllIDs = true
+    _G.C_TradeSkillUI.GetAllRecipeIDs = nil
+    printed = {}
+    w.slash("status")
+    check(Printed("retail API: GetAllRecipeIDs no, GetFilteredRecipeIDs yes"), "retail status: a client without GetAllRecipeIDs says so")
+    -- Archaeology has a slot of its own and stays untracked; status names what the list held besides
+    local wa = RetailWorld({slots = {5, 6, 10, 8, 9}})
+    wa.book[10] = {"Archaeology", 1, 950, 794, "Archaeology"}
+    wa.Fire("SKILL_LINES_CHANGED")
+    printed = {}
+    wa.slash("status")
+    check(wa.ns.profs.Archaeology == nil and wa.ns.GetTracked().Archaeology == nil and wa.ns.profs.Fishing and wa.ns.profs.Cooking and
+          Printed('retail: in the profession list, not tracked: "Archaeology" (skillLine 794, skillLineName "Archaeology")'),
+          "retail status: Archaeology stays untracked, and what the list held besides is named")
+    -- the other clients' status has none of it
+    local wc = NewWorld({client = "classic", events = CLASSIC_EVENTS, db = {setupDone = true, chosen = {Mining = true}, show = true}})
+    wc.Fire("PLAYER_ENTERING_WORLD")
+    printed = {}
+    wc.slash("status")
+    check(not Printed("retail") and Printed("item tooltips: on through"), "classic: /rxpp status is unchanged, no retail lines")
+end
+
+-- RestedXP's empty guide is nothing to finish, on any client
+do
+    local empty = {empty = true, displayname = "Welcome to RestedXP Guides\nRight click to pick a guide", name = ""}
+    local w = NewWorld({client = "classic", events = CLASSIC_EVENTS, level = 20, rxp = {currentGuide = empty}, db = {setupDone = true, chosen = {Mining = true}, show = true}})
+    w.Fire("PLAYER_ENTERING_WORLD")
+    local text = Lines(w, "Mining")
+    check(Has(text, "before leaving Elwynn Forest") and not Has(text, "Welcome to RestedXP"), "guide context: RestedXP's empty guide falls back to the zone, never 'finishing Welcome to RestedXP Guides'")
+    local w2 = NewWorld({client = "classic", events = CLASSIC_EVENTS, level = 20, rxp = {currentGuide = {displayname = "19-20 Redridge", name = "x"}},
+                         db = {setupDone = true, chosen = {Mining = true}, show = true}})
+    w2.Fire("PLAYER_ENTERING_WORLD")
+    check(Has(Lines(w2, "Mining"), "before finishing 19-20 Redridge"), "guide context: a real guide is still named")
+end
+
+-- what the review of 1.4.0 found
+do
+    local NOTHING = "Nothing you know skills up - check your trainer for new recipes."
+    local OPEN_BS = "Open your Blacksmithing window so I can see your recipes."
+    -- "nothing you know skills up" is the game's word (every known recipe grey), not "no colour known":
+    -- a new game build starts every profession's colours afresh when any one window is read
+    local w = RetailWorld({slots = {5, nil, nil, nil, 9}, chosen = {Blacksmithing = true, Cooking = true}})
+    Smithing(w)
+    w.recipes[501] = {name = "Sunwell Stew", prof = 185, line = 2908, learned = true, relativeDifficulty = 0, canSkillUp = true, numSkillUps = 1}
+    Open(w, 164); Shut(w)
+    Open(w, 185); Shut(w)
+    check(Has(Lines(w, "Cooking"), "Craft: Sunwell Stew (orange)"), "retail review: (setup) Cooking read, an orange recipe known")
+    w.build = "70999"
+    Open(w, 164); Shut(w)
+    local cook = Lines(w, "Cooking")
+    check(not Has(cook, NOTHING) and Has(cook, "Open your Cooking window so I can see your recipes."),
+          "retail review: after a new game build a profession not opened again asks for its window, not for a trainer visit")
+    -- the skill moved on more than 15 points since the window was read
+    local wm = RetailWorld({slots = {5}, chosen = {Blacksmithing = true}})
+    Smithing(wm); Open(wm, 164); Shut(wm)
+    wm.book[5][2] = 53; wm.lines[164][1].skillLevel = 53
+    wm.Fire("SKILL_LINES_CHANGED")
+    local moved = Lines(wm, "Blacksmithing")
+    check(Has(moved, "Blacksmithing - Midnight 53/100") and not Has(moved, NOTHING) and Has(moved, OPEN_BS),
+          "retail review: colours 16 points old ask for the window, not for a trainer visit")
+    -- (grey at 37 is grey at 53: there the game did say it)
+    local wg = RetailWorld({slots = {5}, chosen = {Blacksmithing = true}})
+    Smithing(wg)
+    for _, id in ipairs({101, 102, 103, 104, 105}) do wg.recipes[id].relativeDifficulty, wg.recipes[id].canSkillUp = 3, false end
+    Open(wg, 164); Shut(wg)
+    wg.book[5][2] = 53; wg.lines[164][1].skillLevel = 53
+    wg.Fire("SKILL_LINES_CHANGED")
+    check(Has(Lines(wg, "Blacksmithing"), NOTHING) and not Has(Lines(wg, "Blacksmithing"), OPEN_BS),
+          "retail review: recipes seen grey stay 'nothing you know skills up' at a higher skill")
+
+    -- before a profession's window was read, which line is this expansion's is not known:
+    -- an older line's 100/100 is not called this expansion's cap, and a gatherer is asked for the window too
+    local wo = RetailWorld({level = 82, slots = {5, 6}, chosen = {Blacksmithing = true, Mining = true},
+                            book = {[5] = {"Blacksmithing", 100, 100, 164, "Khaz Algar Blacksmithing"}, [6] = {"Mining", 100, 100, 186, "Khaz Algar Mining"}}})
+    for _, b in ipairs({164, 186}) do wo.lines[b][1].skillLevel, wo.lines[b][1].maxSkillLevel = 0, 0 end
+    check(Lines(wo, "Mining") == "Khaz Algar Mining  100/100\nOpen your Mining window once so I can see this expansion's skill.",
+          "retail review: a gatherer whose line was never seen is asked to open the window once, and no cap is claimed")
+    check(Lines(wo, "Blacksmithing") == "Khaz Algar Blacksmithing  100/100\n" .. OPEN_BS,
+          "retail review: nor is a craft's older line at 100/100 called this expansion's cap before its window was read")
+    Open(wo, 186); Shut(wo)
+    check(Lines(wo, "Mining") == "Khaz Algar Mining  100/100\nLearn Midnight Mining from a trainer",
+          "retail review: once the journal was read, 'Learn Midnight Mining' under the older line's own figures, and no more asking")
+    local wn = RetailWorld({slots = {6}, chosen = {Mining = true}})
+    check(Has(Lines(wn, "Mining"), "Open your Mining window once so I can see this expansion's skill."),
+          "retail review: (a gatherer asked for the window)")
+    wn.lines[186][1].skillLevel = 100; wn.book[6][2] = 100
+    Open(wn, 186); Shut(wn)
+    check(Lines(wn, "Mining") == "Mining - Midnight 100/100\nSkill capped for this expansion",
+          "retail review: a line known to be this expansion's keeps 'Skill capped for this expansion', and the asking stops")
+
+    -- a leveller below Midnight keeps the figures of the line being levelled
+    local wl = RetailWorld({level = 74, slots = {6}, chosen = {Mining = true}, book = {[6] = {"Mining", 30, 100, 186, "Khaz Algar Mining"}}})
+    wl.lines[186][1].skillLevel, wl.lines[186][1].maxSkillLevel = 0, 0
+    wl.lines[186][2].skillLevel = 30
+    Open(wl, 186, 2881); Shut(wl)
+    check(Lines(wl, "Mining") == "Khaz Algar Mining  30/100\nLearn Midnight Mining from a trainer" and wl.ns.profs.Mining.rank == 0,
+          "retail review: the older line being levelled keeps its name and 30/100 above 'Learn Midnight Mining'; it is never Midnight's skill")
+
+    -- dropped at Midnight 25 and learned again with the window shut
+    for _, named in ipairs({"Blacksmithing", false}) do
+        local wd = RetailWorld({slots = {5}, chosen = {Blacksmithing = true}, book = {[5] = {"Blacksmithing", 25, 100, 164, "Midnight Blacksmithing"}}})
+        wd.lines[164][1].skillLevel = 25
+        Smithing(wd); Open(wd, 164); Shut(wd)
+        wd.slots = {}
+        for _, l in ipairs(wd.lines[164]) do l.skillLevel, l.maxSkillLevel = 0, 0 end
+        wd.Fire("SKILL_LINES_CHANGED")
+        wd.slots = {5}; wd.book[5] = {"Blacksmithing", 1, 300, 164, named or nil}
+        wd.Fire("SKILL_LINES_CHANGED")
+        local t = Lines(wd, "Blacksmithing")
+        check(not Has(t, "25/100") and not Has(t, "Midnight 1/300") and not Has(t, "Craft:") and Has(t, "Learn Midnight Blacksmithing from a trainer"),
+              "retail review: dropped and learned again, the old Midnight 25/100 and its recipes are not shown (the list " ..
+              (named and "naming the base line" or "naming no line") .. ")")
+    end
+    -- an empty profession list at login marks nothing dropped
+    local cached = {Blacksmithing = {id = 2907, name = "Midnight Blacksmithing", expansion = "Midnight", skill = 20, max = 100}}
+    local we = RetailWorld({slots = {}, noLogin = true, db = {setupDone = true, show = true, chosen = {Blacksmithing = true}, retailLines = cached}})
+    we.byLineShut = true
+    we.Fire("PLAYER_ENTERING_WORLD")
+    we.slots = {5}; we.book[5] = {"Blacksmithing", 100, 100, 164, "Khaz Algar Blacksmithing"}
+    we.Fire("SKILL_LINES_CHANGED")
+    check(Lines(we, "Blacksmithing"):match("^[^\n]+") == "Blacksmithing - Midnight 20/100" and cached.Blacksmithing.unlearned == nil,
+          "retail review: a profession list that is empty at login drops nothing")
+    -- a list that names no line and gives another cap is not the cached line's
+    local wc = RetailWorld({slots = {5}, noLogin = true, book = {[5] = {"Blacksmithing", 1, 300, 164, nil}},
+                            db = {setupDone = true, show = true, chosen = {Blacksmithing = true},
+                                  retailLines = {Blacksmithing = {id = 2907, name = "Midnight Blacksmithing", expansion = "Midnight", skill = 20, max = 100}}}})
+    wc.byLineShut = true
+    wc.Fire("PLAYER_ENTERING_WORLD")
+    check(not Has(Lines(wc, "Blacksmithing"), "1/300"), "retail review: a nameless 1/300 from the list is not put under the Midnight header")
+
+    -- a cap that cannot be read is unknown, not "unlearned"
+    local secret = function() return setmetatable({}, {__lt = function() error("secret") end, __le = function() error("secret") end, __eq = function() error("secret") end}) end
+    local ws = RetailWorld({slots = {5}, chosen = {Blacksmithing = true}})
+    ws.lines[164][1].maxSkillLevel = secret()
+    Smithing(ws)
+    local okS = pcall(Open, ws, 164)
+    local st = Lines(ws, "Blacksmithing")
+    printed = {}
+    ws.slash("status")
+    check(okS and st:match("^[^\n]+") == "Blacksmithing - Midnight 37/100" and Has(st, "Craft: Ashen Greaves") and not Has(st, "Learn Midnight") and
+          Printed("Blacksmithing line cap"),
+          "retail review: an unreadable line cap is not 'Learn Midnight Blacksmithing': the skill stands, the recipes are read, /rxpp status names the value")
+    local ws2 = RetailWorld({slots = {5}, chosen = {Blacksmithing = true}})
+    ws2.lines[164][1].maxSkillLevel, ws2.lines[164][1].skillLevel = secret(), secret()
+    Smithing(ws2)
+    check(pcall(Open, ws2, 164) and not Has(Lines(ws2, "Blacksmithing"), "Learn Midnight"), "retail review: nor with the skill unreadable too")
+    local ws3 = RetailWorld({slots = {5}, chosen = {Blacksmithing = true}})
+    ws3.lines[164][1].maxSkillLevel, ws3.lines[164][1].skillLevel = secret(), 0
+    Smithing(ws3)
+    check(pcall(Open, ws3, 164) and Has(Lines(ws3, "Blacksmithing"), "Learn Midnight Blacksmithing from a trainer"),
+          "retail review: a plain skill of 0 still says the line is to be learned")
+
+    -- the other expansions' recipes are told apart before their tables are asked for
+    local wr = RetailWorld({slots = {5}, chosen = {Blacksmithing = true}})
+    Smithing(wr)
+    for id = 10001, 10200 do
+        wr.recipes[id] = {name = "Old Recipe " .. id, prof = 164, line = 2872, learned = true, relativeDifficulty = 3, canSkillUp = false, numSkillUps = 0}
+    end
+    local real, outside, inside = _G.C_TradeSkillUI.GetRecipeInfo, 0, 0
+    _G.C_TradeSkillUI.GetRecipeInfo = function(id)
+        if wr.recipes[id] and wr.recipes[id].line ~= 2907 then outside = outside + 1 else inside = inside + 1 end
+        return real(id)
+    end
+    Open(wr, 164)
+    check(outside == 0 and inside > 0 and Has(Lines(wr, "Blacksmithing"), "Craft: Ashen Greaves (orange, +3 skill)"),
+          "retail review: GetRecipeInfo is asked only for the current line's recipes (IsRecipeInSkillLine first)")
+end
+
+-- Fishing is not asked for a window it may not have (its book button casts); the other gatherers are
+do
+    local w = RetailWorld({slots = {6, nil, nil, 8}, chosen = {Mining = true, Fishing = true},
+                           book = {[6] = {"Mining", 12, 100, 186, "Midnight Mining"}, [8] = {"Fishing", 5, 100, 356, "Midnight Fishing"}}})
+    local f = Lines(w, "Fishing")
+    check(f == "Midnight Fishing  5/100\nFish in this expansion's zones - catches there give skill-ups" and
+          Has(Lines(w, "Mining"), "Open your Mining window once so I can see this expansion's skill."),
+          "retail final: Fishing is never asked to open a window; Mining still is")
+end
+
+-- a profession that answers without a name, or throws, while the list is read is not taken for dropped
+do
+    for _, how in ipairs({"gives no name", "throws"}) do
+        local w = RetailWorld({slots = {5, 6}, chosen = {Blacksmithing = true, Mining = true},
+                               book = {[5] = {"Blacksmithing", 100, 100, 164, "Khaz Algar Blacksmithing"}, [6] = {"Mining", 12, 100, 186, "Midnight Mining"}}})
+        Smithing(w); Open(w, 164); Shut(w)
+        w.byLineShut = true
+        local real = _G.GetProfessionInfo
+        _G.GetProfessionInfo = function(index)
+            if index == 5 then
+                if how == "throws" then error("not ready") end
+                return nil
+            end
+            return real(index)
+        end
+        w.Fire("SKILL_LINES_CHANGED")
+        _G.GetProfessionInfo = real
+        w.Fire("SKILL_LINES_CHANGED")
+        local t = Lines(w, "Blacksmithing")
+        check(w.ns.db.retailLines.Blacksmithing.unlearned == nil and t:match("^[^\n]+") == "Blacksmithing - Midnight 37/100" and
+              not Has(t, "Learn Midnight"), "retail final: a profession that " .. how .. " while the list is read is not taken for dropped")
+    end
+end
+
+-- retail is new ground: a fault while reading a window, a trainer or drawing a profession is kept for /rxpp status
+do
+    local w = RetailWorld({slots = {5, 6}, chosen = {Blacksmithing = true, Mining = true}})
+    Smithing(w)
+    local ns = w.ns
+    local realBest, realMats, realKey = ns.BestKnownRecipe, ns.RetailMats, ns.ProfKey
+    ns.BestKnownRecipe = function() error("scan fault") end
+    local okScan = pcall(Open, w, 164)
+    ns.BestKnownRecipe = realBest
+    check(okScan and tostring(ns.lastError):find("scan fault", 1, true) ~= nil,
+          "retail final: a fault while reading the window is kept for /rxpp status, not raised")
+    Shut(w)
+    ns.lastError = nil
+    w.trainer = {{"Voidglass Blade", "available", "Midnight Blacksmithing", 45}}
+    ns.ProfKey = function() error("trainer fault") end
+    local okTrainer = pcall(w.Fire, "TRAINER_SHOW")
+    ns.ProfKey = realKey
+    check(okTrainer and tostring(ns.lastError):find("trainer fault", 1, true) ~= nil, "retail final: and one while reading a trainer")
+    ns.lastError = nil
+    ns.RetailMats = function() error("draw fault") end
+    local okDraw, text = pcall(Lines, w, "Blacksmithing")
+    local okWindow = pcall(ns.UpdateUI)
+    ns.RetailMats = realMats
+    check(okDraw and okWindow and text == "Blacksmithing - Midnight 37/100\nCraft: Ashen Greaves (orange, +3 skill)" and
+          Has(Lines(w, "Mining"), "Gather in") and tostring(ns.lastError):find("draw fault", 1, true) ~= nil,
+          "retail final: a fault drawing one profession costs only the rest of its lines, the others draw, and it is kept")
+    printed = {}
+    w.slash("status")
+    check(Printed("last error:") and Printed("draw fault"), "retail final: /rxpp status shows the kept fault")
+    -- the other clients call straight through, as before
+    local wc = NewWorld({client = "forever", events = FOREVER_EVENTS, db = {setupDone = true, chosen = {Cooking = true}, show = true}})
+    wc.Fire("PLAYER_ENTERING_WORLD")
+    wc.ns.ScanOpenTradeSkill = function() error("classic fault") end
+    check(not pcall(wc.Fire, "TRADE_SKILL_SHOW"), "retail final: on the other clients a window fault is raised as before")
+end
+
+-- the retail sentences in every language, their placeholders kept; the toc lists the client
+do
+    local keys = {"%s - %s %d/%d", "Not learned yet - learn it from a %s trainer", "Learn %s from a trainer", "%s, +%d skill", "First craft bonus: %s",
+                  "Nothing you know skills up - check your trainer for new recipes.", "Open your %s window so I can see your recipes.",
+                  "Open your %s window once so I can see this expansion's skill.",
+                  "Gather in %s zones - nodes there give skill-ups", "Gather in this expansion's zones - nodes there give skill-ups",
+                  "Skin beasts in %s zones - they give skill-ups", "Skin beasts in this expansion's zones - they give skill-ups",
+                  "Fish in %s zones - catches there give skill-ups", "Fish in this expansion's zones - catches there give skill-ups",
+                  "Best now: %s (%s)", "Item tooltips are not on retail yet."}
+    local function shape(s)
+        local out = {}
+        for spec in s:gmatch("%%[sd]") do out[#out + 1] = spec end
+        return table.concat(out)
+    end
+    local missing = {}
+    for _, locale in ipairs({"frFR", "deDE", "esES", "esMX", "ptBR", "itIT", "ruRU", "koKR", "zhCN", "zhTW"}) do
+        local wl = RetailWorld({locale = locale})
+        for _, key in ipairs(keys) do
+            local v = rawget(wl.ns.L, key)
+            if type(v) ~= "string" or shape(v) ~= shape(key) then missing[#missing + 1] = locale .. ": " .. key end
+        end
+        for _, prof in ipairs({"Jewelcrafting", "Inscription"}) do
+            local name = wl.ns.PROF_NAMES_FOR.retail[locale] and wl.ns.PROF_NAMES_FOR.retail[locale][prof]
+            if type(name) ~= "string" or wl.ns.ProfKey(name) ~= prof then missing[#missing + 1] = locale .. ": " .. prof end
+        end
+    end
+    check(#missing == 0, "retail: every new sentence and both new professions in every language" .. (missing[1] and (" - missing: " .. missing[1]) or ""))
+    local wf = RetailWorld({locale = "frFR", slots = {5}, chosen = {Blacksmithing = true}, book = {[5] = {"Forge", 37, 100, 164, "Forge de Minuit"}}})
+    wf.lines[164][1].professionName, wf.lines[164][1].expansionName = "Forge de Minuit", "Minuit"
+    Smithing(wf)
+    Open(wf, 164)
+    local fr = Lines(wf, "Blacksmithing")
+    check(Has(fr, "Forge - Minuit 37/100") and Has(fr, "Créer : Ashen Greaves (orange, +3 en compétence)") and
+          Has(fr, "Bonus de première fabrication : Dawnsteel Buckler"), "retail: a French client reads in French")
+    local toc = assert(io.open(root .. "/RXPProfessions/RXPProfessions.toc")):read("*a")
+    check(toc:find("## Interface: 11509, 20506, 50504, 16001, 120105", 1, true) and toc:find("## Version: 1.4.0", 1, true) and
+          not toc:match("## Notes:[^\n]*First Aid"), "toc: lists 120105, version 1.4.0, and promises no First Aid")
 end
 
 realPrint(("RestedXP Professions harness: %d passed, %d failed"):format(passed, failed))

@@ -11,18 +11,39 @@ local eventFrame = CreateFrame("Frame")
 -- of its own (Data.lua foreverRoute / foreverNotes, ns.FOREVER); TBC
 -- renamed and re-costed a few recipes and teaches more at its trainers (a
 -- route row's `tbc` / `tbcMats` / `tbcSource`). ns.CLIENT names the game
--- for data that differs: "era", "forever", "tbc" or "later" (Mists).
+-- for data that differs: "era", "forever", "tbc", "later" (Mists) or
+-- "retail" (WoW Midnight, 12.x), which takes none of the Classic data: one
+-- skill line per expansion there, no ranks, no fixed routes - its advice
+-- is drawn from what the game reports (the "Retail" sections below).
 do
     local toc = GetBuildInfo and select(4, GetBuildInfo())
     toc = type(toc) == "number" and toc or 0
-    ns.IS_FOREVER = toc >= 16000 and toc < 20000
-    ns.IS_TBC = toc >= 20000 and toc < 30000
-    ns.CLIENT = ns.IS_FOREVER and "forever" or ns.IS_TBC and "tbc" or toc >= 30000 and "later" or "era"
-    ns.HAS_MASTER = toc >= 20000 -- Classic Era and Forever stop at Artisan
-    ns.HAS_LATER_RANKS = toc >= 30000 -- Grand Master and up
+    -- (Forever's project is its own, WOW_PROJECT_CAMELOT, not the mainline)
+    ns.IS_RETAIL = toc >= 110000 or (WOW_PROJECT_MAINLINE ~= nil and WOW_PROJECT_ID == WOW_PROJECT_MAINLINE)
+    ns.IS_FOREVER = not ns.IS_RETAIL and toc >= 16000 and toc < 20000
+    ns.IS_TBC = not ns.IS_RETAIL and toc >= 20000 and toc < 30000
+    ns.CLIENT = ns.IS_RETAIL and "retail" or ns.IS_FOREVER and "forever" or ns.IS_TBC and "tbc" or toc >= 30000 and "later" or "era"
+    ns.HAS_MASTER = not ns.IS_RETAIL and toc >= 20000 -- Classic Era and Forever stop at Artisan
+    ns.HAS_LATER_RANKS = not ns.IS_RETAIL and toc >= 30000 -- Grand Master and up
     -- before patch 3.1, Expert and Artisan First Aid, Cooking and Fishing
     -- came from books and quests, not trainers
-    ns.BOOK_RANKS = toc < 30000
+    ns.BOOK_RANKS = not ns.IS_RETAIL and toc < 30000
+end
+-- Retail has none of what Data.lua describes: no ranks to train, no
+-- Classic nodes, routes, notes, trainers or fishing waters, and no First
+-- Aid. The tables are emptied (the addon's own, never the game's), so no
+-- line can be built from them; Jewelcrafting and Inscription join the
+-- professions it knows.
+if ns.IS_RETAIL then
+    for _, key in ipairs({"RANKS", "RANK_RULES", "RANK_RULES_FOR", "GATHER", "CRAFT", "REFINE", "TRAINERS", "VILLAGE_TRAINERS",
+                          "ZONE_WATERS", "ZONE_MAPS", "FISH_COOKING", "FISHING_NOTES"}) do
+        ns[key] = {}
+    end
+    ns.SKILL_LINES[129] = nil
+    ns.SKILL_LINES[755], ns.SKILL_LINES[773] = "Jewelcrafting", "Inscription"
+    ns.TRACKED["First Aid"] = nil
+    ns.TRACKED["Jewelcrafting"], ns.TRACKED["Inscription"] = "craft", "craft"
+    ns.CHOOSABLE = ns.RETAIL_CHOOSABLE
 end
 -- names this client writes differently from Classic Era (Locales.lua)
 for _, set in ipairs({{"NODE_NAMES", "NODE_NAMES_FOR"}, {"RANK_NAMES", "RANK_NAMES_FOR"}}) do
@@ -136,6 +157,12 @@ local function ProfNames()
             for _, name in ipairs(list) do add(name, key) end
         end
     end
+    -- retail's own spellings, Jewelcrafting and Inscription among them
+    if ns.IS_RETAIL then
+        for _, names in pairs(ns.PROF_NAMES_FOR and ns.PROF_NAMES_FOR.retail or {}) do
+            for key, name in pairs(names) do add(name, key) end
+        end
+    end
     -- and the client's own name for each skill line, whatever its language
     local display = C_TradeSkillUI and C_TradeSkillUI.GetTradeSkillDisplayName
     if display then
@@ -153,8 +180,41 @@ function ns.ProfKey(name, id)
     end
     if type(name) ~= "string" then return nil end
     local names = ProfNames()
-    return names[name] or names[ns.Fold(name)]
+    local key = names[name] or names[ns.Fold(name)]
+    -- retail: an expansion's line ("Midnight Blacksmithing", or its ID)
+    -- the profession window has shown before
+    if not key and ns.IS_RETAIL then key = ns.LineProfKey(name, id) end
+    return key
 end
+-- Retail: the current expansion's skill line of a profession, as its
+-- window last listed it (see "Retail: skill" below), kept in the saved
+-- variables: {id, name, expansion, skill, max, unlearned}
+function ns.CurrentLine(prof)
+    local lines = ns.db and ns.db.retailLines
+    local line = type(lines) == "table" and lines[prof]
+    if type(line) == "table" and type(line.id) == "number" then return line end
+end
+function ns.LineProfKey(name, id)
+    local lines = ns.db and ns.db.retailLines
+    if type(lines) ~= "table" then return nil end
+    for prof, line in pairs(lines) do
+        if type(line) == "table" and ns.TRACKED[prof] then
+            if type(name) == "string" and name ~= "" and line.name == name then return prof end
+            local ok, same = pcall(function() return id ~= nil and line.id == id end)
+            if ok and same then return prof end
+        end
+    end
+end
+-- Where a profession's recipes and their colours are kept: under its own
+-- name, and on retail under its current expansion's line as well, so
+-- another expansion's recipes and skill never mix in (nil until the
+-- window has shown which line that is).
+local function StoreKey(prof)
+    if not ns.IS_RETAIL then return prof end
+    local line = ns.CurrentLine(prof)
+    return line and (prof .. ":" .. line.id) or nil
+end
+ns.StoreKey = StoreKey
 -- a profession, a rank, as this client writes them: the name the game
 -- gave for it in a scan, else the one it gives for the skill line, else
 -- Locales.lua's for this client (a profession not learned yet has no scan)
@@ -369,6 +429,147 @@ local function ForeverSkillLines()
     }
 end
 
+--------------------------------------------------------------------------
+-- Retail: skill. Every expansion has a skill line of its own under each
+-- profession (Midnight's runs 1-100), and the advice is about the current
+-- one. Its ID is in no table of the game's Lua: the profession window
+-- lists a profession's lines newest first (GetChildProfessionInfos), and
+-- the first is kept in the saved variables (ns.CurrentLine). With the
+-- window shut the line is asked for by that ID; failing an answer, the
+-- profession list's own figures stand - but only as the line they are
+-- for: readings of different lines are never merged, so an older
+-- expansion's 100/100 cannot pass for Midnight's 20/100.
+--------------------------------------------------------------------------
+
+-- for /rxpp status: what the game said, per profession (ns.retailRaw),
+-- whether a line was answered for with the window shut (ns.retailClosed)
+-- and which values came back unreadable (ns.retailSecret)
+ns.retailRaw, ns.retailClosed, ns.retailSecret, ns.retailUnknown = {}, {}, {}, {}
+
+-- a number of the game's; one that cannot be read (a secret value) is
+-- noted for /rxpp status and counts as unknown
+local function RetailNumber(v, what)
+    local n = Plain(v)
+    if n == nil and type(v) ~= "nil" then ns.retailSecret[what] = true end
+    return n
+end
+-- a name of the game's; one that cannot be compared (a secret value) is
+-- none (the test is made inside the pcall: a secret's comparison throws,
+-- and so would testing what it gives)
+local function Text(v)
+    if type(v) ~= "string" then return nil end
+    local ok, named = pcall(function() if v ~= "" then return true end end)
+    if ok and named == true then return v end
+end
+
+-- A line counts as learned with a cap above 0 and a skill that is not 0
+-- (Blizzard's own test for "known" is skillLevel > 0). A cap that cannot
+-- be read (nil) is unknown, not 0: then a plain skill above 0 says learned.
+local function LineLearned(skill, cap)
+    if cap == nil then return skill ~= nil and skill > 0 end
+    return cap > 0 and skill ~= 0
+end
+
+-- GetProfessionInfoBySkillLineID for a line: its table when it answers
+-- with a cap, else nil and why not
+local function ReadLine(id, what)
+    local api = C_TradeSkillUI
+    if not (api and type(api.GetProfessionInfoBySkillLineID) == "function") then return nil, "not in this client" end
+    local ok, info = pcall(api.GetProfessionInfoBySkillLineID, id)
+    if not ok or type(info) ~= "table" then return nil, "no answer" end
+    local cap = RetailNumber(info.maxSkillLevel, what .. " line cap")
+    if not cap or cap <= 0 then return nil, "answered without a skill" end
+    return info
+end
+
+local function ScanRetailSkills(found)
+    local raws, unknown = {}, {}
+    local slots = {GetProfessions()}
+    -- (whether every profession in the list answered with a name: one
+    -- that did not is not taken for dropped, below)
+    local whole = true
+    -- prof1, prof2, archaeology (not tracked), fishing, cooking
+    for slot = 1, 6 do
+        local index = slots[slot]
+        if index then
+            local ok, name, _, rank, maxRank, _, _, skillLine, _, _, _, lineName = pcall(GetProfessionInfo, index)
+            if not (ok and (Text(name) or Text(lineName))) then whole = false end
+            local key = ok and (ns.ProfKey(name, skillLine) or ns.ProfKey(lineName))
+            if key and ns.TRACKED[key] and not found[key] then
+                -- the label: the profession's own name when the game gave it
+                if type(name) == "string" and name ~= "" and ns.ProfKey(name) == key and not ns.LineProfKey(name) then
+                    ns.profLabels[key] = name
+                end
+                local raw = {
+                    rank = RetailNumber(rank, key .. " rank"), maxRank = RetailNumber(maxRank, key .. " maxRank"),
+                    skillLine = RetailNumber(skillLine, key .. " skillLine"), lineName = Text(lineName)
+                }
+                raws[key] = raw
+                local p = {rank = raw.rank or 0, maxRank = raw.maxRank or 0, kind = ns.TRACKED[key], sources = {},
+                           lineName = raw.lineName}
+                p.sources["GetProfessions"] = p.rank .. "/" .. p.maxRank
+                found[key] = p
+                local line = ns.CurrentLine(key)
+                if line then
+                    local info, why = ReadLine(line.id, key)
+                    raw.byLine = info and "answered" or why
+                    if not ns.tradeOpen then ns.retailClosed[key] = raw.byLine end
+                    local other = raw.lineName and Text(line.name) and raw.lineName ~= line.name
+                    -- the line the profession list shows instead, with its
+                    -- own figures: shown under its own name while this
+                    -- expansion's is still to be learned
+                    if other and raw.rank and raw.maxRank and raw.maxRank > 0 then
+                        p.listLine = {name = raw.lineName, rank = raw.rank, maxRank = raw.maxRank}
+                    end
+                    -- a list that names no line and gives another cap than
+                    -- this line's is not about this line either
+                    local cachedMax = Plain(line.max) or 0
+                    local otherCap = not raw.lineName and cachedMax > 0 and p.maxRank ~= cachedMax
+                    if info then
+                        local skill = RetailNumber(info.skillLevel, key .. " line skill")
+                        p.rank, p.maxRank = skill or 0, Plain(info.maxSkillLevel)
+                        line.skill, line.max, line.unlearned = p.rank, p.maxRank, not LineLearned(skill, p.maxRank) or nil
+                        p.sources["GetProfessionInfoBySkillLineID"] = p.rank .. "/" .. p.maxRank
+                    elseif other or otherCap or (not raw.lineName and line.unlearned) then
+                        -- the profession list shows another line (an older
+                        -- expansion's) or names none: its figures are not
+                        -- this line's, what the window last said is
+                        p.rank, p.maxRank = Plain(line.skill) or 0, Plain(line.max) or 0
+                        p.sources["window, earlier"] = p.rank .. "/" .. p.maxRank
+                    else
+                        -- the profession list shows this very line
+                        line.skill, line.max, line.unlearned = p.rank, p.maxRank, not LineLearned(raw.rank, p.maxRank) or nil
+                    end
+                    p.lineID, p.lineName, p.expansion = line.id, Text(line.name) or p.lineName, Text(line.expansion)
+                    -- the profession is learned, this expansion's line not yet
+                    if line.unlearned then
+                        p.rank, p.maxRank = 0, 0
+                        p.needsLine = Text(line.name) or ns.ProfLabel(key)
+                    end
+                end
+            elseif ok and not key and (Text(name) or Text(lineName)) then
+                -- a profession the tracker does not follow (Archaeology), or
+                -- one it failed to recognise: named for /rxpp status
+                unknown[#unknown + 1] = string.format('"%s" (skillLine %s, skillLineName "%s")', tostring(Text(name)),
+                                                      tostring(Plain(skillLine)), tostring(Text(lineName)))
+            end
+        end
+    end
+    -- A profession that was learned at the last reading and is gone from
+    -- the list now was dropped: its line starts over, so what the window
+    -- once said of it (25/100, its recipes) is not shown should it be
+    -- learned again - "Learn <line>" until the line is read anew. (Only a
+    -- drop seen in this session: an empty list at login marks nothing; nor
+    -- does a list one of whose professions gave no name.)
+    local lines, was = ns.db and ns.db.retailLines, ns.profs
+    for key, line in pairs(whole and type(lines) == "table" and type(was) == "table" and lines or {}) do
+        if type(line) == "table" and not raws[key] and was[key] and not was[key].unlearned then
+            line.skill, line.unlearned = 0, true
+        end
+    end
+    ns.retailRaw, ns.retailUnknown = raws, unknown
+end
+
 -- Opening and closing a folded header raises SKILL_LINES_CHANGED, and
 -- on Forever that event runs on the spot, inside the call: unguarded, the
 -- scan's own fold-back started a new scan, which opened the header again,
@@ -388,6 +589,14 @@ function ns.ScanSkills()
         if forever then
             ScanSkillLines(forever, found, "C_SkillInfo")
             used[#used + 1] = "C_SkillInfo"
+        end
+        -- retail: the profession list and the current expansion's lines
+        if ns.IS_RETAIL then
+            if GetProfessions and GetProfessionInfo then
+                ScanRetailSkills(found)
+                used[#used + 1] = "GetProfessions"
+            end
+            return
         end
         -- the profession list: does not depend on the skills tab
         if GetProfessions and GetProfessionInfo then
@@ -487,7 +696,14 @@ local function ColorStore(prof)
     if build and db.recipeColorsBuild ~= build then
         db.recipeColors = {}
         db.recipeColorsBuild = build
+        -- (retail: a recipe's materials are asked for again too)
+        for _, extras in pairs(type(db.retailRecipes) == "table" and db.retailRecipes or {}) do
+            for _, e in pairs(type(extras) == "table" and extras or {}) do
+                if type(e) == "table" then e.mats = nil end
+            end
+        end
     end
+    prof = StoreKey(prof)
     db.recipeColors = db.recipeColors or {}
     db.recipeColors[prof] = db.recipeColors[prof] or {}
     return db.recipeColors[prof]
@@ -526,16 +742,21 @@ end
 -- over. (Only its own words: the skills list can lag a point behind.)
 -- given = the skill the window states; without one (or a secret one, or
 -- 0 while it loads) the skills list's is used.
+-- (Retail: prof's lists are its current expansion's line's - StoreKey -
+-- and `given` is that line's skill, whatever expansion the window's
+-- dropdown is on, so looking at an older expansion wipes nothing.)
 local function RecordWindow(prof, given, list)
     local own = Plain(given)
     if own and own <= 0 then own = nil end
     local rank = own or (ns.profs and ns.profs[prof] and ns.profs[prof].rank)
     local db = ns.db
+    local key = StoreKey(prof)
     db.knownRecipes = db.knownRecipes or {}
     db.recipeRank = db.recipeRank or {}
-    local known, last = db.knownRecipes[prof], db.recipeRank[prof]
+    local known, last = db.knownRecipes[key], db.recipeRank[key]
     if type(known) ~= "table" or (own and type(last) == "number" and own < last) then
         known = {}
+        if type(db.retailRecipes) == "table" then db.retailRecipes[key] = nil end
     end
     local store = ColorStore(prof)
     for _, e in ipairs(list) do
@@ -544,11 +765,11 @@ local function RecordWindow(prof, given, list)
             NoteColor(store, e.name, e.diff, rank)
         end
     end
-    db.knownRecipes[prof] = known
+    db.knownRecipes[key] = known
     db.allRecipes = nil -- 1.0.0 dropped the "not in this game" list
-    db.recipeRank[prof] = rank
+    db.recipeRank[key] = rank
     -- (the window is read: a recipe learned since then has its colour now)
-    if db.recipeUnseen then db.recipeUnseen[prof] = nil end
+    if db.recipeUnseen then db.recipeUnseen[key] = nil end
     -- the window's skill is the freshest there is: a skill-up while
     -- crafting reaches it before the skills list, so the advice moves on
     -- with the colours it was given
@@ -557,6 +778,9 @@ local function RecordWindow(prof, given, list)
     -- the item tooltips (Inventory.lua) build their plan again
     ns.dataVersion = (ns.dataVersion or 0) + 1
 end
+
+-- (retail's parts of the window scan, defined with it below)
+local NoteCurrentLine, InLine, NoteRetailRecipes
 
 -- true when an optional game function exists and says yes
 local function Says(fn)
@@ -593,6 +817,155 @@ local function OpenProfession(api)
     if ok then return prof, info end
 end
 
+--------------------------------------------------------------------------
+-- Retail: the window. Its recipe list spans every expansion of the open
+-- profession; the current expansion's line is the first of
+-- GetChildProfessionInfos (newest first). The line is only read, never
+-- selected: SetProfessionChildSkillLineID would change the player's own
+-- window.
+--------------------------------------------------------------------------
+
+-- reads and remembers the open profession's current line; nil when the
+-- game does not list one
+function NoteCurrentLine(api, prof)
+    if type(api.GetChildProfessionInfos) ~= "function" then return end
+    local ok, infos = pcall(api.GetChildProfessionInfos)
+    local first = ok and type(infos) == "table" and infos[1]
+    if type(first) ~= "table" then return end
+    local id = RetailNumber(first.professionID, prof .. " line ID")
+    if not id or id <= 0 then return end
+    -- (a list still showing another profession's lines is not this one's)
+    local parent = Plain(first.parentProfessionID)
+    if parent and ns.SKILL_LINES[parent] and ns.SKILL_LINES[parent] ~= prof then return end
+    local db = ns.db
+    if type(db.retailLines) ~= "table" then db.retailLines = {} end
+    local line = db.retailLines[prof]
+    if type(line) ~= "table" or line.id ~= id then
+        line = {id = id}
+        db.retailLines[prof] = line
+    end
+    local skill = RetailNumber(first.skillLevel, prof .. " line skill")
+    -- (a cap that cannot be read is unknown: the cap known before stands,
+    -- else the profession list's, and it does not make the line unlearned)
+    local cap = RetailNumber(first.maxSkillLevel, prof .. " line cap")
+    -- (a cap that is there but secret: unlearned only on a plain skill of 0)
+    local learned = LineLearned(skill, cap) or (cap == nil and type(first.maxSkillLevel) ~= "nil" and skill ~= 0)
+    line.name, line.expansion = Text(first.professionName), Text(first.expansionName)
+    line.skill, line.max, line.unlearned = skill or 0, cap or Plain(line.max) or 0, not learned or nil
+    -- the window's word on the line is the freshest there is: the skills
+    -- are read again now the line is known, and the profession list, which
+    -- can lag a point behind, does not take it back
+    ns.tradeOpen = true
+    ns.profs = ns.ScanSkills()
+    line.skill, line.max, line.unlearned = skill or 0, cap or Plain(line.max) or 0, not learned or nil
+    local p = ns.profs[prof]
+    if p then
+        p.lineID, p.lineName, p.expansion = id, line.name or p.lineName, line.expansion
+        p.rank, p.maxRank = line.skill, line.max
+        p.needsLine = line.unlearned and (line.name or ns.ProfLabel(prof)) or nil
+        if line.unlearned then p.rank, p.maxRank = 0, 0 end
+        p.sources["window"] = p.rank .. "/" .. p.maxRank
+    end
+    ns.UpdateUI()
+    return line
+end
+
+-- whether a recipe belongs to a skill line
+function InLine(api, id, lineID)
+    if type(api.IsRecipeInSkillLine) == "function" then
+        local ok, yes = pcall(api.IsRecipeInSkillLine, id, lineID)
+        return ok and yes == true
+    end
+    if type(api.GetTradeSkillLineForRecipe) == "function" then
+        local ok, recipeLine = pcall(api.GetTradeSkillLineForRecipe, id)
+        return ok and Plain(recipeLine) == lineID
+    end
+    return false
+end
+
+-- What retail says of a learned recipe besides its colour, per line:
+--   ns.db.retailRecipes[StoreKey][recipe] = {id, ups, first, mats}
+-- ups = numSkillUps, first = a first-craft bonus is still to be had,
+-- mats = {{itemID, count}, ...} once asked for (ns.RetailMats)
+local function RetailExtras(prof, create)
+    local key, db = StoreKey(prof), ns.db
+    if not (key and db) then return end
+    if type(db.retailRecipes) ~= "table" then
+        if not create then return end
+        db.retailRecipes = {}
+    end
+    if type(db.retailRecipes[key]) ~= "table" then
+        if not create then return end
+        db.retailRecipes[key] = {}
+    end
+    return db.retailRecipes[key]
+end
+function NoteRetailRecipes(prof, list)
+    local extras = RetailExtras(prof, true)
+    if not extras then return end
+    for _, e in ipairs(list) do
+        if e.learned ~= false then
+            local x = type(extras[e.name]) == "table" and extras[e.name] or {}
+            if x.id ~= e.id then x.mats = nil end
+            x.id, x.ups, x.first = e.id, Plain(e.ups), e.first == true or nil
+            extras[e.name] = x
+        end
+    end
+end
+-- recipe -> numSkillUps, for BestKnownRecipe's tie-break
+function ns.RetailSkillUps(prof)
+    local ups = {}
+    for name, x in pairs(RetailExtras(prof) or {}) do
+        if type(x) == "table" then ups[name] = Plain(x.ups) end
+    end
+    return ups
+end
+-- up to `limit` learned recipes whose first craft still gives its bonus
+function ns.RetailFirstCrafts(prof, limit)
+    local out, known = {}, ns.GetKnownRecipes(prof) or {}
+    for name, x in pairs(RetailExtras(prof) or {}) do
+        if type(x) == "table" and x.first and known[name] ~= nil then out[#out + 1] = name end
+    end
+    table.sort(out)
+    for i = #out, (limit or #out) + 1, -1 do out[i] = nil end
+    return out
+end
+-- A recipe's basic materials, "3 x Item, 2 x Item": from the schematic's
+-- Basic slots that must be filled; a slot's several item IDs are the
+-- quality tiers of one material, named by the first. nil while the game
+-- has not named every item (asked for; the window redraws when it has).
+function ns.RetailMats(prof, recipe)
+    local extras = RetailExtras(prof)
+    local x = extras and extras[recipe]
+    if type(x) ~= "table" or type(x.id) ~= "number" then return nil end
+    local api = C_TradeSkillUI
+    if type(x.mats) ~= "table" and api and type(api.GetRecipeSchematic) == "function" then
+        local ok, schematic = pcall(api.GetRecipeSchematic, x.id, false)
+        local slots = ok and type(schematic) == "table" and schematic.reagentSlotSchematics
+        if type(slots) == "table" then
+            local basic = Enum and Enum.CraftingReagentType and Enum.CraftingReagentType.Basic or 1
+            local mats = {}
+            for _, slot in ipairs(slots) do
+                local first = type(slot) == "table" and type(slot.reagents) == "table" and slot.reagents[1]
+                local item = type(first) == "table" and Plain(first.itemID)
+                local count = type(slot) == "table" and Plain(slot.quantityRequired)
+                if item and count and count > 0 and Plain(slot.reagentType) == basic and slot.required ~= false then
+                    mats[#mats + 1] = {item, count}
+                end
+            end
+            x.mats = mats
+        end
+    end
+    if type(x.mats) ~= "table" or #x.mats == 0 then return nil end
+    local parts = {}
+    for _, m in ipairs(x.mats) do
+        local name = type(m) == "table" and ItemName(m[1])
+        if not name then return nil end
+        parts[#parts + 1] = string.format("%d x %s", m[2], name)
+    end
+    return table.concat(parts, ", ")
+end
+
 -- Forever (and retail) keep recipes behind C_TradeSkillUI. GetAllRecipeIDs
 -- lists every recipe of the open profession, learned or not, whatever the
 -- window's filters (measured in game on Forever 1.60.1); Blizzard's window
@@ -610,6 +983,17 @@ local function ScanTradeSkillUI()
     if Says(api.IsDataSourceChanging) or ForeignWindow() then return end
     local prof, info = OpenProfession(api)
     if not prof then return end
+    -- retail: the current expansion's line, not the one the window's
+    -- dropdown is on (GetChildProfessionInfo), gives the skill and
+    -- decides which recipes count
+    local line
+    if ns.IS_RETAIL then
+        line = NoteCurrentLine(api, prof)
+        if not line then return end
+        info = {skillLevel = line.skill, maxSkillLevel = line.max}
+        if line.unlearned then return true end
+    end
+    local wantGather = ns.TRACKED[prof] ~= "craft"
     local ids
     for _, source in ipairs({"GetAllRecipeIDs", "GetFilteredRecipeIDs"}) do
         if not ids and api[source] then
@@ -630,12 +1014,23 @@ local function ScanTradeSkillUI()
     local capped = skill and cap and cap > 0 and skill >= cap
     local list, any = {}, false
     for _, id in ipairs(ids) do
-        local okR, r = pcall(api.GetRecipeInfo, id)
-        if okR and type(r) == "table" and type(r.name) == "string" then
+        -- retail's ID list spans every expansion: only the current line's
+        -- recipes (asked before the recipe's own table is built, which the
+        -- other expansions' hundreds then never are), and of those the
+        -- crafts for a crafting profession, the journal's entries for a
+        -- gathering one; no salvage, placeholder or recraft entries (as
+        -- Blizzard's own list leaves them out)
+        local mine = not line or InLine(api, id, line.id)
+        local okR, r
+        if mine then okR, r = pcall(api.GetRecipeInfo, id) end
+        if okR and type(r) == "table" and type(r.name) == "string" and
+            (not line or (not (r.isSalvageRecipe or r.isDummyRecipe or r.isRecraft) and
+                (r.isGatheringRecipe and true or false) == wantGather)) then
             local diff = Difficulty(r.relativeDifficulty)
             -- a learned recipe the game says cannot skill up is grey
             if r.learned and r.canSkillUp == false and not capped then diff = "trivial" end
-            list[#list + 1] = {name = r.name, diff = diff, learned = r.learned and true or false}
+            list[#list + 1] = {name = r.name, diff = diff, learned = r.learned and true or false,
+                               id = id, ups = r.numSkillUps, first = r.firstCraft}
             if r.learned then any = true end
         end
     end
@@ -646,6 +1041,13 @@ local function ScanTradeSkillUI()
     ns.db.recipeFiltered = ns.db.recipeFiltered or {}
     ns.db.recipeFiltered[prof] = ns.recipeAPI == "GetFilteredRecipeIDs" or nil
     RecordWindow(prof, info.skillLevel, list)
+    if line then
+        NoteRetailRecipes(prof, list)
+        -- the recipe to craft now has its materials asked for while the
+        -- window is open
+        local best = ns.BestKnownRecipe(prof, nil, ns.RetailSkillUps(prof))
+        if best then ns.RetailMats(prof, best) end
+    end
     ns.UpdateUI()
     return true
 end
@@ -717,10 +1119,15 @@ function ns.ScanTrainer()
     for i = 1, n do
         -- Classic: name, subText, serviceType, isExpanded
         -- Forever: name, serviceType, texture, reqLevel, subText, category
+        -- retail:  name, serviceType, texture, reqLevel
         local okI, name, second, third = pcall(GetTrainerServiceInfo, i)
-        local serviceType = ns.IS_FOREVER and second or third
+        local serviceType = (ns.IS_FOREVER or ns.IS_RETAIL) and second or third
         local okR, skill, level = pcall(GetTrainerServiceSkillReq, i)
         level = okR and Plain(level)
+        -- (for /rxpp status: the name a trainer gives the skill - retail
+        -- may name the expansion's line, "Midnight Blacksmithing")
+        local named = okR and Text(skill)
+        if named then ns.lastTrainerSkill = named end
         skill = okR and ns.ProfKey(skill)
         if okI and okR and type(name) == "string" and serviceType ~= "header" and
             type(skill) == "string" and ns.TRACKED[skill] and level then
@@ -781,7 +1188,8 @@ function ns.ScanOpenCraft() -- Enchanting uses the separate Craft API on older c
 end
 
 function ns.GetKnownRecipes(prof)
-    return ns.db and ns.db.knownRecipes and ns.db.knownRecipes[prof]
+    local key = StoreKey(prof)
+    return key and ns.db and ns.db.knownRecipes and ns.db.knownRecipes[key]
 end
 
 -- A recipe learned (a pattern, a trainer) while the profession's window is
@@ -804,10 +1212,20 @@ function ns.NoteLearnedRecipe(recipeID)
         if ok then prof = ns.ProfKey(nil, parentID) or ns.ProfKey(lineName, lineID) end
     end
     if not prof or not ns.TRACKED[prof] then return end
+    -- retail: only a recipe of the current expansion's line
+    local line
+    if ns.IS_RETAIL then
+        line = ns.CurrentLine(prof)
+        if not (line and InLine(api, recipeID, line.id)) then return end
+    end
     local info
     if api.GetRecipeInfo then
         local ok, r = pcall(api.GetRecipeInfo, recipeID)
         if ok and type(r) == "table" then info = r end
+    end
+    if line and info and (info.isSalvageRecipe or info.isDummyRecipe or info.isRecraft or
+        (info.isGatheringRecipe and true or false) ~= (ns.TRACKED[prof] ~= "craft")) then
+        return
     end
     local name = info and type(info.name) == "string" and info.name or nil
     if not name and C_Spell and C_Spell.GetSpellName then
@@ -823,7 +1241,8 @@ function ns.NoteLearnedRecipe(recipeID)
     -- (only to a list a look at the window made: one recipe is not all
     -- the player knows, and the advice would call the rest unknown - a
     -- profession never read keeps its "open your window once")
-    if type(db.knownRecipes) ~= "table" or type(db.knownRecipes[prof]) ~= "table" then return end
+    local key = StoreKey(prof)
+    if type(db.knownRecipes) ~= "table" or type(db.knownRecipes[key]) ~= "table" then return end
     local diff = info and Difficulty(info.relativeDifficulty) or "unknown"
     local rank = ns.profs and ns.profs[prof] and ns.profs[prof].rank
     if ORDER[diff] and type(rank) == "number" then
@@ -831,9 +1250,12 @@ function ns.NoteLearnedRecipe(recipeID)
     else
         -- no colour yet: the next look at the window gives one
         db.recipeUnseen = db.recipeUnseen or {}
-        db.recipeUnseen[prof] = true
+        db.recipeUnseen[key] = true
     end
-    if db.knownRecipes[prof][name] == nil or ORDER[diff] then db.knownRecipes[prof][name] = diff end
+    if db.knownRecipes[key][name] == nil or ORDER[diff] then db.knownRecipes[key][name] = diff end
+    if line and info then
+        NoteRetailRecipes(prof, {{name = name, id = recipeID, ups = info.numSkillUps, first = info.firstCraft}})
+    end
     ns.dataVersion = (ns.dataVersion or 0) + 1
     ns.UpdateUI()
     return name
@@ -845,7 +1267,8 @@ end
 --   sure   - true when the sightings pin it down exactly at this skill
 --   seenColour, seenRank - the sighting the estimate leans on, for wording
 function ns.RecipeColor(prof, recipe, rank)
-    local store = ns.db and ns.db.recipeColors and ns.db.recipeColors[prof]
+    local key = StoreKey(prof)
+    local store = key and ns.db and ns.db.recipeColors and ns.db.recipeColors[key]
     local name = Resolve(store, recipe)
     local r = name and store[name]
     if not r or type(rank) ~= "number" then return nil end
@@ -897,8 +1320,10 @@ end
 -- this skill: orange first, then yellow, then green; never grey. Among
 -- equals, a recipe the route uses wins (its mats are listed), then the
 -- name. Returns name, colour, the route row it is on (if any), and
--- whether its colour is from further back (see below).
-function ns.BestKnownRecipe(prof, rank)
+-- whether its colour is from further back (see below). ups (retail):
+-- recipe -> the skill points one craft gives; among equals the most wins,
+-- before the name.
+function ns.BestKnownRecipe(prof, rank, ups)
     local known = ns.GetKnownRecipes(prof)
     if not known then return end
     rank = rank or (ns.profs[prof] and ns.profs[prof].rank)
@@ -929,9 +1354,11 @@ function ns.BestKnownRecipe(prof, rank)
         if o and o < 3 then
             local row = rowOf[recipe]
             if sure or (type(rank) == "number" and rank - seenRank <= 5) then
+                local more = ups and best and (ups[recipe] or 1) - (ups[best] or 1) or 0
                 local better = not bestO or o < bestO or
                                    (o == bestO and row and not bestRow) or
-                                   (o == bestO and (row ~= nil) == (bestRow ~= nil) and recipe < best)
+                                   (o == bestO and (row ~= nil) == (bestRow ~= nil) and
+                                       (more > 0 or (more == 0 and recipe < best)))
                 if better then best, bestO, bestRow = recipe, o, row end
             elseif type(seenRank) == "number" and type(rank) == "number" and rank - seenRank <= 15 then
                 local better = not oldO or o < oldO or (o == oldO and seenRank > oldSeen) or
@@ -969,7 +1396,9 @@ local function GuideContext()
         local ace = LibStub("AceAddon-3.0", true)
         local rxp = ace and ace:GetAddon("RXPGuides", true)
         local guide = rxp and rxp.currentGuide
-        local gname = guide and (guide.displayname or guide.name)
+        -- (no guide picked: RestedXP's empty guide is named "Welcome to
+        -- RestedXP Guides", which is nothing to finish)
+        local gname = guide and not guide.empty and (guide.displayname or guide.name)
         if type(gname) == "string" and gname ~= "" then
             gname = gname:gsub("\n.*", ""):gsub("|c%x%x%x%x%x%x%x%x", "")
                          :gsub("|r", "")
@@ -1185,6 +1614,109 @@ function ns.CraftNow(name, p, current)
     return now
 end
 
+-- Retail's lines for one profession (ns.BuildProfLines hands over its
+-- label, its add() and its list). No ranks, books, level gates, pace
+-- check, Classic nodes, routes, notes or trainers there: the header is the
+-- current expansion's line, and the advice is what the game itself said
+-- of the recipes in the profession's window.
+function ns.BuildRetailLines(name, p, label, add, lines)
+    if p.unlearned then
+        add(label, "head")
+        add(string.format(L["Not learned yet - learn it from a %s trainer"], label), "warn")
+        return lines
+    end
+    -- the profession is learned, this expansion's line of it not yet
+    if p.needsLine then
+        -- (the line the profession list shows meanwhile - an older
+        -- expansion's, being levelled - keeps its own name and figures)
+        local list = p.listLine
+        if type(list) == "table" then
+            add(string.format("%s  %d/%d", list.name, list.rank, list.maxRank), "head")
+        else
+            add(label, "head")
+        end
+        add(string.format(L["Learn %s from a trainer"], p.needsLine), "warn")
+        return lines
+    end
+    if p.expansion then
+        add(string.format(L["%s - %s %d/%d"], label, p.expansion, p.rank, p.maxRank), "head")
+    else
+        -- the line as the profession list names it ("Midnight Blacksmithing")
+        add(string.format("%s  %d/%d", p.lineName or label, p.rank, p.maxRank), "head")
+    end
+    local capped = p.maxRank > 0 and p.rank >= p.maxRank
+    -- Which line is this expansion's is only known once the profession's
+    -- window has been read: until then the list's figures may be an older
+    -- line's, and its 100/100 is not called this expansion's cap.
+    local seen = ns.CurrentLine(name) ~= nil
+    if capped and seen then add(L["Skill capped for this expansion"], "dim") end
+
+    local known = ns.GetKnownRecipes(name)
+    local read = known ~= nil and next(known) ~= nil
+    local best, bestColor
+    if read and not capped then best, bestColor = ns.BestKnownRecipe(name, p.rank, ns.RetailSkillUps(name)) end
+    local function colorText(recipe, color)
+        local text = ns.ColorText(name, recipe, p.rank) or L[ns.COLOR_WORD[color]]
+        local ups = ns.RetailSkillUps(name)[recipe]
+        if ups and ups > 1 then text = string.format(L["%s, +%d skill"], text, ups) end
+        return text
+    end
+    -- "Nothing you know skills up" only when the game said so: every known
+    -- recipe grey at this skill. No recipe to name is otherwise a matter of
+    -- colours not known now (a new game build started them afresh, or the
+    -- skill has moved on since the window was read), and the window is
+    -- asked for instead.
+    local allGrey = read and not best
+    for recipe in pairs(allGrey and known or {}) do
+        local c, sure = ns.RecipeColor(name, recipe, p.rank)
+        if not (c == "trivial" and sure) then allGrey = false break end
+    end
+    if p.kind == "craft" then
+        if not read or (not best and not capped and not allGrey) then
+            add(string.format(L["Open your %s window so I can see your recipes."], label), "dim")
+        elseif best then
+            add(string.format(L["Craft: %s (%s)"], best, colorText(best, bestColor)), "normal")
+            local mats = ns.RetailMats(name, best)
+            if mats then add(string.format(L["Mats: %s"], mats), "dim") end
+        elseif not capped then
+            add(L["Nothing you know skills up - check your trainer for new recipes."], "warn")
+            -- the list came through the window's filters: it may not be all
+            if ns.db and ns.db.recipeFiltered and ns.db.recipeFiltered[name] then
+                add(string.format(L["(open your %s window with every recipe showing - nothing filtered or folded - so I can see what still skills up)"], label), "dim")
+            end
+        end
+        -- a first craft pays its bonus at the cap too
+        for _, recipe in ipairs(read and ns.RetailFirstCrafts(name, 2) or {}) do
+            add(string.format(L["First craft bonus: %s"], recipe), "good")
+        end
+        if name ~= "Cooking" and ns.db and ns.db.useAH then
+            add(L["Tip: buy missing mats from the Auction House"], "dim")
+        end
+    else
+        -- gathering: no node tables for retail - any node, beast or pool of
+        -- the expansion's zones can skill up
+        local form = p.kind == "fishing" and "Fish" or p.kind == "skinning" and "Skin beasts" or "Gather"
+        local what = p.kind == "fishing" and "catches there" or p.kind == "skinning" and "they" or "nodes there"
+        if not capped then
+            if p.expansion then
+                add(string.format(L[form .. " in %s zones - " .. what .. " give skill-ups"], p.expansion), "normal")
+            else
+                add(L[form .. " in this expansion's zones - " .. what .. " give skill-ups"], "normal")
+            end
+        end
+        -- and the journal's best entry, once the window has been read
+        if best then add(string.format(L["Best now: %s (%s)"], best, colorText(best, bestColor)), "dim") end
+        -- (a gatherer has no other reason to open it: asked for once, as
+        -- nothing else tells which line is this expansion's. Not Fishing:
+        -- its book button casts, and a window of its own is not certain -
+        -- a request that may be impossible to meet would never go away.)
+        if not seen and p.kind ~= "fishing" then
+            add(string.format(L["Open your %s window once so I can see this expansion's skill."], label), "dim")
+        end
+    end
+    return lines
+end
+
 -- Returns a list of {text, style} lines for one profession.
 -- style: "head" | "normal" | "good" | "warn" | "dim"
 function ns.BuildProfLines(name, p)
@@ -1194,6 +1726,14 @@ function ns.BuildProfLines(name, p)
     end
 
     local label = ns.ProfLabel(name)
+    if ns.IS_RETAIL then
+        -- (retail is new ground: a fault there costs the rest of that
+        -- profession's lines and is kept for /rxpp status, rather than an
+        -- error each time the window is drawn)
+        local ok, err = pcall(ns.BuildRetailLines, name, p, label, add, lines)
+        if not ok then ns.lastError = tostring(err) end
+        return lines
+    end
     if p.unlearned then
         add(label, "head")
         add(L["Not learned yet - train with:"], "warn")
@@ -1469,7 +2009,8 @@ end
 
 -- Both Fishing and Cooking tracked -> level them together off your catches
 function ns.FishCookCombo()
-    return ns.IsTrackedName("Cooking") and ns.IsTrackedName("Fishing")
+    -- (Classic fish and waters: not on retail)
+    return not ns.IS_RETAIL and ns.IsTrackedName("Cooking") and ns.IsTrackedName("Fishing")
 end
 
 -- The setup choices decide what's displayed: checked professions show
@@ -1506,7 +2047,7 @@ function ns.Refresh()
     local chosen = ns.db and ns.db.setupDone and ns.db.chosen
     for name, p in pairs(fresh) do
         local old = ns.profs[name]
-        if (not chosen or chosen[name]) and old and p.kind == "gather" and
+        if not ns.IS_RETAIL and (not chosen or chosen[name]) and old and p.kind == "gather" and
             p.rank > old.rank then
             for _, tier in ipairs(ns.GATHER[name].tiers) do
                 if old.rank < tier[1] and p.rank >= tier[1] and tier[1] > 1 then
@@ -1539,6 +2080,9 @@ local EVENTS = {
     "TRAINER_SHOW", "TRAINER_UPDATE", "GET_ITEM_INFO_RECEIVED", "SPELL_DATA_LOAD_RESULT",
     "NEW_RECIPE_LEARNED"
 }
+-- retail: the window closing, so /rxpp status can tell whether a skill
+-- line answers while it is shut (the other clients' lists stay as they are)
+if ns.IS_RETAIL then EVENTS[#EVENTS + 1] = "TRADE_SKILL_CLOSE" end
 ns.missingEvents = {}
 for _, event in ipairs(EVENTS) do
     local ok = pcall(eventFrame.RegisterEvent, eventFrame, event)
@@ -1549,6 +2093,14 @@ end
 -- later one - or for TRADE_SKILL_DATA_SOURCE_CHANGED, which ends the swap)
 local TRADE_EVENTS = {TRADE_SKILL_SHOW = true, TRADE_SKILL_UPDATE = true, TRADE_SKILL_LIST_UPDATE = true,
                       TRADE_SKILL_DATA_SOURCE_CHANGED = true}
+-- Retail is new ground: there a fault in reading a window is kept for
+-- /rxpp status ("last error") instead of being raised at every list
+-- update. The other clients call straight through, as before.
+local function RetailSafe(fn)
+    if not ns.IS_RETAIL then return fn() end
+    local ok, err = pcall(fn)
+    if not ok then ns.lastError = tostring(err) end
+end
 eventFrame:SetScript("OnEvent", function(_, event, arg1)
     if event == "NEW_RECIPE_LEARNED" then
         if ns.db then pcall(ns.NoteLearnedRecipe, arg1) end
@@ -1562,11 +2114,14 @@ eventFrame:SetScript("OnEvent", function(_, event, arg1)
             if C_Timer and C_Timer.After then C_Timer.After(0.3, redraw) else redraw() end
         end
         return
+    elseif event == "TRADE_SKILL_CLOSE" then
+        ns.tradeOpen = false
+        return
     elseif TRADE_EVENTS[event] then
-        if ns.db then ns.ScanOpenTradeSkill() end
+        if ns.db then RetailSafe(ns.ScanOpenTradeSkill) end
         return
     elseif event == "TRAINER_SHOW" or event == "TRAINER_UPDATE" then
-        if ns.db then ns.ScanTrainer() end
+        if ns.db then RetailSafe(ns.ScanTrainer) end
         return
     elseif event == "CRAFT_SHOW" or event == "CRAFT_UPDATE" then
         if ns.db then ns.ScanOpenCraft() end
@@ -1597,6 +2152,40 @@ eventFrame:SetScript("OnEvent", function(_, event, arg1)
     end
     if ns.db then ns.Refresh() end
 end)
+
+-- /rxpp status on retail: what the game gave, in figures and its own
+-- names for professions and skill lines (no character's name) - enough
+-- for a player's paste to settle what the source could not: which line
+-- GetProfessionInfo reports, whether a line answers with the window shut,
+-- whether GetAllRecipeIDs is there, what a trainer calls the skill, and
+-- which values came back secret.
+function ns.RetailStatus()
+    local keys = {}
+    for key in pairs(ns.retailRaw) do keys[#keys + 1] = key end
+    table.sort(keys)
+    for _, key in ipairs(keys) do
+        local raw, line = ns.retailRaw[key], ns.CurrentLine(key)
+        ns.Print("retail %s: GetProfessionInfo %s/%s, skillLine %s, skillLineName %s; current line %s; by line ID now: %s; with the window closed: %s",
+                 key, tostring(raw.rank), tostring(raw.maxRank), tostring(raw.skillLine),
+                 raw.lineName and ('"' .. raw.lineName .. '"') or "none",
+                 line and string.format('%d "%s" (%s) %s/%s%s', line.id, tostring(line.name), tostring(line.expansion),
+                                        tostring(line.skill), tostring(line.max), line.unlearned and " not learned" or "") or
+                     "not seen yet - open the profession window once",
+                 raw.byLine or "not asked", ns.retailClosed[key] or "not asked yet")
+    end
+    if #keys == 0 then ns.Print("retail: GetProfessions lists no tracked profession") end
+    if #ns.retailUnknown > 0 then ns.Print("retail: in the profession list, not tracked: %s", table.concat(ns.retailUnknown, ", ")) end
+    local api = C_TradeSkillUI
+    local function has(fn) return api and type(api[fn]) == "function" and "yes" or "no" end
+    ns.Print("retail API: GetAllRecipeIDs %s, GetFilteredRecipeIDs %s, GetChildProfessionInfos %s, GetProfessionInfoBySkillLineID %s, IsRecipeInSkillLine %s, GetRecipeSchematic %s",
+             has("GetAllRecipeIDs"), has("GetFilteredRecipeIDs"), has("GetChildProfessionInfos"),
+             has("GetProfessionInfoBySkillLineID"), has("IsRecipeInSkillLine"), has("GetRecipeSchematic"))
+    ns.Print("retail trainer: last skill name seen: %s", ns.lastTrainerSkill and ('"' .. ns.lastTrainerSkill .. '"') or "none yet - visit a profession trainer")
+    local secret = {}
+    for what in pairs(ns.retailSecret) do secret[#secret + 1] = what end
+    table.sort(secret)
+    ns.Print("retail values that came back secret: %s", #secret > 0 and table.concat(secret, ", ") or "none")
+end
 
 SLASH_RXPPROFESSIONS1 = "/rxpp"
 SLASH_RXPPROFESSIONS2 = "/rxpprofessions"
@@ -1654,7 +2243,7 @@ SlashCmdList["RXPPROFESSIONS"] = function(input)
         local read = {}
         for prof, rank in pairs(ns.db.recipeRank or {}) do
             local n = 0
-            for _ in pairs(ns.GetKnownRecipes(prof) or {}) do n = n + 1 end
+            for _ in pairs(ns.db.knownRecipes and ns.db.knownRecipes[prof] or {}) do n = n + 1 end
             read[#read + 1] = string.format("%s %d recipes at skill %d", prof, n, rank)
         end
         table.sort(read)
@@ -1665,6 +2254,7 @@ SlashCmdList["RXPPROFESSIONS"] = function(input)
             ns.Print("events this client lacks (skipped): %s", table.concat(ns.missingEvents, ", "))
         end
         if ns.TooltipStatus then ns.Print("%s", ns.TooltipStatus()) end
+        if ns.IS_RETAIL then ns.RetailStatus() end
     else
         ns.Print(L["commands: |cFFFFCC00/rxpp|r toggle the window, |cFFFFCC00/rxpp setup|r choose professions, |cFFFFCC00/rxpp status|r what the client gives us"])
         ns.Print(L["item tooltips: |cFFFFCC00/rxpp tooltip|r on or off, |cFFFFCC00/rxpp tooltip later|r the spans after the one you are in, |cFFFFCC00/rxpp tooltip others|r the professions you did not pick"])
